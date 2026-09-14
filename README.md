@@ -247,7 +247,11 @@ taken from operation security requirements (falling back to root
 requirements), not every scope supported by the server. Public operations
 require no scopes; unsupported authentication combinations fail closed.
 
-`OAUTH_<PLATFORM>_CLIENT_AUTH_METHOD` selects the method registered for this client: `none`, `client_secret_post` (default), or `client_secret_basic`. Public clients use `none` and do not load or send a secret. Confidential clients require the corresponding `_CLIENT_SECRET`. This setting describes the client registration, not server-supported capabilities. Authorization uses S256 PKCE unless trusted metadata explicitly declares PKCE unsupported.
+`OAUTH_<PLATFORM>_CLIENT_AUTH_METHOD` optionally overrides the client authentication method: `none`, `client_secret_post`, or `client_secret_basic`. When omitted, the proxy selects the **first usable method in the declared array order** of `x-oauth-authentication-details.authorizationServerMetadata.token_endpoint_auth_methods_supported` in the selected OAuth security scheme. It skips methods the proxy does not implement and methods incompatible with the referenced token/refresh operations. If the array declares no usable method, configuration fails rather than silently falling back.
+
+When that metadata is absent, the proxy retains `client_secret_post` for compatibility, except when a referenced token or refresh operation requires HTTP Basic authentication: it then uses `client_secret_basic`. Explicit overrides must still be supported by the metadata and token operations; an invalid override is an error, not a request to auto-select.
+
+For example, Notion advertises only `client_secret_basic`, so its `_CLIENT_AUTH_METHOD` setting can be omitted. For `["private_key_jwt", "none", "client_secret_basic"]`, the proxy skips the unimplemented JWT method and chooses `none`. Array order is this proxy's default-selection policy, not an assertion of provider preference or the client's registered method. Set the override when your client registration requires a different advertised method. Public clients use `none` and do not load or send a secret; confidential methods require `_CLIENT_SECRET`. Missing credentials cause an error and do not trigger selection of another method. Authorization uses S256 PKCE unless trusted metadata explicitly declares PKCE unsupported.
 
 The proxy implements a bounded subset of
 **x-oauth-authentication-details**. It reads inline
