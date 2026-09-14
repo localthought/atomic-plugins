@@ -1,0 +1,53 @@
+overlay: 1.0.0
+info:
+  title: Google Calendar authenticated principal
+  version: 1.0.0
+actions:
+  - target: $.components.securitySchemes.googleOnline.flows.authorizationCode.scopes
+    update:
+      openid: Identify the authenticated Google Account.
+      email: Read the authenticated user's email claim.
+      profile: Read the authenticated user's profile claims.
+  - target: $.components.securitySchemes.googleOffline.flows.authorizationCode.scopes
+    update:
+      openid: Identify the authenticated Google Account.
+      email: Read the authenticated user's email claim.
+      profile: Read the authenticated user's profile claims.
+  - target: $.paths
+    update:
+      /v1/userinfo:
+        get:
+          operationId: getGoogleAuthenticatedPrincipal
+          summary: Get the authenticated Google principal
+          servers:
+            - url: https://openidconnect.googleapis.com
+          security:
+            - googleOnline: [openid, email, profile]
+            - googleOffline: [openid, email, profile]
+          x-authenticated-principal:
+            kind: user
+            namespace: https://accounts.google.com
+            subject: $response.body#/sub
+            identifier:
+              scope: provider
+              stable: true
+              reassigned: false
+            claims:
+              name: $response.body#/name
+              email: $response.body#/email
+              picture: $response.body#/picture
+              email_verified: $response.body#/email_verified
+          responses:
+            '200':
+              description: The authenticated OpenID Connect user.
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required: [sub]
+                    properties:
+                      sub: {type: string}
+                      name: {type: string}
+                      email: {type: string}
+                      picture: {type: string, format: uri}
+                      email_verified: {type: boolean}
