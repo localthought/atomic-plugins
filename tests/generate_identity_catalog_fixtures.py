@@ -1,4 +1,4 @@
-"""Compose catalog-pinned Google and GitHub OADs plus local identity overlays.
+"""Compose exactly the catalog-pinned Google and GitHub OADs and overlays.
 
 Outputs are reproducible snapshots for integration-proxy tests. The manifest
 records every URL and SHA-256 used to produce them.
@@ -17,10 +17,7 @@ from openapi_spec_validator import validate
 
 ROOT = pathlib.Path(__file__).parents[1]
 CATALOG = json.loads((ROOT / "catalog.json").read_text())
-IDENTITY = {
-    "google-calendar": ROOT / "googleapis.com/google-calendar/v3/identity-overlay.yaml",
-    "github-issues": ROOT / "github.com/github-issues/1.1.4/identity-overlay.yaml",
-}
+IDENTITY_PLATFORMS = ("google-calendar", "github-issues")
 
 
 def fetch(url, cache):
@@ -65,9 +62,6 @@ def compose(name, cache):
         raw, record = fetch(url, cache)
         apply(document, yaml.safe_load(raw))
         provenance.append(record)
-    local = IDENTITY[name]
-    apply(document, yaml.safe_load(local.read_text()))
-    provenance.append({"path": str(local.relative_to(ROOT)), "sha256": hashlib.sha256(local.read_bytes()).hexdigest()})
     # Existing pagination/CRUD proposals use non-`x-` component members. They
     # remain in the fixture; remove only those extension members for ordinary
     # OpenAPI validation.
@@ -87,7 +81,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     args.cache.mkdir(parents=True, exist_ok=True)
     manifest = {"catalog": {"path": "catalog.json", "sha256": hashlib.sha256((ROOT / "catalog.json").read_bytes()).hexdigest()}, "platforms": {}}
-    for name in IDENTITY:
+    for name in IDENTITY_PLATFORMS:
         document, provenance = compose(name, args.cache)
         (args.output / f"{name}-composed.yaml").write_text(yaml.safe_dump(document, sort_keys=False))
         manifest["platforms"][name] = provenance
