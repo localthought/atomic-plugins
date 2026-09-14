@@ -7,7 +7,7 @@
 | Catalog trust selection, namespace match, authenticated operation, stable non-reassigned ID, supported fixed HTTPS GET | `src/identity_policy_tests.rs`, `src/identity.rs`, `src/catalog.rs` |
 | Provider/client namespace separation and string versus integer subjects | `src/identity_policy_tests.rs` |
 | Explicit legacy subject mapping and unchanged tenant-secret derivation | `src/identity_policy_tests.rs`, `src/identity_catalog_tests.rs` |
-| Real composed Google Offline and GitHub metadata, operation-only login scopes and integration scopes | `src/identity_catalog_tests.rs`, `src/catalog.rs`; pinned fixture provenance in `tests/identity-catalog/sources.json` |
+| Real composed Google Offline and GitHub metadata, operation-only login scopes and integration scopes | `src/identity_catalog_tests.rs`, `src/catalog.rs`; pinned fixture provenance in `tests/identity-catalog/sources.json`; ignored network test loads the published catalog through the runtime |
 | Anonymous connection: one OAuth exchange, identity resolution, session, PKCE redemption | PostgreSQL router tests in `src/connect.rs` |
 | Existing tenant retention with no identity lookup; resolved bootstrap revocation before session/handoff | PostgreSQL mock-provider tests in `src/connect.rs` |
 | Callback state consumption and browser/session binding before token exchange | PostgreSQL router tests in `src/connect.rs`, `src/api_login_flow_tests.rs` |

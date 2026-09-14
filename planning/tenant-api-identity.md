@@ -35,17 +35,17 @@ Only trusted catalog identity sources may authenticate; declaration alone grants
 - Spec draft lives in /private/tmp/tenant-identity-task/openapi-extensions, branch codex/authenticated-principal. Schema/examples passed initial validation. Lifecycle guarantees omitted mean unknown, not false.
 - Metadata work lives in /private/tmp/tenant-identity-task/overlays, branch codex/tenant-api-identity. Google discovery verified UserInfo endpoint and public-subject issuer; GitHub official OAuth app best practices guarantee durable, non-reassigned numeric user id.
 - Isolated PostgreSQL: task-owned Docker container tenant-api-identity-postgres on 127.0.0.1:15439, database connect_test. Parent owns cleanup.
-- Auto-review blocked publishing a specification design issue to pondersource/openapi-extensions. Explicit user approval requested asynchronously for design issue and three repository PRs; local work continues. Do not publish until answered.
+- User explicitly approved publication. Design issue #21 and PR #22 in pondersource/openapi-extensions, overlays PR #154 and integration-proxy PR #69 are open.
 
 - Full composed Google Offline and GitHub catalog fixtures now pass the actual proxy parser tests (2 tests), with exact upstream source URLs and content hashes. These replace the earlier insufficient hand-reduced projections.
 
-## Prepared immutable dependencies (local commits; not yet published)
+## Published immutable dependencies
 
 - Extension proposal: pondersource/openapi-extensions codex/authenticated-principal, fea4f0a (initial schema/examples commit 4362e6c).
 - Identity overlays: localthought/overlays ee929c625d3c63dea87bcccae932a98a33138a8f.
 - Catalog selection: localthought/overlays 8f29d9973267b6b3877aa27a5ab50cd41b010e6c; proxy default updated to this pin.
 - Final full fixtures regenerated from the exact local identity-overlay commit blobs cached under their eventual immutable URLs, plus already-published pinned dependencies. This is local pre-publication validation, not evidence that the new remote URLs resolve.
-- Publish overlays branch before proxy PR/CI; then verify raw URLs and load the actual remote catalog through the proxy. Publication remains pending explicit approval after auto-review rejection.
+- Publish overlays branch before proxy PR/CI; then verify raw URLs and load the actual remote catalog through the proxy. Fresh downloads now reproduce the committed fixtures exactly; the real proxy Catalog::load regression passes for this published revision.
 
 ## Final local review
 
@@ -56,3 +56,5 @@ Only trusted catalog identity sources may authenticate; declaration alone grants
 - Both original checkouts remain clean, matching saved baselines.
 
 - Final schema suite: 3 passed. Both overlay composition tests pass with the exact-commit source cache; new remote URLs and CI remain unverified until approved publication.
+
+- Specification and overlays CI passed for fea4f0a and 07c9138. Implementation CI pending; added a published-catalog loader regression after remote availability was established.

@@ -62,3 +62,37 @@ fn composed_github_identity_uses_numeric_subject_without_google_legacy_mapping()
         Ok(None)
     );
 }
+
+#[tokio::test]
+#[ignore = "downloads the published catalog revision and its pinned OAD sources"]
+async fn published_catalog_loads_trusted_google_and_github_identity_operations() {
+    let catalog = Catalog::load(
+        "https://raw.githubusercontent.com/localthought/overlays/8f29d9973267b6b3877aa27a5ab50cd41b010e6c/catalog.json",
+        &crate::build_http_client(),
+    )
+    .await
+    .expect("published pinned catalog must load through the runtime loader");
+
+    let google = catalog.tenant_identity("google-calendar").unwrap();
+    assert_eq!(
+        google.url.as_str(),
+        "https://openidconnect.googleapis.com/v1/userinfo"
+    );
+    assert_eq!(google.namespace, "https://accounts.google.com");
+    assert_eq!(
+        catalog
+            .identity_oauth_provider("google-calendar")
+            .unwrap()
+            .scopes,
+        vec!["openid", "email", "profile"]
+    );
+
+    let github = catalog.tenant_identity("github-issues").unwrap();
+    assert_eq!(github.url.as_str(), "https://api.github.com/user");
+    assert_eq!(github.namespace, "https://github.com");
+    assert!(catalog
+        .identity_oauth_provider("github-issues")
+        .unwrap()
+        .scopes
+        .is_empty());
+}
