@@ -69,6 +69,16 @@
         "https://raw.githubusercontent.com/localthought/overlays/39224b665a9db71d92112acfab40003d6c0bc7b5/discord.com/api/v10/pagination-overlay.yaml",
         "https://raw.githubusercontent.com/localthought/overlays/39224b665a9db71d92112acfab40003d6c0bc7b5/discord.com/api/v10/crud-causality-overlay.yaml"
       ]
+    },
+    {
+      "name": "notion",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/0c8e229623efdcc1d4ab50111d17bcca3214a899/APIs/notion.com/2026-03-11/openapi.yaml",
+      "overlays": [
+        "https://raw.githubusercontent.com/localthought/overlays/250e3a5426c6bda95e7520641513447cf65e51d4/notion.com/2026-03-11/auth-overlay.yaml"
+      ],
+      "selection": {
+        "oauthSecurityScheme": "notionOAuth"
+      }
     }
   ]
 }
