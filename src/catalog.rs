@@ -127,6 +127,71 @@ impl Catalog {
         }
         Some(server_url)
     }
+    pub fn required_headers(
+        &self,
+        platform: &str,
+        method: &str,
+        path: &str,
+    ) -> Option<Vec<(String, String)>> {
+        let document: Value = serde_yaml::from_str(self.documents.get(platform)?).ok()?;
+        let server = document
+            .get("servers")?
+            .as_array()?
+            .first()?
+            .get("url")?
+            .as_str()?;
+        let server_url = url::Url::parse(server).ok()?;
+        let relative = path.strip_prefix(server_url.path().trim_end_matches('/'))?;
+        let paths = document.get("paths")?.as_object()?;
+        let template = paths.keys().find(|t| path_matches(t, relative))?;
+        let path_item = paths.get(template)?.as_object()?;
+        let operation = path_item.get(&method.to_ascii_lowercase())?.as_object()?;
+        let mut out = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for parameter in operation
+            .get("parameters")
+            .into_iter()
+            .chain(path_item.get("parameters"))
+            .flat_map(Value::as_array)
+            .flatten()
+        {
+            let parameter = if let Some(reference) = parameter.get("$ref").and_then(Value::as_str) {
+                document.pointer(reference.strip_prefix('#')?)?
+            } else {
+                parameter
+            };
+            if parameter.get("in").and_then(Value::as_str) != Some("header") {
+                continue;
+            }
+            let name = parameter.get("name").and_then(Value::as_str)?;
+            if !seen.insert(name.to_ascii_lowercase()) {
+                continue;
+            }
+            if name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("host") {
+                return None;
+            }
+            let value = parameter
+                .get("schema")
+                .and_then(|s| s.get("default"))
+                .or_else(|| {
+                    parameter
+                        .get("schema")
+                        .and_then(|s| s.get("enum"))
+                        .and_then(|e| e.as_array())
+                        .filter(|a| a.len() == 1)
+                        .and_then(|a| a.first())
+                });
+            let Some(value) = value.and_then(Value::as_str) else {
+                if parameter.get("required").and_then(Value::as_bool) == Some(true) {
+                    return None;
+                } else {
+                    continue;
+                }
+            };
+            out.push((name.to_owned(), value.to_owned()));
+        }
+        Some(out)
+    }
     pub fn oauth_provider(&self, platform: &str) -> Result<crate::providers::Provider, String> {
         let source = self.get(platform).ok_or("unknown catalog platform")?;
         let document = serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
@@ -308,6 +373,54 @@ pub async fn document(Path(file): Path<String>, State(state): State<AppState>) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fixed_header_defaults_are_explicit_and_operation_overrides_path() {
+        use serde_json::json;
+        let mut doc = json!({"servers":[{"url":"https://example.com/v1"}], "paths":{"/items": {
+            "parameters":[{"in":"header","name":"X-Version","required":true,"schema":{"default":"old"}}],
+            "get":{"parameters":[
+                {"in":"header","name":"X-Version","required":true,"schema":{"enum":["new"]}},
+                {"in":"header","name":"X-Optional","example":"not a default","schema":{"type":"string"}}
+            ]}
+        }}});
+        let headers = |doc: &serde_json::Value| {
+            let catalog = super::Catalog {
+                documents: [("test".into(), serde_yaml::to_string(doc).unwrap())].into(),
+                ..Default::default()
+            };
+            catalog.required_headers("test", "GET", "/v1/items")
+        };
+        assert_eq!(
+            headers(&doc).unwrap(),
+            vec![("X-Version".into(), "new".into())]
+        );
+        doc["paths"]["/items"]["get"]["parameters"][1]["required"] = json!(true);
+        assert!(headers(&doc).is_none());
+        doc["paths"]["/items"]["get"]["parameters"][1]["schema"]["enum"] = json!(["one", "two"]);
+        assert!(headers(&doc).is_none());
+        doc["paths"]["/items"]["get"]["parameters"][1]["schema"]["default"] = json!("one");
+        assert_eq!(headers(&doc).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn composed_notion_preserves_base_path_and_resolves_version_header() {
+        let catalog = super::Catalog {
+            documents: [(
+                "notion".into(),
+                include_str!("../tests/fixtures/notion-composed.yaml").into(),
+            )]
+            .into(),
+            ..Default::default()
+        };
+        assert!(catalog.allows("notion", "POST", "/search").is_none());
+        assert!(catalog.allows("notion", "POST", "/v1/search").is_some());
+        assert_eq!(
+            catalog
+                .required_headers("notion", "POST", "/v1/search")
+                .unwrap(),
+            vec![("Notion-Version".into(), "2026-03-11".into())]
+        );
+    }
     use super::*;
 
     #[tokio::test]
