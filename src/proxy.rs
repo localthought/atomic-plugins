@@ -484,6 +484,7 @@ mod tests {
             app_auth_token_url: "https://accounts.example/token".to_string(),
             app_auth_userinfo_url: "https://accounts.example/userinfo".to_string(),
             app_auth_label: "OIDC".to_string(),
+            app_auth_identity_namespace: None,
             base_url: "http://localhost:8080".to_string(),
             port: 8080,
             session_secret: None,
@@ -497,12 +498,15 @@ mod tests {
             oauth_client: crate::auth::build_client(&config).unwrap(),
             app_auth_userinfo_url: config.app_auth_userinfo_url.clone(),
             app_auth_label: config.app_auth_label.clone(),
+            app_auth_identity_namespace: config.app_auth_identity_namespace.clone(),
             http_client: crate::build_http_client(),
+            identity_http_client: crate::build_identity_http_client(),
             key: Key::generate(),
             server_secret: config.server_secret,
             base_url: config.base_url,
             catalog: crate::catalog::Catalog::default(),
             security: None,
+            test_upstream: None,
         }
     }
 

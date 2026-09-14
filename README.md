@@ -1,10 +1,11 @@
 # integration-proxy
 
 A stateless Rust web server that lets a user log in with a configured OIDC
-provider. Sign-in sets an encrypted session cookie; there is a logout button
+provider or a catalog-trusted authenticated API identity. Sign-in sets an encrypted session cookie; there is a logout button
 to clear it. No database, no server-side session store — the cookie *is*
 the session, so any number of instances can run behind a load balancer with
-no shared state.
+no shared session state. PostgreSQL stores only short-lived consumed OAuth
+states, replay nonces, and encrypted one-time credentials.
 
 Built with [axum](https://github.com/tokio-rs/axum) and the
 [`oauth2`](https://docs.rs/oauth2) crate, following the OAuth 2.0
@@ -20,13 +21,18 @@ Authorization Code flow with PKCE.
   to the provider's consent screen.
 - `GET /auth/callback` — the configured provider redirects here with an authorization code.
   The server validates the CSRF token, exchanges the code for an access
-  token, fetches the user's profile from Google's userinfo endpoint, and
+  token, fetches the configured provider's profile endpoint, and
   sets the session cookie.
+- `GET /auth/login/{platform}` — starts a standalone login through a catalog
+  platform only when its selection explicitly trusts a `tenantIdentity`
+  operation. It requests that identity operation's OAuth scopes, creates no
+  connection credential, and returns only to `/` or an already validated
+  pending `/connect` request.
 - `POST /auth/logout` — clears the session cookie.
 - `GET /catalog` — lists the available integration platform names.
 - `GET /catalog/{platform}.yaml` — returns the OpenAPI document for that
   platform with its configured overlays applied.
-- `GET /connect?platform=github-issues&redirect_uri=<url>&user_id=<actor>&code_challenge=<S256>&code_challenge_method=S256&credentials=connection` — starts a browser connection without a tenant secret. The page shows the configured application-login action, or the signed-in application identity and one action: **Use LocalThought to sync GitHub with your Atomic Data Hub**. The selected platform, return URL and PKCE challenge survive application login.
+- `GET /connect?platform=github-issues&redirect_uri=<url>&user_id=<actor>&code_challenge=<S256>&code_challenge_method=S256&credentials=connection` — starts a browser connection without a tenant secret. For a catalog platform that explicitly selects `tenantIdentity`, one provider OAuth authorization establishes the tenant identity and connection credential. Other platforms retain the configured application-login flow.
 - `POST /connect/authorize` — approves the selected platform with a short-lived, cookie-bound CSRF token and starts provider OAuth. The authenticated application account determines the tenant; the caller supplies its local user/agent identifier. The consent page shows the destination hub origin and uses `Referrer-Policy: same-origin`, so its form submission retains a concrete origin without sending a referrer to the external OAuth provider.
 - `POST /connect/redeem` — exchanges `{ "code": "<callback connection_code>", "code_verifier": "<original verifier>" }` for `{ "connection_code": "<rotating proxy credential>", "platform": "github-issues" }`. The handoff expires after five minutes, requires S256 PKCE, and is consumed atomically. Wrong verifiers do not consume a legitimate handoff. Responses have `Cache-Control: no-store`; browser requests omit cookies.
 - Clients that also need the tenant credential explicitly request `credentials=connection+tenant_secret` (URL-encode the `+` as `%2B`). The consent page discloses this extra grant; redemption additionally returns `tenant_secret`. The browser-only Atomic Data Hub requests just `connection` and never needs to paste, receive, or store a tenant secret.
@@ -40,7 +46,7 @@ Authorization Code flow with PKCE.
   supplies that response, a tenant-vouched `user_id`, and its signature when
   opening `/connect`. The proof expires after ten minutes.
 
-The signed-in home page displays the OIDC identity, without displaying credentials. Tenant secrets are deterministic HMAC credentials derived from the stable OIDC subject and `SERVER_SECRET`; existing credentials remain valid. Provider access/refresh tokens are encrypted at rest and never returned to the hub. The hub receives a rotating opaque proxy credential through the protected exchange.
+The signed-in home page displays the configured or API-derived identity, without displaying credentials. Tenant secrets are deterministic HMAC credentials derived from the stable tenant identity and `SERVER_SECRET`; existing credentials remain valid. Provider access/refresh tokens are encrypted at rest and never returned to the hub. The hub receives a rotating opaque proxy credential through the protected exchange.
 
 The new consent, provider-state binding and one-time handoff work alongside the existing OAuth and proxy routes. The database migration adds a nullable OAuth context column and a `connection_handoffs` table without invalidating existing connection codes. Schema initialization runs in a transaction under a PostgreSQL advisory lock, so simultaneous app instances can safely start against an empty database. Google/provider OAuth app registrations and callback URLs do not change.
 
@@ -67,6 +73,7 @@ directly):
 | `APP_AUTH_TOKEN_URL` | yes | OIDC token endpoint. |
 | `APP_AUTH_USERINFO_URL` | yes | OIDC userinfo endpoint. |
 | `APP_AUTH_LABEL` | no | Login provider label shown in the UI. Defaults to `OIDC`. |
+| `APP_AUTH_IDENTITY_NAMESPACE` | no | Fixed HTTPS namespace for an exact trusted provider-scoped identity that preserves legacy bare APP_AUTH subjects. Blank disables migration. |
 | `BASE_URL`             | no       | Public URL of the server, no trailing slash. Defaults to `http://localhost:8080`. Must match the redirect URI registered with the application-login provider. |
 | `PORT`                 | no       | Port to listen on. Defaults to `8080`.                                      |
 | `SESSION_SECRET`       | no       | Secret used to encrypt session cookies. If unset, a random key is generated at startup and sessions are invalidated whenever the process restarts. Set this to a persistent random value in production. |
@@ -75,6 +82,13 @@ directly):
 | `DATABASE_URL`          | yes      | PostgreSQL connection URL. Stores short-lived, consumed challenge nonces to prevent replay. |
 | `ENCRYPTION_KEY`        | yes      | Base64url-encoded, random 32-byte key for versioned XChaCha20-Poly1305 credential envelopes. |
 | `REVOKED_SUBJECTS`      | no       | Comma-separated tenant and user IDs denied access. |
+
+Provider-neutral tenant identities use the reserved `tenant:v1:` prefix followed
+by a versioned JSON tuple. `APP_AUTH_IDENTITY_NAMESPACE` must be a fixed HTTPS
+namespace and preserves bare historic subjects only for an exact trusted,
+provider-scoped match. Before enabling it, confirm the historic issuer never
+assigned subjects beginning `tenant:v1:`; those values are rejected. Email is
+display data only and never links provider identities.
 
 OAuth credentials are provider-specific. For a catalog platform named
 `google-calendar`, configure `OAUTH_GOOGLE_CALENDAR_CLIENT_ID` and
@@ -98,6 +112,21 @@ available, and rotates the handoff code after every request. GitHub sometimes
 returns repository pagination links using its canonical numeric repository
 path; the proxy rewrites that metadata to the current allowlisted owner/repo
 path only when the collection suffix matches.
+
+## Trusted API identities
+
+A platform can establish or log in a tenant only when its catalog selection
+contains `tenantIdentity` with an `operationId` and HTTPS `namespace`. The
+selected operation must declare `x-authenticated-principal` with a stable,
+non-reassigned user subject and must require the selected OAuth scheme. The
+initial runtime subset accepts a fixed HTTPS `GET` operation without parameters
+or redirects. It supports string and integer subjects, provider- and
+client-scoped identities, and optional display claims. It never uses email to
+identify or link tenants.
+
+Regression coverage includes parser and composed-catalog fixtures, PostgreSQL
+mock OAuth identity/bootstrap/redemption flows, browser binding/replay checks,
+and standalone API login with identity-only scopes.
 
 ## Catalog
 
@@ -178,18 +207,19 @@ CI runs the same checks on every push and pull request (see
 
 ## Security
 
-The current service provides catalog and tenant-session primitives. OAuth token
-storage and the forwarding proxy remain deliberately unimplemented until the
-controls in [SECURITY.md](SECURITY.md) are in place.
+The service stores encrypted provider credentials only inside short-lived,
+encrypted connection envelopes and forwards requests only through catalog
+allowlists. [SECURITY.md](SECURITY.md) describes the remaining deployment and
+operational controls.
 
 ## Notes on statelessness
 
 - Session data (email, name, picture, expiry) lives entirely inside the
   encrypted `session` cookie — nothing is written to disk or a database.
-- The OAuth CSRF token and PKCE verifier for an in-flight login are also
-  held in a short-lived encrypted cookie (`oauth_state`) rather than
-  server memory, so the login flow works correctly even if requests land
-  on different instances behind a load balancer.
+- The configured OIDC login keeps its CSRF token and PKCE verifier in the
+  short-lived encrypted `oauth_state` cookie. Catalog API login and integration
+  authorization use one-use PostgreSQL state plus encrypted browser binding
+  cookies, so callbacks can reach a different instance safely.
 - Cookies are marked `Secure`, so in production `BASE_URL` must use
   `https://`. `http://localhost` works during local development because
   browsers treat `localhost` as a secure context.
@@ -270,4 +300,4 @@ that contains any of those fields is rejected, because discovery or a
 separately described operation could require different token-request
 authentication or wire behavior.
 
-When upgrading the previous deployment, copy its application-login client ID/secret to `APP_AUTH_CLIENT_ID` / `APP_AUTH_CLIENT_SECRET` and configure the same authorization, token, and userinfo endpoints before deploying. Keep the identity issuer stable: tenant identities are derived from its subject identifiers. Set the existing public PKCE client's `_CLIENT_AUTH_METHOD=none`. Existing credential envelopes, handoffs, callbacks, and provider credential variable names remain valid. Browser login sessions created by the earlier session schema require sign-in again.
+When upgrading the previous deployment, copy its application-login client ID/secret to `APP_AUTH_CLIENT_ID` / `APP_AUTH_CLIENT_SECRET` and configure the same authorization, token, and userinfo endpoints before deploying. Keep the identity issuer stable: tenant identities are derived from its subject identifiers. Set the existing public PKCE client's `_CLIENT_AUTH_METHOD=none`. Existing credential envelopes, completed handoffs, provider credential variable names and browser sessions remain valid. The optional session identity label is backward compatible. In-flight connection authorizations created before this upgrade may require restarting from the hub because their sealed context lacks the new bootstrap mode.

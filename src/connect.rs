@@ -49,6 +49,13 @@ struct Consent {
 pub struct OAuthContext {
     pub request: Request,
     pub binding: String,
+    pub mode: BootstrapMode,
+}
+
+#[derive(Deserialize, Serialize, Clone, PartialEq, Eq)]
+pub enum BootstrapMode {
+    Bootstrap,
+    ExistingTenant { tenant_id: String },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -140,6 +147,16 @@ pub fn cancel_login_target(target: &str) -> Option<String> {
     Some(destination.into())
 }
 
+/// The only return target a standalone API login can inherit is the complete,
+/// encrypted browser bootstrap request already validated by this module.
+pub(crate) fn validated_login_return(jar: &PrivateCookieJar) -> Option<String> {
+    let target = session::read_connect_redirect(jar)?;
+    let uri: axum::http::Uri = target.parse().ok()?;
+    let Query(request) = Query::<Request>::try_from_uri(&uri).ok()?;
+    request.validate().ok()?;
+    Some(request.local_url())
+}
+
 pub fn clear_consent(jar: PrivateCookieJar) -> PrivateCookieJar {
     jar.remove(Cookie::build(CONSENT_COOKIE).path("/").build())
 }
@@ -212,6 +229,14 @@ pub async fn page(
         expires: crate::proxy::now_unix() + 600,
     };
     let user = session::read_session(&jar);
+    let bootstrap_identity =
+        user.is_none() && state.catalog.tenant_identity(&request.platform).is_ok();
+    let api_login_platforms = state
+        .catalog
+        .names()
+        .into_iter()
+        .filter(|platform| state.catalog.tenant_identity(platform).is_ok())
+        .collect::<Vec<_>>();
     let jar = jar.add(private_cookie(
         CONSENT_COOKIE,
         serde_json::to_string(&consent).unwrap(),
@@ -230,7 +255,11 @@ pub async fn page(
             &target.origin().ascii_serialization(),
             &consent.csrf,
             request.credentials == Credentials::ConnectionAndTenantSecret,
-            &state.app_auth_label,
+            user.as_ref()
+                .and_then(|user| user.identity_label.as_deref())
+                .unwrap_or(&state.app_auth_label),
+            bootstrap_identity,
+            &api_login_platforms,
         )),
     ));
     // Keep the consent form's same-origin POST attributable while sending no
@@ -289,13 +318,21 @@ pub async fn authorize(
     {
         return error("Connection request expired or invalid; start again from your hub");
     }
-    let Some(user) = session::read_session(&jar) else {
-        return error("Log in before connecting");
-    };
+    let user = session::read_session(&jar);
+    if user.is_none()
+        && state
+            .catalog
+            .tenant_identity(&consent.request.platform)
+            .is_err()
+    {
+        return error("This platform cannot establish a tenant identity; log in before connecting");
+    }
     let Some(security) = &state.security else {
         return error("Connections are unavailable");
     };
-    if security.is_revoked(&user.subject, &consent.request.user_id)
+    if user
+        .as_ref()
+        .is_some_and(|user| security.is_revoked(&user.subject, &consent.request.user_id))
         || !matches!(
             security
                 .consume_nonce(&format!("consent:{}", consent.csrf))
@@ -308,6 +345,12 @@ pub async fn authorize(
     let context = OAuthContext {
         request: consent.request.clone(),
         binding: random(),
+        mode: match user {
+            Some(user) => BootstrapMode::ExistingTenant {
+                tenant_id: user.subject,
+            },
+            None => BootstrapMode::Bootstrap,
+        },
     };
     let Ok(sealed_context) =
         security.seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
@@ -320,7 +363,10 @@ pub async fn authorize(
         &state,
         &request.platform,
         &request.redirect_uri,
-        &user.subject,
+        match &context.mode {
+            BootstrapMode::ExistingTenant { tenant_id } => tenant_id,
+            BootstrapMode::Bootstrap => "",
+        },
         &request.user_id,
         Some(sealed_context),
     )
@@ -339,12 +385,10 @@ pub fn oauth_context(
     security: &Security,
     value: &str,
     jar: &PrivateCookieJar,
-    tenant_id: &str,
 ) -> Option<OAuthContext> {
     let context: OAuthContext =
         serde_json::from_slice(&security.open(value, b"platform-oauth-v1")?).ok()?;
-    let user = session::read_session(jar)?;
-    if jar.get(PROVIDER_COOKIE)?.value() != context.binding || user.subject != tenant_id {
+    if jar.get(PROVIDER_COOKIE)?.value() != context.binding {
         return None;
     }
     Some(context)
@@ -426,6 +470,10 @@ pub async fn redeem(State(state): State<AppState>, Json(request): Json<Redemptio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     fn request() -> Request {
         Request { platform: "github-issues".into(), redirect_uri: "https://hub.example/app/integrations?integration_state=state&platform=github-issues".into(), user_id: "did:ad:agent:test".into(), code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(), code_challenge_method: "S256".into(), credentials: Credentials::Connection }
     }
@@ -487,13 +535,516 @@ mod tests {
             ),
             app_auth_userinfo_url: "https://accounts.example/userinfo".into(),
             app_auth_label: "OIDC".into(),
+            app_auth_identity_namespace: None,
             http_client: crate::build_http_client(),
+            identity_http_client: crate::build_identity_http_client(),
             key: axum_extra::extract::cookie::Key::generate(),
             server_secret: "fixture-server-secret".into(),
             base_url: "https://localthought.io".into(),
             catalog: crate::catalog::Catalog::for_test("github-issues"),
             security,
+            test_upstream: None,
         }
+    }
+
+    fn identity_catalog() -> crate::catalog::Catalog {
+        crate::catalog::Catalog::from_test_document(
+            "github-issues",
+            serde_json::json!({
+                "servers": [{"url": "https://api.example/v1"}],
+                "components": {"securitySchemes": {"auth": {"type":"oauth2", "flows":{"authorizationCode":{"authorizationUrl":"https://auth.example/authorize","tokenUrl":"https://auth.example/token","scopes":{"read":"Read"}}}}}},
+                "paths": {"/me":{"get":{"operationId":"me","security":[{"auth":[]}],"x-authenticated-principal":{"kind":"user","namespace":"https://github.example","subject":"$response.body#/id","identifier":{"scope":"provider","stable":true,"reassigned":false}}}}}
+            }),
+            serde_json::json!({"oauthSecurityScheme":"auth","tenantIdentity":{"operationId":"me","namespace":"https://github.example"}}),
+        )
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
+    async fn postgres_anonymous_callback_resolves_identity_once_and_mints_bound_handoff() {
+        use axum::{routing::post, Json};
+        use tower::ServiceExt;
+        let token_hits = Arc::new(AtomicUsize::new(0));
+        let identity_hits = Arc::new(AtomicUsize::new(0));
+        let token_counter = token_hits.clone();
+        let identity_counter = identity_hits.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                post(move || {
+                    let token_counter = token_counter.clone();
+                    async move {
+                        token_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"access_token":"provider-token"}))
+                    }
+                }),
+            )
+            .route(
+                "/identity",
+                axum::routing::get(move |headers: HeaderMap| {
+                    let identity_counter = identity_counter.clone();
+                    async move {
+                        assert_eq!(
+                            headers.get(header::AUTHORIZATION).unwrap(),
+                            "Bearer provider-token"
+                        );
+                        identity_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"id":42,"email":"display@example.test"}))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, upstream).await.unwrap();
+        });
+        let db = std::env::var("TEST_DATABASE_URL").unwrap();
+        let security =
+            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
+                .await
+                .unwrap();
+        let mut s = state(Some(security.clone()));
+        s.catalog = identity_catalog();
+        s.test_upstream = Some(upstream_url);
+        let consent = Consent {
+            request: request(),
+            csrf: random(),
+            expires: crate::proxy::now_unix() + 600,
+        };
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent).unwrap(),
+        ));
+        let authorization = authorize(
+            State(s.clone()),
+            jar.clone(),
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent.csrf.clone(),
+            }),
+        )
+        .await;
+        assert_eq!(authorization.status(), StatusCode::SEE_OTHER);
+        let state_value = Url::parse(authorization.headers()[header::LOCATION].to_str().unwrap())
+            .unwrap()
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let mut cookies = jar
+            .into_response()
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        cookies.extend(
+            authorization
+                .headers()
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .map(|value| {
+                    value
+                        .to_str()
+                        .unwrap()
+                        .split(';')
+                        .next()
+                        .unwrap()
+                        .to_owned()
+                }),
+        );
+        let callback = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={state_value}&code=code"
+                    ))
+                    .header(header::COOKIE, cookies.join("; "))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+        assert_eq!(token_hits.load(Ordering::SeqCst), 1);
+        assert_eq!(identity_hits.load(Ordering::SeqCst), 1);
+        let handoff = Url::parse(callback.headers()[header::LOCATION].to_str().unwrap())
+            .unwrap()
+            .query_pairs()
+            .find(|(key, _)| key == "connection_code")
+            .unwrap()
+            .1
+            .into_owned();
+        let redemption = redeem(
+            State(s.clone()),
+            Json(Redemption {
+                code: handoff,
+                code_verifier: "a".repeat(43),
+            }),
+        )
+        .await;
+        assert_eq!(redemption.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(redemption.into_body(), 16_384)
+            .await
+            .unwrap();
+        let redeemed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let connection_code = redeemed["connection_code"].as_str().unwrap().to_owned();
+        let credential_envelope = security
+            .take_connection_code(&connection_code)
+            .await
+            .unwrap()
+            .unwrap();
+        let plain = security
+            .open(&credential_envelope, b"connection-credential-v1")
+            .unwrap();
+        let credential: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+        let mut session_headers = HeaderMap::new();
+        let session_cookie = callback
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .find(|value| value.to_str().unwrap().starts_with("session="))
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        session_headers.insert(header::COOKIE, session_cookie.parse().unwrap());
+        let session = session::read_session(&PrivateCookieJar::from_headers(
+            &session_headers,
+            s.key.clone(),
+        ))
+        .unwrap();
+        assert_eq!(session.subject, "tenant:v1:{\"client\":null,\"namespace\":\"https://github.example\",\"scope\":\"provider\",\"subject\":42}");
+        assert_eq!(credential["tenant_id"], session.subject);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL"]
+    async fn postgres_callback_rejects_session_appearing_during_bootstrap_before_exchange() {
+        use tower::ServiceExt;
+        let exchanges = Arc::new(AtomicUsize::new(0));
+        let counter = exchanges.clone();
+        let upstream = axum::Router::new().route(
+            "/token",
+            axum::routing::post(move || {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Json(serde_json::json!({"access_token":"unexpected"}))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+        let db = std::env::var("TEST_DATABASE_URL").unwrap();
+        let security =
+            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
+                .await
+                .unwrap();
+        let mut s = state(Some(security.clone()));
+        s.catalog = identity_catalog();
+        s.test_upstream = Some(upstream_url);
+        let context = OAuthContext {
+            request: request(),
+            binding: random(),
+            mode: BootstrapMode::Bootstrap,
+        };
+        let envelope = security
+            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
+            .unwrap();
+        let state_value = random();
+        security
+            .store_oauth_state(
+                &state_value,
+                &crate::security::OAuthState {
+                    provider: "github-issues".into(),
+                    redirect_uri: context.request.redirect_uri.clone(),
+                    tenant_id: "".into(),
+                    user_id: context.request.user_id.clone(),
+                    verifier: random(),
+                    context: Some(envelope),
+                },
+            )
+            .await
+            .unwrap();
+        let session_user =
+            session::SessionUser::new("other-tenant".into(), "".into(), "Other".into(), None);
+        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &session_user)
+            .add(private_cookie(PROVIDER_COOKIE, context.binding));
+        let cookies = jar
+            .into_response()
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let response = crate::router(s)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={state_value}&code=code"
+                    ))
+                    .header(header::COOKIE, cookies.join("; "))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(exchanges.load(Ordering::SeqCst), 0);
+        assert!(security
+            .take_oauth_state(&state_value)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
+    async fn postgres_existing_tenant_callback_never_rebinds_or_resolves_provider_identity() {
+        use tower::ServiceExt;
+        let tokens = Arc::new(AtomicUsize::new(0));
+        let identities = Arc::new(AtomicUsize::new(0));
+        let token_counter = tokens.clone();
+        let identity_counter = identities.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(move || {
+                    let token_counter = token_counter.clone();
+                    async move {
+                        token_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"access_token":"token"}))
+                    }
+                }),
+            )
+            .route(
+                "/identity",
+                axum::routing::get(move || {
+                    let identity_counter = identity_counter.clone();
+                    async move {
+                        identity_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"id":999}))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+        let db = std::env::var("TEST_DATABASE_URL").unwrap();
+        let security =
+            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
+                .await
+                .unwrap();
+        let mut s = state(Some(security.clone()));
+        s.catalog = identity_catalog();
+        s.test_upstream = Some(upstream_url);
+        let tenant = "existing-tenant".to_owned();
+        let context = OAuthContext {
+            request: request(),
+            binding: random(),
+            mode: BootstrapMode::ExistingTenant {
+                tenant_id: tenant.clone(),
+            },
+        };
+        let envelope = security
+            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
+            .unwrap();
+        let state_value = random();
+        security
+            .store_oauth_state(
+                &state_value,
+                &crate::security::OAuthState {
+                    provider: "github-issues".into(),
+                    redirect_uri: context.request.redirect_uri.clone(),
+                    tenant_id: tenant.clone(),
+                    user_id: context.request.user_id.clone(),
+                    verifier: random(),
+                    context: Some(envelope),
+                },
+            )
+            .await
+            .unwrap();
+        let user = session::SessionUser::new(tenant.clone(), "".into(), "Existing".into(), None);
+        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user)
+            .add(private_cookie(PROVIDER_COOKIE, context.binding));
+        let cookies = jar
+            .into_response()
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let callback = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={state_value}&code=code"
+                    ))
+                    .header(header::COOKIE, cookies.join("; "))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+        assert_eq!(tokens.load(Ordering::SeqCst), 1);
+        assert_eq!(identities.load(Ordering::SeqCst), 0);
+        let handoff = Url::parse(callback.headers()[header::LOCATION].to_str().unwrap())
+            .unwrap()
+            .query_pairs()
+            .find(|(key, _)| key == "connection_code")
+            .unwrap()
+            .1
+            .into_owned();
+        let handoff = security
+            .take_handoff(&handoff, &context.request.code_challenge)
+            .await
+            .unwrap()
+            .unwrap();
+        let handoff: Handoff =
+            serde_json::from_slice(&security.open(&handoff, HANDOFF_AAD).unwrap()).unwrap();
+        assert_eq!(handoff.tenant_id, tenant);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
+    async fn postgres_bootstrap_rejects_revoked_resolved_identity_before_session_or_handoff() {
+        use tower::ServiceExt;
+        let tokens = Arc::new(AtomicUsize::new(0));
+        let identities = Arc::new(AtomicUsize::new(0));
+        let token_counter = tokens.clone();
+        let identity_counter = identities.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(move || {
+                    let token_counter = token_counter.clone();
+                    async move {
+                        token_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"access_token":"token"}))
+                    }
+                }),
+            )
+            .route(
+                "/identity",
+                axum::routing::get(move || {
+                    let identity_counter = identity_counter.clone();
+                    async move {
+                        identity_counter.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!({"id":42}))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+        let revoked = "tenant:v1:{\"client\":null,\"namespace\":\"https://github.example\",\"scope\":\"provider\",\"subject\":42}".to_owned();
+        let db = std::env::var("TEST_DATABASE_URL").unwrap();
+        let security = Security::connect(
+            &db,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            vec![revoked],
+        )
+        .await
+        .unwrap();
+        let mut s = state(Some(security.clone()));
+        s.catalog = identity_catalog();
+        s.test_upstream = Some(upstream_url);
+        let context = OAuthContext {
+            request: request(),
+            binding: random(),
+            mode: BootstrapMode::Bootstrap,
+        };
+        let sealed = security
+            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
+            .unwrap();
+        let state_value = random();
+        security
+            .store_oauth_state(
+                &state_value,
+                &crate::security::OAuthState {
+                    provider: "github-issues".into(),
+                    redirect_uri: context.request.redirect_uri.clone(),
+                    tenant_id: "".into(),
+                    user_id: context.request.user_id.clone(),
+                    verifier: random(),
+                    context: Some(sealed),
+                },
+            )
+            .await
+            .unwrap();
+        let jar = PrivateCookieJar::new(s.key.clone())
+            .add(private_cookie(PROVIDER_COOKIE, context.binding));
+        let cookies = jar
+            .into_response()
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let callback = crate::router(s)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={state_value}&code=code"
+                    ))
+                    .header(header::COOKIE, cookies.join("; "))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(callback.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(tokens.load(Ordering::SeqCst), 1);
+        assert_eq!(identities.load(Ordering::SeqCst), 1);
+        assert!(!callback
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .any(|value| value.to_str().unwrap().starts_with("session=")));
+        assert!(security
+            .take_handoff("missing", &context.request.code_challenge)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -563,7 +1114,7 @@ mod tests {
         let body = axum::body::to_bytes(result.into_body(), 16384)
             .await
             .unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("Log in before connecting"));
+        assert!(String::from_utf8_lossy(&body).contains("cannot establish a tenant identity"));
     }
 
     #[tokio::test]
@@ -580,6 +1131,9 @@ mod tests {
         let mut context = OAuthContext {
             request: request(),
             binding: random(),
+            mode: BootstrapMode::ExistingTenant {
+                tenant_id: "tenant".into(),
+            },
         };
         let credential = security.seal(br#"{"provider":"github-issues","tenant_id":"tenant","user_id":"did:ad:agent:test","access_token":"fixture-token","refresh_token":null,"expires_at":null}"#, b"connection-credential-v1").unwrap();
         let handoff_code = handoff(&security, &context, "tenant", &credential)
@@ -693,15 +1247,10 @@ mod tests {
         let envelope = security
             .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
             .unwrap();
-        assert!(oauth_context(&security, &envelope, &jar, "tenant").is_some());
-        assert!(oauth_context(&security, &envelope, &jar, "another-tenant").is_none());
-        assert!(oauth_context(
-            &security,
-            &envelope,
-            &PrivateCookieJar::new(s.key.clone()),
-            "tenant"
-        )
-        .is_none());
+        assert!(oauth_context(&security, &envelope, &jar).is_some());
+        assert!(
+            oauth_context(&security, &envelope, &PrivateCookieJar::new(s.key.clone())).is_none()
+        );
 
         let code = handoff(&security, &context, "tenant", &credential)
             .await

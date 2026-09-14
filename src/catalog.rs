@@ -45,6 +45,17 @@ struct Action {
 
 impl Catalog {
     #[cfg(test)]
+    pub(crate) fn from_test_document(platform: &str, document: Value, selection: Value) -> Self {
+        Self {
+            documents: [(
+                platform.to_owned(),
+                serde_yaml::to_string(&document).expect("test document serializes"),
+            )]
+            .into(),
+            selections: [(platform.to_owned(), selection)].into(),
+        }
+    }
+    #[cfg(test)]
     pub(crate) fn for_test(platform: &str) -> Self {
         Self {
             documents: [(platform.into(), serde_json::json!({
@@ -205,6 +216,122 @@ impl Catalog {
             None => None,
         };
         crate::providers::Provider::from_document(&document, scheme)
+    }
+    /// Returns an explicitly catalog-trusted identity operation. The OpenAPI
+    /// extension alone is descriptive and is never sufficient for tenancy.
+    pub fn tenant_identity(
+        &self,
+        platform: &str,
+    ) -> Result<crate::identity::IdentityOperation, String> {
+        let source = self.get(platform).ok_or("unknown catalog platform")?;
+        let document: Value =
+            serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
+        let selection = self
+            .selections
+            .get(platform)
+            .ok_or("tenantIdentity selection is required")?;
+        let scheme = selection
+            .get("oauthSecurityScheme")
+            .and_then(Value::as_str)
+            .ok_or("tenant identity requires oauthSecurityScheme selection")?;
+        let operation = crate::identity::parse(&document, selection)?;
+        // A credential for another OAuth scheme must never be sent to the
+        // identity endpoint. Require the selected scheme in the operation's
+        // effective security requirement (or an unambiguous global one).
+        let required = document
+            .get("paths")
+            .and_then(Value::as_object)
+            .and_then(|paths| {
+                paths.values().find_map(|item| {
+                    item.get("get").filter(|op| {
+                        op.get("operationId").and_then(Value::as_str)
+                            == selection
+                                .pointer("/tenantIdentity/operationId")
+                                .and_then(Value::as_str)
+                    })
+                })
+            })
+            .and_then(|op| op.get("security"))
+            .or_else(|| document.get("security"));
+        let allowed = required
+            .and_then(Value::as_array)
+            .is_some_and(|alternatives| {
+                !alternatives.is_empty()
+                    && alternatives.iter().all(|alternative| {
+                        alternative
+                            .as_object()
+                            .is_some_and(|requirement| !requirement.is_empty())
+                    })
+                    && alternatives.iter().any(|alternative| {
+                        alternative.as_object().is_some_and(|requirement| {
+                            requirement.len() == 1 && requirement.contains_key(scheme)
+                        })
+                    })
+            });
+        if !allowed {
+            return Err(
+                "tenant identity operation must require the selected OAuth security scheme".into(),
+            );
+        }
+        Ok(operation)
+    }
+    /// OAuth client configuration narrowed to the scope alternative selected
+    /// by the trusted identity operation, used for login-only authorization.
+    pub fn identity_oauth_provider(
+        &self,
+        platform: &str,
+    ) -> Result<crate::providers::Provider, String> {
+        let source = self.get(platform).ok_or("unknown catalog platform")?;
+        let document: Value =
+            serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
+        let selection = self
+            .selections
+            .get(platform)
+            .ok_or("tenantIdentity selection is required")?;
+        let scheme = selection
+            .get("oauthSecurityScheme")
+            .and_then(Value::as_str)
+            .ok_or("tenant identity requires oauthSecurityScheme selection")?;
+        let operation_id = selection
+            .pointer("/tenantIdentity/operationId")
+            .and_then(Value::as_str)
+            .ok_or("tenantIdentity.operationId must be a string")?;
+        self.tenant_identity(platform)?;
+        let operation = document
+            .get("paths")
+            .and_then(Value::as_object)
+            .and_then(|paths| {
+                paths.values().find_map(|item| {
+                    item.get("get").filter(|operation| {
+                        operation.get("operationId").and_then(Value::as_str) == Some(operation_id)
+                    })
+                })
+            })
+            .ok_or("tenantIdentity.operationId does not resolve")?;
+        let alternatives = operation
+            .get("security")
+            .or_else(|| document.get("security"))
+            .and_then(Value::as_array)
+            .ok_or("tenant identity operation requires security")?;
+        let scopes = alternatives
+            .iter()
+            .find_map(|alternative| {
+                alternative
+                    .as_object()
+                    .filter(|requirement| requirement.len() == 1)
+                    .and_then(|requirement| requirement.get(scheme))
+                    .and_then(Value::as_array)
+            })
+            .ok_or("tenant identity operation must require the selected OAuth security scheme")?
+            .iter()
+            .map(|scope| {
+                scope
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("identity scope must be a string")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(self.oauth_provider(platform)?.with_scopes(scopes))
     }
     fn get(&self, platform: &str) -> Option<&str> {
         self.documents.get(platform).map(String::as_str)
@@ -699,12 +826,15 @@ mod tests {
             ),
             app_auth_userinfo_url: "https://accounts.example/userinfo".into(),
             app_auth_label: "OIDC".into(),
+            app_auth_identity_namespace: None,
             http_client: crate::build_http_client(),
+            identity_http_client: crate::build_identity_http_client(),
             key: axum_extra::extract::cookie::Key::generate(),
             server_secret: "test".into(),
             base_url: "http://localhost".into(),
             catalog: Catalog { documents, selections: [("moneybird".into(), serde_json::json!({"query_overrides": [{"path":"/records", "values":{"include_archived":true}}]}))].into() },
             security: None,
+            test_upstream: None,
         })
     }
 
