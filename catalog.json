@@ -7,8 +7,16 @@
         "https://raw.githubusercontent.com/localthought/overlays/11019717575be9e6f6ce47bf63782cf68a6ce043/github.com/github-issues/1.1.4/auth-overlay.yaml",
         "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/github.com/github-issues/1.1.4/pagination-overlay.yaml",
         "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/github.com/github-issues/1.1.4/crud-causality-overlay.yaml",
-        "https://raw.githubusercontent.com/localthought/overlays/11019717575be9e6f6ce47bf63782cf68a6ce043/github.com/github-issues/1.1.4/canonical-paths-overlay.yaml"
-      ]
+        "https://raw.githubusercontent.com/localthought/overlays/11019717575be9e6f6ce47bf63782cf68a6ce043/github.com/github-issues/1.1.4/canonical-paths-overlay.yaml",
+        "https://raw.githubusercontent.com/localthought/overlays/ee929c625d3c63dea87bcccae932a98a33138a8f/github.com/github-issues/1.1.4/identity-overlay.yaml"
+      ],
+      "selection": {
+        "oauthSecurityScheme": "githubOAuth",
+        "tenantIdentity": {
+          "operationId": "getGitHubAuthenticatedPrincipal",
+          "namespace": "https://github.com"
+        }
+      }
     },
     {
       "name": "google-calendar",
@@ -17,10 +25,15 @@
         "https://raw.githubusercontent.com/localthought/overlays/168a9395a5ce290eee10a6a924c57717e7e0395a/googleapis.com/google-calendar/v3/auth-overlay.yaml",
         "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/googleapis.com/google-calendar/v3/pagination-overlay.yaml",
         "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/googleapis.com/google-calendar/v3/crud-causality-overlay.yaml",
-        "https://raw.githubusercontent.com/localthought/overlays/0621413709fc88d65e908ae3643ceaaa53872194/googleapis.com/google-calendar/v3/schema-overlay.yaml"
+        "https://raw.githubusercontent.com/localthought/overlays/0621413709fc88d65e908ae3643ceaaa53872194/googleapis.com/google-calendar/v3/schema-overlay.yaml",
+        "https://raw.githubusercontent.com/localthought/overlays/ee929c625d3c63dea87bcccae932a98a33138a8f/googleapis.com/google-calendar/v3/identity-overlay.yaml"
       ],
       "selection": {
-        "oauthSecurityScheme": "googleOffline"
+        "oauthSecurityScheme": "googleOffline",
+        "tenantIdentity": {
+          "operationId": "getGoogleAuthenticatedPrincipal",
+          "namespace": "https://accounts.google.com"
+        }
       }
     },
     {
