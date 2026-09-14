@@ -1,0 +1,60 @@
+{
+  "catalog": {
+    "path": "catalog.json",
+    "sha256": "9b79ad36b99b78810e5f276d060fdec1f28deff3f918604e975925d20d8b998c"
+  },
+  "platforms": {
+    "google-calendar": [
+      {
+        "url": "https://raw.githubusercontent.com/localthought/openapi-directory/9c5cfb87b3f8b64e11069373a73e3fc85de0de5e/APIs/googleapis.com/google-calendar/v3/openapi.yaml",
+        "sha256": "093d160025a14c69479bbf30d277a19a83c696f10c3b37d81ccefeddf30f860f"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/168a9395a5ce290eee10a6a924c57717e7e0395a/googleapis.com/google-calendar/v3/auth-overlay.yaml",
+        "sha256": "6ad6b9375eede96fe8981a988301400345ca3c97c3e9ee4b38ab9e358addd1d0"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/googleapis.com/google-calendar/v3/pagination-overlay.yaml",
+        "sha256": "38fc738ac451a545084750d984b7ee5cd29db45b7fa8b48c346347ea8342cd84"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/googleapis.com/google-calendar/v3/crud-causality-overlay.yaml",
+        "sha256": "51449d355b3f2708b02aee6efe26f72bc8b5287e8a1e5553d53b0aa632ee4526"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/0621413709fc88d65e908ae3643ceaaa53872194/googleapis.com/google-calendar/v3/schema-overlay.yaml",
+        "sha256": "06ba78fc58e56f09e3edebad0a58597fdb14c0078c78508e01e2c6ca2298febd"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/ee929c625d3c63dea87bcccae932a98a33138a8f/googleapis.com/google-calendar/v3/identity-overlay.yaml",
+        "sha256": "9acf145f2a0611202ae199c29976eebe22813e67977354bd057e0446b89cc6f1"
+      }
+    ],
+    "github-issues": [
+      {
+        "url": "https://raw.githubusercontent.com/localthought/openapi-directory/9c5cfb87b3f8b64e11069373a73e3fc85de0de5e/APIs/github.com/github-issues/1.1.4/openapi.yaml",
+        "sha256": "9a5dcc9b4b31a3f2152790cc0d9251441c7862cb6dde5ca93bf0f92f7878a283"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/11019717575be9e6f6ce47bf63782cf68a6ce043/github.com/github-issues/1.1.4/auth-overlay.yaml",
+        "sha256": "578032531a036f7b21c1115e5b19deb7c7903c11d2b57e76c186ea54b2b014e1"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/github.com/github-issues/1.1.4/pagination-overlay.yaml",
+        "sha256": "f812b8445cb26ba7de308a249edd75cd0c56f69ccff4ba9a8f49c096362276b9"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/d603d5453e9dc5ec26a1d7a6b9cfaeec934d5f4a/github.com/github-issues/1.1.4/crud-causality-overlay.yaml",
+        "sha256": "19caadc82ccc184e7f8e45fd82b62279828c68ac8faaeb5f82cdd7165e441e47"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/11019717575be9e6f6ce47bf63782cf68a6ce043/github.com/github-issues/1.1.4/canonical-paths-overlay.yaml",
+        "sha256": "5449eb6462eb00c4dd912b4fbf31081fc821cb3a99a45547056369fd77681f1f"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/localthought/overlays/ee929c625d3c63dea87bcccae932a98a33138a8f/github.com/github-issues/1.1.4/identity-overlay.yaml",
+        "sha256": "8df50990a4d3d98aeec83a134e0f5f0fc8abf5fc87de4ee32d95e5a616bc5e77"
+      }
+    ]
+  }
+}

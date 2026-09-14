@@ -22,6 +22,10 @@ struct TokenOperation {
 }
 
 impl Provider {
+    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
+        self.scopes = scopes;
+        self
+    }
     /// Read API capabilities from the composed document, never from platform names.
     pub fn from_document(document: &Value, selected_scheme: Option<&str>) -> Result<Self, String> {
         let schemes = document

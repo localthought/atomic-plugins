@@ -116,6 +116,9 @@ pub async fn callback(
         .await
         .map_err(|_| AuthError::UserInfoFailed)?;
 
+    if userinfo.sub.starts_with("tenant:v1:") {
+        return Err(AuthError::UserInfoFailed);
+    }
     let user = SessionUser::new(
         userinfo.sub,
         userinfo.email.clone(),
@@ -186,6 +189,7 @@ mod tests {
             app_auth_token_url: "https://issuer.example/token".into(),
             app_auth_userinfo_url: "https://issuer.example/userinfo".into(),
             app_auth_label: "Example Login".into(),
+            app_auth_identity_namespace: None,
             base_url: "https://proxy.example".into(),
             port: 8080,
             session_secret: None,

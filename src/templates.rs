@@ -7,10 +7,26 @@ pub fn render_home(
     user: Option<&SessionUser>,
     _tenant_secret: Option<&str>,
     auth_label: &str,
+    api_login_platforms: &[String],
 ) -> String {
     if user.is_none() {
+        let choices = api_login_platforms
+            .iter()
+            .map(|platform| {
+                format!(
+                    r#"<a class="button" href="/auth/login/{platform}">Log in with {}</a>"#,
+                    escape(&platform_label(platform))
+                )
+            })
+            .collect::<String>();
+        let choices = if choices.is_empty() {
+            String::new()
+        } else {
+            format!("<div class=\"card\"><p>Or sign in with:</p>{choices}</div>")
+        };
         return include_str!("../static/index.html")
-            .replace("{{APP_AUTH_LABEL}}", &escape(auth_label));
+            .replace("{{APP_AUTH_LABEL}}", &escape(auth_label))
+            .replace("</body>", &format!("{choices}</body>"));
     }
     let body = match user {
         Some(user) => signed_in_body(user, auth_label),
@@ -21,6 +37,7 @@ pub fn render_home(
 }
 
 /// Renders the browser connection consent screen for one selected platform.
+#[allow(clippy::too_many_arguments)] // rendering inputs remain explicit and escaped at the boundary
 pub fn render_platform_connect(
     user: Option<&SessionUser>,
     platform: &str,
@@ -28,30 +45,58 @@ pub fn render_platform_connect(
     csrf: &str,
     include_tenant_secret: bool,
     auth_label: &str,
+    bootstrap_identity: bool,
+    api_login_platforms: &[String],
 ) -> String {
+    let tenant_consent = if include_tenant_secret {
+        "<p class=\"secret-help\">This also gives this hub your LocalThought account credential, allowing it to authorize future connections on your behalf.</p>"
+    } else {
+        ""
+    };
     let body = match user {
+        None if bootstrap_identity => format!(
+            r#"
+            <div class="card">
+              <h1>Connect {platform}</h1>
+              <p>Continue with your {platform} account to establish your LocalThought identity and connect {platform} to this hub.</p>
+              <p>Target Atomic Data Hub: <span class="email">{target_origin}</span></p>
+              {tenant_consent}
+              <form method="post" action="/connect/authorize">
+                <input type="hidden" name="csrf" value="{csrf}" />
+                <button class="button" type="submit">Continue with {platform}</button>
+              </form>
+            </div>
+            "#,
+            platform = escape(&platform_label(platform)),
+            target_origin = escape(target_origin),
+            csrf = escape(csrf),
+            tenant_consent = tenant_consent,
+        ),
         None => format!(
             r#"
             <div class="card">
               <h1>Connect {platform}</h1>
               <p>Sign in with {auth_label} to continue.</p>
               <a class="button" href="/auth/login">Log in with {auth_label}</a>
+              {api_logins}
             </div>
             "#,
             platform = escape(&platform_label(platform)),
             auth_label = escape(auth_label),
+            api_logins = api_login_platforms
+                .iter()
+                .map(|candidate| format!(
+                    r#"<a class="button" href="/auth/login/{candidate}">Log in with {}</a>"#,
+                    escape(&platform_label(candidate))
+                ))
+                .collect::<String>(),
         ),
         Some(user) => {
-            let tenant_consent = if include_tenant_secret {
-                "<p class=\"secret-help\">This also gives this hub your LocalThought account credential, allowing it to authorize future connections on your behalf.</p>"
-            } else {
-                ""
-            };
             format!(
                 r#"
                 <div class="card">
                   <h1>Connect {platform}</h1>
-                  <p>You are logged in with {auth_label} as <span class="email">{email}</span></p>
+                  <p>You are logged in with {auth_label}{identity}</p>
                   <p>Target Atomic Data Hub: <span class="email">{target_origin}</span></p>
                   {tenant_consent}
                   <form method="post" action="/connect/authorize">
@@ -61,7 +106,11 @@ pub fn render_platform_connect(
                 </div>
                 "#,
                 platform = escape(&platform_label(platform)),
-                email = escape(&user.email),
+                identity = if user.email.is_empty() {
+                    String::new()
+                } else {
+                    format!(" as <span class=\"email\">{}</span>", escape(&user.email))
+                },
                 target_origin = escape(target_origin),
                 csrf = escape(csrf),
                 tenant_consent = tenant_consent,
@@ -258,14 +307,14 @@ mod tests {
 
     #[test]
     fn signed_out_shows_login_link() {
-        let html = render_home(None, None, "Example Login");
+        let html = render_home(None, None, "Example Login", &[]);
         assert!(html.contains("Log in with Example Login"));
         assert!(html.contains(r#"href="/auth/login""#));
     }
 
     #[test]
     fn signed_in_shows_oidc_identity_without_secrets() {
-        let html = render_home(Some(&test_user()), Some("the-secret"), "Example Login");
+        let html = render_home(Some(&test_user()), Some("the-secret"), "Example Login", &[]);
         assert!(!html.contains("the-secret"));
         assert!(!html.contains("tenant secret"));
         assert!(html.contains("You are logged in with Example Login as"));
@@ -275,7 +324,7 @@ mod tests {
     fn signed_in_escapes_untrusted_fields() {
         let mut user = test_user();
         user.email = "<script>alert(1)</script>".to_string();
-        let html = render_home(Some(&user), Some("<b>not-html</b>"), "Example Login");
+        let html = render_home(Some(&user), Some("<b>not-html</b>"), "Example Login", &[]);
         assert!(!html.contains("<script>"));
         assert!(!html.contains("<b>not-html</b>"));
         assert!(html.contains("&lt;script&gt;"));
@@ -284,7 +333,16 @@ mod tests {
 
     #[test]
     fn render_home_allows_missing_secret_while_signed_in() {
-        render_home(Some(&test_user()), None, "Example Login");
+        render_home(Some(&test_user()), None, "Example Login", &[]);
+    }
+
+    #[test]
+    fn home_only_shows_api_login_choices_when_eligible() {
+        let empty = render_home(None, None, "OIDC", &[]);
+        assert!(!empty.contains("Or sign in with:"));
+        let choices = render_home(None, None, "OIDC", &["github-issues".into()]);
+        assert!(choices.contains("Or sign in with:"));
+        assert!(choices.contains("/auth/login/github-issues"));
     }
 
     #[test]
@@ -296,6 +354,8 @@ mod tests {
             "csrf&<\"",
             true,
             "Example Login",
+            false,
+            &[],
         );
         assert!(html.contains("Google Calendar"));
         assert!(html.contains("Use LocalThought to sync Google Calendar with your Atomic Data Hub"));
@@ -304,6 +364,41 @@ mod tests {
         assert!(!html.contains("<script>"));
         assert!(html.contains("account credential"));
         assert!(!html.contains("the-secret"));
+    }
+
+    #[test]
+    fn bootstrap_consent_discloses_destination_and_explicit_tenant_grant() {
+        let html = render_platform_connect(
+            None,
+            "github-issues",
+            "https://hub.example",
+            "csrf",
+            true,
+            "OIDC",
+            true,
+            &[],
+        );
+        assert!(html.contains("Target Atomic Data Hub"));
+        assert!(html.contains("account credential"));
+        assert!(html.contains("Continue with Github Issues"));
+    }
+
+    #[test]
+    fn empty_email_does_not_render_an_empty_identity_suffix() {
+        let mut user = test_user();
+        user.email.clear();
+        let html = render_platform_connect(
+            Some(&user),
+            "github-issues",
+            "https://hub.example",
+            "csrf",
+            false,
+            "Github",
+            false,
+            &[],
+        );
+        assert!(html.contains("logged in with Github</p>"));
+        assert!(!html.contains("as <span"));
     }
 
     #[test]

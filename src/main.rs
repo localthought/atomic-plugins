@@ -1,7 +1,15 @@
+mod api_login;
+#[cfg(test)]
+mod api_login_flow_tests;
 mod auth;
 mod catalog;
 mod config;
 mod connect;
+mod identity;
+#[cfg(test)]
+mod identity_catalog_tests;
+#[cfg(test)]
+mod identity_policy_tests;
 mod oauth;
 #[allow(dead_code)] // used by the provider OAuth routes introduced with issue #9
 mod providers;
@@ -30,12 +38,16 @@ struct AppState {
     oauth_client: BasicClient,
     app_auth_userinfo_url: String,
     app_auth_label: String,
+    app_auth_identity_namespace: Option<String>,
     http_client: reqwest::Client,
+    identity_http_client: reqwest::Client,
     key: Key,
     server_secret: String,
     base_url: String,
     catalog: catalog::Catalog,
     security: Option<security::Security>,
+    #[cfg(test)]
+    test_upstream: Option<String>,
 }
 
 impl FromRef<AppState> for Key {
@@ -50,6 +62,15 @@ fn build_http_client() -> reqwest::Client {
         .user_agent("LocalThought-integration-proxy")
         .build()
         .expect("failed to build HTTP client")
+}
+
+fn build_identity_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent("LocalThought-integration-proxy")
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("failed to build identity HTTP client")
 }
 
 #[tokio::main]
@@ -79,6 +100,7 @@ async fn main() {
     };
 
     let http_client = build_http_client();
+    let identity_http_client = build_identity_http_client();
     let catalog = match catalog::Catalog::load(&config.catalog_path, &http_client).await {
         Ok(catalog) => catalog,
         Err(err) => {
@@ -107,12 +129,16 @@ async fn main() {
         oauth_client,
         app_auth_userinfo_url: config.app_auth_userinfo_url.clone(),
         app_auth_label: config.app_auth_label.clone(),
+        app_auth_identity_namespace: config.app_auth_identity_namespace.clone(),
         http_client,
+        identity_http_client,
         key,
         server_secret,
         base_url,
         catalog,
         security: Some(security),
+        #[cfg(test)]
+        test_upstream: None,
     };
 
     let app = router(state);
@@ -161,6 +187,7 @@ fn router(state: AppState) -> Router {
         .route("/", get(home))
         .route("/logo.png", get(logo))
         .route("/auth/login", get(auth::login))
+        .route("/auth/login/:platform", get(api_login::start))
         .route("/auth/callback", get(auth::callback))
         .route("/auth/logout", post(auth::logout))
         .route("/connect", get(connect::page).post(proxy::connect_confirm))
@@ -196,7 +223,15 @@ async fn home(State(state): State<AppState>, jar: PrivateCookieJar) -> Html<Stri
     Html(templates::render_home(
         user.as_ref(),
         tenant_secret.as_deref(),
-        &state.app_auth_label,
+        user.as_ref()
+            .and_then(|user| user.identity_label.as_deref())
+            .unwrap_or(&state.app_auth_label),
+        &state
+            .catalog
+            .names()
+            .into_iter()
+            .filter(|platform| state.catalog.tenant_identity(platform).is_ok())
+            .collect::<Vec<_>>(),
     ))
 }
 
