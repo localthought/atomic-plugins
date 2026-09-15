@@ -327,6 +327,17 @@ pub async fn forward(
         return (StatusCode::UNAUTHORIZED, "credential refresh failed").into_response();
     }
     let request_path = format!("/{path}");
+    let Some(required_headers) =
+        state
+            .catalog
+            .required_headers(platform, method.as_str(), &request_path)
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            "method or path is not in the catalog",
+        )
+            .into_response();
+    };
     let Some(mut target) = state
         .catalog
         .allows(platform, method.as_str(), &request_path)
@@ -338,13 +349,14 @@ pub async fn forward(
             .into_response();
     };
     target.set_path(&request_path);
+    target.set_query(query.as_deref());
     let upstream = match upstream_request(
         &state.http_client,
         method.clone(),
         target.clone(),
-        query.as_deref(),
         &credential.access_token,
         &headers,
+        &required_headers,
         body,
     )
     .send()
@@ -413,19 +425,21 @@ fn upstream_response_headers(headers: &HeaderMap) -> HeaderMap {
 fn upstream_request(
     client: &reqwest::Client,
     method: axum::http::Method,
-    mut target: Url,
-    query: Option<&str>,
+    target: Url,
     access_token: &str,
     headers: &HeaderMap,
+    required_headers: &[(String, String)],
     body: Bytes,
 ) -> reqwest::RequestBuilder {
-    target.set_query(query);
     let mut request = client.request(method, target).bearer_auth(access_token);
     if let Some(content_type) = headers.get(header::CONTENT_TYPE) {
         request = request.header(header::CONTENT_TYPE, content_type);
     }
     if let Some(etag) = headers.get(header::IF_MATCH) {
         request = request.header(header::IF_MATCH, etag);
+    }
+    for (name, value) in required_headers {
+        request = request.header(name, value);
     }
     request.body(body)
 }
@@ -470,6 +484,7 @@ mod tests {
             app_auth_token_url: "https://accounts.example/token".to_string(),
             app_auth_userinfo_url: "https://accounts.example/userinfo".to_string(),
             app_auth_label: "OIDC".to_string(),
+            app_auth_identity_namespace: None,
             base_url: "http://localhost:8080".to_string(),
             port: 8080,
             session_secret: None,
@@ -483,12 +498,15 @@ mod tests {
             oauth_client: crate::auth::build_client(&config).unwrap(),
             app_auth_userinfo_url: config.app_auth_userinfo_url.clone(),
             app_auth_label: config.app_auth_label.clone(),
+            app_auth_identity_namespace: config.app_auth_identity_namespace.clone(),
             http_client: crate::build_http_client(),
+            identity_http_client: crate::build_identity_http_client(),
             key: Key::generate(),
             server_secret: config.server_secret,
             base_url: config.base_url,
             catalog: crate::catalog::Catalog::default(),
             security: None,
+            test_upstream: None,
         }
     }
 
@@ -527,10 +545,10 @@ mod tests {
             let response = upstream_request(
                 &client,
                 axum::http::Method::POST,
-                Url::parse(&format!("http://{address}/repos/owner/repo/issues")).unwrap(),
-                Some("state=all&page=2&per_page=1&labels=a%2Cb"),
+                Url::parse(&format!("http://{address}/repos/owner/repo/issues?state=all&page=2&per_page=1&labels=a%2Cb")).unwrap(),
                 "test-provider-token",
                 &headers,
+                &[],
                 Bytes::from_static(b"{}"),
             )
             .send()

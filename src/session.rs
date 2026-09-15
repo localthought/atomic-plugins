@@ -19,6 +19,8 @@ pub struct SessionUser {
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
+    #[serde(default)]
+    pub identity_label: Option<String>,
     pub expires_at: u64,
 }
 
@@ -30,6 +32,7 @@ impl SessionUser {
             email,
             name,
             picture,
+            identity_label: None,
             expires_at,
         }
     }

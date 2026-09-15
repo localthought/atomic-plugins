@@ -1,4 +1,24 @@
 use std::env;
+use url::Url;
+
+fn identity_namespace(value: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let url = Url::parse(&value)
+        .map_err(|_| "APP_AUTH_IDENTITY_NAMESPACE must be an HTTPS URI".to_string())?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || value.contains('{')
+    {
+        return Err("APP_AUTH_IDENTITY_NAMESPACE must be a fixed credential-free HTTPS URI".into());
+    }
+    Ok(Some(value))
+}
 
 /// Runtime configuration, loaded entirely from environment variables so the
 /// server itself stays stateless and container-friendly.
@@ -10,6 +30,9 @@ pub struct Config {
     pub app_auth_token_url: String,
     pub app_auth_userinfo_url: String,
     pub app_auth_label: String,
+    /// Optional namespace which makes a legacy APP_AUTH OIDC subject compatible
+    /// with an explicitly trusted provider-scoped catalog identity.
+    pub app_auth_identity_namespace: Option<String>,
     /// Public URL the server is reachable at, used to build the OAuth
     /// redirect URL (e.g. `https://auth.example.com`).
     pub base_url: String,
@@ -45,6 +68,8 @@ impl Config {
         let app_auth_userinfo_url = env::var("APP_AUTH_USERINFO_URL")
             .map_err(|_| "APP_AUTH_USERINFO_URL must be set".to_string())?;
         let app_auth_label = env::var("APP_AUTH_LABEL").unwrap_or_else(|_| "OIDC".to_string());
+        let app_auth_identity_namespace =
+            identity_namespace(env::var("APP_AUTH_IDENTITY_NAMESPACE").ok())?;
         let base_url = env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
         let port = env::var("PORT")
             .ok()
@@ -54,7 +79,7 @@ impl Config {
         let server_secret =
             env::var("SERVER_SECRET").map_err(|_| "SERVER_SECRET must be set".to_string())?;
         let catalog_path = env::var("CATALOG_PATH").unwrap_or_else(|_| {
-            "https://raw.githubusercontent.com/localthought/overlays/d83c3ce0afd9f8ca0e4c42e142fa89d5fa9d8f70/catalog.json".to_string()
+            "https://raw.githubusercontent.com/localthought/overlays/8f29d9973267b6b3877aa27a5ab50cd41b010e6c/catalog.json".to_string()
         });
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| "DATABASE_URL must be set for replay protection".to_string())?;
@@ -74,6 +99,7 @@ impl Config {
             app_auth_token_url,
             app_auth_userinfo_url,
             app_auth_label,
+            app_auth_identity_namespace,
             base_url,
             port,
             session_secret,
@@ -130,5 +156,23 @@ mod tests {
             "OAUTH_GOOGLE_CALENDAR"
         );
         assert!(Config::provider_env_prefix("Google Calendar").is_err());
+    }
+
+    #[test]
+    fn legacy_identity_namespace_is_blank_or_fixed_https_only() {
+        assert_eq!(identity_namespace(Some("  ".into())).unwrap(), None);
+        assert_eq!(
+            identity_namespace(Some("https://accounts.example".into())).unwrap(),
+            Some("https://accounts.example".into())
+        );
+        for invalid in [
+            "http://accounts.example",
+            "https://u@accounts.example",
+            "https://accounts.example?x=1",
+            "https://accounts.example#x",
+            "https://accounts.example/{tenant}",
+        ] {
+            assert!(identity_namespace(Some(invalid.into())).is_err());
+        }
     }
 }

@@ -9,10 +9,23 @@ pub struct Provider {
     pub scopes: Vec<String>,
     pub authorization_params: Vec<(String, String)>,
     pub use_pkce: bool,
-    supported_client_auth: Option<BTreeSet<String>>,
+    supported_client_auth: Option<Vec<String>>,
+    token_operation: Option<TokenOperation>,
+    refresh_operation: Option<TokenOperation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TokenOperation {
+    json: bool,
+    headers: Vec<(String, String)>,
+    requires_basic: bool,
 }
 
 impl Provider {
+    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
+        self.scopes = scopes;
+        self
+    }
     /// Read API capabilities from the composed document, never from platform names.
     pub fn from_document(document: &Value, selected_scheme: Option<&str>) -> Result<Self, String> {
         let schemes = document
@@ -101,11 +114,26 @@ impl Provider {
             Ok(())
         };
         if let Some(paths) = document.get("paths").and_then(Value::as_object) {
-            for path in paths.values().filter_map(Value::as_object) {
+            let helper_refs = ["tokenEndpointOperation", "refreshEndpointOperation"]
+                .iter()
+                .filter_map(|key| authentication_details(scheme)?.get(*key)?.as_str())
+                .collect::<BTreeSet<_>>();
+            for (path_name, path) in paths
+                .iter()
+                .filter_map(|(n, p)| p.as_object().map(|p| (n, p)))
+            {
                 for method in [
                     "get", "put", "post", "delete", "options", "head", "patch", "trace",
                 ] {
                     if let Some(operation) = path.get(method) {
+                        let pointer = format!(
+                            "#/paths/{}/{}",
+                            path_name.replace('~', "~0").replace('/', "~1"),
+                            method
+                        );
+                        if helper_refs.contains(pointer.as_str()) {
+                            continue;
+                        }
                         add_requirements(
                             operation
                                 .get("security")
@@ -116,16 +144,75 @@ impl Provider {
             }
         }
         let authorization_url = endpoint("authorizationUrl")?;
+        let token_url = endpoint("tokenUrl")?;
         let authorization_params = authorization_params(document, scheme)?;
         validate_authorization_url(&authorization_url, &authorization_params)?;
         Ok(Self {
-            authorization_url,
-            token_url: endpoint("tokenUrl")?,
+            authorization_url: authorization_url.clone(),
+            token_url: token_url.clone(),
             scopes: scopes.into_iter().collect(),
             authorization_params,
             use_pkce: pkce_behavior(scheme)?,
             supported_client_auth: supported_client_auth(scheme)?,
+            token_operation: operation_details(
+                document,
+                scheme,
+                "tokenEndpointOperation",
+                &token_url,
+            )?,
+            refresh_operation: operation_details(
+                document,
+                scheme,
+                "refreshEndpointOperation",
+                &token_url,
+            )?,
         })
+    }
+
+    fn select_client_auth(&self, configured: Option<&str>) -> Result<ClientAuth, String> {
+        let requires_basic = self
+            .token_operation
+            .as_ref()
+            .is_some_and(|op| op.requires_basic)
+            || self
+                .refresh_operation
+                .as_ref()
+                .is_some_and(|op| op.requires_basic);
+        let client_auth = match configured {
+            Some(method) => ClientAuth::parse(method)?,
+            None => match &self.supported_client_auth {
+                Some(methods) => methods.iter().filter_map(|method| ClientAuth::parse(method).ok())
+                    .find(|method| !requires_basic || *method == ClientAuth::SecretBasic)
+                    .ok_or("no advertised client authentication method is supported by the proxy and token operations")?,
+                None if requires_basic => ClientAuth::SecretBasic,
+                None => ClientAuth::SecretPost,
+            },
+        };
+        if self
+            .token_operation
+            .as_ref()
+            .is_some_and(|op| op.requires_basic)
+            && client_auth != ClientAuth::SecretBasic
+            || self
+                .refresh_operation
+                .as_ref()
+                .is_some_and(|op| op.requires_basic)
+                && client_auth != ClientAuth::SecretBasic
+        {
+            return Err("OAuth token operation requires client_secret_basic".into());
+        }
+        if self
+            .supported_client_auth
+            .as_ref()
+            .is_some_and(|supported| {
+                !supported
+                    .iter()
+                    .any(|method| method == client_auth.registered_name())
+            })
+        {
+            return Err("configured client authentication method is not supported by the authorization server".into());
+        }
+        Ok(client_auth)
     }
 
     pub fn configured(catalog: &Catalog, name: &str) -> Result<ConfiguredProvider, String> {
@@ -133,17 +220,8 @@ impl Provider {
         let prefix = Config::provider_env_prefix(name)?;
         let client_id = env::var(format!("{prefix}_CLIENT_ID"))
             .map_err(|_| format!("{prefix}_CLIENT_ID must be set"))?;
-        // Client registration chooses authentication; this is not an API capability.
-        let method = env::var(format!("{prefix}_CLIENT_AUTH_METHOD"))
-            .unwrap_or_else(|_| "client_secret_post".into());
-        let client_auth = ClientAuth::parse(&method)?;
-        if provider
-            .supported_client_auth
-            .as_ref()
-            .is_some_and(|supported| !supported.contains(client_auth.registered_name()))
-        {
-            return Err("configured client authentication method is not supported by the authorization server".into());
-        }
+        let method = env::var(format!("{prefix}_CLIENT_AUTH_METHOD")).ok();
+        let client_auth = provider.select_client_auth(method.as_deref())?;
         let client_secret = if client_auth == ClientAuth::None {
             String::new()
         } else {
@@ -183,18 +261,137 @@ fn validate_supported_authentication_details(scheme: &Value) -> Result<(), Strin
     let Some(details) = authentication_details(scheme) else {
         return Ok(());
     };
-    let details = details
+    let _details = details
         .as_object()
         .ok_or("OAuth authentication details must be an object")?;
-    for unsupported in ["tokenEndpointOperation", "refreshEndpointOperation"] {
-        if details.contains_key(unsupported) {
-            return Err(format!("{unsupported} is not supported by this proxy"));
-        }
-    }
     Ok(())
 }
 
-fn supported_client_auth(scheme: &Value) -> Result<Option<BTreeSet<String>>, String> {
+fn operation_details(
+    document: &Value,
+    scheme: &Value,
+    key: &str,
+    endpoint: &str,
+) -> Result<Option<TokenOperation>, String> {
+    let Some(reference) = authentication_details(scheme)
+        .and_then(|d| d.get(key))
+        .and_then(Value::as_str)
+    else {
+        return Ok(None);
+    };
+    let pointer = reference
+        .strip_prefix('#')
+        .ok_or("OAuth operation references must be local")?;
+    if !pointer.ends_with("/post") {
+        return Err("OAuth token operation must use POST".into());
+    }
+    let operation = document
+        .pointer(pointer)
+        .ok_or("OAuth operation reference does not resolve")?;
+    let requires_basic = operation
+        .get("security")
+        .and_then(Value::as_array)
+        .map(|reqs| {
+            !reqs.is_empty()
+                && reqs.iter().all(|r| {
+                    r.as_object().is_some_and(|obj| {
+                        obj.keys().any(|name| {
+                            document
+                                .pointer(&format!("/components/securitySchemes/{name}"))
+                                .is_some_and(|s| {
+                                    s.get("type").and_then(Value::as_str) == Some("http")
+                                        && s.get("scheme")
+                                            .and_then(Value::as_str)
+                                            .is_some_and(|v| v.eq_ignore_ascii_case("basic"))
+                                })
+                        })
+                    })
+                })
+        })
+        .unwrap_or(false);
+    let actual = operation_endpoint(document, &format!("#{pointer}"))
+        .ok_or("OAuth operation reference is not a path operation")?;
+    if actual != endpoint {
+        return Err("OAuth token operation URL does not match OAuth endpoint".into());
+    }
+    let body = operation
+        .get("requestBody")
+        .and_then(|b| b.get("content"))
+        .and_then(Value::as_object)
+        .ok_or("OAuth token operation must declare request content")?;
+    let json = body.contains_key("application/json");
+    if !json && !body.contains_key("application/x-www-form-urlencoded") {
+        return Err("OAuth token operation uses unsupported content type".into());
+    }
+    let mut headers = Vec::new();
+    if let Some(parameters) = operation.get("parameters").and_then(Value::as_array) {
+        for parameter in parameters {
+            let parameter = if let Some(reference) = parameter.get("$ref").and_then(Value::as_str) {
+                let pointer = reference
+                    .strip_prefix('#')
+                    .ok_or("OAuth parameter references must be local")?;
+                document
+                    .pointer(pointer)
+                    .ok_or("OAuth parameter reference does not resolve")?
+            } else {
+                parameter
+            };
+            if parameter.get("in").and_then(Value::as_str) != Some("header") {
+                continue;
+            }
+            let name = parameter
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or("OAuth header parameter has no name")?;
+            if name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("host") {
+                return Err("OAuth operation cannot override protected headers".into());
+            }
+            let value = parameter
+                .get("schema")
+                .and_then(|s| s.get("default"))
+                .or_else(|| {
+                    parameter
+                        .get("schema")
+                        .and_then(|s| s.get("enum"))
+                        .and_then(|e| e.as_array())
+                        .filter(|a| a.len() == 1)
+                        .and_then(|a| a.first())
+                })
+                .and_then(Value::as_str)
+                .ok_or("OAuth header parameter needs a string default or singleton enum")?;
+            headers.push((name.to_owned(), value.to_owned()));
+        }
+    }
+    Ok(Some(TokenOperation {
+        json,
+        headers,
+        requires_basic,
+    }))
+}
+
+fn operation_endpoint(document: &Value, pointer: &str) -> Option<String> {
+    let server = document
+        .get("servers")?
+        .as_array()?
+        .first()?
+        .get("url")?
+        .as_str()?;
+    let mut base = url::Url::parse(server).ok()?;
+    for (path, item) in document.get("paths")?.as_object()? {
+        for method in [
+            "get", "put", "post", "delete", "options", "head", "patch", "trace",
+        ] {
+            let escaped = path.replace('~', "~0").replace('/', "~1");
+            if format!("#/paths/{escaped}/{method}") == pointer && item.get(method).is_some() {
+                base.set_path(&format!("{}{}", base.path().trim_end_matches('/'), path));
+                return Some(base.to_string().trim_end_matches('/').to_owned());
+            }
+        }
+    }
+    None
+}
+
+fn supported_client_auth(scheme: &Value) -> Result<Option<Vec<String>>, String> {
     let Some(details) = authentication_details(scheme) else {
         return Ok(None);
     };
@@ -224,8 +421,8 @@ fn supported_client_auth(scheme: &Value) -> Result<Option<BTreeSet<String>>, Str
                 .map(str::to_owned)
                 .ok_or_else(|| "invalid token endpoint authentication method".to_string())
         })
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    if parsed.len() != methods.len() {
+        .collect::<Result<Vec<_>, _>>()?;
+    if parsed.iter().collect::<BTreeSet<_>>().len() != methods.len() {
         return Err("duplicate token endpoint authentication method".into());
     }
     Ok(Some(parsed))
@@ -588,6 +785,32 @@ impl ConfiguredProvider {
                 form.push(("client_secret", &self.client_secret));
             }
         }
+        let operation = if params
+            .iter()
+            .any(|(key, value)| *key == "grant_type" && *value == "refresh_token")
+        {
+            self.provider
+                .refresh_operation
+                .as_ref()
+                .or(self.provider.token_operation.as_ref())
+        } else {
+            self.provider.token_operation.as_ref()
+        };
+        if let Some(operation) = operation {
+            if operation.requires_basic && self.client_auth != ClientAuth::SecretBasic {
+                return request;
+            }
+            for (name, value) in &operation.headers {
+                request = request.header(name, value);
+            }
+            if operation.json {
+                let body = form
+                    .into_iter()
+                    .map(|(k, v)| (k.to_owned(), serde_json::Value::String(v.to_owned())))
+                    .collect::<serde_json::Map<_, _>>();
+                return request.json(&body).header("accept", "application/json");
+            }
+        }
         request.form(&form).header("accept", "application/json")
     }
 }
@@ -680,7 +903,7 @@ mod tests {
         assert!(!provider.use_pkce);
         assert_eq!(
             provider.supported_client_auth.unwrap(),
-            BTreeSet::from(["client_secret_post".into()])
+            vec!["client_secret_post".to_string()]
         );
         assert!(Provider::from_document(&doc, None).is_err());
         assert!(Provider::from_document(&doc, Some("missing")).is_err());
@@ -762,19 +985,114 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unimplemented_discovery_and_token_operation_semantics() {
+    fn rejects_unimplemented_discovery_but_accepts_token_operation_semantics() {
         let mut doc = document();
         doc["components"]["securitySchemes"]["auth"]["oauth2MetadataUrl"] =
             "https://auth.example/.well-known/oauth-authorization-server".into();
         assert!(Provider::from_document(&doc, None).is_err());
 
-        for field in ["tokenEndpointOperation", "refreshEndpointOperation"] {
-            let mut doc = document();
-            doc["components"]["securitySchemes"]["auth"]["x-oauth-authentication-details"] =
-                serde_json::json!({(field): "#/paths/~1token/post"});
-            assert!(Provider::from_document(&doc, None).is_err(), "{field}");
+        let mut doc = document();
+        doc["servers"] = serde_json::json!([{"url":"https://auth.example"}]);
+        doc["paths"]["/token"] = serde_json::json!({"post": {
+            "requestBody": {"content": {"application/json": {"schema": {"type": "object"}}}},
+            "parameters": [{"name": "Notion-Version", "in": "header", "schema": {"type":"string", "enum":["2026-03-11"]}}]
+        }});
+        doc["components"]["securitySchemes"]["auth"]["x-oauth-authentication-details"] = serde_json::json!({"tokenEndpointOperation": "#/paths/~1token/post", "refreshEndpointOperation": "#/paths/~1token/post"});
+        let provider = Provider::from_document(&doc, None).unwrap();
+        let configured = ConfiguredProvider {
+            provider,
+            client_id: "client".into(),
+            client_secret: "secret".into(),
+            client_auth: ClientAuth::SecretBasic,
+        };
+        let request = configured
+            .token_request(
+                &reqwest::Client::new(),
+                &[("grant_type", "authorization_code"), ("code", "abc")],
+            )
+            .build()
+            .unwrap();
+        assert_eq!(request.headers()["content-type"], "application/json");
+        assert_eq!(request.headers()["notion-version"], "2026-03-11");
+        assert!(
+            String::from_utf8(request.body().unwrap().as_bytes().unwrap().to_vec())
+                .unwrap()
+                .contains("\"code\":\"abc\"")
+        );
+        doc["components"]["securitySchemes"]["auth"]["x-oauth-authentication-details"]
+            ["tokenEndpointOperation"] = "#/paths/~1records/get".into();
+        assert!(Provider::from_document(&doc, None).is_err());
+    }
+    #[test]
+    fn default_client_auth_uses_metadata_order_and_preserves_overrides() {
+        let mut doc = document();
+        doc["components"]["securitySchemes"]["auth"]["x-oauth-authentication-details"] = serde_json::json!({
+            "authorizationServerMetadata": {
+                "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"]
+            }
+        });
+        let provider = Provider::from_document(&doc, None).unwrap();
+        assert_eq!(provider.select_client_auth(None).unwrap(), ClientAuth::None);
+        assert_eq!(
+            provider
+                .select_client_auth(Some("client_secret_basic"))
+                .unwrap(),
+            ClientAuth::SecretBasic
+        );
+        assert!(provider.select_client_auth(Some("unknown")).is_err());
+    }
+
+    #[test]
+    fn default_client_auth_skips_unimplemented_methods_but_rejects_no_match() {
+        let mut doc = document();
+        for (methods, expected) in [
+            (
+                serde_json::json!(["private_key_jwt", "client_secret_basic", "none"]),
+                Some(ClientAuth::SecretBasic),
+            ),
+            (
+                serde_json::json!(["client_secret_basic"]),
+                Some(ClientAuth::SecretBasic),
+            ),
+            (serde_json::json!(["private_key_jwt"]), None),
+        ] {
+            doc["components"]["securitySchemes"]["auth"]["x-oauth-authentication-details"] = serde_json::json!({
+                "authorizationServerMetadata": {"token_endpoint_auth_methods_supported": methods}
+            });
+            let provider = Provider::from_document(&doc, None).unwrap();
+            assert_eq!(provider.select_client_auth(None).ok(), expected);
+            assert!(provider
+                .select_client_auth(Some("client_secret_post"))
+                .is_err());
         }
     }
+
+    #[test]
+    fn default_client_auth_respects_token_operations_and_legacy_fallback() {
+        let mut provider = Provider::from_document(&document(), None).unwrap();
+        assert_eq!(
+            provider.select_client_auth(None).unwrap(),
+            ClientAuth::SecretPost
+        );
+        provider.refresh_operation = Some(TokenOperation {
+            json: true,
+            headers: vec![],
+            requires_basic: true,
+        });
+        assert_eq!(
+            provider.select_client_auth(None).unwrap(),
+            ClientAuth::SecretBasic
+        );
+        provider.supported_client_auth = Some(vec!["none".into(), "client_secret_basic".into()]);
+        assert_eq!(
+            provider.select_client_auth(None).unwrap(),
+            ClientAuth::SecretBasic
+        );
+        assert!(provider.select_client_auth(Some("none")).is_err());
+        provider.supported_client_auth = Some(vec!["none".into()]);
+        assert!(provider.select_client_auth(None).is_err());
+    }
+
     #[test]
     fn client_registration_selects_token_authentication_for_exchange_and_refresh() {
         use base64::Engine;
@@ -821,5 +1139,38 @@ mod tests {
             }
         }
         assert!(ClientAuth::parse("unknown").is_err());
+    }
+
+    #[test]
+    fn composed_notion_fixture_builds_json_token_request() {
+        let document: Value =
+            serde_yaml::from_str(include_str!("../tests/fixtures/notion-composed.yaml")).unwrap();
+        let provider = Provider::from_document(&document, Some("notionOAuth")).unwrap();
+        let client_auth = provider.select_client_auth(None).unwrap();
+        assert_eq!(client_auth, ClientAuth::SecretBasic);
+        let configured = ConfiguredProvider {
+            provider,
+            client_id: "id".into(),
+            client_secret: "secret".into(),
+            client_auth,
+        };
+        let request = configured
+            .token_request(
+                &reqwest::Client::new(),
+                &[
+                    ("grant_type", "authorization_code"),
+                    ("code", "abc"),
+                    ("redirect_uri", "https://example/cb"),
+                ],
+            )
+            .build()
+            .unwrap();
+        assert_eq!(request.headers()["content-type"], "application/json");
+        assert_eq!(request.headers()["notion-version"], "2026-03-11");
+        assert!(
+            String::from_utf8(request.body().unwrap().as_bytes().unwrap().to_vec())
+                .unwrap()
+                .contains("\"grant_type\":\"authorization_code\"")
+        );
     }
 }

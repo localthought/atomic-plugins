@@ -1,7 +1,7 @@
 use crate::{
     providers::Provider,
     proxy::{self, ConnectParams},
-    AppState,
+    session, AppState,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -153,6 +153,59 @@ pub async fn begin(
     Ok(url.into())
 }
 
+/// Starts a standalone API identity login. The context is deliberately in a
+/// different sealing domain from a connection handoff and carries no tenant
+/// or proxy credential.
+pub async fn begin_login(
+    state: &AppState,
+    name: &str,
+    context: &crate::api_login::ApiLoginContext,
+) -> Result<String, ()> {
+    let mut provider = Provider::configured(&state.catalog, name).map_err(|_| ())?;
+    provider.provider = state
+        .catalog
+        .identity_oauth_provider(name)
+        .map_err(|_| ())?;
+    let security = state.security.as_ref().ok_or(())?;
+    let state_value = random();
+    let verifier = random();
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let sealed = security
+        .seal(
+            &serde_json::to_vec(context).map_err(|_| ())?,
+            crate::api_login::CONTEXT_AAD,
+        )
+        .map_err(|_| ())?;
+    let callback = format!(
+        "{}/oauth/{}/callback",
+        state.base_url.trim_end_matches('/'),
+        name
+    );
+    security
+        .store_oauth_state(
+            &state_value,
+            &crate::security::OAuthState {
+                provider: name.into(),
+                redirect_uri: "/".into(),
+                tenant_id: "".into(),
+                user_id: "".into(),
+                verifier,
+                context: Some(format!("{}{}", crate::api_login::CONTEXT_PREFIX, sealed)),
+            },
+        )
+        .await
+        .map_err(|_| ())?;
+    let mut url = Url::parse(&provider.provider.authorization_url).map_err(|_| ())?;
+    url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", &provider.client_id)
+        .append_pair("redirect_uri", &callback)
+        .append_pair("scope", &provider.provider.scopes.join(" "))
+        .append_pair("state", &state_value);
+    append_provider_authorization(&mut url, &provider.provider, &challenge);
+    Ok(url.into())
+}
+
 pub async fn callback(
     Path(name): Path<String>,
     State(state): State<AppState>,
@@ -171,37 +224,71 @@ async fn callback_response(
     let Ok(provider) = Provider::configured(&state.catalog, &name) else {
         return error();
     };
+    #[cfg(test)]
+    let provider = {
+        let mut provider = provider;
+        if let Some(upstream) = &state.test_upstream {
+            provider.provider.token_url = format!("{}/token", upstream.trim_end_matches('/'));
+        }
+        provider
+    };
     let Some(security) = &state.security else {
         return error();
     };
     let Ok(Some(stored)) = security.take_oauth_state(&query.state).await else {
         return error();
     };
+    if stored
+        .context
+        .as_deref()
+        .is_some_and(|context| context.starts_with(crate::api_login::CONTEXT_PREFIX))
+    {
+        return crate::api_login::callback(&name, &state, stored, query.code, query.error, jar)
+            .await;
+    }
     if stored.provider != name || security.is_revoked(&stored.tenant_id, &stored.user_id) {
         return error();
     }
     let context = match &stored.context {
-        Some(value) => {
-            match crate::connect::oauth_context(security, value, &jar, &stored.tenant_id) {
+        Some(value) => match crate::connect::oauth_context(security, value, &jar) {
+            Some(context)
+                if context.request.platform == name
+                    && context.request.redirect_uri == stored.redirect_uri
+                    && context.request.user_id == stored.user_id =>
+            {
                 Some(context)
-                    if context.request.platform == name
-                        && context.request.redirect_uri == stored.redirect_uri
-                        && context.request.user_id == stored.user_id =>
-                {
-                    Some(context)
-                }
-                _ => return error(),
             }
-        }
+            _ => return error(),
+        },
         None => None,
     };
     let crate::security::OAuthState {
         redirect_uri,
-        tenant_id,
+        tenant_id: tenant_id_from_state,
         user_id,
         verifier,
         ..
     } = stored;
+    // Validate the browser/session binding before looking at a cancellation or
+    // exchanging the code. A callback must never authenticate a session that
+    // was created or switched while the browser was at the provider.
+    if let Some(context) = &context {
+        match &context.mode {
+            crate::connect::BootstrapMode::Bootstrap if session::read_session(&jar).is_some() => {
+                return error()
+            }
+            crate::connect::BootstrapMode::ExistingTenant { tenant_id }
+                if tenant_id != &tenant_id_from_state
+                    || session::read_session(&jar)
+                        .as_ref()
+                        .map(|user| &user.subject)
+                        != Some(tenant_id) =>
+            {
+                return error()
+            }
+            _ => {}
+        }
+    }
     if query.error.is_some() || query.code.is_none() {
         if context.is_some() {
             let Ok(mut redirect) = Url::parse(&redirect_uri) else {
@@ -245,6 +332,83 @@ async fn callback_response(
     };
     let Ok(token) = response.json::<Token>().await else {
         return error();
+    };
+    let (tenant_id, jar) = match context.as_ref().map(|context| &context.mode) {
+        Some(crate::connect::BootstrapMode::ExistingTenant { tenant_id }) => {
+            (tenant_id.clone(), jar)
+        }
+        Some(crate::connect::BootstrapMode::Bootstrap) => {
+            // A session appearing while this state was in flight would let a
+            // different browser identity bind the provider credential.
+            let Ok(operation) = state.catalog.tenant_identity(&name) else {
+                return error();
+            };
+            #[cfg(test)]
+            let operation = if let Some(upstream) = &state.test_upstream {
+                let mut operation = operation;
+                operation.url = format!("{}/identity", upstream.trim_end_matches('/'))
+                    .parse()
+                    .expect("test upstream URL");
+                operation
+            } else {
+                operation
+            };
+            let mut response = match state
+                .identity_http_client
+                .get(operation.url.clone())
+                .bearer_auth(&token.access_token)
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(_) => return error(),
+            };
+            if !response.status().is_success() {
+                return error();
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > 65_536)
+            {
+                return error();
+            }
+            let mut bytes = Vec::new();
+            loop {
+                let Ok(chunk) = response.chunk().await else {
+                    return error();
+                };
+                let Some(chunk) = chunk else { break };
+                if bytes.len() + chunk.len() > 65_536 {
+                    return error();
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let Ok(body) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                return error();
+            };
+            let Ok(identity) = crate::identity::resolve(&operation, &body, &provider.client_id)
+            else {
+                return error();
+            };
+            let subject = match identity
+                .legacy_subject_if_matches(state.app_auth_identity_namespace.as_deref())
+            {
+                Ok(Some(subject)) => subject,
+                Ok(None) => identity.canonical(),
+                Err(_) => return error(),
+            };
+            if security.is_revoked(&subject, &user_id) {
+                return error();
+            }
+            let identity_label = name.clone();
+            let email = identity.email.clone().unwrap_or_default();
+            let name = identity.name.clone().unwrap_or_else(|| email.clone());
+            let mut user =
+                session::SessionUser::new(subject.clone(), email, name, identity.picture);
+            user.identity_label = Some(identity_label);
+            (subject, session::set_session(jar, &user))
+        }
+        None => (tenant_id_from_state.clone(), jar),
     };
     let credential = Credential {
         provider: name.clone(),
