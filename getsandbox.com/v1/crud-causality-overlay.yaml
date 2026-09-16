@@ -1,0 +1,45 @@
+overlay: 1.0.0
+info:
+  title: Sandbox API CRUD Causality
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      sandbox:
+        identity:
+          urlTemplate: /1/sandboxes/{sandboxName}
+          bindings:
+            sandboxName:
+              field: name
+        collections:
+          sandboxes:
+            urlTemplate: /1/sandboxes
+- target: "$.paths['/1/sandboxes'].post"
+  update:
+    x-crud:
+      action: create
+      resource: sandbox
+      url:
+        source: template
+      addedFields:
+        id:
+          source: generated
+        name:
+          source: default
+          description: >-
+            Generated from a template when the client omits it in the
+            create request.
+      memberOf: [sandboxes]
+- target: "$.paths['/1/sandboxes'].get"
+  update:
+    x-crud: { action: list, resource: sandbox, collection: sandboxes }
+- target: "$.paths['/1/sandboxes/{sandboxName}'].get"
+  update:
+    x-crud: { action: read, resource: sandbox }
+- target: "$.paths['/1/sandboxes/{sandboxName}'].put"
+  update:
+    x-crud: { action: update, mode: replace, resource: sandbox }
+- target: "$.paths['/1/sandboxes/{sandboxName}'].delete"
+  update:
+    x-crud: { action: delete, resource: sandbox, removesFrom: "*" }
