@@ -1,0 +1,28 @@
+overlay: 1.0.0
+info:
+  title: Clockify API Time Entry CRUD Causality
+  version: 1.0.0
+# The initial Clockify integration is deliberately read-only. A time entry
+# is listed for a user on a workspace and read by its own id. workspaceId
+# and userId are supplied as constants (like GitHub Issues' owner/repo),
+# not discovered — Clockify has no auto-discovery step in this catalog.
+actions:
+  - target: $.components
+    update:
+      crudResources:
+        timeEntry:
+          schema: {$ref: '#/components/schemas/TimeEntry'}
+          description: A time entry on a Clockify workspace.
+          identity:
+            urlTemplate: /v1/workspaces/{workspaceId}/time-entries/{id}
+            bindings:
+              id: {field: id}
+          collections:
+            timeEntries:
+              urlTemplate: /v1/workspaces/{workspaceId}/user/{userId}/time-entries
+  - target: $.paths['/v1/workspaces/{workspaceId}/user/{userId}/time-entries'].get
+    update:
+      x-crud: {action: list, resource: timeEntry, collection: timeEntries}
+  - target: $.paths['/v1/workspaces/{workspaceId}/time-entries/{id}'].get
+    update:
+      x-crud: {action: read, resource: timeEntry}
