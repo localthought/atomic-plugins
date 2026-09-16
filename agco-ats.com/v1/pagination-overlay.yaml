@@ -1,0 +1,294 @@
+overlay: 1.0.0
+info:
+  title: AGCO ATS API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Offset/limit pagination. The response wraps results as
+          {Entities, Metadata}, where Metadata.TotalCount/Limit/Offset
+          echo the effective paging window.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            Metadata.TotalCount:
+              role: totalCount
+            Metadata.Limit:
+              role: pageSize
+      limitOnly:
+        type: pageNumber
+        description: >-
+          Same response envelope as offset, but these two endpoints
+          only expose a limit parameter, with no way for the client to
+          set the offset directly.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+        response:
+          bodyFields:
+            Metadata.TotalCount:
+              role: totalCount
+            Metadata.Limit:
+              role: pageSize
+- target: "$.paths['/api/v2/AuthorizationCategories'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/AuthorizationCategories/Users'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/AuthorizationCodeDefinitions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/AuthorizationCodes'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/AuthorizationContactInformation'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Bundles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Clients'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Clients/{ID}/AvailableUpdateGroupSubscriptions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Clients/{ID}/UpdateGroupSubscriptions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/ContentDefinitions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/ContentDefinitions/{contentDefinitionID}/Attributes'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/ContentReleases'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/ContentSubmissions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/ContentSubmissions/{contentSubmissionID}/Attributes'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/DealerByCountry'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Dealers'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Files'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/GlobalImageCategories'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/GlobalImages'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Languages'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Licenses'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/PackageTypes'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/PackageTypetoBundles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Packages'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Permissions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/PriorityPackages'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Releases'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Reporting/BundleStatusSummary'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Reporting/BundlesInUpdateGroup'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Reporting/GetSubscriptions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Reporting/RegisteredClients'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Reporting/UpdateGroups'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Roles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Roles/{id}/Permissions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Roles/{id}/Users'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationKeys'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationRequests'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationSets'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationSets/{ID}/Attributes'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationSets/{ID}/SourceStrings'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/TranslationSets/{ID}/Strings'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/UpdateGroupClientRelationships'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/UpdateGroupSubscriptions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/UpdateGroups'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/UpdateGroups/{ID}/Bundles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/UserContentDefinitions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Users'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Users/Current/Permissions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Users/Current/Roles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Users/{id}/Permissions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Users/{id}/Roles'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/VoucherHistory'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Vouchers'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/Vouchers/{VoucherCode}/VoucherHistory'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/activities'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/activityRuns'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/agents'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/jobRuns'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/jobs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/steps'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/api/v2/StringDefinitions'].get"
+  update:
+    x-pagination:
+    - scheme: limitOnly
+- target: "$.paths['/api/v2/StringTranslations'].get"
+  update:
+    x-pagination:
+    - scheme: limitOnly
