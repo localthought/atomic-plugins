@@ -1,0 +1,49 @@
+overlay: 1.0.0
+info:
+  title: FormAPI Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Page-number pagination. The response is a bare array with no
+          count/page envelope modeled in this spec.
+        request:
+          queryParameters:
+            page:
+              role: page
+            per_page:
+              role: pageSize
+      cursor:
+        type: pageToken
+        request:
+          queryParameters:
+            cursor:
+              role: pageToken
+            limit:
+              role: pageSize
+        response:
+          bodyFields:
+            next_cursor:
+              role: nextPageToken
+            limit:
+              role: pageSize
+- target: "$.paths['/combined_submissions'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/templates'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/submissions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/templates/{template_id}/submissions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
