@@ -1,0 +1,27 @@
+overlay: 1.0.0
+info:
+  title: ChompThis API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          ChompThis paginates search results with a fixed page size chosen
+          via `limit` (1-10, default 10) and a 1-based `page` number.
+        request:
+          queryParameters:
+            page:
+              role: page
+            limit:
+              role: pageSize
+- target: "$.paths['/food/branded/name.php'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/food/branded/search.php'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

@@ -1,0 +1,24 @@
+overlay: 1.0.0
+info:
+  title: Contribly API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        request:
+          queryParameters:
+            page:
+              role: page
+            pageSize:
+              role: pageSize
+        response:
+          headers:
+            X-total-count:
+              role: totalCount
+- target: "$.paths['/assignments'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

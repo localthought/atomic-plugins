@@ -1,0 +1,52 @@
+overlay: 1.0.0
+info:
+  title: Billingo API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Billingo uses Laravel-style page-number pagination. Responses
+          report the current and last page, the effective page size, the
+          total item count, and `next_page_url`/`prev_page_url` links.
+        request:
+          queryParameters:
+            page:
+              role: page
+            per_page:
+              role: pageSize
+        response:
+          bodyFields:
+            current_page:
+              role: currentPage
+            last_page:
+              role: totalPages
+            per_page:
+              role: pageSize
+            total:
+              role: totalCount
+            next_page_url:
+              role: nextLink
+- target: "$.paths['/bank-accounts'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/document-blocks'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/documents'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/partners'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/products'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
