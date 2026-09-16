@@ -1,0 +1,138 @@
+overlay: 1.0.0
+info:
+  title: CallFire API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Offset/limit pagination. The response wraps results as a Page
+          object: {items, limit, offset, totalCount}. totalCount is -1
+          when the total is unknown.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            totalCount:
+              role: totalCount
+            limit:
+              role: pageSize
+      offsetRequestOnly:
+        type: pageNumber
+        description: >-
+          Same request parameters as offset, but this endpoint's
+          response (a bundle of a contact's calls and texts) doesn't
+          echo a pagination envelope.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+- target: "$.paths['/calls'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/calls/broadcasts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/calls/broadcasts/{id}/batches'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/calls/broadcasts/{id}/calls'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/campaigns/sounds'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/contacts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/contacts/dncs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/contacts/lists'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/contacts/lists/{id}/items'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/keywords/leases'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/keywords/leases/configs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/me/api/credentials'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/media'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/numbers/leases'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/numbers/leases/configs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/numbers/regions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/orders'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/reports/delivery'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/texts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/texts/auto-replys'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/texts/broadcasts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/texts/broadcasts/{id}/batches'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/texts/broadcasts/{id}/texts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/webhooks'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/contacts/{id}/history'].get"
+  update:
+    x-pagination:
+    - scheme: offsetRequestOnly
