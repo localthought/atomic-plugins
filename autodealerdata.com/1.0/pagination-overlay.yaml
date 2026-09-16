@@ -1,0 +1,71 @@
+overlay: 1.0.0
+info:
+  title: AutoDealerData API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      dealers:
+        type: pageNumber
+        description: >-
+          Fixed page size (up to 30 results per page), no client-controlled
+          page size. The response nests the current page and page count
+          under `data`.
+        request:
+          queryParameters:
+            page:
+              role: page
+        response:
+          bodyFields:
+            data.page:
+              role: currentPage
+            data.maxPages:
+              role: totalPages
+      listings:
+        type: pageNumber
+        description: >-
+          Fixed page size, no client-controlled page size. The response
+          nests the current page and page count under `data`.
+        request:
+          queryParameters:
+            page:
+              role: page
+        response:
+          bodyFields:
+            data.page:
+              role: currentPage
+            data.maxPages:
+              role: totalPages
+- target: "$.paths['/getDealersByRegion'].get"
+  update:
+    x-pagination:
+    - scheme: dealers
+- target: "$.paths['/listings'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listings2'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listingsByDate'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listingsByRegion'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listingsByRegionAndDate'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listingsByZipCode'].get"
+  update:
+    x-pagination:
+    - scheme: listings
+- target: "$.paths['/listingsByZipCodeAndDate'].get"
+  update:
+    x-pagination:
+    - scheme: listings
