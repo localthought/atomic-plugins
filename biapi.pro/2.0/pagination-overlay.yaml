@@ -1,0 +1,70 @@
+overlay: 1.0.0
+info:
+  title: Powens (Budget Insight) API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Offset/limit pagination used across the logs and transactions
+          endpoints. The response reports the total match count as `total`.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Used by the incidents timeline. Default page is 1, default size
+          is 30.
+        request:
+          queryParameters:
+            page:
+              role: page
+            size:
+              role: pageSize
+- target: "$.paths['/connections/{id_connection}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/psd2-registrations/{id_psd2registration}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/users/{id_user}/connections/{id_connection}/accounts/{id_account}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/users/{id_user}/connections/{id_connection}/accounts/{id_account}/transactions'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/users/{id_user}/connections/{id_connection}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/users/{id_user}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/webhooks/{id_webhook}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/incidents'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
