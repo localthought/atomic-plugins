@@ -551,6 +551,45 @@ mod tests {
         assert_eq!(headers(&doc).unwrap().len(), 2);
     }
 
+    /// Composed the same way `Catalog::load` composes any platform: the base
+    /// OAD plus each overlay's actions applied in order. Captured as a
+    /// checked-in fixture rather than fetched live, matching this file's
+    /// existing pinned-fixture tests; move to the network-backed
+    /// `identity_catalog_tests.rs` pattern (a real `Catalog::load` against
+    /// the now-published `localthought/overlays` clockify entry) if that
+    /// coverage is wanted later.
+    #[test]
+    fn composed_clockify_fixture_declares_an_api_key_scheme_and_pagination() {
+        let document: Value =
+            serde_yaml::from_str(include_str!("../tests/fixtures/clockify-composed.yaml")).unwrap();
+        let catalog = Catalog::from_test_document("clockify", document, serde_json::json!({}));
+        let scheme = catalog.security_scheme("clockify").unwrap();
+        match scheme {
+            crate::providers::SecurityScheme::ApiKey(scheme) => {
+                assert_eq!(scheme.name, "X-Api-Key");
+                assert_eq!(scheme.location, crate::providers::ApiKeyLocation::Header);
+            }
+            crate::providers::SecurityScheme::OAuth(_) => panic!("expected an apiKey scheme"),
+        }
+        assert!(catalog
+            .allows(
+                "clockify",
+                "GET",
+                "/api/v1/workspaces/ws1/user/u1/time-entries"
+            )
+            .is_some());
+        assert_eq!(
+            catalog
+                .required_headers(
+                    "clockify",
+                    "GET",
+                    "/api/v1/workspaces/ws1/user/u1/time-entries"
+                )
+                .unwrap(),
+            Vec::<(String, String)>::new()
+        );
+    }
+
     #[test]
     fn composed_notion_preserves_base_path_and_resolves_version_header() {
         let catalog = super::Catalog {
