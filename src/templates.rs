@@ -47,6 +47,7 @@ pub fn render_platform_connect(
     auth_label: &str,
     bootstrap_identity: bool,
     api_login_platforms: &[String],
+    requires_api_key: bool,
 ) -> String {
     let tenant_consent = if include_tenant_secret {
         "<p class=\"secret-help\">This also gives this hub your LocalThought account credential, allowing it to authorize future connections on your behalf.</p>"
@@ -92,6 +93,20 @@ pub fn render_platform_connect(
                 .collect::<String>(),
         ),
         Some(user) => {
+            let api_key_field = if requires_api_key {
+                r#"<p class="secret-help">Find this in your account settings on the platform's own site.</p>
+                   <input class="button" style="background:white;color:#202124;border:1px solid #ccc" type="password" name="api_key" autocomplete="off" placeholder="API key" required />"#
+            } else {
+                ""
+            };
+            let button_label = if requires_api_key {
+                format!("Connect {}", escape(&platform_label(platform)))
+            } else {
+                format!(
+                    "Use LocalThought to sync {} with your Atomic Data Hub",
+                    escape(&platform_label(platform))
+                )
+            };
             format!(
                 r#"
                 <div class="card">
@@ -101,7 +116,8 @@ pub fn render_platform_connect(
                   {tenant_consent}
                   <form method="post" action="/connect/authorize">
                     <input type="hidden" name="csrf" value="{csrf}" />
-                    <button class="button" type="submit">Use LocalThought to sync {platform} with your Atomic Data Hub</button>
+                    {api_key_field}
+                    <button class="button" type="submit">{button_label}</button>
                   </form>
                 </div>
                 "#,
@@ -114,7 +130,8 @@ pub fn render_platform_connect(
                 target_origin = escape(target_origin),
                 csrf = escape(csrf),
                 tenant_consent = tenant_consent,
-                auth_label = escape(auth_label),
+                api_key_field = api_key_field,
+                button_label = button_label,
             )
         }
     };
@@ -356,6 +373,7 @@ mod tests {
             "Example Login",
             false,
             &[],
+            false,
         );
         assert!(html.contains("Google Calendar"));
         assert!(html.contains("Use LocalThought to sync Google Calendar with your Atomic Data Hub"));
@@ -377,6 +395,7 @@ mod tests {
             "OIDC",
             true,
             &[],
+            false,
         );
         assert!(html.contains("Target Atomic Data Hub"));
         assert!(html.contains("account credential"));
@@ -396,9 +415,45 @@ mod tests {
             "Github",
             false,
             &[],
+            false,
         );
         assert!(html.contains("logged in with Github</p>"));
         assert!(!html.contains("as <span"));
+    }
+
+    #[test]
+    fn signed_in_api_key_platform_renders_a_key_field_and_generic_button() {
+        let html = render_platform_connect(
+            Some(&test_user()),
+            "clockify",
+            "https://hub.example",
+            "csrf",
+            false,
+            "OIDC",
+            false,
+            &[],
+            true,
+        );
+        assert_eq!(html.matches(r#"name="api_key""#).count(), 1);
+        assert!(html.contains(r#"type="password" name="api_key""#));
+        assert!(html.contains("Connect Clockify"));
+        assert!(!html.contains("Use LocalThought to sync"));
+    }
+
+    #[test]
+    fn oauth_platform_renders_no_key_field() {
+        let html = render_platform_connect(
+            Some(&test_user()),
+            "google-calendar",
+            "https://hub.example",
+            "csrf",
+            false,
+            "OIDC",
+            false,
+            &[],
+            false,
+        );
+        assert!(!html.contains("name=\"api_key\""));
     }
 
     #[test]

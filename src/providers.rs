@@ -21,6 +21,102 @@ struct TokenOperation {
     requires_basic: bool,
 }
 
+/// A static-secret OpenAPI `apiKey` security scheme: a declared parameter
+/// name/location, filled in at proxy time from a browser-submitted secret.
+/// There is no scopes concept and nothing to exchange or refresh.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiKeyScheme {
+    pub name: String,
+    pub location: ApiKeyLocation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApiKeyLocation {
+    Header,
+    Query,
+    Cookie,
+}
+
+impl ApiKeyScheme {
+    /// Read API-key capabilities from the composed document, never from platform names.
+    pub fn from_document(document: &Value, selected_scheme: Option<&str>) -> Result<Self, String> {
+        let schemes = document
+            .pointer("/components/securitySchemes")
+            .and_then(Value::as_object)
+            .ok_or("missing security schemes")?;
+        let candidates: Vec<_> = schemes
+            .iter()
+            .filter(|(_, scheme)| scheme.get("type").and_then(Value::as_str) == Some("apiKey"))
+            .collect();
+        let (_, scheme) = match selected_scheme {
+            Some(selected) => candidates
+                .iter()
+                .find(|(name, _)| name.as_str() == selected)
+                .copied()
+                .ok_or("selected API key security scheme is not an apiKey scheme")?,
+            None => match candidates.as_slice() {
+                [candidate] => *candidate,
+                _ => return Err(
+                    "apiKeySecurityScheme selection is required when multiple apiKey schemes exist"
+                        .into(),
+                ),
+            },
+        };
+        let name = scheme
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .ok_or("apiKey scheme must declare a non-empty name")?;
+        let location = match scheme.get("in").and_then(Value::as_str) {
+            Some("header") => ApiKeyLocation::Header,
+            Some("query") => ApiKeyLocation::Query,
+            Some("cookie") => ApiKeyLocation::Cookie,
+            _ => return Err("apiKey scheme must declare a supported 'in' location".into()),
+        };
+        Ok(Self {
+            name: name.to_owned(),
+            location,
+        })
+    }
+}
+
+/// Which kind of credential a catalog platform's composed document declares.
+/// Resolved generically from the document's `securitySchemes`, never from the
+/// platform's name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SecurityScheme {
+    OAuth(Provider),
+    ApiKey(ApiKeyScheme),
+}
+
+impl SecurityScheme {
+    pub fn from_document(
+        document: &Value,
+        oauth_selected: Option<&str>,
+        api_key_selected: Option<&str>,
+    ) -> Result<Self, String> {
+        let schemes = document
+            .pointer("/components/securitySchemes")
+            .and_then(Value::as_object)
+            .ok_or("missing security schemes")?;
+        let types: BTreeSet<&str> = schemes
+            .values()
+            .filter_map(|scheme| scheme.get("type").and_then(Value::as_str))
+            .collect();
+        match (types.contains("oauth2"), types.contains("apiKey")) {
+            (true, false) => Provider::from_document(document, oauth_selected).map(Self::OAuth),
+            (false, true) => {
+                ApiKeyScheme::from_document(document, api_key_selected).map(Self::ApiKey)
+            }
+            (true, true) => Err(
+                "platform declares both oauth2 and apiKey security schemes; mixed-kind catalogs are not supported"
+                    .into(),
+            ),
+            (false, false) => Err("no supported security scheme found".into()),
+        }
+    }
+}
+
 impl Provider {
     pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
         self.scopes = scopes;
@@ -1139,6 +1235,82 @@ mod tests {
             }
         }
         assert!(ClientAuth::parse("unknown").is_err());
+    }
+
+    fn api_key_document() -> Value {
+        serde_json::json!({"components":{"securitySchemes":{"clockifyApiKey":{
+            "type":"apiKey","in":"header","name":"X-Api-Key"}}},
+            "security":[{"clockifyApiKey":[]}],
+            "paths":{"/workspaces":{"get":{}}}})
+    }
+
+    #[test]
+    fn api_key_scheme_reads_declared_name_and_location() {
+        let scheme = ApiKeyScheme::from_document(&api_key_document(), None).unwrap();
+        assert_eq!(scheme.name, "X-Api-Key");
+        assert_eq!(scheme.location, ApiKeyLocation::Header);
+    }
+
+    #[test]
+    fn api_key_scheme_supports_query_and_cookie_locations() {
+        for (location, expected) in [
+            ("query", ApiKeyLocation::Query),
+            ("cookie", ApiKeyLocation::Cookie),
+        ] {
+            let mut doc = api_key_document();
+            doc["components"]["securitySchemes"]["clockifyApiKey"]["in"] = location.into();
+            assert_eq!(
+                ApiKeyScheme::from_document(&doc, None).unwrap().location,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn api_key_scheme_rejects_missing_name_unsupported_location_and_ambiguous_selection() {
+        let mut doc = api_key_document();
+        doc["components"]["securitySchemes"]["clockifyApiKey"]["name"] = "".into();
+        assert!(ApiKeyScheme::from_document(&doc, None).is_err());
+
+        let mut doc = api_key_document();
+        doc["components"]["securitySchemes"]["clockifyApiKey"]["in"] = "body".into();
+        assert!(ApiKeyScheme::from_document(&doc, None).is_err());
+
+        let mut doc = api_key_document();
+        doc["components"]["securitySchemes"]["second"] =
+            doc["components"]["securitySchemes"]["clockifyApiKey"].clone();
+        assert!(ApiKeyScheme::from_document(&doc, None).is_err());
+        assert!(ApiKeyScheme::from_document(&doc, Some("missing")).is_err());
+        assert_eq!(
+            ApiKeyScheme::from_document(&doc, Some("second"))
+                .unwrap()
+                .name,
+            "X-Api-Key"
+        );
+    }
+
+    #[test]
+    fn security_scheme_dispatches_generically_on_declared_type() {
+        assert!(matches!(
+            SecurityScheme::from_document(&document(), None, None).unwrap(),
+            SecurityScheme::OAuth(_)
+        ));
+        assert!(matches!(
+            SecurityScheme::from_document(&api_key_document(), None, None).unwrap(),
+            SecurityScheme::ApiKey(_)
+        ));
+    }
+
+    #[test]
+    fn security_scheme_rejects_mixed_or_absent_scheme_types() {
+        let mut mixed = document();
+        mixed["components"]["securitySchemes"]["clockifyApiKey"] =
+            api_key_document()["components"]["securitySchemes"]["clockifyApiKey"].clone();
+        assert!(SecurityScheme::from_document(&mixed, None, None).is_err());
+
+        let neither = serde_json::json!({"components":{"securitySchemes":{"basic":{
+            "type":"http","scheme":"basic"}}}});
+        assert!(SecurityScheme::from_document(&neither, None, None).is_err());
     }
 
     #[test]

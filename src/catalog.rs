@@ -217,6 +217,28 @@ impl Catalog {
         };
         crate::providers::Provider::from_document(&document, scheme)
     }
+    /// Resolves whichever kind of security scheme (OAuth or static apiKey)
+    /// the platform's composed document declares, generically. Callers that
+    /// only work with one kind (e.g. tenant identity, which is OAuth-only)
+    /// keep using `oauth_provider` directly.
+    pub fn security_scheme(
+        &self,
+        platform: &str,
+    ) -> Result<crate::providers::SecurityScheme, String> {
+        let source = self.get(platform).ok_or("unknown catalog platform")?;
+        let document = serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
+        let selection = self.selections.get(platform);
+        let read_selected = |key: &str| -> Result<Option<&str>, String> {
+            match selection.and_then(|selection| selection.get(key)) {
+                Some(Value::String(scheme)) => Ok(Some(scheme.as_str())),
+                Some(_) => Err(format!("{key} selection must be a string")),
+                None => Ok(None),
+            }
+        };
+        let oauth_scheme = read_selected("oauthSecurityScheme")?;
+        let api_key_scheme = read_selected("apiKeySecurityScheme")?;
+        crate::providers::SecurityScheme::from_document(&document, oauth_scheme, api_key_scheme)
+    }
     /// Returns an explicitly catalog-trusted identity operation. The OpenAPI
     /// extension alone is descriptive and is never sufficient for tenancy.
     pub fn tenant_identity(
