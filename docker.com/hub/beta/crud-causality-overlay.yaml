@@ -1,0 +1,53 @@
+overlay: 1.0.0
+info:
+  title: Docker Hub API CRUD Causality
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      accessToken:
+        schema:
+          $ref: "#/components/schemas/accessToken"
+        identity:
+          urlTemplate: /v2/access-tokens/{uuid}
+          bindings:
+            uuid:
+              field: uuid
+        collections:
+          accessTokens:
+            urlTemplate: /v2/access-tokens
+            envelope:
+              itemsField: results
+- target: "$.paths['/v2/access-tokens'].post"
+  update:
+    x-crud:
+      action: create
+      resource: accessToken
+      url:
+        source: template
+      addedFields:
+        uuid:
+          source: generated
+        token:
+          source: generated
+      memberOf: [accessTokens]
+- target: "$.paths['/v2/access-tokens'].get"
+  update:
+    x-crud:
+      action: list
+      resource: accessToken
+      collection: accessTokens
+- target: "$.paths['/v2/access-tokens/{uuid}'].get"
+  update:
+    x-crud: { action: read, resource: accessToken }
+- target: "$.paths['/v2/access-tokens/{uuid}'].patch"
+  update:
+    x-crud:
+      action: update
+      mode: patch
+      patchFormat: custom
+      resource: accessToken
+- target: "$.paths['/v2/access-tokens/{uuid}'].delete"
+  update:
+    x-crud: { action: delete, resource: accessToken, removesFrom: "*" }

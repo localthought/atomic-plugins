@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: BikeWise API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        request:
+          queryParameters:
+            page:
+              role: page
+            per_page:
+              role: pageSize
+- target: "$.paths['/v2/incidents'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
