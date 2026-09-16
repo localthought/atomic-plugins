@@ -57,9 +57,16 @@ impl FromRef<AppState> for Key {
 }
 
 fn build_http_client() -> reqwest::Client {
-    // GitHub's REST API requires a User-Agent on every request.
+    // GitHub's REST API requires a User-Agent on every request. Redirects are
+    // disabled because only the initial target is validated against the
+    // catalog allowlist; a followed redirect would escape that validation.
+    // A bounded timeout keeps a stalled or slow upstream from holding the
+    // connection (and the caller's request) open indefinitely.
     reqwest::Client::builder()
         .user_agent("LocalThought-integration-proxy")
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("failed to build HTTP client")
 }
@@ -185,6 +192,7 @@ fn browser_cors() -> tower_http::cors::CorsLayer {
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
+        .route("/healthz", get(healthz))
         .route("/logo.png", get(logo))
         .route("/auth/login", get(auth::login))
         .route("/auth/login/:platform", get(api_login::start))
@@ -203,6 +211,19 @@ fn router(state: AppState) -> Router {
         .layer(browser_cors())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Reports whether the database is currently reachable, so an operator or
+/// load balancer can detect a still-recovering connection instead of only
+/// finding out from a failed request.
+async fn healthz(State(state): State<AppState>) -> impl axum::response::IntoResponse {
+    match &state.security {
+        Some(security) if security.is_ready().await => (axum::http::StatusCode::OK, "ok"),
+        _ => (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "database unavailable",
+        ),
+    }
 }
 
 async fn logo() -> impl axum::response::IntoResponse {

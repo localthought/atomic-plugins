@@ -170,7 +170,7 @@ pub fn parse(document: &Value, selection: &Value) -> Result<IdentityOperation, S
     {
         return Err("tenant identity operation must be a fixed GET without parameters".into());
     }
-    if !operation.get("x-authenticated-principal").is_some() {
+    if operation.get("x-authenticated-principal").is_none() {
         return Err("selected identity operation lacks x-authenticated-principal".into());
     }
     // Identity lookup must be an authenticated read. Other methods can create
