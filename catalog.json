@@ -92,6 +92,15 @@
       "selection": {
         "oauthSecurityScheme": "notionOAuth"
       }
+    },
+    {
+      "name": "clockify",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/dc7b2bdb8b9435ce7da15e48ff3955853bcc589c/APIs/clockify.me/1.0.0-readonly/openapi.yaml",
+      "overlays": [
+        "https://raw.githubusercontent.com/localthought/overlays/d810246c82e675d83a2c3e1b65b1399c5f567cef/clockify.me/1.0.0-readonly/auth-overlay.yaml",
+        "https://raw.githubusercontent.com/localthought/overlays/d810246c82e675d83a2c3e1b65b1399c5f567cef/clockify.me/1.0.0-readonly/pagination-overlay.yaml",
+        "https://raw.githubusercontent.com/localthought/overlays/d810246c82e675d83a2c3e1b65b1399c5f567cef/clockify.me/1.0.0-readonly/crud-causality-overlay.yaml"
+      ]
     }
   ]
 }
