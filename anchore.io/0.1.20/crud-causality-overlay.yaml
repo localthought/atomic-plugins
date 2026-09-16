@@ -1,0 +1,64 @@
+overlay: 1.0.0
+info:
+  title: Anchore Engine API CRUD Causality
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      account:
+        schema:
+          $ref: "#/components/schemas/Account"
+        identity:
+          urlTemplate: /accounts/{accountname}
+          bindings:
+            accountname:
+              field: name
+        collections:
+          accounts:
+            urlTemplate: /accounts
+      user:
+        schema:
+          $ref: "#/components/schemas/User"
+        identity:
+          urlTemplate: /accounts/{accountname}/users/{username}
+          bindings:
+            username:
+              field: username
+        collections:
+          users:
+            urlTemplate: /accounts/{accountname}/users
+- target: "$.paths['/accounts'].post"
+  update:
+    x-crud:
+      action: create
+      resource: account
+      url:
+        source: template
+      memberOf: [accounts]
+- target: "$.paths['/accounts'].get"
+  update:
+    x-crud: { action: list, resource: account, collection: accounts }
+- target: "$.paths['/accounts/{accountname}'].get"
+  update:
+    x-crud: { action: read, resource: account }
+- target: "$.paths['/accounts/{accountname}'].delete"
+  update:
+    x-crud: { action: delete, resource: account, removesFrom: "*" }
+- target: "$.paths['/accounts/{accountname}/users'].post"
+  update:
+    x-crud:
+      action: create
+      resource: user
+      url:
+        source: template
+      memberOf: [users]
+- target: "$.paths['/accounts/{accountname}/users'].get"
+  update:
+    x-crud: { action: list, resource: user, collection: users }
+- target: "$.paths['/accounts/{accountname}/users/{username}'].get"
+  update:
+    x-crud: { action: read, resource: user }
+- target: "$.paths['/accounts/{accountname}/users/{username}'].delete"
+  update:
+    x-crud: { action: delete, resource: user, removesFrom: "*" }

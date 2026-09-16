@@ -1,0 +1,84 @@
+overlay: 1.0.0
+info:
+  title: Adafruit IO CRUD Causality
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      dashboard:
+        schema:
+          $ref: "#/definitions/Dashboard"
+        identity:
+          urlTemplate: /{username}/dashboards/{id}
+          bindings:
+            id:
+              field: key
+        collections:
+          dashboards:
+            urlTemplate: /{username}/dashboards
+      feed:
+        schema:
+          $ref: "#/definitions/Feed"
+        identity:
+          urlTemplate: /{username}/feeds/{feed_key}
+          bindings:
+            feed_key:
+              field: key
+        collections:
+          feeds:
+            urlTemplate: /{username}/feeds
+- target: "$.paths['/{username}/dashboards'].post"
+  update:
+    x-crud:
+      action: create
+      resource: dashboard
+      url:
+        source: template
+      memberOf: [dashboards]
+- target: "$.paths['/{username}/dashboards'].get"
+  update:
+    x-crud: { action: list, resource: dashboard, collection: dashboards }
+- target: "$.paths['/{username}/dashboards/{id}'].get"
+  update:
+    x-crud: { action: read, resource: dashboard }
+- target: "$.paths['/{username}/dashboards/{id}'].put"
+  update:
+    x-crud: { action: update, mode: replace, resource: dashboard }
+- target: "$.paths['/{username}/dashboards/{id}'].patch"
+  update:
+    x-crud:
+      action: update
+      mode: patch
+      patchFormat: jsonMergePatch
+      resource: dashboard
+- target: "$.paths['/{username}/dashboards/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: dashboard, removesFrom: "*" }
+- target: "$.paths['/{username}/feeds'].post"
+  update:
+    x-crud:
+      action: create
+      resource: feed
+      url:
+        source: template
+      memberOf: [feeds]
+- target: "$.paths['/{username}/feeds'].get"
+  update:
+    x-crud: { action: list, resource: feed, collection: feeds }
+- target: "$.paths['/{username}/feeds/{feed_key}'].get"
+  update:
+    x-crud: { action: read, resource: feed }
+- target: "$.paths['/{username}/feeds/{feed_key}'].put"
+  update:
+    x-crud: { action: update, mode: replace, resource: feed }
+- target: "$.paths['/{username}/feeds/{feed_key}'].patch"
+  update:
+    x-crud:
+      action: update
+      mode: patch
+      patchFormat: jsonMergePatch
+      resource: feed
+- target: "$.paths['/{username}/feeds/{feed_key}'].delete"
+  update:
+    x-crud: { action: delete, resource: feed, removesFrom: "*" }
