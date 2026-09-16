@@ -1,0 +1,139 @@
+overlay: 1.0.0
+info:
+  title: Api2Cart API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Offset-based pagination. Cannot be combined with page_cursor
+          on the same request.
+        request:
+          queryParameters:
+            start:
+              role: offset
+            count:
+              role: pageSize
+      cursor:
+        type: pageToken
+        description: >-
+          Cursor-based pagination, mutually exclusive with start/count
+          on the same request. The response's pagination.next field
+          carries the cursor value to pass back as page_cursor.
+        request:
+          queryParameters:
+            page_cursor:
+              role: pageToken
+        response:
+          bodyFields:
+            pagination.next:
+              role: nextPageToken
+      cursorRequestOnly:
+        type: pageToken
+        description: >-
+          Same as cursor, but this endpoint's response schema doesn't
+          model a pagination envelope.
+        request:
+          queryParameters:
+            page_cursor:
+              role: pageToken
+- target: "$.paths['/cart.catalog_price_rules.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/cart.coupon.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/cart.giftcard.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/cart.script.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/category.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/customer.group.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/customer.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/order.abandoned.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/order.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/order.shipment.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/product.attribute.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/product.child_item.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/product.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursor
+- target: "$.paths['/cart.meta_data.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/customer.attribute.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/order.transaction.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/customer.wishlist.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursorRequestOnly
+- target: "$.paths['/product.currency.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursorRequestOnly
+- target: "$.paths['/product.review.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursorRequestOnly
+- target: "$.paths['/subscriber.list.json'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+    - scheme: cursorRequestOnly

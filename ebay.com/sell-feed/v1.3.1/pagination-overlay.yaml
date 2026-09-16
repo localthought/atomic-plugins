@@ -1,0 +1,52 @@
+overlay: 1.0.0
+info:
+  title: eBay Sell Feed API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          eBay's standard offset/limit pagination. The response echoes
+          limit/offset, reports the total match count, and includes a
+          next-page URI when further results are available.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+            next:
+              role: nextLink
+            limit:
+              role: pageSize
+- target: "$.paths['/customer_service_metric_task'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/inventory_task'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/order_task'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/schedule'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/schedule_template'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/task'].get"
+  update:
+    x-pagination:
+    - scheme: offset
