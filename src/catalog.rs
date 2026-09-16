@@ -347,6 +347,28 @@ impl Catalog {
         };
         crate::providers::Provider::from_document(&document, scheme)
     }
+    /// Resolves whichever kind of security scheme (OAuth or static apiKey)
+    /// the platform's composed document declares, generically. Callers that
+    /// only work with one kind (e.g. tenant identity, which is OAuth-only)
+    /// keep using `oauth_provider` directly.
+    pub fn security_scheme(
+        &self,
+        platform: &str,
+    ) -> Result<crate::providers::SecurityScheme, String> {
+        let source = self.get(platform).ok_or("unknown catalog platform")?;
+        let document = serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
+        let selection = self.selections.get(platform);
+        let read_selected = |key: &str| -> Result<Option<&str>, String> {
+            match selection.and_then(|selection| selection.get(key)) {
+                Some(Value::String(scheme)) => Ok(Some(scheme.as_str())),
+                Some(_) => Err(format!("{key} selection must be a string")),
+                None => Ok(None),
+            }
+        };
+        let oauth_scheme = read_selected("oauthSecurityScheme")?;
+        let api_key_scheme = read_selected("apiKeySecurityScheme")?;
+        crate::providers::SecurityScheme::from_document(&document, oauth_scheme, api_key_scheme)
+    }
     /// Returns an explicitly catalog-trusted identity operation. The OpenAPI
     /// extension alone is descriptive and is never sufficient for tenancy.
     pub fn tenant_identity(
@@ -657,6 +679,45 @@ mod tests {
         assert!(headers(&doc).is_none());
         doc["paths"]["/items"]["get"]["parameters"][1]["schema"]["default"] = json!("one");
         assert_eq!(headers(&doc).unwrap().len(), 2);
+    }
+
+    /// Composed the same way `Catalog::load` composes any platform: the base
+    /// OAD plus each overlay's actions applied in order. Captured as a
+    /// checked-in fixture rather than fetched live, matching this file's
+    /// existing pinned-fixture tests; move to the network-backed
+    /// `identity_catalog_tests.rs` pattern (a real `Catalog::load` against
+    /// the now-published `localthought/overlays` clockify entry) if that
+    /// coverage is wanted later.
+    #[test]
+    fn composed_clockify_fixture_declares_an_api_key_scheme_and_pagination() {
+        let document: Value =
+            serde_yaml::from_str(include_str!("../tests/fixtures/clockify-composed.yaml")).unwrap();
+        let catalog = Catalog::from_test_document("clockify", document, serde_json::json!({}));
+        let scheme = catalog.security_scheme("clockify").unwrap();
+        match scheme {
+            crate::providers::SecurityScheme::ApiKey(scheme) => {
+                assert_eq!(scheme.name, "X-Api-Key");
+                assert_eq!(scheme.location, crate::providers::ApiKeyLocation::Header);
+            }
+            crate::providers::SecurityScheme::OAuth(_) => panic!("expected an apiKey scheme"),
+        }
+        assert!(catalog
+            .allows(
+                "clockify",
+                "GET",
+                "/api/v1/workspaces/ws1/user/u1/time-entries"
+            )
+            .is_some());
+        assert_eq!(
+            catalog
+                .required_headers(
+                    "clockify",
+                    "GET",
+                    "/api/v1/workspaces/ws1/user/u1/time-entries"
+                )
+                .unwrap(),
+            Vec::<(String, String)>::new()
+        );
     }
 
     #[test]

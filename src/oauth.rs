@@ -11,7 +11,7 @@ use axum::{
 use axum_extra::extract::PrivateCookieJar;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use url::Url;
 
@@ -40,16 +40,6 @@ struct Token {
     #[serde(default)]
     expires_in: Option<u64>,
 }
-#[derive(Serialize)]
-struct Credential {
-    provider: String,
-    tenant_id: String,
-    user_id: String,
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_at: Option<u64>,
-}
-
 fn random() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -410,7 +400,7 @@ async fn callback_response(
         }
         None => (tenant_id_from_state.clone(), jar),
     };
-    let credential = Credential {
+    let credential = crate::proxy::StoredCredential::OAuth {
         provider: name.clone(),
         tenant_id: tenant_id.clone(),
         user_id: user_id.clone(),
@@ -444,17 +434,7 @@ async fn callback_response(
             code
         }
     };
-    let Ok(mut redirect) = Url::parse(&redirect_uri) else {
-        return error();
-    };
-    redirect
-        .query_pairs_mut()
-        .append_pair("connection_code", &code);
-    (
-        crate::connect::clear_provider_cookie(jar),
-        Redirect::to(redirect.as_str()),
-    )
-        .into_response()
+    crate::connect::finish_with_connection_code(jar, &redirect_uri, &code)
 }
 
 #[cfg(test)]

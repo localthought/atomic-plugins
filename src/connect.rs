@@ -218,8 +218,15 @@ pub async fn page(
         Ok(target) => target,
         Err(message) => return error(message),
     };
-    if !state.catalog.names().contains(&request.platform)
-        || Provider::configured(&state.catalog, &request.platform).is_err()
+    if !state.catalog.names().contains(&request.platform) {
+        return error("This platform is not available for connection");
+    }
+    let scheme = match state.catalog.security_scheme(&request.platform) {
+        Ok(scheme) => scheme,
+        Err(_) => return error("This platform is not available for connection"),
+    };
+    if matches!(scheme, crate::providers::SecurityScheme::OAuth(_))
+        && Provider::configured(&state.catalog, &request.platform).is_err()
     {
         return error("This platform is not available for connection");
     }
@@ -260,6 +267,7 @@ pub async fn page(
                 .unwrap_or(&state.app_auth_label),
             bootstrap_identity,
             &api_login_platforms,
+            matches!(scheme, crate::providers::SecurityScheme::ApiKey(_)),
         )),
     ));
     // Keep the consent form's same-origin POST attributable while sending no
@@ -268,20 +276,32 @@ pub async fn page(
         .headers_mut()
         .insert(header::REFERRER_POLICY, "same-origin".parse().unwrap());
     // Chrome applies form-action to redirects too, including an already-authorized
-    // provider returning straight through its callback to the hub.
-    let provider = state.catalog.oauth_provider(&request.platform).unwrap();
-    let provider_origin = Url::parse(&provider.authorization_url)
-        .unwrap()
-        .origin()
-        .ascii_serialization();
-    let policy = format!(
-        "{}; form-action 'self' {} {}",
-        response.headers()["content-security-policy"]
-            .to_str()
-            .unwrap(),
-        provider_origin,
-        target.origin().ascii_serialization()
-    );
+    // provider returning straight through its callback to the hub. An apiKey
+    // platform never redirects to a third party, so only the caller's own
+    // redirect_uri origin needs allowing.
+    let policy = match &scheme {
+        crate::providers::SecurityScheme::OAuth(provider) => {
+            let provider_origin = Url::parse(&provider.authorization_url)
+                .unwrap()
+                .origin()
+                .ascii_serialization();
+            format!(
+                "{}; form-action 'self' {} {}",
+                response.headers()["content-security-policy"]
+                    .to_str()
+                    .unwrap(),
+                provider_origin,
+                target.origin().ascii_serialization()
+            )
+        }
+        crate::providers::SecurityScheme::ApiKey(_) => format!(
+            "{}; form-action 'self' {}",
+            response.headers()["content-security-policy"]
+                .to_str()
+                .unwrap(),
+            target.origin().ascii_serialization()
+        ),
+    };
     response
         .headers_mut()
         .insert("content-security-policy", policy.parse().unwrap());
@@ -291,6 +311,8 @@ pub async fn page(
 #[derive(Deserialize)]
 pub struct Approval {
     csrf: String,
+    #[serde(default)]
+    api_key: Option<String>,
 }
 
 pub async fn authorize(
@@ -341,6 +363,54 @@ pub async fn authorize(
         )
     {
         return error("Connection approval expired or already used");
+    }
+    // Only an OAuth platform redirects to a third party from here; an apiKey
+    // platform already has everything it needs (the submitted key) and
+    // completes the handoff directly, generically, without ever involving
+    // `oauth::begin`/`oauth::callback`.
+    match state.catalog.security_scheme(&consent.request.platform) {
+        Ok(crate::providers::SecurityScheme::ApiKey(_)) => {
+            let Some(tenant_id) = user.as_ref().map(|user| user.subject.clone()) else {
+                return error(
+                    "This platform cannot establish a tenant identity; log in before connecting",
+                );
+            };
+            let Some(key) = approval
+                .api_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|key| (4..=512).contains(&key.len()))
+            else {
+                return error("Enter a valid API key");
+            };
+            let credential = crate::proxy::StoredCredential::ApiKey {
+                provider: consent.request.platform.clone(),
+                tenant_id: tenant_id.clone(),
+                user_id: consent.request.user_id.clone(),
+                key: key.to_owned(),
+            };
+            let Ok(envelope) = security.seal(
+                &serde_json::to_vec(&credential).unwrap(),
+                b"connection-credential-v1",
+            ) else {
+                return error("Could not complete connection");
+            };
+            let context = OAuthContext {
+                request: consent.request.clone(),
+                binding: random(),
+                mode: BootstrapMode::ExistingTenant {
+                    tenant_id: tenant_id.clone(),
+                },
+            };
+            let redirect_uri = context.request.redirect_uri.clone();
+            let code = match handoff(security, &context, &tenant_id, &envelope).await {
+                Ok(code) => code,
+                Err(()) => return error("Could not complete connection"),
+            };
+            return finish_with_connection_code(clear_consent(jar), &redirect_uri, &code);
+        }
+        Ok(crate::providers::SecurityScheme::OAuth(_)) => {}
+        Err(_) => return error("This platform is not available for connection"),
     }
     let context = OAuthContext {
         request: consent.request.clone(),
@@ -396,6 +466,24 @@ pub fn oauth_context(
 
 pub fn clear_provider_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
     jar.remove(Cookie::build(PROVIDER_COOKIE).path("/").build())
+}
+
+/// Redirects the browser back to `redirect_uri` with a rotating handoff
+/// `connection_code` appended. Shared by the OAuth callback and the apiKey
+/// `authorize` branch below; clearing the OAuth provider-binding cookie is a
+/// no-op for a flow (like apiKey) that never set it.
+pub(crate) fn finish_with_connection_code(
+    jar: PrivateCookieJar,
+    redirect_uri: &str,
+    code: &str,
+) -> Response {
+    let Ok(mut redirect) = Url::parse(redirect_uri) else {
+        return error("Could not complete connection");
+    };
+    redirect
+        .query_pairs_mut()
+        .append_pair("connection_code", code);
+    (clear_provider_cookie(jar), Redirect::to(redirect.as_str())).into_response()
 }
 
 pub async fn handoff(
@@ -621,6 +709,7 @@ mod tests {
             HeaderMap::new(),
             Form(Approval {
                 csrf: consent.csrf.clone(),
+                api_key: None,
             }),
         )
         .await;
@@ -1089,6 +1178,7 @@ mod tests {
             HeaderMap::new(),
             Form(Approval {
                 csrf: "wrong".into(),
+                api_key: None,
             }),
         )
         .await;
@@ -1108,6 +1198,7 @@ mod tests {
             HeaderMap::new(),
             Form(Approval {
                 csrf: "valid".into(),
+                api_key: None,
             }),
         )
         .await;
@@ -1115,6 +1206,172 @@ mod tests {
             .await
             .unwrap();
         assert!(String::from_utf8_lossy(&body).contains("cannot establish a tenant identity"));
+    }
+
+    fn api_key_catalog() -> crate::catalog::Catalog {
+        crate::catalog::Catalog::from_test_document(
+            "clockify",
+            serde_json::json!({
+                "servers": [{"url": "https://api.clockify.me/v1"}],
+                "components": {"securitySchemes": {"clockifyApiKey": {
+                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
+                }}},
+                "security": [{"clockifyApiKey": []}],
+                "paths": {"/workspaces": {"get": {}}}
+            }),
+            serde_json::json!({}),
+        )
+    }
+
+    fn api_key_request() -> Request {
+        Request {
+            platform: "clockify".into(),
+            redirect_uri:
+                "https://hub.example/app/integrations?integration_state=state&platform=clockify"
+                    .into(),
+            user_id: "did:ad:agent:test".into(),
+            code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(),
+            code_challenge_method: "S256".into(),
+            credentials: Credentials::Connection,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_api_key_authorize_seals_the_submitted_key_without_a_provider_redirect() {
+        let db = std::env::var("TEST_DATABASE_URL")
+            .expect("set TEST_DATABASE_URL to an isolated test database");
+        let security =
+            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
+                .await
+                .unwrap();
+        let mut s = state(Some(security.clone()));
+        s.catalog = api_key_catalog();
+        let user = session::SessionUser::new(
+            "fixture-clockify-tenant".into(),
+            "fixture@example.com".into(),
+            "Fixture".into(),
+            None,
+        );
+        let session_jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user);
+
+        // A wrong CSRF is rejected before the nonce (and thus the key) is ever consulted.
+        let consent_a = Consent {
+            request: api_key_request(),
+            csrf: random(),
+            expires: crate::proxy::now_unix() + 600,
+        };
+        let jar_a = session_jar.clone().add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent_a).unwrap(),
+        ));
+        assert_eq!(
+            authorize(
+                State(s.clone()),
+                jar_a.clone(),
+                HeaderMap::new(),
+                Form(Approval {
+                    csrf: "wrong".into(),
+                    api_key: Some("clockify-secret".into()),
+                })
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+
+        // A correct CSRF with a blank key is rejected (and burns that consent's nonce).
+        let blank_key_result = authorize(
+            State(s.clone()),
+            jar_a.clone(),
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent_a.csrf.clone(),
+                api_key: Some("   ".into()),
+            }),
+        )
+        .await;
+        assert_eq!(blank_key_result.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(blank_key_result.into_body(), 16384)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("valid API key"));
+
+        // A fresh consent, correct CSRF and a real key completes without ever
+        // touching `oauth::begin`/`oauth::callback` or a provider redirect.
+        let consent_b = Consent {
+            request: api_key_request(),
+            csrf: random(),
+            expires: crate::proxy::now_unix() + 600,
+        };
+        let jar_b = session_jar.add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent_b).unwrap(),
+        ));
+        let response = authorize(
+            State(s.clone()),
+            jar_b,
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent_b.csrf.clone(),
+                api_key: Some("clockify-secret".into()),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let location = response.headers()[header::LOCATION].to_str().unwrap();
+        assert!(location.starts_with(
+            "https://hub.example/app/integrations?integration_state=state&platform=clockify"
+        ));
+        let redirect = Url::parse(location).unwrap();
+        let handoff_code = redirect
+            .query_pairs()
+            .find(|(name, _)| name == "connection_code")
+            .map(|(_, value)| value.into_owned())
+            .unwrap();
+
+        let redeemed = redeem(
+            State(s.clone()),
+            Json(Redemption {
+                code: handoff_code,
+                code_verifier: "a".repeat(43),
+            }),
+        )
+        .await;
+        assert_eq!(redeemed.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(redeemed.into_body(), 16384)
+            .await
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&body).contains("clockify-secret"));
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["platform"], "clockify");
+        let connection_code = body["connection_code"].as_str().unwrap();
+        let envelope = security
+            .take_connection_code(connection_code)
+            .await
+            .unwrap()
+            .unwrap();
+        let plaintext = security
+            .open(&envelope, b"connection-credential-v1")
+            .unwrap();
+        let credential: crate::proxy::StoredCredential =
+            serde_json::from_slice(&plaintext).unwrap();
+        match credential {
+            crate::proxy::StoredCredential::ApiKey {
+                provider,
+                tenant_id,
+                user_id,
+                key,
+            } => {
+                assert_eq!(provider, "clockify");
+                assert_eq!(tenant_id, "fixture-clockify-tenant");
+                assert_eq!(user_id, "did:ad:agent:test");
+                assert_eq!(key, "clockify-secret");
+            }
+            crate::proxy::StoredCredential::OAuth { .. } => {
+                panic!("expected an apiKey credential")
+            }
+        }
     }
 
     #[tokio::test]
@@ -1335,7 +1592,8 @@ mod tests {
                 jar.clone(),
                 HeaderMap::new(),
                 Form(Approval {
-                    csrf: "wrong".into()
+                    csrf: "wrong".into(),
+                    api_key: None,
                 })
             )
             .await
@@ -1350,7 +1608,8 @@ mod tests {
                 jar.clone(),
                 foreign,
                 Form(Approval {
-                    csrf: consent.csrf.clone()
+                    csrf: consent.csrf.clone(),
+                    api_key: None,
                 })
             )
             .await
@@ -1365,7 +1624,8 @@ mod tests {
                 jar.clone(),
                 opaque,
                 Form(Approval {
-                    csrf: consent.csrf.clone()
+                    csrf: consent.csrf.clone(),
+                    api_key: None,
                 })
             )
             .await
@@ -1378,6 +1638,7 @@ mod tests {
             HeaderMap::new(),
             Form(Approval {
                 csrf: consent.csrf.clone(),
+                api_key: None,
             }),
         )
         .await;
@@ -1472,7 +1733,8 @@ mod tests {
                 jar,
                 HeaderMap::new(),
                 Form(Approval {
-                    csrf: consent.csrf.clone()
+                    csrf: consent.csrf.clone(),
+                    api_key: None,
                 })
             )
             .await
@@ -1489,7 +1751,10 @@ mod tests {
                 State(s),
                 jar,
                 HeaderMap::new(),
-                Form(Approval { csrf: consent.csrf })
+                Form(Approval {
+                    csrf: consent.csrf,
+                    api_key: None
+                })
             )
             .await
             .status(),

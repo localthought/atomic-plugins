@@ -222,14 +222,46 @@ pub async fn proxy(State(state): State<AppState>, headers: HeaderMap) -> Respons
     }
 }
 
+/// The credential sealed into a connection code, opaque to the
+/// PKCE/handoff/rotation machinery and only interpreted here and where it's
+/// minted (`oauth.rs`'s callback, `connect.rs`'s apiKey `authorize` branch).
 #[derive(Deserialize, Serialize)]
-struct Credential {
-    provider: String,
-    tenant_id: String,
-    user_id: String,
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_at: Option<u64>,
+#[serde(tag = "kind")]
+pub(crate) enum StoredCredential {
+    #[serde(rename = "oauth")]
+    OAuth {
+        provider: String,
+        tenant_id: String,
+        user_id: String,
+        access_token: String,
+        refresh_token: Option<String>,
+        expires_at: Option<u64>,
+    },
+    #[serde(rename = "api_key")]
+    ApiKey {
+        provider: String,
+        tenant_id: String,
+        user_id: String,
+        key: String,
+    },
+}
+
+impl StoredCredential {
+    fn provider(&self) -> &str {
+        match self {
+            Self::OAuth { provider, .. } | Self::ApiKey { provider, .. } => provider,
+        }
+    }
+    fn tenant_id(&self) -> &str {
+        match self {
+            Self::OAuth { tenant_id, .. } | Self::ApiKey { tenant_id, .. } => tenant_id,
+        }
+    }
+    fn user_id(&self) -> &str {
+        match self {
+            Self::OAuth { user_id, .. } | Self::ApiKey { user_id, .. } => user_id,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -241,30 +273,38 @@ struct RefreshToken {
     expires_in: Option<u64>,
 }
 
-async fn refresh_if_needed(state: &AppState, credential: &mut Credential) -> Result<(), ()> {
-    if credential
-        .expires_at
-        .is_none_or(|expires| expires > now() + 30)
-    {
+async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) -> Result<(), ()> {
+    let StoredCredential::OAuth {
+        provider,
+        access_token,
+        refresh_token,
+        expires_at,
+        ..
+    } = credential
+    else {
+        // A static API key has nothing to refresh.
+        return Ok(());
+    };
+    if expires_at.is_none_or(|expires| expires > now() + 30) {
         return Ok(());
     }
-    let refresh_token = credential.refresh_token.as_deref().ok_or(())?;
-    let provider = crate::providers::Provider::configured(&state.catalog, &credential.provider)
-        .map_err(|_| ())?;
+    let refresh_token_value = refresh_token.as_deref().ok_or(())?;
+    let configured =
+        crate::providers::Provider::configured(&state.catalog, provider).map_err(|_| ())?;
     #[cfg(test)]
-    let provider = {
-        let mut provider = provider;
+    let configured = {
+        let mut configured = configured;
         if let Some(upstream) = &state.test_upstream {
-            provider.provider.token_url = format!("{}/token", upstream.trim_end_matches('/'));
+            configured.provider.token_url = format!("{}/token", upstream.trim_end_matches('/'));
         }
-        provider
+        configured
     };
-    let response = provider
+    let response = configured
         .token_request(
             &state.http_client,
             &[
                 ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
+                ("refresh_token", refresh_token_value),
             ],
         )
         .send()
@@ -273,12 +313,21 @@ async fn refresh_if_needed(state: &AppState, credential: &mut Credential) -> Res
         .error_for_status()
         .map_err(|_| ())?;
     let token = response.json::<RefreshToken>().await.map_err(|_| ())?;
-    credential.access_token = token.access_token;
+    *access_token = token.access_token;
     if token.refresh_token.is_some() {
-        credential.refresh_token = token.refresh_token;
+        *refresh_token = token.refresh_token;
     }
-    credential.expires_at = token.expires_in.map(|seconds| now() + seconds);
+    *expires_at = token.expires_in.map(|seconds| now() + seconds);
     Ok(())
+}
+
+/// How to attach a resolved credential to the outbound upstream request.
+/// `None` covers query-located API keys, already appended to the target URL
+/// before the request is built.
+enum CredentialInjection {
+    Bearer(String),
+    Header { name: String, value: String },
+    None,
 }
 
 pub async fn forward(
@@ -331,11 +380,11 @@ pub async fn forward(
     let Some(plaintext) = security.open(&envelope, b"connection-credential-v1") else {
         return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
     };
-    let Ok(mut credential) = serde_json::from_slice::<Credential>(&plaintext) else {
+    let Ok(mut credential) = serde_json::from_slice::<StoredCredential>(&plaintext) else {
         return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
     };
-    if credential.provider != platform
-        || security.is_revoked(&credential.tenant_id, &credential.user_id)
+    if credential.provider() != platform
+        || security.is_revoked(credential.tenant_id(), credential.user_id())
     {
         return (StatusCode::FORBIDDEN, "credential is not permitted").into_response();
     }
@@ -377,11 +426,40 @@ pub async fn forward(
     }
     target.set_path(&request_path);
     target.set_query(query.as_deref());
+    let injection = match &credential {
+        StoredCredential::OAuth { access_token, .. } => {
+            CredentialInjection::Bearer(access_token.clone())
+        }
+        StoredCredential::ApiKey { key, .. } => {
+            let Ok(crate::providers::SecurityScheme::ApiKey(scheme)) =
+                state.catalog.security_scheme(platform)
+            else {
+                return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
+            };
+            match scheme.location {
+                crate::providers::ApiKeyLocation::Header => CredentialInjection::Header {
+                    name: scheme.name,
+                    value: key.clone(),
+                },
+                crate::providers::ApiKeyLocation::Query => {
+                    target.query_pairs_mut().append_pair(&scheme.name, key);
+                    CredentialInjection::None
+                }
+                crate::providers::ApiKeyLocation::Cookie => {
+                    return (
+                        StatusCode::NOT_IMPLEMENTED,
+                        "cookie-located API keys are not supported",
+                    )
+                        .into_response();
+                }
+            }
+        }
+    };
     let upstream = match upstream_request(
         &state.http_client,
         method.clone(),
         target.clone(),
-        &credential.access_token,
+        injection,
         &headers,
         &required_headers,
         body,
@@ -490,12 +568,17 @@ fn upstream_request(
     client: &reqwest::Client,
     method: axum::http::Method,
     target: Url,
-    access_token: &str,
+    injection: CredentialInjection,
     headers: &HeaderMap,
     required_headers: &[(String, String)],
     body: Bytes,
 ) -> reqwest::RequestBuilder {
-    let mut request = client.request(method, target).bearer_auth(access_token);
+    let mut request = client.request(method, target);
+    request = match injection {
+        CredentialInjection::Bearer(token) => request.bearer_auth(token),
+        CredentialInjection::Header { name, value } => request.header(name, value),
+        CredentialInjection::None => request,
+    };
     if let Some(content_type) = headers.get(header::CONTENT_TYPE) {
         request = request.header(header::CONTENT_TYPE, content_type);
     }
@@ -611,7 +694,7 @@ mod tests {
                 &client,
                 axum::http::Method::POST,
                 Url::parse(&format!("http://{address}/repos/owner/repo/issues?state=all&page=2&per_page=1&labels=a%2Cb")).unwrap(),
-                "test-provider-token",
+                CredentialInjection::Bearer("test-provider-token".to_string()),
                 &headers,
                 &[],
                 Bytes::from_static(b"{}"),
@@ -634,6 +717,148 @@ mod tests {
             assert_eq!(response["body"], "{}");
             assert_eq!(response["if_match"], "\"event-version\"");
         }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn api_key_credentials_are_sent_as_the_declared_header_not_bearer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/workspaces",
+            axum::routing::get(
+                |headers: HeaderMap| async move {
+                    Json(json!({
+                        "authorization": headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()),
+                        "x_api_key": headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+                    }))
+                },
+            ),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = crate::build_http_client();
+        let response = upstream_request(
+            &client,
+            axum::http::Method::GET,
+            Url::parse(&format!("http://{address}/workspaces")).unwrap(),
+            CredentialInjection::Header {
+                name: "X-Api-Key".to_string(),
+                value: "clockify-secret".to_string(),
+            },
+            &HeaderMap::new(),
+            &[],
+            Bytes::new(),
+        )
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+        assert_eq!(response["authorization"], serde_json::Value::Null);
+        assert_eq!(response["x_api_key"], "clockify-secret");
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_forward_injects_the_declared_api_key_header_and_rotates_the_code() {
+        let db = std::env::var("TEST_DATABASE_URL")
+            .expect("set TEST_DATABASE_URL to an isolated test database");
+        let security = crate::security::Security::connect(
+            &db,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/workspaces",
+            axum::routing::get(|headers: HeaderMap| async move {
+                Json(json!({
+                    "authorization": headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()),
+                    "x_api_key": headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+                }))
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut s = test_state("fixture-server-secret");
+        s.security = Some(security.clone());
+        s.catalog = crate::catalog::Catalog::from_test_document(
+            "clockify",
+            serde_json::json!({
+                "servers": [{"url": format!("http://{address}")}],
+                "components": {"securitySchemes": {"clockifyApiKey": {
+                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
+                }}},
+                "security": [{"clockifyApiKey": []}],
+                "paths": {"/workspaces": {"get": {}}}
+            }),
+            serde_json::json!({}),
+        );
+
+        let credential = StoredCredential::ApiKey {
+            provider: "clockify".into(),
+            tenant_id: "tenant".into(),
+            user_id: "did:ad:agent:test".into(),
+            key: "clockify-secret".into(),
+        };
+        let envelope = security
+            .seal(
+                &serde_json::to_vec(&credential).unwrap(),
+                b"connection-credential-v1",
+            )
+            .unwrap();
+        let code = "test-connection-code".to_string();
+        security
+            .store_connection_code(&code, &envelope)
+            .await
+            .unwrap();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {code}")).unwrap(),
+        );
+        let response = forward(
+            Path("clockify/workspaces".to_string()),
+            RawQuery(None),
+            State(s),
+            axum::http::Method::GET,
+            headers,
+            Bytes::new(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let new_code = response.headers()["x-connection-code"]
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_ne!(new_code, code);
+        let body = axum::body::to_bytes(response.into_body(), 16384)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["x_api_key"], "clockify-secret");
+        assert_eq!(body["authorization"], serde_json::Value::Null);
+
+        // The redeemed code is single-use; only the rotated code now works.
+        assert!(security
+            .take_connection_code(&code)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(security
+            .take_connection_code(&new_code)
+            .await
+            .unwrap()
+            .is_some());
         server.abort();
     }
 
@@ -813,7 +1038,7 @@ mod tests {
         state.security = Some(security.clone());
         state.test_upstream = Some(upstream_url);
 
-        let credential = Credential {
+        let credential = StoredCredential::OAuth {
             provider: "github-issues".into(),
             tenant_id: "tenant".into(),
             user_id: "user".into(),
@@ -880,8 +1105,13 @@ mod tests {
         let plaintext = security
             .open(&rotated_envelope, b"connection-credential-v1")
             .unwrap();
-        let rotated: Credential = serde_json::from_slice(&plaintext).unwrap();
-        assert_eq!(rotated.access_token, "refreshed-token");
+        let rotated: StoredCredential = serde_json::from_slice(&plaintext).unwrap();
+        match rotated {
+            StoredCredential::OAuth { access_token, .. } => {
+                assert_eq!(access_token, "refreshed-token");
+            }
+            StoredCredential::ApiKey { .. } => panic!("expected an OAuth credential"),
+        }
 
         server.abort();
     }
