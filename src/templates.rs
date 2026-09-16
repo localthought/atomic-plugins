@@ -59,7 +59,7 @@ pub fn render_platform_connect(
             <div class="card">
               <h1>Connect {platform}</h1>
               <p>Continue with your {platform} account to establish your LocalThought identity and connect {platform} to this hub.</p>
-              <p>Target Atomic Data Hub: <span class="email">{target_origin}</span></p>
+              <p>Destination: <span class="email">{target_origin}</span></p>
               {tenant_consent}
               <form method="post" action="/connect/authorize">
                 <input type="hidden" name="csrf" value="{csrf}" />
@@ -97,11 +97,11 @@ pub fn render_platform_connect(
                 <div class="card">
                   <h1>Connect {platform}</h1>
                   <p>You are logged in with {auth_label}{identity}</p>
-                  <p>Target Atomic Data Hub: <span class="email">{target_origin}</span></p>
+                  <p>Destination: <span class="email">{target_origin}</span></p>
                   {tenant_consent}
                   <form method="post" action="/connect/authorize">
                     <input type="hidden" name="csrf" value="{csrf}" />
-                    <button class="button" type="submit">Use LocalThought to sync {platform} with your Atomic Data Hub</button>
+                    <button class="button" type="submit">Use LocalThought to sync {platform} with this destination</button>
                   </form>
                 </div>
                 "#,
@@ -358,7 +358,7 @@ mod tests {
             &[],
         );
         assert!(html.contains("Google Calendar"));
-        assert!(html.contains("Use LocalThought to sync Google Calendar with your Atomic Data Hub"));
+        assert!(html.contains("Use LocalThought to sync Google Calendar with this destination"));
         assert_eq!(html.matches(r#"action="/connect/authorize""#).count(), 1);
         assert!(html.contains("name=\"csrf\" value=\"csrf&amp;&lt;&quot;\""));
         assert!(!html.contains("<script>"));
@@ -378,7 +378,7 @@ mod tests {
             true,
             &[],
         );
-        assert!(html.contains("Target Atomic Data Hub"));
+        assert!(html.contains("Destination:"));
         assert!(html.contains("account credential"));
         assert!(html.contains("Continue with Github Issues"));
     }

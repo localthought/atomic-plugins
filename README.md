@@ -1,11 +1,12 @@
 # integration-proxy
 
-A stateless Rust web server that lets a user log in with a configured OIDC
-provider or a catalog-trusted authenticated API identity. Sign-in sets an encrypted session cookie; there is a logout button
-to clear it. No database, no server-side session store — the cookie *is*
-the session, so any number of instances can run behind a load balancer with
-no shared session state. PostgreSQL stores only short-lived consumed OAuth
-states, replay nonces, and encrypted one-time credentials.
+A Rust web server that lets a user log in with a configured OIDC provider or
+a catalog-trusted authenticated API identity. Sign-in sets an encrypted
+session cookie; there is a logout button to clear it. There is no
+server-side session store — the cookie *is* the session, so any number of
+instances can run behind a load balancer with no shared session state.
+PostgreSQL is required, though: it stores short-lived consumed OAuth states,
+replay nonces, and encrypted one-time credentials.
 
 Built with [axum](https://github.com/tokio-rs/axum) and the
 [`oauth2`](https://docs.rs/oauth2) crate, following the OAuth 2.0
@@ -62,8 +63,17 @@ Configure an OIDC authorization-code client and register `<BASE_URL>/auth/callba
 
 ### 2. Configure environment variables
 
-Copy `.env.example` to `.env` and fill it in (or export the variables
-directly):
+Copy `.env.example` to `.env` and fill it in, then load it into your shell
+before running the server — nothing in the process reads `.env` files on its
+own, only actual process environment variables:
+
+```sh
+set -a
+source .env
+set +a
+```
+
+Or export the variables directly without a `.env` file.
 
 | Variable               | Required | Description                                                                 |
 | ----------------------| -------- | ---------------------------------------------------------------------------- |
@@ -97,21 +107,26 @@ OAuth credentials are provider-specific. For a catalog platform named
 letters, digits, and hyphens, and are converted to uppercase with hyphens
 replaced by underscores for environment-variable names.
 
-The server owns the OAuth endpoints and scopes. The built-in providers are
-`google-calendar` (read-only Calendar scope) and `github-issues` (`repo`
-scope); a request cannot supply a provider URL, token URL, or scope.
+The server owns the OAuth endpoints and scopes for every platform in the
+catalog, reading them from that platform's composed OpenAPI document; a
+request cannot supply a provider URL, token URL, or scope.
 
 The PostgreSQL client validates the database TLS certificate. Heroku assigns
 `DATABASE_URL` automatically when its Postgres add-on is attached.
 
-Use the `connection_code` returned by the OAuth redirect as the Bearer token
-for `/proxy/{platform}/{path}`. Each successful proxy response includes a new
-single-use value in `X-Connection-Code`; use that value for the next request.
-The proxy refreshes an expired provider access token when a refresh token is
-available, and rotates the handoff code after every request. GitHub sometimes
-returns repository pagination links using its canonical numeric repository
-path; the proxy rewrites that metadata to the current allowlisted owner/repo
-path only when the collection suffix matches.
+These two flows hand back a proxy credential differently. In the legacy
+signed `/connect` and `/oauth/{platform}/start` flow, use the
+`connection_code` returned directly by the OAuth redirect as the Bearer token
+for `/proxy/{platform}/{path}`. In the browser bootstrap flow (`POST
+/connect/authorize`), the OAuth callback instead returns a short-lived,
+PKCE-bound handoff code that is **not** a proxy credential; redeem it first
+at `POST /connect/redeem` (see above) to obtain the actual `connection_code`.
+Either way, each successful proxy response includes a new single-use value
+in `X-Connection-Code`; use that value as the Bearer token for the next
+request. The proxy refreshes an expired provider access token when a refresh
+token is available, and rotates the connection code after every request.
+Pagination `Link` headers from the upstream are forwarded to the caller
+unchanged.
 
 ## Trusted API identities
 
@@ -143,8 +158,9 @@ Discord access tokens expire and use the existing refresh-token flow.
 Spotify uses `OAUTH_SPOTIFY_CLIENT_ID` and the callback
 `https://localthought.io/oauth/spotify/callback` in production. Register a
 Spotify Web API app with that exact redirect URI. The integration uses
-Authorization Code with PKCE, so no client secret is required or transmitted.
-It imports playlists with `playlist-read-private` and
+Authorization Code with PKCE, so no client secret is required or transmitted;
+set `OAUTH_SPOTIFY_CLIENT_AUTH_METHOD=none` so the proxy does not require or
+send one. It imports playlists with `playlist-read-private` and
 `playlist-read-collaborative`; no write scopes are requested. No account ID
 parameter is needed. Development-mode access is subject to Spotify's Premium
 and app-user allowlist requirements. Access tokens refresh automatically;

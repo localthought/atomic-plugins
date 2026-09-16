@@ -251,6 +251,14 @@ async fn refresh_if_needed(state: &AppState, credential: &mut Credential) -> Res
     let refresh_token = credential.refresh_token.as_deref().ok_or(())?;
     let provider = crate::providers::Provider::configured(&state.catalog, &credential.provider)
         .map_err(|_| ())?;
+    #[cfg(test)]
+    let provider = {
+        let mut provider = provider;
+        if let Some(upstream) = &state.test_upstream {
+            provider.provider.token_url = format!("{}/token", upstream.trim_end_matches('/'));
+        }
+        provider
+    };
     let response = provider
         .token_request(
             &state.http_client,
@@ -288,6 +296,14 @@ pub async fn forward(
         )
             .into_response();
     };
+    let request_path = format!("/{path}");
+    if contains_traversal_segment(&request_path) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "path must not contain traversal segments",
+        )
+            .into_response();
+    }
     if body.len() > 1_048_576 {
         return (StatusCode::PAYLOAD_TOO_LARGE, "request body is too large").into_response();
     }
@@ -326,7 +342,6 @@ pub async fn forward(
     if refresh_if_needed(&state, &mut credential).await.is_err() {
         return (StatusCode::UNAUTHORIZED, "credential refresh failed").into_response();
     }
-    let request_path = format!("/{path}");
     let Some(required_headers) =
         state
             .catalog
@@ -348,6 +363,18 @@ pub async fn forward(
         )
             .into_response();
     };
+    if let Err(message) = state.catalog.validate_request(
+        platform,
+        method.as_str(),
+        &request_path,
+        query.as_deref(),
+        headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok()),
+        !body.is_empty(),
+    ) {
+        return (StatusCode::BAD_REQUEST, message).into_response();
+    }
     target.set_path(&request_path);
     target.set_query(query.as_deref());
     let upstream = match upstream_request(
@@ -367,9 +394,9 @@ pub async fn forward(
     };
     let status = upstream.status();
     let forwarded_headers = upstream_response_headers(upstream.headers());
-    let bytes = match upstream.bytes().await {
-        Ok(bytes) if bytes.len() <= 10_485_760 => bytes,
-        _ => {
+    let bytes = match read_bounded_body(upstream, MAX_RESPONSE_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
             return (
                 StatusCode::BAD_GATEWAY,
                 "upstream response failed or was too large",
@@ -414,12 +441,49 @@ pub async fn forward(
 // Forward only representation/pagination metadata, never provider cookies or credentials.
 fn upstream_response_headers(headers: &HeaderMap) -> HeaderMap {
     let mut result = HeaderMap::new();
-    for name in [header::CONTENT_TYPE, header::LINK, header::RETRY_AFTER] {
+    for name in [
+        header::CONTENT_TYPE,
+        header::LINK,
+        header::RETRY_AFTER,
+        header::ETAG,
+        axum::http::HeaderName::from_static("x-total-count"),
+        axum::http::HeaderName::from_static("x-next-page"),
+    ] {
         for value in headers.get_all(&name) {
             result.append(name.clone(), value.clone());
         }
     }
     result
+}
+
+const MAX_RESPONSE_BYTES: usize = 10_485_760;
+
+/// Reads the upstream body incrementally so an oversized or slow response is
+/// rejected as soon as the limit is crossed, instead of after it is fully
+/// buffered in memory.
+async fn read_bounded_body(mut upstream: reqwest::Response, limit: usize) -> Result<Bytes, ()> {
+    if upstream
+        .content_length()
+        .is_some_and(|len| len > limit as u64)
+    {
+        return Err(());
+    }
+    let mut buffer = Vec::new();
+    while let Some(chunk) = upstream.chunk().await.map_err(|_| ())? {
+        if buffer.len() + chunk.len() > limit {
+            return Err(());
+        }
+        buffer.extend_from_slice(&chunk);
+    }
+    Ok(Bytes::from(buffer))
+}
+
+/// Rejects any `.` or `..` path segment so a client cannot request a path
+/// that, once assigned to the upstream URL, normalizes to a different path
+/// than the one validated against the catalog allowlist.
+fn contains_traversal_segment(path: &str) -> bool {
+    path.split('/')
+        .any(|segment| segment == "." || segment == "..")
 }
 
 fn upstream_request(
@@ -475,6 +539,7 @@ mod tests {
     use super::*;
     use axum::http::{header::AUTHORIZATION, HeaderValue};
     use axum_extra::extract::cookie::Key;
+    use tower::ServiceExt;
 
     fn test_state(server_secret: &str) -> AppState {
         let config = crate::config::Config {
@@ -609,6 +674,216 @@ mod tests {
         assert_eq!(forwarded[header::CONTENT_TYPE], "application/json");
         assert!(!forwarded.contains_key(header::SET_COOKIE));
         assert!(!forwarded.contains_key("x-connection-code"));
+    }
+
+    #[test]
+    fn traversal_segments_are_rejected_including_encoded_forms() {
+        assert!(contains_traversal_segment("/repositories/../issues"));
+        assert!(contains_traversal_segment("/repositories/./issues"));
+        assert!(contains_traversal_segment("/../etc/passwd"));
+        assert!(!contains_traversal_segment("/repositories/123/issues"));
+        assert!(!contains_traversal_segment("/repositories/..foo/issues"));
+    }
+
+    #[tokio::test]
+    async fn forward_rejects_a_path_containing_traversal_segments_before_touching_credentials() {
+        let mut state = test_state("server-secret");
+        state.catalog = crate::catalog::Catalog::from_test_document(
+            "github-issues",
+            json!({
+                "servers": [{"url": "https://api.example"}],
+                "paths": {"/repositories/{id}/issues": {"get": {}}}
+            }),
+            json!({}),
+        );
+        // No Authorization header and no security service configured: if the
+        // traversal check did not run first, this would fail with 401/503
+        // instead of 400.
+        let response = crate::router(state)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/github-issues/repositories/../issues")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn read_bounded_body_rejects_a_response_over_the_limit() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route("/big", axum::routing::get(|| async { vec![0u8; 20] }));
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = crate::build_http_client();
+        let response = client
+            .get(format!("http://{address}/big"))
+            .send()
+            .await
+            .unwrap();
+        assert!(read_bounded_body(response, 10).await.is_err());
+
+        let response = client
+            .get(format!("http://{address}/big"))
+            .send()
+            .await
+            .unwrap();
+        assert!(read_bounded_body(response, 20).await.is_ok());
+        server.abort();
+    }
+
+    /// End-to-end coverage of `forward()` through the real router: an
+    /// expired credential is refreshed at the (mocked) provider token
+    /// endpoint, the resulting access token is used to call the (mocked)
+    /// provider API, the response is forwarded with its pagination/ETag
+    /// headers intact, and the one-time connection code is rotated.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
+    async fn forward_refreshes_an_expired_credential_and_forwards_the_response() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let token_requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let item_requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let token_counter = token_requests.clone();
+        let item_counter = item_requests.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(move |body: Bytes| {
+                    let token_counter = token_counter.clone();
+                    async move {
+                        token_counter.fetch_add(1, Ordering::SeqCst);
+                        assert!(String::from_utf8(body.to_vec())
+                            .unwrap()
+                            .contains("grant_type=refresh_token"));
+                        Json(json!({"access_token": "refreshed-token", "expires_in": 3600}))
+                    }
+                }),
+            )
+            .route(
+                "/items",
+                axum::routing::get(move |headers: HeaderMap| {
+                    let item_counter = item_counter.clone();
+                    async move {
+                        item_counter.fetch_add(1, Ordering::SeqCst);
+                        assert_eq!(
+                            headers.get(AUTHORIZATION).unwrap(),
+                            "Bearer refreshed-token"
+                        );
+                        (
+                            [
+                                (header::ETAG, "\"v1\""),
+                                (header::LINK, "<https://example/items?page=2>; rel=\"next\""),
+                            ],
+                            Json(json!([{"id": 1}])),
+                        )
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+
+        let db = std::env::var("TEST_DATABASE_URL").unwrap();
+        let security = crate::security::Security::connect(
+            &db,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let document = json!({
+            "servers": [{"url": upstream_url}],
+            "components": {"securitySchemes": {"oauth": {"type": "oauth2", "flows": {
+                "authorizationCode": {
+                    "authorizationUrl": "https://auth.example/authorize",
+                    "tokenUrl": "https://auth.example/token",
+                    "scopes": {"read": "Read items"}
+                }
+            }}}},
+            "security": [{"oauth": ["read"]}],
+            "paths": {"/items": {"get": {}}}
+        });
+        let mut state = test_state("server-secret");
+        state.catalog =
+            crate::catalog::Catalog::from_test_document("github-issues", document, json!({}));
+        state.security = Some(security.clone());
+        state.test_upstream = Some(upstream_url);
+
+        let credential = Credential {
+            provider: "github-issues".into(),
+            tenant_id: "tenant".into(),
+            user_id: "user".into(),
+            access_token: "stale-token".into(),
+            refresh_token: Some("a-refresh-token".into()),
+            expires_at: Some(0),
+        };
+        let envelope = security
+            .seal(
+                &serde_json::to_vec(&credential).unwrap(),
+                b"connection-credential-v1",
+            )
+            .unwrap();
+        let old_code = "e2e-test-connection-code";
+        security
+            .store_connection_code(old_code, &envelope)
+            .await
+            .unwrap();
+
+        let response = crate::router(state)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/github-issues/items")
+                    .header(AUTHORIZATION, format!("Bearer {old_code}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(token_requests.load(Ordering::SeqCst), 1);
+        assert_eq!(item_requests.load(Ordering::SeqCst), 1);
+        let new_code = response
+            .headers()
+            .get("x-connection-code")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert_ne!(new_code, old_code);
+        assert_eq!(response.headers()[header::ETAG], "\"v1\"");
+        assert!(response.headers().get(header::LINK).is_some());
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            json!([{"id": 1}])
+        );
+
+        // The old code is single-use and already consumed.
+        assert!(security
+            .take_connection_code(old_code)
+            .await
+            .unwrap()
+            .is_none());
+        // The rotated code is valid and carries the refreshed credential.
+        let rotated_envelope = security
+            .take_connection_code(&new_code)
+            .await
+            .unwrap()
+            .unwrap();
+        let plaintext = security
+            .open(&rotated_envelope, b"connection-credential-v1")
+            .unwrap();
+        let rotated: Credential = serde_json::from_slice(&plaintext).unwrap();
+        assert_eq!(rotated.access_token, "refreshed-token");
+
+        server.abort();
     }
 
     fn logged_in_jar(key: Key) -> (PrivateCookieJar, crate::session::SessionUser) {

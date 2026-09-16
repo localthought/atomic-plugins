@@ -203,6 +203,136 @@ impl Catalog {
         }
         Some(out)
     }
+    /// A bounded, explicit request validation against the composed OAD:
+    /// every declared *required* query parameter must be present, a
+    /// declared enum-constrained query parameter's value must be one of the
+    /// declared values, and a request body's presence and content type must
+    /// match the operation's declared `requestBody`. This does not validate
+    /// full JSON Schema for bodies or non-enum query parameter values; see
+    /// SECURITY.md for the documented scope.
+    pub fn validate_request(
+        &self,
+        platform: &str,
+        method: &str,
+        path: &str,
+        query: Option<&str>,
+        content_type: Option<&str>,
+        has_body: bool,
+    ) -> Result<(), &'static str> {
+        let document: Value =
+            serde_yaml::from_str(self.documents.get(platform).ok_or("unknown platform")?)
+                .map_err(|_| "invalid catalog document")?;
+        let server = document
+            .get("servers")
+            .and_then(Value::as_array)
+            .and_then(|servers| servers.first())
+            .and_then(|server| server.get("url"))
+            .and_then(Value::as_str)
+            .ok_or("invalid catalog document")?;
+        let server_url = url::Url::parse(server).map_err(|_| "invalid catalog document")?;
+        let relative = path
+            .strip_prefix(server_url.path().trim_end_matches('/'))
+            .ok_or("method or path is not in the catalog")?;
+        let paths = document
+            .get("paths")
+            .and_then(Value::as_object)
+            .ok_or("invalid catalog document")?;
+        let template = paths
+            .keys()
+            .find(|t| path_matches(t, relative))
+            .ok_or("method or path is not in the catalog")?;
+        let path_item = paths
+            .get(template)
+            .and_then(Value::as_object)
+            .ok_or("invalid catalog document")?;
+        let operation = path_item
+            .get(&method.to_ascii_lowercase())
+            .and_then(Value::as_object)
+            .ok_or("method or path is not in the catalog")?;
+
+        let query_pairs: Vec<(String, String)> = query
+            .map(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .into_owned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        for parameter in operation
+            .get("parameters")
+            .into_iter()
+            .chain(path_item.get("parameters"))
+            .flat_map(Value::as_array)
+            .flatten()
+        {
+            let parameter = if let Some(reference) = parameter.get("$ref").and_then(Value::as_str) {
+                document
+                    .pointer(
+                        reference
+                            .strip_prefix('#')
+                            .ok_or("invalid catalog document")?,
+                    )
+                    .ok_or("invalid catalog document")?
+            } else {
+                parameter
+            };
+            if parameter.get("in").and_then(Value::as_str) != Some("query") {
+                continue;
+            }
+            let name = parameter
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or("invalid catalog document")?;
+            let values: Vec<&str> = query_pairs
+                .iter()
+                .filter(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str())
+                .collect();
+            if values.is_empty() {
+                if parameter.get("required").and_then(Value::as_bool) == Some(true) {
+                    return Err("missing required query parameter");
+                }
+                continue;
+            }
+            if let Some(allowed) = parameter
+                .get("schema")
+                .and_then(|schema| schema.get("enum"))
+                .and_then(Value::as_array)
+            {
+                let allowed: Vec<&str> = allowed.iter().filter_map(Value::as_str).collect();
+                if values.iter().any(|value| !allowed.contains(value)) {
+                    return Err("query parameter value is not permitted");
+                }
+            }
+        }
+
+        match operation.get("requestBody") {
+            None => {
+                if has_body {
+                    return Err("operation does not accept a request body");
+                }
+            }
+            Some(request_body) => {
+                if !has_body {
+                    if request_body.get("required").and_then(Value::as_bool) == Some(true) {
+                        return Err("operation requires a request body");
+                    }
+                    return Ok(());
+                }
+                let content = request_body
+                    .get("content")
+                    .and_then(Value::as_object)
+                    .ok_or("invalid catalog document")?;
+                let media_type = content_type
+                    .and_then(|value| value.split(';').next())
+                    .map(str::trim)
+                    .unwrap_or("");
+                if !content.contains_key(media_type) {
+                    return Err("unsupported content type");
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn oauth_provider(&self, platform: &str) -> Result<crate::providers::Provider, String> {
         let source = self.get(platform).ok_or("unknown catalog platform")?;
         let document = serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
@@ -530,6 +660,84 @@ mod tests {
     }
 
     #[test]
+    fn validate_request_checks_required_query_parameters_enums_and_body() {
+        use serde_json::json;
+        let doc = json!({"servers":[{"url":"https://example.com/v1"}], "paths":{"/items": {
+            "get":{"parameters":[
+                {"in":"query","name":"state","required":true,"schema":{"enum":["open","closed"]}},
+                {"in":"query","name":"page","schema":{"type":"integer"}}
+            ]},
+            "post": {"requestBody": {"required": true, "content": {"application/json": {}}}}
+        }}});
+        let catalog = super::Catalog {
+            documents: [("test".into(), serde_yaml::to_string(&doc).unwrap())].into(),
+            ..Default::default()
+        };
+
+        // Missing a required query parameter.
+        assert!(catalog
+            .validate_request("test", "GET", "/v1/items", None, None, false)
+            .is_err());
+        // Required parameter present with a disallowed value.
+        assert!(catalog
+            .validate_request(
+                "test",
+                "GET",
+                "/v1/items",
+                Some("state=pending"),
+                None,
+                false
+            )
+            .is_err());
+        // Valid required value, plus an undeclared parameter that is simply ignored.
+        assert!(catalog
+            .validate_request(
+                "test",
+                "GET",
+                "/v1/items",
+                Some("state=open&page=2&undeclared=1"),
+                None,
+                false
+            )
+            .is_ok());
+
+        // A body is rejected when the operation declares none.
+        assert!(catalog
+            .validate_request(
+                "test",
+                "GET",
+                "/v1/items",
+                Some("state=open"),
+                Some("application/json"),
+                true
+            )
+            .is_err());
+        // A required body that is missing is rejected.
+        assert!(catalog
+            .validate_request("test", "POST", "/v1/items", None, None, false)
+            .is_err());
+        // An unsupported content type is rejected.
+        assert!(catalog
+            .validate_request("test", "POST", "/v1/items", None, Some("text/plain"), true)
+            .is_err());
+        // A matching content type (with parameters, e.g. a charset) is accepted.
+        assert!(catalog
+            .validate_request(
+                "test",
+                "POST",
+                "/v1/items",
+                None,
+                Some("application/json; charset=utf-8"),
+                true
+            )
+            .is_ok());
+        // An unknown path/method is rejected the same way as `allows`.
+        assert!(catalog
+            .validate_request("test", "DELETE", "/v1/items", None, None, false)
+            .is_err());
+    }
+
+    #[test]
     fn composed_notion_preserves_base_path_and_resolves_version_header() {
         let catalog = super::Catalog {
             documents: [(
@@ -550,6 +758,47 @@ mod tests {
     }
     use super::*;
 
+    /// Exercises the exact catalog revision the application loads by
+    /// default (`Config::from_env`'s `CATALOG_PATH` fallback), so a pass here
+    /// establishes that the deployed configuration actually supplies these
+    /// OAuth profiles. `pinned_catalog_selects_google_offline_and_spotify_pkce_profiles`
+    /// below covers only a separately identified, non-default revision.
+    #[tokio::test]
+    #[ignore = "downloads the pinned production catalog sources"]
+    async fn default_catalog_pin_selects_google_offline_and_spotify_pkce_profiles() {
+        let catalog = Catalog::load(
+            crate::config::DEFAULT_CATALOG_PATH,
+            &crate::build_http_client(),
+        )
+        .await
+        .unwrap();
+        for name in catalog.names() {
+            let provider = catalog
+                .oauth_provider(&name)
+                .unwrap_or_else(|error| panic!("{name}: {error}"));
+            // Notion's security scheme declares no per-operation OAuth
+            // scopes (it authorizes by integration capability instead), so
+            // it is the one platform excluded from the non-empty check.
+            if name != "notion" {
+                assert!(!provider.scopes.is_empty(), "{name}");
+            }
+        }
+        let google = catalog.oauth_provider("google-calendar").unwrap();
+        assert!(google.use_pkce);
+        assert!(google
+            .authorization_params
+            .contains(&("access_type".into(), "offline".into())));
+        let spotify = catalog.oauth_provider("spotify").unwrap();
+        assert!(spotify.use_pkce);
+        assert!(catalog
+            .allows("github-issues", "GET", "/repositories/123/issues")
+            .is_some());
+    }
+
+    /// Tests a specific, separately identified catalog revision (not the
+    /// application's default pin; see `TEST_CATALOG_PATH` below) for
+    /// regression coverage of canonical GitHub paths and Moneybird's
+    /// composed resource/throttling metadata.
     #[tokio::test]
     #[ignore = "downloads the pinned production catalog sources"]
     async fn pinned_catalog_supplies_oauth_and_canonical_pagination_paths() {
@@ -606,6 +855,9 @@ mod tests {
             .is_none());
     }
 
+    /// Covers a separately identified, non-default catalog revision; see
+    /// `default_catalog_pin_selects_google_offline_and_spotify_pkce_profiles`
+    /// above for coverage of the revision the application actually deploys.
     #[tokio::test]
     #[ignore = "downloads pinned OAuth authentication-details metadata"]
     async fn pinned_catalog_selects_google_offline_and_spotify_pkce_profiles() {

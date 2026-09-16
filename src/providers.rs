@@ -188,17 +188,7 @@ impl Provider {
                 None => ClientAuth::SecretPost,
             },
         };
-        if self
-            .token_operation
-            .as_ref()
-            .is_some_and(|op| op.requires_basic)
-            && client_auth != ClientAuth::SecretBasic
-            || self
-                .refresh_operation
-                .as_ref()
-                .is_some_and(|op| op.requires_basic)
-                && client_auth != ClientAuth::SecretBasic
-        {
+        if requires_basic && client_auth != ClientAuth::SecretBasic {
             return Err("OAuth token operation requires client_secret_basic".into());
         }
         if self
@@ -476,10 +466,10 @@ fn pkce_behavior(scheme: &Value) -> Result<bool, String> {
             .is_some_and(|values| {
                 !values.is_empty() && values.iter().all(|value| value.is_string())
             })
-            || !pkce
+            || pkce
                 .get("description")
                 .and_then(Value::as_str)
-                .is_some_and(|value| !value.trim().is_empty())
+                .is_none_or(|value| value.trim().is_empty())
         {
             return Err("conditional PKCE requires requiredFor and description".into());
         }
