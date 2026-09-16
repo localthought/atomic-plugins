@@ -55,18 +55,28 @@ pub struct Config {
     pub revoked_subjects: Vec<String>,
 }
 
+/// Immutable pinned revision of `localthought/overlays`' `catalog.json` used
+/// when `CATALOG_PATH` is not set. Shared with tests that need to validate
+/// the exact catalog the application would load by default.
+pub const DEFAULT_CATALOG_PATH: &str = "https://raw.githubusercontent.com/localthought/overlays/8f29d9973267b6b3877aa27a5ab50cd41b010e6c/catalog.json";
+
+/// Reads a required environment variable and rejects it if unset or blank,
+/// so a blank `.env` value fails configuration explicitly instead of being
+/// silently accepted (e.g. as a reproducible empty secret).
+fn require_env(name: &str) -> Result<String, String> {
+    match env::var(name) {
+        Ok(value) if !value.is_empty() => Ok(value),
+        _ => Err(format!("{name} must be set")),
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let app_auth_client_id = env::var("APP_AUTH_CLIENT_ID")
-            .map_err(|_| "APP_AUTH_CLIENT_ID must be set".to_string())?;
-        let app_auth_client_secret = env::var("APP_AUTH_CLIENT_SECRET")
-            .map_err(|_| "APP_AUTH_CLIENT_SECRET must be set".to_string())?;
-        let app_auth_authorization_url = env::var("APP_AUTH_AUTHORIZATION_URL")
-            .map_err(|_| "APP_AUTH_AUTHORIZATION_URL must be set".to_string())?;
-        let app_auth_token_url = env::var("APP_AUTH_TOKEN_URL")
-            .map_err(|_| "APP_AUTH_TOKEN_URL must be set".to_string())?;
-        let app_auth_userinfo_url = env::var("APP_AUTH_USERINFO_URL")
-            .map_err(|_| "APP_AUTH_USERINFO_URL must be set".to_string())?;
+        let app_auth_client_id = require_env("APP_AUTH_CLIENT_ID")?;
+        let app_auth_client_secret = require_env("APP_AUTH_CLIENT_SECRET")?;
+        let app_auth_authorization_url = require_env("APP_AUTH_AUTHORIZATION_URL")?;
+        let app_auth_token_url = require_env("APP_AUTH_TOKEN_URL")?;
+        let app_auth_userinfo_url = require_env("APP_AUTH_USERINFO_URL")?;
         let app_auth_label = env::var("APP_AUTH_LABEL").unwrap_or_else(|_| "OIDC".to_string());
         let app_auth_identity_namespace =
             identity_namespace(env::var("APP_AUTH_IDENTITY_NAMESPACE").ok())?;
@@ -75,16 +85,18 @@ impl Config {
             .ok()
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
-        let session_secret = env::var("SESSION_SECRET").ok();
-        let server_secret =
-            env::var("SERVER_SECRET").map_err(|_| "SERVER_SECRET must be set".to_string())?;
-        let catalog_path = env::var("CATALOG_PATH").unwrap_or_else(|_| {
-            "https://raw.githubusercontent.com/localthought/overlays/8f29d9973267b6b3877aa27a5ab50cd41b010e6c/catalog.json".to_string()
-        });
-        let database_url = env::var("DATABASE_URL")
+        // An empty SESSION_SECRET is treated as unset, so it triggers random
+        // key generation instead of being hashed into a reproducible,
+        // guessable cookie-encryption key.
+        let session_secret = env::var("SESSION_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let server_secret = require_env("SERVER_SECRET")?;
+        let catalog_path =
+            env::var("CATALOG_PATH").unwrap_or_else(|_| DEFAULT_CATALOG_PATH.to_string());
+        let database_url = require_env("DATABASE_URL")
             .map_err(|_| "DATABASE_URL must be set for replay protection".to_string())?;
-        let encryption_key =
-            env::var("ENCRYPTION_KEY").map_err(|_| "ENCRYPTION_KEY must be set".to_string())?;
+        let encryption_key = require_env("ENCRYPTION_KEY")?;
         let revoked_subjects = env::var("REVOKED_SUBJECTS")
             .unwrap_or_default()
             .split(',')
@@ -156,6 +168,18 @@ mod tests {
             "OAUTH_GOOGLE_CALENDAR"
         );
         assert!(Config::provider_env_prefix("Google Calendar").is_err());
+    }
+
+    #[test]
+    fn require_env_rejects_missing_and_blank_values() {
+        let name = "INTEGRATION_PROXY_TEST_REQUIRE_ENV_VAR";
+        env::remove_var(name);
+        assert!(require_env(name).is_err());
+        env::set_var(name, "");
+        assert!(require_env(name).is_err());
+        env::set_var(name, "a-value");
+        assert_eq!(require_env(name).unwrap(), "a-value");
+        env::remove_var(name);
     }
 
     #[test]
