@@ -19,7 +19,6 @@ name: CI
 # is unavoidable infrastructure, not a test.
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
 
@@ -88,9 +87,15 @@ jobs:
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
+      # --no-default-features trims the default `https`, `telemetry` and
+      # `img` features: none of the live tests use TLS/ACME, OTel export
+      # (tonic/opentelemetry-otlp pull in a heavy gRPC stack) or image
+      # codecs, and the server falls back to plain server.bind() (serve.rs)
+      # when `--https` isn't passed regardless of the `https` feature. Only
+      # `wasm-plugins` (the sandbox the live tests execute plugins in) stays.
       - name: Build atomic-server (e2e profile; embeds these integrations)
         working-directory: atomic-server
-        run: cargo build --profile e2e -p atomic-server
+        run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins
 
       - name: Start atomic-server
         working-directory: atomic-server
