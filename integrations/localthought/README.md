@@ -190,15 +190,6 @@ The companion worktree is `/private/tmp/calendar-sync-proxy`, branch
 `codex/google-calendar-two-way`. No production deployment or live account writes
 were performed as part of these checks.
 
-`calendar-sync.test.ts` covers minimal patches, conflict detection, stale local
-and remote previews, write-in-flight edits, lost checkpoints, date validation,
-identity isolation, unsupported fields and denied writes. The browser transport
-test checks conditional headers alongside rotating credentials.
-
-`calendar.test.ts` exercises mixed dates, offset boundaries, exclusive ends,
-recurrence/attendee notes, cancellations, malformed starts, cross-calendar
-identity and repeated imports with private local fields.
-
 ## Todoist tasks lens
 
 The `devonian-todoist` catalog entry connects the proxy's `todoist` platform
