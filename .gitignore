@@ -1,0 +1,5 @@
+/browser
+/artifacts
+*.log
+*.pid
+node_modules

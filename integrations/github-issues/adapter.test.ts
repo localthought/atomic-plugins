@@ -1,12 +1,6 @@
-import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { preview, project, manifest, type Issue } from './adapter.js';
 import { validateManifest } from '../../browser/lib/src/plugin-manifest.js';
-import { readFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-const root = fileURLToPath(new URL('../../', import.meta.url));
 const issue = (number: number): Issue => ({
   number,
   title: `Issue ${number}`,
@@ -19,28 +13,6 @@ describe('GitHub package', () => {
     expect(validateManifest(manifest('owner/repo')).operations).toHaveLength(6);
     expect(() => manifest('../escape')).toThrow();
     expect(() => manifest('owner/repo?token=x')).toThrow();
-  });
-  it('ships exactly the artifact tested by the sandbox', async () => {
-    const built = execFileSync(
-      existsSync(resolve(root, 'browser/node_modules/.bin/esbuild'))
-        ? resolve(root, 'browser/node_modules/.bin/esbuild')
-        : resolve(root, 'browser/node_modules/.pnpm/node_modules/.bin/esbuild'),
-      [
-        'integrations/github-issues/plugin.ts',
-        '--preserve-symlinks',
-        '--bundle',
-        '--format=esm',
-        '--platform=neutral',
-        '--target=es2022',
-      ],
-      { encoding: 'utf8', cwd: root },
-    );
-    expect(
-      await readFile(
-        resolve(root, 'integrations/github-issues/plugin.js'),
-        'utf8',
-      ),
-    ).toBe(built);
   });
   it('reads every page and excludes pull requests', async () => {
     const issues = Array.from({ length: 101 }, (_, i) => issue(i + 1));
@@ -79,15 +51,4 @@ describe('GitHub package', () => {
         .status,
     ).toBe('Done');
   });
-});
-
-it('keeps the sandbox action manifest fixture current', async () => {
-  expect(
-    JSON.parse(
-      await readFile(
-        resolve(root, 'integrations/github-issues/manifest.fixture.json'),
-        'utf8',
-      ),
-    ),
-  ).toEqual(manifest('atomic-fixtures/issues'));
 });

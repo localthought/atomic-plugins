@@ -6,11 +6,20 @@
 //! (#4) and binding constants (#6) — putting each record into a
 //! host-provided [`Storage`] (#7).
 //!
-//! **Local-first writes are out of scope here.** The issue explicitly
-//! allows that: "Steps beyond \[the full read\] can land later." `create`/
-//! `update`/`remove`, the per-record write queue and retry/backoff, and
-//! reading back `x-crud`'s `addedFields` from a create response are a
-//! separate, later piece of #9.
+//! [`SyncClient::create`], [`SyncClient::update`] and [`SyncClient::remove`]
+//! are a first prototype of the remaining piece of #9: each sends its
+//! request immediately (no local-first write queue, no retry/backoff — that
+//! generality belongs to [`crate::client::client`]'s eventual write path,
+//! not duplicated here) and applies the outcome to `storage` before
+//! returning. `create` reads `x-crud`'s `addedFields` back out of the
+//! response, per the issue; `update`/`remove` are driven the same way by
+//! the operation's own `x-crud` annotation (`mode`/`patchFormat` for
+//! `update`). `memberOf`/`removesFrom` name collections a write affects,
+//! but [`Storage`] keys a record by `resource`/`id` alone, not per
+//! collection it's listed in, so there's nothing further to store for
+//! either. Only [`ManagedCollection`]-shaped resources are writable this
+//! way — a [`ManagedRead`] is a bare GET, not something `x-crud` describes
+//! a create/update/delete operation against.
 //!
 //! `ClientConfig`/`SyncReport`/`SyncError` are copied field-for-field from
 //! the contract [`localthought/reflector-rs`](https://github.com/localthought/reflector-rs)
@@ -32,7 +41,7 @@ use indexmap::IndexMap;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_json::{Map, Value};
 
-use crate::client::client::{Fetch, HttpRequest};
+use crate::client::client::{Fetch, HttpRequest, HttpResponse};
 use crate::error::Error;
 use crate::openapi::overlay::load_open_api_document_with_overlays;
 use crate::openapi::types::{OpenApiDocument, SchemaObject};
@@ -46,8 +55,9 @@ use super::constants::{bind_url, validate_constants};
 use super::credentials::{base_url, Credentials};
 use super::ontology::derive_ontology;
 use super::resource_model::{
-    discover_resource_model, CollectionLink, ContextProvider, LinkTarget, LinkValueSource,
-    ManagedCollection, ManagedRead, ResourceModel,
+    crud_operation, discover_resource_model, AddedField, CollectionLink, ContextProvider,
+    CrudAction, CrudOperation, LinkTarget, LinkValueSource, ManagedCollection, ManagedRead,
+    ResourceModel,
 };
 use super::storage::{Record, Storage, StorageError};
 
@@ -127,6 +137,24 @@ impl From<Error> for SyncError {
     fn from(error: Error) -> Self {
         SyncError::Document(error.to_string())
     }
+}
+
+/// Addresses one existing record [`SyncClient::update`] or
+/// [`SyncClient::remove`] acts on: which resource it is, the [`Storage`]
+/// `namespace`/`id` it's keyed under (as [`SyncClient::sync`] or
+/// [`SyncClient::create`] stored it), and any path variables its item URL
+/// needs beyond [`ClientConfig::constants`] — a parent record's id, for a
+/// resource nested under one.
+#[derive(Clone, Copy, Debug)]
+pub struct RecordAddress<'a> {
+    /// The resource key in `crudResources`, e.g. `issue`.
+    pub resource: &'a str,
+    /// The [`Storage`] namespace the record is stored under.
+    pub namespace: &'a str,
+    /// The record's id within `resource`/`namespace`.
+    pub id: &'a str,
+    /// Path variables the item URL needs beyond `ClientConfig::constants`.
+    pub context: &'a BTreeMap<String, String>,
 }
 
 /// The sync engine.
@@ -579,6 +607,465 @@ impl SyncClient {
 
         Ok(items)
     }
+
+    /// Creates a new `resource` record through the document's `x-crud`
+    /// create operation for `collection_name`, applies the result to
+    /// `storage`, and returns the stored record.
+    ///
+    /// `context` supplies path variables `collection_name`'s URL needs
+    /// beyond [`ClientConfig::constants`] — typically a parent record's id,
+    /// for a nested collection — the same role `constants` plays across a
+    /// whole [`SyncClient::sync`], but for one explicit write.
+    pub async fn create(
+        &self,
+        resource: &str,
+        collection_name: &str,
+        context: &BTreeMap<String, String>,
+        fields: Map<String, Value>,
+        storage: &dyn Storage,
+    ) -> Result<Record, SyncError> {
+        let document = load_open_api_document_with_overlays(
+            self.config.document.as_path(),
+            &self.config.overlays,
+        )
+        .await?;
+        self.create_document(
+            &document,
+            resource,
+            collection_name,
+            context,
+            fields,
+            storage,
+        )
+        .await
+    }
+
+    /// [`SyncClient::create`] against an already loaded document — see
+    /// [`SyncClient::sync_document`] for why a wasm32 host needs this form.
+    pub async fn create_document(
+        &self,
+        document: &OpenApiDocument,
+        resource: &str,
+        collection_name: &str,
+        context: &BTreeMap<String, String>,
+        fields: Map<String, Value>,
+        storage: &dyn Storage,
+    ) -> Result<Record, SyncError> {
+        let model = discover_resource_model(document)?;
+        let collection = model.by_name(collection_name).ok_or_else(|| {
+            SyncError::Document(format!("no managed collection named {collection_name}"))
+        })?;
+        if collection.resource != resource {
+            return Err(SyncError::Document(format!(
+                "collection {collection_name} belongs to resource {}, not {resource}",
+                collection.resource
+            )));
+        }
+
+        let Some((path, method, crud)) = find_crud_operation(
+            document,
+            CrudAction::Create,
+            resource,
+            Some(collection_name),
+        )?
+        else {
+            return Err(SyncError::Document(format!(
+                "document declares no create operation for {resource}/{collection_name}"
+            )));
+        };
+        // A create is only meaningful against the collection's own list
+        // URL — an `x-crud` annotation naming a differently-shaped path
+        // here would be a document bug, not something this engine can act
+        // on.
+        if path != collection.collection_url {
+            return Err(SyncError::Document(format!(
+                "create operation for {resource}/{collection_name} is declared on {path}, \
+                 not the collection URL {}",
+                collection.collection_url
+            )));
+        }
+
+        let base = base_url(document)
+            .ok_or_else(|| SyncError::Document("document declares no servers".to_string()))?;
+        let mut values = self.config.constants.clone();
+        values.extend(context.clone());
+        let url = bind_url(&collection.collection_url, &values)?;
+        let request_url = format!("{base}{url}");
+
+        let body = serde_json::to_vec(&Value::Object(fields.clone()))
+            .map_err(|error| SyncError::Document(error.to_string()))?;
+        let response = self
+            .send(method, &request_url, Some(body))
+            .await
+            .map_err(|error| SyncError::Transport(error.to_string()))?;
+        if !(200..300).contains(&response.status) {
+            return Err(SyncError::Transport(format!(
+                "{method} {} responded {}",
+                redacted_request_url(&request_url),
+                response.status
+            )));
+        }
+
+        let merged = merge_added_fields(&fields, &crud.added_fields, &response.body);
+        let id = merged
+            .get(&collection.id_field)
+            .map(json_to_string)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                SyncError::Document(format!(
+                    "create response for {resource} is missing its id field \"{}\" — is it \
+                     declared under x-crud's addedFields?",
+                    collection.id_field
+                ))
+            })?;
+        let namespace = collection
+            .context_params
+            .iter()
+            .map(|param| values.get(param).cloned().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("/");
+
+        let record = Record {
+            namespace,
+            resource: resource.to_string(),
+            id,
+            value: merged,
+        };
+        storage.put(&record).await.map_err(SyncError::Storage)?;
+        Ok(record)
+    }
+
+    /// Updates an existing record through the document's `x-crud` update
+    /// operation, applies the result to `storage`, and returns the stored
+    /// record.
+    ///
+    /// `PUT` semantics (the default `x-crud` mode) send the full record —
+    /// `changes` merged onto whatever `storage` already holds for
+    /// `address`, or `changes` alone if nothing is stored yet. `mode:
+    /// patch` sends `changes` alone as a JSON merge patch
+    /// ([`patchFormat: merge`](CrudOperation::patch_format), the only
+    /// patch format this prototype understands); any other declared format
+    /// is reported rather than guessed at.
+    pub async fn update(
+        &self,
+        address: &RecordAddress<'_>,
+        changes: Map<String, Value>,
+        storage: &dyn Storage,
+    ) -> Result<Record, SyncError> {
+        let document = load_open_api_document_with_overlays(
+            self.config.document.as_path(),
+            &self.config.overlays,
+        )
+        .await?;
+        self.update_document(&document, address, changes, storage)
+            .await
+    }
+
+    /// [`SyncClient::update`] against an already loaded document.
+    pub async fn update_document(
+        &self,
+        document: &OpenApiDocument,
+        address: &RecordAddress<'_>,
+        changes: Map<String, Value>,
+        storage: &dyn Storage,
+    ) -> Result<Record, SyncError> {
+        let RecordAddress {
+            resource,
+            namespace,
+            id,
+            context,
+        } = *address;
+        let model = discover_resource_model(document)?;
+        let (identity_param, collection) = identity_binding(&model, resource)?;
+
+        let Some((path, method, crud)) =
+            find_crud_operation(document, CrudAction::Update, resource, None)?
+        else {
+            return Err(SyncError::Document(format!(
+                "document declares no update operation for {resource}"
+            )));
+        };
+        if path != collection.item_url {
+            return Err(SyncError::Document(format!(
+                "update operation for {resource} is declared on {path}, not its item URL {}",
+                collection.item_url
+            )));
+        }
+
+        let base = base_url(document)
+            .ok_or_else(|| SyncError::Document("document declares no servers".to_string()))?;
+        let mut values = self.config.constants.clone();
+        values.extend(context.clone());
+        values.insert(identity_param.clone(), id.to_string());
+        let url = bind_url(&collection.item_url, &values)?;
+        let request_url = format!("{base}{url}");
+
+        let current = storage
+            .get(namespace, resource, id)
+            .await
+            .map_err(SyncError::Storage)?
+            .map(|record| record.value)
+            .unwrap_or_default();
+        let mut full = current;
+        for (key, value) in &changes {
+            full.insert(key.clone(), value.clone());
+        }
+
+        let is_patch = crud.mode.as_deref() == Some("patch");
+        if is_patch {
+            match crud.patch_format.as_deref() {
+                None | Some("merge") => {}
+                Some(other) => {
+                    return Err(SyncError::Document(format!(
+                        "update operation for {resource} declares patchFormat {other:?}, which \
+                         this write prototype does not implement — only merge-patch PATCH and \
+                         whole-record PUT are supported"
+                    )))
+                }
+            }
+        }
+        let body_value = if is_patch {
+            Value::Object(changes)
+        } else {
+            Value::Object(full.clone())
+        };
+        let body = serde_json::to_vec(&body_value)
+            .map_err(|error| SyncError::Document(error.to_string()))?;
+
+        let response = self
+            .send(method, &request_url, Some(body))
+            .await
+            .map_err(|error| SyncError::Transport(error.to_string()))?;
+        if !(200..300).contains(&response.status) {
+            return Err(SyncError::Transport(format!(
+                "{method} {} responded {}",
+                redacted_request_url(&request_url),
+                response.status
+            )));
+        }
+
+        // The server's own representation of the updated record wins over
+        // what was sent, for any field it actually returns — a PATCH
+        // response in particular may report values (recomputed totals,
+        // updated timestamps) the client never sent.
+        let merged = overlay_response(full, &response.body);
+        let record = Record {
+            namespace: namespace.to_string(),
+            resource: resource.to_string(),
+            id: id.to_string(),
+            value: merged,
+        };
+        storage.put(&record).await.map_err(SyncError::Storage)?;
+        Ok(record)
+    }
+
+    /// Deletes an existing record through the document's `x-crud` delete
+    /// operation, then removes it from `storage`.
+    pub async fn remove(
+        &self,
+        address: &RecordAddress<'_>,
+        storage: &dyn Storage,
+    ) -> Result<(), SyncError> {
+        let document = load_open_api_document_with_overlays(
+            self.config.document.as_path(),
+            &self.config.overlays,
+        )
+        .await?;
+        self.remove_document(&document, address, storage).await
+    }
+
+    /// [`SyncClient::remove`] against an already loaded document. The
+    /// record is only removed from `storage` after a successful delete
+    /// request — a rejected or failed request leaves the local copy
+    /// untouched.
+    pub async fn remove_document(
+        &self,
+        document: &OpenApiDocument,
+        address: &RecordAddress<'_>,
+        storage: &dyn Storage,
+    ) -> Result<(), SyncError> {
+        let RecordAddress {
+            resource,
+            namespace,
+            id,
+            context,
+        } = *address;
+        let model = discover_resource_model(document)?;
+        let (identity_param, collection) = identity_binding(&model, resource)?;
+
+        let Some((path, method, _crud)) =
+            find_crud_operation(document, CrudAction::Delete, resource, None)?
+        else {
+            return Err(SyncError::Document(format!(
+                "document declares no delete operation for {resource}"
+            )));
+        };
+        if path != collection.item_url {
+            return Err(SyncError::Document(format!(
+                "delete operation for {resource} is declared on {path}, not its item URL {}",
+                collection.item_url
+            )));
+        }
+
+        let base = base_url(document)
+            .ok_or_else(|| SyncError::Document("document declares no servers".to_string()))?;
+        let mut values = self.config.constants.clone();
+        values.extend(context.clone());
+        values.insert(identity_param.clone(), id.to_string());
+        let url = bind_url(&collection.item_url, &values)?;
+        let request_url = format!("{base}{url}");
+
+        let response = self
+            .send(method, &request_url, None)
+            .await
+            .map_err(|error| SyncError::Transport(error.to_string()))?;
+        if !(200..300).contains(&response.status) {
+            return Err(SyncError::Transport(format!(
+                "{method} {} responded {}",
+                redacted_request_url(&request_url),
+                response.status
+            )));
+        }
+
+        storage
+            .delete(namespace, resource, id)
+            .await
+            .map_err(SyncError::Storage)
+    }
+
+    /// Sends one authenticated request, JSON `Content-Type` included
+    /// whenever there's a body.
+    async fn send(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<HttpResponse, Error> {
+        let mut headers = IndexMap::new();
+        if body.is_some() {
+            headers.insert("Content-Type".to_string(), "application/json".to_string());
+        }
+        if let Some(authorization) = self.config.credentials.authorization_header() {
+            headers.insert("Authorization".to_string(), authorization);
+        }
+        self.fetch
+            .fetch(HttpRequest {
+                method: method.to_string(),
+                url: url.to_string(),
+                headers,
+                body,
+            })
+            .await
+    }
+}
+
+/// The path variable [`ManagedCollection::identity_params`] binds a
+/// resource's own id into, and that resource's [`ManagedCollection`] — any
+/// of its collections carries the same `item_url`/`id_field`, since both
+/// come from the resource's own `identity`, not from any one collection.
+///
+/// Errors [`SyncError::NotImplemented`] for a resource with no identity
+/// (nothing to address a single item by) or a compound identity binding
+/// (more than one path variable from the resource's own `identity`) — this
+/// write prototype only handles the common single-variable case.
+fn identity_binding<'a>(
+    model: &'a ResourceModel,
+    resource: &str,
+) -> Result<(&'a String, &'a ManagedCollection), SyncError> {
+    let collection = model
+        .collections
+        .iter()
+        .find(|collection| collection.resource == resource)
+        .ok_or_else(|| {
+            SyncError::Document(format!("no managed collection for resource {resource}"))
+        })?;
+    if collection.item_url.is_empty() {
+        return Err(SyncError::Document(format!(
+            "resource {resource} declares no identity (single-item URL)"
+        )));
+    }
+    match collection.identity_params.as_slice() {
+        [param] => Ok((param, collection)),
+        [] => Err(SyncError::NotImplemented(
+            "update/remove against a resource with no identity binding",
+        )),
+        _ => Err(SyncError::NotImplemented(
+            "update/remove against a resource with a compound identity binding",
+        )),
+    }
+}
+
+/// Finds the operation in `document` whose `x-crud` annotation matches
+/// `action` and `resource` (and, for a create, `collection` — `x-crud`
+/// allows more than one create operation per resource, one per collection
+/// it's added through). Returns the path it's declared on, the HTTP verb to
+/// send, and the parsed annotation.
+fn find_crud_operation(
+    document: &OpenApiDocument,
+    action: CrudAction,
+    resource: &str,
+    collection: Option<&str>,
+) -> Result<Option<(String, &'static str, CrudOperation)>, SyncError> {
+    const METHODS: [(&str, &str); 4] = [
+        ("post", "POST"),
+        ("put", "PUT"),
+        ("patch", "PATCH"),
+        ("delete", "DELETE"),
+    ];
+    for (path, item) in &document.paths {
+        for (key, verb) in METHODS {
+            let Some(operation) = item.operation(key) else {
+                continue;
+            };
+            let Some(crud) = crud_operation(operation)? else {
+                continue;
+            };
+            if crud.action != action || crud.resource != resource {
+                continue;
+            }
+            if let Some(collection) = collection {
+                if crud.collection.as_deref() != Some(collection) {
+                    continue;
+                }
+            }
+            return Ok(Some((path.clone(), verb, crud)));
+        }
+    }
+    Ok(None)
+}
+
+/// Merges the response's declared `addedFields` (per `crud`) into `fields`
+/// — the only part of a create response this prototype trusts. The
+/// client's own sent values stay authoritative for everything else; a
+/// response body that isn't a JSON object (some APIs answer a create with
+/// `204` or a bare id) contributes nothing.
+fn merge_added_fields(
+    fields: &Map<String, Value>,
+    added_fields: &IndexMap<String, AddedField>,
+    response_body: &[u8],
+) -> Map<String, Value> {
+    let mut merged = fields.clone();
+    if let Ok(Value::Object(response)) = serde_json::from_slice::<Value>(response_body) {
+        for key in added_fields.keys() {
+            if let Some(value) = response.get(key) {
+                merged.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    merged
+}
+
+/// Overlays every field an update response actually returns onto `base` —
+/// see [`SyncClient::update_document`] for why the server wins here, unlike
+/// [`merge_added_fields`]. A response body that isn't a JSON object (a
+/// `204`, most often) leaves `base` untouched.
+fn overlay_response(mut base: Map<String, Value>, response_body: &[u8]) -> Map<String, Value> {
+    if let Ok(Value::Object(response)) = serde_json::from_slice::<Value>(response_body) {
+        for (key, value) in response {
+            base.insert(key, value);
+        }
+    }
+    base
 }
 
 /// Returns a request URL that is useful in an error message without exposing
