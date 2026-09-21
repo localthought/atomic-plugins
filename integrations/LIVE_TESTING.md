@@ -36,5 +36,7 @@ status/request IDs where safe; never dump authentication headers.
 
 Implementation status: this is the run contract, not an automated live runner.
 Dedicated accounts, host-enforced expiry and live adapters remain to implement.
-The existing GitHub live test is tied to its specific sandbox; Notion's
-`atomic.live.test.ts` uses authored HTTP replies and is not vendor-live evidence.
+Notion's `atomic.live.test.ts` uses authored HTTP replies and is not
+vendor-live evidence. GitHub issues sync now runs entirely in-browser via
+Devonian, outside this Rust-sandbox live-test tier; see
+`integrations/github-issues/devonian/README.md`'s own live-verification notes.

@@ -8,8 +8,8 @@ credentials stay in the host.
 
 Inputs support a deliberately bounded JSON Schema subset: object,
 string/integer/boolean fields, required fields and `additionalProperties: false`.
-Unsupported keywords are rejected. GitHub provides `get_issue` and `create_issue`;
-Notion currently provides sync rather than named actions.
+Unsupported keywords are rejected. GitHub and Notion currently provide sync
+rather than named actions.
 
 ## Direct calls and review
 

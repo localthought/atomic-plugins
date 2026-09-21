@@ -8,5 +8,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["adapter.ts", "atomic.ts", "cli.ts", "plugin.ts"]
+  "include": ["adapter.ts"]
 }

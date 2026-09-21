@@ -342,6 +342,15 @@ jobs:
         working-directory: atomic-plugins
         run: node integrations/tooling/certify.mjs --layer js
 
+      # github-issues no longer has a Rust-sandbox pilot or a live tier (its
+      # sync now runs entirely in-browser via Devonian, outside this
+      # certification pipeline); its remaining adapter/automation unit tests
+      # don't need the pinned atomic-server, but run them here anyway since
+      # this is the one place browser/ is available for their relative imports.
+      - name: github-issues unit tests (adapter mapping + automation starter)
+        working-directory: atomic-plugins
+        run: browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
+
       # clockify and localthought have no package.json/atomicCertification
       # (they're the generic LocalThought engine and a lens on top of it,
       # not a certified provider integration), so certify.mjs's discover()
@@ -363,18 +372,10 @@ jobs:
 
       # certify.mjs deliberately strips ATOMIC_*_TEST_SERVER before running
       # tests (a normal certification run must never opt into live tests),
-      # so the .live.test.ts suites are run directly here instead, against
+      # so the .live.test.ts suite is run directly here instead, against
       # the dev-server proxy in front of the atomic-server started above.
-      # github-issues and notion are the only certified packages with a live
-      # tier today; each only runs when that package (or something shared)
-      # changed.
-      - name: "Live test: github-issues"
-        if: needs.changes.outputs.github-issues == 'true' || needs.changes.outputs.shared == 'true'
-        working-directory: atomic-plugins
-        env:
-          ATOMIC_GITHUB_TEST_SERVER: http://localhost:9880
-        run: browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
-
+      # notion is the only certified package with a live tier today; it only
+      # runs when notion (or something shared) changed.
       - name: "Live test: notion"
         if: needs.changes.outputs.notion == 'true' || needs.changes.outputs.shared == 'true'
         working-directory: atomic-plugins
