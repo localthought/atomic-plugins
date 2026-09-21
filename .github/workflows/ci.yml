@@ -6,17 +6,49 @@ name: CI
 # in this repo, and atomic-server only publishes Docker images from its
 # `develop` branch — not from feat/plugin-debug, which is what these
 # integrations are being evolved alongside. So this workflow checks out
-# atomic-server at the pinned commit in .atomic-server-ref, drops this
-# repo's integrations/ into it (recreating the monorepo layout these files
-# were copied out of), and builds atomic-server from source to get a server
-# to test against. Bump .atomic-server-ref to track feat/plugin-debug.
+# atomic-server at the pinned commit in .atomic-server-ref and builds it from
+# source, unmodified, to get a server to test against. Bump
+# .atomic-server-ref to track feat/plugin-debug.
+#
+# atomic-server's own checkout is never mutated: this repo's integrations/
+# is not copied into it before the build, so the binary embeds whatever
+# integrations the pinned commit itself ships (build.rs::embed_integrations),
+# not this repo's. Instead:
+#   - `browser` is symlinked into this checkout (`atomic-plugins/browser` ->
+#     the pinned atomic-server's `browser/`), the layout certify.mjs and
+#     every package's relative `../../browser/lib/...` import already expect
+#     (see certify.test.mjs's "CI browser and integration symlinks" case) —
+#     so every JS/TS step below runs with `working-directory: atomic-plugins`
+#     and its own `browser/node_modules/.bin/*`, never atomic-server's tree.
+#   - `integrations/tooling/dev-server.mjs` stands in for the `/integrations`
+#     route atomic-server would otherwise embed at build time: it serves
+#     this repo's catalog.json and plugin.js bundles itself, and proxies
+#     every other request through to the real atomic-server. Live tests and
+#     the Playwright suite below connect through it, so from their point of
+#     view "atomic-server" is one URL that happens to host this repo's
+#     plugin catalog.
+#   - `integrations/localthought/mock-proxy.mjs` (the same fixture
+#     atomic-server's own dagger e2e pipeline runs — see
+#     `.dagger/src/index.ts`'s `e2eShardContainer`/`rustBuild(e2e)`) stands
+#     in for the real LocalThought integration proxy, so the Playwright
+#     Integrations-page flow (Pets/Notion/GitHub "Install and connect") can
+#     run without live provider credentials.
+#
+# The `changes` job path-filters the diff so a PR touching only one plugin
+# does not pay for every plugin's live/e2e lane — see its `filters:` for
+# exactly which paths gate which lane. The Rust build and the always-on
+# checks (lint, tooling tests, offline certification for every package) are
+# not gated: they are not what makes this pipeline slow, and certify.mjs
+# already reports a clear per-package pass/fail regardless of what changed.
 #
 # No Rust/WASM tests run here: not the sandboxTests declared in each
 # package's atomicCertification (those are atomic-server's own `cargo test`
 # suite, run by its CI), and not localthought's wasm-smoke.mjs /
-# browser-smoke.mjs (they need a built wasm/pkg and a full Playwright/Vite
-# app respectively — out of scope). Building the atomic-server binary itself
-# is unavoidable infrastructure, not a test.
+# browser-smoke.mjs (they need a built wasm/pkg and a full Vite app
+# respectively — out of scope, distinct from the Playwright suite below,
+# which drives the production-built, server-embedded frontend rather than a
+# dev server). Building the atomic-server binary itself is unavoidable
+# infrastructure, not a test.
 
 on:
   pull_request:
@@ -27,10 +59,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changed plugins
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      any: ${{ steps.filter.outputs.any }}
+      shared: ${{ steps.filter.outputs.shared }}
+      github-issues: ${{ steps.filter.outputs.github-issues }}
+      notion: ${{ steps.filter.outputs.notion }}
+      mt940: ${{ steps.filter.outputs.mt940 }}
+      pets: ${{ steps.filter.outputs.pets }}
+      clockify: ${{ steps.filter.outputs.clockify }}
+      localthought: ${{ steps.filter.outputs.localthought }}
+    steps:
+      # `shared` paths can affect every plugin (tooling, the catalog gate,
+      # the pinned server commit, this workflow itself), so every `if:`
+      # below ORs its own package flag with `shared` rather than this job
+      # trying to fold that in on its own.
+      - name: Path filters
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - 'integrations/tooling/**'
+              - 'integrations/catalog.json'
+              - 'integrations/*.md'
+              - '.atomic-server-ref'
+              - '.github/workflows/ci.yml'
+            github-issues:
+              - 'integrations/github-issues/**'
+            notion:
+              - 'integrations/notion/**'
+            mt940:
+              - 'integrations/mt940/**'
+            pets:
+              - 'integrations/pets/**'
+            clockify:
+              - 'integrations/clockify/**'
+            localthought:
+              - 'integrations/localthought/**'
+            any:
+              - 'integrations/**'
+              - '.atomic-server-ref'
+              - '.github/workflows/ci.yml'
+
   test:
     name: Integration tests (pinned atomic-server)
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Checkout atomic-plugins
         uses: actions/checkout@v4
@@ -48,10 +130,8 @@ jobs:
           ref: ${{ steps.pin.outputs.sha }}
           path: atomic-server
 
-      - name: Use this repo's integrations instead of the pinned commit's copy
-        run: |
-          rm -rf atomic-server/integrations
-          cp -r atomic-plugins/integrations atomic-server/integrations
+      - name: Link atomic-server's browser workspace into atomic-plugins
+        run: ln -s ../atomic-server/browser atomic-plugins/browser
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -102,12 +182,49 @@ jobs:
       # and a real point of CI flakiness. SKIP_WASM_BUILD=1 (the same
       # variable atomic-server's own downstream-saas CI job sets, for the
       # same "the embed only needs to exist" reason) skips it.
-      - name: Build atomic-server (e2e profile; embeds these integrations)
+      #
+      # Three VITE_* vars are build-time defaults baked into the embedded
+      # frontend by its Vite build, which build.rs runs as a child process
+      # that inherits this step's env (verified the next step down):
+      #   - VITE_PLUGIN_CATALOG_URL (helpers/pluginCatalogUrl.ts, added
+      #     upstream in ontola/atomic-server#1597) replaces the old behavior
+      #     of always fetching integrations/catalog.json from the paired
+      #     atomic-server; unset, it defaults to a catalog published from
+      #     this repo's gh-pages. Point it at the dev-server started below.
+      #   - VITE_E2E and VITE_INTEGRATION_PROXY_URL are the same two vars
+      #     atomic-server's own dagger e2e pipeline sets on this build
+      #     (`jsBuild(e2e: true)`): the former surfaces /app/dev-drive (the
+      #     Playwright suite's sign-in path), the latter points the
+      #     Integrations "Install and connect" flow at the mock proxy
+      #     started below instead of the real LocalThought service.
+      - name: Build atomic-server (e2e profile, unmodified pinned checkout)
         working-directory: atomic-server
         env:
           SKIP_WASM_BUILD: "1"
+          VITE_PLUGIN_CATALOG_URL: http://localhost:9880/integrations/catalog.json
+          VITE_E2E: "true"
+          VITE_INTEGRATION_PROXY_URL: http://127.0.0.1:19090
         run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins
 
+      - name: Verify the built frontend uses this repo's catalog and proxy URLs
+        working-directory: atomic-server
+        run: |
+          set -eu
+          for needle in \
+            "http://localhost:9880/integrations/catalog.json" \
+            "http://127.0.0.1:19090"; do
+            if ! grep -rl -- "$needle" browser/data-browser/dist >/dev/null; then
+              echo "'$needle' was not baked into the built frontend" >&2
+              exit 1
+            fi
+          done
+
+      # ATOMIC_INTEGRATION_PROXY_URL / TENANT_SECRET /
+      # ATOMIC_INTEGRATION_FRONTEND_ORIGIN mirror what atomic-server's own
+      # dagger e2e pipeline sets on the server process for parity (see
+      # `.dagger/src/index.ts`'s `atomicServerBinary`/e2e runtime); nothing
+      # in server/src currently reads them, so they are a no-op today, kept
+      # only so this matches upstream if/when a future commit does.
       - name: Start atomic-server
         working-directory: atomic-server
         run: |
@@ -118,6 +235,9 @@ jobs:
           ATOMIC_PORT=9883 \
           ATOMIC_DOMAIN=localhost \
           ATOMIC_REPOPULATE_DEFAULTS=true \
+          ATOMIC_INTEGRATION_PROXY_URL=http://127.0.0.1:19090 \
+          ATOMIC_INTEGRATION_FRONTEND_ORIGIN=http://localhost:9880 \
+          TENANT_SECRET='bW9jay10ZW5hbnQ.mock-signature' \
           ./target/e2e/atomic-server > atomic-server.log 2>&1 &
           echo $! > atomic-server.pid
           for i in $(seq 1 60); do
@@ -128,8 +248,98 @@ jobs:
           cat atomic-server.log
           exit 1
 
+      # integrations/localthought/mock-proxy.mjs is the same fixture
+      # atomic-server's own dagger pipeline runs beside atomic-server for
+      # its Playwright suite (`node /mock-proxy/mock-proxy.mjs & exec
+      # /atomic-server-bin`). MOCK_FRONTEND_ORIGIN must match wherever the
+      # browser actually loads the SPA from (the dev-server proxy below,
+      # not atomic-server directly) — it validates OAuth-style redirect_uri
+      # origins against it.
+      - name: Start the mock integration proxy
+        working-directory: atomic-plugins
+        run: |
+          MOCK_FRONTEND_ORIGIN=http://localhost:9880 \
+            node integrations/localthought/mock-proxy.mjs > mock-proxy.log 2>&1 &
+          echo $! > mock-proxy.pid
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:19090/catalog && exit 0
+            sleep 1
+          done
+          echo "mock integration proxy did not become ready in time" >&2
+          cat mock-proxy.log
+          exit 1
+
+      # Serves this repo's own integrations/catalog.json and plugin.js
+      # bundles on :9880, proxying everything else through to the real
+      # atomic-server on :9883 — see integrations/tooling/dev-server.mjs.
+      # Everything downstream (live tests, Playwright, the hosting-surface
+      # check below) talks to :9880, not :9883 directly.
+      - name: Serve the plugin catalog and proxy atomic-server
+        working-directory: atomic-plugins
+        run: |
+          DEV_SERVER_UPSTREAM=http://localhost:9883 DEV_SERVER_PORT=9880 \
+            node integrations/tooling/dev-server.mjs > dev-server.log 2>&1 &
+          echo $! > dev-server.pid
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:9880/integrations/catalog.json && exit 0
+            sleep 1
+          done
+          echo "dev-server did not become ready in time" >&2
+          cat dev-server.log
+          exit 1
+
+      # Proves the wiring above actually works: every certified plugin.js
+      # and the root catalog.json are byte-identical when fetched through
+      # :9880 (this is the "plugin hosting" a real browser's fetch() would
+      # rely on at install time — see server/build.rs::embed_integrations
+      # upstream), and an ordinary atomic-data request still reaches the
+      # real atomic-server transparently through the same URL.
+      - name: Verify the plugin catalog and hosting surface
+        working-directory: atomic-plugins
+        run: |
+          set -eu
+          check() {
+            local path="$1"
+            local expected actual
+            expected=$(sha256sum "$path" | cut -d' ' -f1)
+            actual=$(curl -sf "http://localhost:9880/integrations/${path#integrations/}" | sha256sum | cut -d' ' -f1)
+            if [ "$expected" != "$actual" ]; then
+              echo "mismatch serving $path through the dev-server proxy" >&2
+              exit 1
+            fi
+          }
+          check integrations/catalog.json
+          for plugin in integrations/*/plugin.js; do
+            check "$plugin"
+          done
+          curl -sf -o /dev/null http://localhost:9880/integrations/github-issues/README.md && \
+            { echo "dev-server must not host non-catalog integration files" >&2; exit 1; }
+          direct=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9883/)
+          proxied=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9880/)
+          if [ "$direct" != "$proxied" ]; then
+            echo "dev-server did not transparently proxy a non-integrations request (direct=$direct proxied=$proxied)" >&2
+            exit 1
+          fi
+
+      - name: Tooling unit tests
+        working-directory: atomic-plugins
+        run: node --test integrations/tooling/certify.test.mjs integrations/tooling/dev-server.test.mjs
+
+      - name: Lint (oxlint)
+        working-directory: atomic-plugins
+        run: browser/node_modules/.bin/oxlint -c browser/.oxlintrc.json integrations
+
+      - name: Format check (oxfmt)
+        working-directory: atomic-plugins
+        run: browser/node_modules/.bin/oxfmt -c browser/.oxfmtrc.json --check integrations
+
+      # Not gated by the changes job: certify.mjs discovers and reports every
+      # certified package in one pass regardless of what changed, and this
+      # layer is local typecheck/bundle/fixture-test work with no server or
+      # browser involved — it is not the cost this workflow's per-plugin
+      # gating is aimed at.
       - name: Offline certification (typecheck, bundle reproducibility, fixture tests)
-        working-directory: atomic-server
+        working-directory: atomic-plugins
         run: node integrations/tooling/certify.mjs --layer js
 
       # github-issues no longer has a Rust-sandbox pilot or a live tier (its
@@ -138,33 +348,95 @@ jobs:
       # don't need the pinned atomic-server, but run them here anyway since
       # this is the one place browser/ is available for their relative imports.
       - name: github-issues unit tests (adapter mapping + automation starter)
-        working-directory: atomic-server
+        working-directory: atomic-plugins
         run: browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
+
+      # clockify and localthought have no package.json/atomicCertification
+      # (they're the generic LocalThought engine and a lens on top of it,
+      # not a certified provider integration), so certify.mjs's discover()
+      # never picks them up. Typecheck and unit-test them directly instead
+      # of leaving their *.test.ts suites unrun, gated on their own changes.
+      - name: Typecheck and unit test clockify
+        if: needs.changes.outputs.clockify == 'true' || needs.changes.outputs.shared == 'true'
+        working-directory: atomic-plugins
+        run: |
+          browser/node_modules/.bin/tsc -p integrations/clockify/tsconfig.json
+          browser/node_modules/.bin/vitest run --config integrations/clockify/vitest.config.ts
+
+      - name: Typecheck and unit test localthought
+        if: needs.changes.outputs.localthought == 'true' || needs.changes.outputs.shared == 'true'
+        working-directory: atomic-plugins
+        run: |
+          browser/node_modules/.bin/tsc -p integrations/localthought/tsconfig.json
+          browser/node_modules/.bin/vitest run --config integrations/localthought/vitest.config.ts
 
       # certify.mjs deliberately strips ATOMIC_*_TEST_SERVER before running
       # tests (a normal certification run must never opt into live tests),
       # so the .live.test.ts suite is run directly here instead, against
-      # the atomic-server started above. notion is the only certified
-      # package with a live tier today.
-      - name: Live tests against the pinned atomic-server
-        working-directory: atomic-server
+      # the dev-server proxy in front of the atomic-server started above.
+      # notion is the only certified package with a live tier today; it only
+      # runs when notion (or something shared) changed.
+      - name: "Live test: notion"
+        if: needs.changes.outputs.notion == 'true' || needs.changes.outputs.shared == 'true'
+        working-directory: atomic-plugins
         env:
-          ATOMIC_NOTION_TEST_SERVER: http://localhost:9883
+          ATOMIC_NOTION_TEST_SERVER: http://localhost:9880
         run: browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts
+
+      - name: Install Playwright (chromium)
+        working-directory: atomic-plugins
+        run: browser/node_modules/.bin/playwright install --with-deps chromium
+
+      # plugin.spec.ts drives atomic-server's generic uploaded-plugin system
+      # (bootstrap sandbox, custom views) — not tied to any one integration
+      # package, so it runs whenever any integration or shared/tooling code
+      # changed rather than being gated per plugin.
+      - name: "E2E: plugin sandbox and bootstrap"
+        working-directory: atomic-plugins
+        env:
+          SERVER_URL: http://localhost:9880
+          FRONTEND_URL: http://localhost:9880
+        run: browser/node_modules/.bin/playwright test --config=browser/e2e/playwright.config.ts --project=chromium browser/e2e/tests/plugin.spec.ts
+
+      # plugins.spec.ts drives the Integrations page for Pets, Notion and
+      # GitHub in one file, so it is gated at file granularity on those three
+      # packages (not per test() inside it — their titles are prose, not a
+      # stable gating key). ATOMIC_MOCK_INTEGRATION_PROXY opts the Pets test
+      # in; the Notion/GitHub tests always route through the mock proxy
+      # started above regardless of that var.
+      - name: "E2E: Integrations page (Pets, Notion, GitHub)"
+        if: needs.changes.outputs.pets == 'true' || needs.changes.outputs.notion == 'true' || needs.changes.outputs.github-issues == 'true' || needs.changes.outputs.shared == 'true'
+        working-directory: atomic-plugins
+        env:
+          SERVER_URL: http://localhost:9880
+          FRONTEND_URL: http://localhost:9880
+          ATOMIC_MOCK_INTEGRATION_PROXY: "1"
+        run: browser/node_modules/.bin/playwright test --config=browser/e2e/playwright.config.ts --project=chromium browser/e2e/tests/plugins.spec.ts
 
       - name: Upload certification report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: integration-certification-report
-          path: atomic-server/artifacts/integration-certification
+          path: atomic-plugins/artifacts/integration-certification
           if-no-files-found: ignore
 
-      - name: Stop atomic-server
+      - name: Upload Playwright report
         if: always()
-        working-directory: atomic-server
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: atomic-plugins/browser/e2e/playwright-report
+          if-no-files-found: ignore
+
+      - name: Stop atomic-server, dev-server and mock proxy
+        if: always()
         run: |
-          if [ -f atomic-server.pid ]; then
-            kill "$(cat atomic-server.pid)" 2>/dev/null || true
-          fi
-          cat atomic-server.log || true
+          for pidfile in atomic-plugins/dev-server.pid atomic-plugins/mock-proxy.pid atomic-server/atomic-server.pid; do
+            if [ -f "$pidfile" ]; then
+              kill "$(cat "$pidfile")" 2>/dev/null || true
+            fi
+          done
+          cat atomic-plugins/dev-server.log || true
+          cat atomic-plugins/mock-proxy.log || true
+          cat atomic-server/atomic-server.log || true
