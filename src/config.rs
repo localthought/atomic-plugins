@@ -58,7 +58,7 @@ pub struct Config {
 /// Immutable pinned revision of `localthought/overlays`' `catalog.json` used
 /// when `CATALOG_PATH` is not set. Shared with tests that need to validate
 /// the exact catalog the application would load by default.
-pub const DEFAULT_CATALOG_PATH: &str = "https://raw.githubusercontent.com/localthought/overlays/8f29d9973267b6b3877aa27a5ab50cd41b010e6c/catalog.json";
+pub const DEFAULT_CATALOG_PATH: &str = "https://raw.githubusercontent.com/localthought/overlays/5d344a62e36f918a065bab1fbb7736571877673e/catalog.json";
 
 /// Reads a required environment variable and rejects it if unset or blank,
 /// so a blank `.env` value fails configuration explicitly instead of being
