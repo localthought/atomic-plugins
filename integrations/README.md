@@ -89,6 +89,264 @@ compares it against this repo's current `version` to offer an update. Bump
 `package.json` `version` (and the matching catalog entry) whenever an
 integration's shipped `plugin.js` changes.
 
+## Building an uploader plugin
+
+A file-upload importer — like **Bank statements** (`integrations/mt940/`,
+which reads MT940 and camt.053 bank statement exports) — is not a special
+plugin kind with its own base class or interface. It is an ordinary
+server-executed sandbox plugin (see [Two plugin runtimes](../AGENTS.md#two-plugin-runtimes))
+whose `run(ctx)` reads file contents that UI code already collected, instead
+of calling `ctx.http` against a provider. Everything else — config
+declaration, `importRecords`, identity/reconciliation — is the same
+contract every importer plugin follows.
+
+1. **Declare no network access.** `operations: []` and `secrets: []` in the
+   manifest is what marks a plugin as needing neither: contrast with
+   `github-issues`/`notion`, which declare secrets and call `ctx.http`.
+   File acquisition (choosing/reading the file) is UI code, not plugin code;
+   parsing can run first in an isolated browser Worker, but the sandboxed
+   `run()` itself never touches the network.
+
+2. **Read the uploaded text from `ctx`.** The host hands file contents in as
+   plain text on the trigger payload:
+   ```ts
+   const text = ctx.text ?? ctx.trigger?.payload?.text;
+   if (!text) throw new Error('Open <Your importer> in Integrations and choose a file');
+   ```
+   Support a **dry validate** call before installation completes:
+   `ctx.trigger?.payload?.validate` — when set, parse/validate and return
+   `{ intents: [], problems: [] }` without writing anything.
+
+3. **Declare and re-guard config.** Follow [Declaring config](#declaring-config):
+   list the destination `table`/`rowClass`/ontology `properties` your
+   importer needs under `manifest.config`, and mark them `required`. The
+   host checks this before starting the sandbox, but the declaration is
+   advisory — `run()` must still guard `ctx.config` and throw a
+   configuration-shaped error (naming the missing fields), never let a
+   destructure of `undefined` throw a raw `TypeError`:
+   ```ts
+   const { table, rowClass, properties: p } = ctx.config ?? ({} as Config);
+   const missing = [['table', table], ['rowClass', rowClass], ['properties', p]]
+     .filter(([, value]) => !value).map(([name]) => name);
+   if (missing.length) throw new Error(`Configure this importer before running it: missing ${missing.join(', ')}`);
+   ```
+
+4. **Give every row a stable identity, keyed by what makes reimport safe.**
+   File-based sources have no server-assigned ID to key off, so build one
+   from content that uniquely identifies a row within your source scope
+   (account/currency/format plus a bank reference, or statement position as
+   a fallback), and a separate content fingerprint to detect a genuinely
+   conflicting reimport versus a harmless repeat. `mt940/plugin.ts` is the
+   reference: it keys `identity` by `[format, account, currency, reference-or-statement-position]`
+   and a parallel `fingerprint` by the row's actual field values, throwing
+   when the same identity carries two different fingerprints within one
+   file (a real conflict), and rejecting overlapping imports that lack
+   unique references at all. Feed the result to the shared reconciliation
+   helper:
+   ```ts
+   import { importRecords, type ImportRecord } from '../../browser/lib/src/import-records.js';
+   const records: ImportRecord[] = rows.map(row => ({
+     sourceId: identity, mode: 'append', legacy: { property: p['source-id'], value: identity },
+     localId: `row-${records.length}`, parent: table, isA: [rowClass], values: { /* ... */ },
+   }));
+   const result = importRecords(ctx, records);
+   return { intents: result.intents, problems: result.problems };
+   ```
+   `importRecords` (`browser/lib/src/import-records.js`) is the shared
+   import/reconciliation contract point every importer calls, whether the
+   source is a file (`mt940`, `pets`) or a fetched provider (`github-issues`,
+   `notion`, the generic `localthought` plugin).
+
+5. **Keep parsing pure and separate from the manifest.** `mt940/parser.ts`
+   (MT940), `mt940/camt053.ts` (camt.053 XML — the sandbox has no
+   `DOMParser`, so this carries its own namespace-agnostic reader) and
+   `mt940/statement.ts` (format detection + dispatch) contain no manifest or
+   `ctx` references at all; `plugin.ts` only wires their output into
+   `ImportRecord`s. This keeps the parser unit-testable without a sandbox
+   host and reusable if a second file format needs the same importer later.
+   Represent amounts, dates and other precision-sensitive fields as exact
+   strings (`mt940/parser.ts` reconciles balances with `BigInt`, never
+   floating point).
+
+6. **Declare the destination ontology in a `schema.ts`.** A code-first
+   `SchemaSpec` (`mt940/schema.ts`'s `bankingSchema()`): an array of
+   `[shortname, displayName, description]` triples turned into `properties`,
+   plus one or more `classes` entries with `requires`/`recommends`. This is
+   what a fresh installation provisions before the importer's first run.
+
+7. **Follow package layout and commands.** `plugin.ts` (manifest + `run`),
+   `<domain>.ts` parser/adapter modules, `schema.ts`, `tsconfig.json`
+   extending `../../browser/tsconfig.build.json`, `vitest.config.ts`,
+   `package.json` with `atomicCertification`, and a `README.md` with an
+   `## Architecture` and `## Supported scope and gaps` section (state exact
+   limits — record counts, byte sizes — and what is out of scope, don't
+   just describe what works). Bundle and test exactly as `mt940` does:
+   ```sh
+   ./browser/node_modules/.bin/vitest run --config integrations/<name>/vitest.config.ts
+   ./browser/node_modules/.bin/esbuild integrations/<name>/plugin.ts --preserve-symlinks --bundle --format=esm --platform=neutral --target=es2022 > integrations/<name>/plugin.js
+   ```
+   Then run the full certification command from [above](#one-certification-command)
+   and add a `catalog.json` entry (see [Adding or changing an integration](#adding-or-changing-an-integration)).
+
+## Building a LocalThought (reflector/syncables/Devonian) connector
+
+This is the other plugin runtime from [Two plugin runtimes](../AGENTS.md#two-plugin-runtimes):
+no server sandbox, no `plugin.js` executed by QuickJS. It runs entirely in
+the browser against a remote platform's HTTP API, through **LocalThought**
+(the remote OAuth/API proxy at `https://localthought.io`, or a
+self-hosted `integration-proxy`) and its supporting engines. Read
+[`integrations/localthought/README.md`](localthought/README.md) for the
+end-to-end connect/install/refresh flow before adding a new platform; this
+section explains where the terms **reflector**, **syncables** and
+**Devonian** fit, and when to reach for which.
+
+### The stack, top to bottom
+
+- **LocalThought** — the OAuth/API proxy. It owns provider credentials
+  (never the browser or AtomicServer), publishes a **catalog** of supported
+  platforms, and for each platform serves the provider's OpenAPI document
+  (already patched with the overlays it needs — see below) plus a default
+  query selection. A plugin declares which platform it targets with a
+  plain string, not a class: `Config.platform` in
+  `integrations/localthought/plugin.ts`, or `catalog.json`'s per-entry
+  `"platform"` field.
+- **`BrowserIntegrations`** (`integrations/localthought/browser.ts`) — the
+  browser-side client class; an instance of it, constructed with browser
+  `Storage`, an `Engine` factory and the proxy origin, **is** "a
+  localthought instance" from a plugin's point of view. It runs PKCE OAuth,
+  fetches the platform's OpenAPI document and default selection, and calls
+  into the injected `Engine`.
+- **`Engine`** (the `describeIntegration`/`fetchIntegration` interface in
+  `browser.ts`) — the WASM-exposed façade over the **syncables** sync
+  engine (`wasm/src/integrations.rs`). This is where an OpenAPI document
+  actually gets read.
+- **Syncables** (`localthought/syncables/`, vendored here from
+  [`localthought/syncables-rs`](https://github.com/localthought/syncables-rs),
+  itself a Rust port of [`localthought/syncables`](https://github.com/localthought/syncables))
+  — reads the platform's OpenAPI document plus its
+  [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
+  (`components.crudResources`) block, discovers a resource model (identity
+  bindings, collections, nested collections — e.g. a repo's issues, then
+  each issue's comments), and drives a full paginated read into local
+  storage, deriving a neutral Atomic-Data-shaped ontology as it goes. This
+  is the mechanism that lets a connector support a new platform's *shape*
+  purely from spec annotations, "nothing about issues, comments, calendars
+  or events is compiled in" (`sync/resource_model.rs`).
+- **Reflector** ([`localthought/reflector`](https://github.com/localthought/reflector) /
+  `reflector-rs`) — the sync-engine/plugin-runtime layer one level above
+  syncables; `SyncClient`'s `ClientConfig` contract is written to match
+  what `reflector-rs`'s `src/syncables.rs` already expects, field-for-field,
+  so the two are meant to converge. A "reflector plugin," in this repo's
+  vocabulary, is a connector built on this sync-engine layer rather than on
+  the plain OpenAPI-mock-and-mirror layer syncables also provides on its own.
+- **Devonian** — a separate, native browser-local resource-lens/storage
+  engine (vendored bundle at
+  `browser/data-browser/src/chunks/DevonianDemo/devonian.js`), used only
+  when a connector needs **two-way, local-first sync**: native Atomic-shaped
+  resources stored in WASM/OPFS + IndexedDB, "lenses" that project a
+  provider's shape onto those native resources, and checkpointed
+  three-way reconciliation. No AtomicServer instance or plugin executor is
+  involved at all for a Devonian connector.
+
+### Two shapes, pick one
+
+**(a) One-way import through the generic LocalThought flow — no lens
+needed unless you're reshaping fields.** This is the default and the
+smallest amount of new code. Add a `catalog.json` entry with `"platform":
+"<your-platform-id>"` so LocalThought's setup dialog handles OAuth and the
+generic `integrations/localthought/plugin.ts` maps fetched records onto
+Atomic properties/classes via `Config.destinations`/`.properties`/`.records`.
+Write a **lens** only if the platform's raw fields need reshaping before
+they become a table — a pure function over `FetchedPlatform`/`FetchedRecord`
+(types in `integrations/localthought/schema.ts`), run *after* the engine has
+already fetched and paginated:
+```ts
+import type { FetchedPlatform, FetchedRecord, Term } from '../localthought/schema.js';
+
+export function myPlatformProjection(fetched: FetchedPlatform): FetchedPlatform {
+  if (fetched.platform !== 'my-platform') return fetched;
+  // add/derive fields on fetched.records, extend fetched.ontology.terms
+  return { ...fetched, ontology: { /* ... */ }, records: [] /* ... */ };
+}
+```
+`integrations/clockify/localthought.ts` (`clockifyProjection`) is the
+reference: it adds two derived `start`/`end` timestamp terms, drops
+in-progress/break entries, and leaves every other provider field untouched.
+Pair it with a query-override function if the connector needs per-run
+parameters (`clockifyImportQuery()` supplies a rolling look-back window,
+merged through `mergeQuerySelections()` in `browser.ts`). Use
+`platformSchema()`/`termKey()` from `localthought/schema.ts` to turn
+discovered `Term`s into a `SchemaSpec` generically — prefixed
+`lt-<platform>-<kind>-<shortname>` to avoid collisions across platforms.
+
+**(b) Two-way, local-first sync — a Devonian lens.** Needed when the
+connector must let local edits flow back to the provider (closing an issue,
+editing a title) without a server round-trip. Model this on
+`integrations/github-issues/devonian/`:
+- `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
+- `ports.mjs` — native-Atomic and provider-side projections/transports.
+- `build.mjs` — regenerates the vendored Devonian bundle:
+  `DEVONIAN_PATH=/path/to/devonian node integrations/github-issues/devonian/build.mjs`.
+
+Give every native resource a stable identity independent of matching text
+(explicit provider IDs bind existing rows; nothing infers identity from
+title/body equality), journal writes before sending them (the provider side
+has no idempotent create, so an uncertain/lost response must stop rather
+than retry blindly), and treat a missing record as a conflict to resolve,
+never an implicit deletion. Add a `catalog.json` entry with the `(Devonian)`
+naming convention (`devonian-<platform>`) and, unless it reuses the generic
+LocalThought setup dialog, its own `callback-platform`.
+
+### OpenAPI overlays and the pondersource extensions
+
+A provider's own OpenAPI document rarely declares the two things syncables
+needs to drive it generically: which operations are CRUD on which resource,
+and how its list endpoints paginate. Rather than fork the provider's spec,
+LocalThought layers **overlays** on top of it — small YAML/JSON documents
+following the [OpenAPI Overlay Specification](https://spec.openapis.org/overlay/v1.0.0.html):
+a list of `{target: <JSONPath-ish string>, update: {...}}` or `{target,
+remove: true}` actions, applied in order onto the resolved document (a later
+overlay may refine what an earlier one added). `localthought/syncables/src/openapi/overlay.rs`
+implements a deliberately minimal subset — `$`, dot-paths (`$.components`),
+and quoted-bracket segments (`$.paths['/pets/{petId}'].get`); no wildcards
+or array indexing.
+
+Two overlay-carried spec extensions from the
+[`pondersource/openapi-extensions`](https://github.com/pondersource/openapi-extensions)
+project do the actual work:
+
+- **[CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)**
+  — adds `components.crudResources` (named resources with an `identity`
+  URL template + path-variable bindings, and `collections` with their own
+  list-query fixed params) and an `x-crud` block on individual operations
+  (`action: list|read|create|update|delete`, `resource`, `collection`,
+  `mode`, `patchFormat`, `addedFields`, `memberOf`, `removesFrom`). This is
+  what `sync::resource_model` in syncables reads to discover a platform's
+  resource graph, including nested collections.
+- **[OpenAPI Pagination Schemes Extension](https://github.com/pondersource/openapi-pagination-schemes-extension)**
+  — adds `components.paginationSchemes`, describing how the API paginates
+  (cursor, offset, page, link-header, ...). Providers essentially never
+  declare this natively either, so it is applied the same way, via an
+  overlay. `syncables/src/pagination/` implements it, deliberately keeping
+  scheme/role strings open-ended rather than closed enums, since the spec
+  allows `x-` extension roles.
+
+**`localthought/overlays`** is the upstream collection of ready-made overlay
+files for real providers (an external repo/catalog, not a directory in this
+checkout) — `syncables/tests/fixtures/real-world/` vendors overlay and
+OpenAPI fixtures unmodified from it and from apis.guru, with provenance in
+each file's header comment. When adding a new platform connector, check
+there first for an existing overlay before writing a new one; when you do
+write a new overlay, keep the same minimal-diff spirit — patch what the
+provider's spec is missing, don't restate what it already declares
+correctly.
+
+In the browser/WASM path (no filesystem), overlays are never read from
+disk by syncables itself: LocalThought applies them server-side before
+serving the platform's document, or the browser applies them in memory
+before calling into the sync engine — `ClientConfig.document`/`.overlays`
+file paths are a native-only convenience.
+
 ## Adding or changing an integration
 
 1. Supply `plugin.ts`, reproducible `plugin.js`, `tsconfig.json`,
