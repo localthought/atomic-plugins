@@ -15,11 +15,13 @@ info:
 # the same way the Google Calendar identity-overlay introduces its
 # `/v1/userinfo` operation from scratch — not merged onto something the
 # base document already had, the way the timeEntry operations above are.
-# Like timeEntry, these two resources are declared independently and
-# unlinked at this layer, mirroring how Todoist's `project`/`task` overlay
-# in this repo declares two unrelated read-only resources side by side;
-# the actual projectId/userId → project/member linking is a devonian lens
-# concern, not something crud-causality metadata expresses.
+#
+# timeEntry.references links projectId/userId to project/member using the
+# Reference Object from CRUD Causality 0.3.0 (pondersource/openapi-extensions
+# spec/crud-causality#references, added for this exact case). It asserts
+# identity only, the same way identity.bindings does for an object's own
+# URL — resolving the referenced project/member from a time entry, and any
+# enrichment into Atomic Project/Person records, is a devonian lens concern.
 actions:
   - target: $.components
     update:
@@ -31,6 +33,18 @@ actions:
             urlTemplate: /v1/workspaces/{workspaceId}/time-entries/{id}
             bindings:
               id: {field: id}
+          references:
+            project:
+              resource: project
+              required: false
+              description: TimeEntry.projectId is nullable — not every time
+                entry is booked against a project.
+              bindings:
+                id: {field: projectId}
+            member:
+              resource: member
+              bindings:
+                id: {field: userId}
           collections:
             timeEntries:
               urlTemplate: /v1/workspaces/{workspaceId}/user/{userId}/time-entries
