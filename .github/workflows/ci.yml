@@ -93,8 +93,19 @@ jobs:
       # codecs, and the server falls back to plain server.bind() (serve.rs)
       # when `--https` isn't passed regardless of the `https` feature. Only
       # `wasm-plugins` (the sandbox the live tests execute plugins in) stays.
+      #
+      # server/build.rs also builds the data-browser frontend to embed
+      # (unconditionally, regardless of Cargo features), and that build's
+      # `pnpm build:wasm` step downloads a pinned binaryen/wasm-opt release
+      # from GitHub — a client-side WASM module for the browser's own
+      # offline/OPFS storage, unrelated to anything the live tests touch,
+      # and a real point of CI flakiness. SKIP_WASM_BUILD=1 (the same
+      # variable atomic-server's own downstream-saas CI job sets, for the
+      # same "the embed only needs to exist" reason) skips it.
       - name: Build atomic-server (e2e profile; embeds these integrations)
         working-directory: atomic-server
+        env:
+          SKIP_WASM_BUILD: "1"
         run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins
 
       - name: Start atomic-server
