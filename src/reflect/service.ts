@@ -1,14 +1,16 @@
 import { join } from 'node:path';
+import {
+  ReflectionEngine,
+  ReflectionRunner,
+  type ReflectionSide,
+  type ReflectionSummary,
+} from 'devonian/reflect';
 import type { ReflectionEndpoint, ReflectorConfig } from '../config/index.js';
 import { deriveApiBase } from '../oauth/oauth.js';
 import { StaticTokenManager } from '../oauth/static-token.js';
 import { buildDocumentFrom } from '../sync/document.js';
 import { discoverResourceModel } from '../sync/resources.js';
-import {
-  ReflectionEngine,
-  type ReflectionSide,
-  type ReflectionSummary,
-} from './engine.js';
+import { buildReflectionSide, type SideConfig } from './sides.js';
 import { FileIdMap } from './id-map.js';
 import { FileKvStore } from './kv-store.js';
 
@@ -52,6 +54,7 @@ function targetContext(target: string): Record<string, string> {
 
 async function buildSide(
   endpoint: ReflectionEndpoint,
+  retry: SideConfig['retry'],
 ): Promise<ReflectionSide> {
   const document = await buildDocumentFrom(
     endpoint.openApiPath,
@@ -59,43 +62,26 @@ async function buildSide(
   );
   const model = discoverResourceModel(document);
   const auth = new StaticTokenManager(deriveApiBase(document), endpoint.token);
-  return {
+  return buildReflectionSide({
     system: endpoint.target,
     document,
     model,
     auth,
     context: targetContext(endpoint.target),
-  };
-}
-
-/** A summary plus when it ran, for the status endpoint. */
-export interface ReflectionRun {
-  at: string;
-  summary: ReflectionSummary;
+    retry,
+  });
 }
 
 /**
- * Runs the reflection engine on a background interval and on demand.
- *
- * `reflectNow()` is the "reflect now" seam (an HTTP trigger, or a live-test
- * harness kick) and the loop both go through one serialized chain, so a manual
- * trigger and a scheduled tick never overlap. The id-map and state ledger are
- * persisted under `${DATA_DIR}/reflect`; on an ephemeral host that directory is
- * lost on restart, but reflection stays duplicate-free because the engine
- * re-derives links from the destination's markers.
+ * Runs `devonian`'s generic reflection engine on reflector's config: builds
+ * the two `ReflectionSide`s from this app's document/overlay/OAuth machinery
+ * (the half `devonian` deliberately knows nothing about — localthought/
+ * atomic-plugins#6), then wraps the resulting engine in a `ReflectionRunner`
+ * for the background loop, on-demand trigger, and status reporting that
+ * `src/server/app.ts`'s `/api/reflect*` routes and `src/main.ts` use.
  */
 export class ReflectionService {
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private chain: Promise<unknown> = Promise.resolve();
-  private lastRun: ReflectionRun | undefined;
-  private lastError: string | undefined;
-
-  private constructor(
-    private readonly engine: ReflectionEngine,
-    private readonly intervalMs: number,
-    private readonly direction: 'bidirectional' | 'a-to-b',
-    private readonly systems: [string, string],
-  ) {}
+  private constructor(private readonly runner: ReflectionRunner) {}
 
   /** Builds the service from config, or `undefined` when reflection is off. */
   static async fromConfig(
@@ -105,83 +91,44 @@ export class ReflectionService {
       return undefined;
     }
     const [a, b] = await Promise.all([
-      buildSide(config.reflection.a),
-      buildSide(config.reflection.b),
+      buildSide(config.reflection.a, config.retry),
+      buildSide(config.reflection.b, config.retry),
     ]);
     const dir = join(config.dataDir, 'reflect');
     const idMap = await FileIdMap.open(join(dir, 'id-map.json'));
     const stateLedger = await FileKvStore.open(join(dir, 'state.json'));
     const engine = new ReflectionEngine(a, b, idMap, {
       direction: config.reflection.direction,
-      retry: config.retry,
+      maxAttempts: config.retry.maxAttempts,
       stateLedger,
+      // reflector's markers predate devonian; keep the established tag so
+      // records already reflected in production keep parsing.
+      namespace: 'reflector',
     });
-    return new ReflectionService(
+    const runner = new ReflectionRunner(
       engine,
       config.reflection.intervalMs,
       config.reflection.direction,
       [a.system, b.system],
     );
+    return new ReflectionService(runner);
   }
 
   /** Triggers one reflection pass, serialized with the loop and other triggers. */
-  async reflectNow(): Promise<ReflectionSummary> {
-    const run = this.chain.then(() => this.engine.reflect());
-    // Keep the chain alive regardless of this run's outcome.
-    this.chain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    try {
-      const summary = await run;
-      this.lastRun = { at: new Date().toISOString(), summary };
-      this.lastError = undefined;
-      return summary;
-    } catch (error) {
-      this.lastError = error instanceof Error ? error.message : String(error);
-      throw error;
-    }
+  reflectNow(): Promise<ReflectionSummary> {
+    return this.runner.reflectNow();
   }
 
   /** Starts the background loop (an immediate pass, then every `intervalMs`). */
   start(): void {
-    if (this.timer) {
-      return;
-    }
-    const tick = (): void => {
-      void this.reflectNow().catch((error: unknown) => {
-        console.error('Reflection pass failed:', error);
-      });
-    };
-    tick();
-    this.timer = setInterval(tick, this.intervalMs);
-    if (typeof this.timer.unref === 'function') {
-      this.timer.unref();
-    }
+    this.runner.start();
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = undefined;
-    }
+    this.runner.stop();
   }
 
-  status(): {
-    enabled: true;
-    direction: string;
-    intervalMs: number;
-    systems: [string, string];
-    lastRun?: ReflectionRun;
-    lastError?: string;
-  } {
-    return {
-      enabled: true,
-      direction: this.direction,
-      intervalMs: this.intervalMs,
-      systems: this.systems,
-      ...(this.lastRun ? { lastRun: this.lastRun } : {}),
-      ...(this.lastError ? { lastError: this.lastError } : {}),
-    };
+  status(): ReturnType<ReflectionRunner['status']> {
+    return this.runner.status();
   }
 }

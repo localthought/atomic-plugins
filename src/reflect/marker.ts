@@ -1,103 +1,36 @@
 /**
- * Origin markers for reflected records.
+ * Origin markers for reflected records — see `devonian/reflect`'s own
+ * `marker.ts` for the full explanation of what these are and why.
  *
- * When Reflector copies a record from one system to another, the copy has to
- * carry a durable link back to the record it came from — so a later pass can
- * tell an original apart from a copy and never reflect a copy onward (which
- * would loop). Systems with a structured metadata channel (e.g. Google
- * Calendar's `extendedProperties.private`) can hold that link as a field; on
- * systems without one — notably **GitHub issues and comments** — the only
- * durable place is the body text itself, as an HTML comment that renders
- * invisibly.
- *
- * This module is that codec: {@link embedMarker} writes the hidden comment,
- * {@link parseMarker} reads it back, and {@link hasMarker} is the cheap
- * "is this already a copy?" check. It is deliberately free of any GitHub or
- * transport specifics — it operates on plain strings.
+ * This is a thin wrapper pinning the marker namespace to `reflector` (the
+ * tag reflector has always used, `<!-- reflector:origin ... -->`), so
+ * existing markers already embedded in production records keep parsing the
+ * same way after the underlying codec moved to `devonian` (localthought/
+ * atomic-plugins#6).
  */
+import * as devonianMarker from 'devonian/reflect';
+import type { OriginRef } from 'devonian/reflect';
 
-/** A reference to the record a copy was made from. */
-export interface OriginRef {
-  /** Which system/endpoint the original lives on, e.g. a GitHub `owner/repo`. */
-  system: string;
-  /** The kind of record, e.g. `issue` or `comment`. */
-  kind: string;
-  /** The original record's identifier on that system. */
-  id: string;
-}
+export type { OriginRef };
 
-/**
- * Matches a single reflector origin marker anywhere in a body. The payload is
- * a space-separated list of `key=value` pairs whose values are
- * percent-encoded, so a value can never contain `>` (hence never `-->`) and
- * the comment cannot be closed early or collide with surrounding text.
- */
-const MARKER_RE = /<!--\s*reflector:origin\s+([^>]*?)\s*-->/g;
+const NAMESPACE = 'reflector';
 
-const KEYS = ['system', 'kind', 'id'] as const;
-
-/** Renders an origin ref as the hidden HTML comment (no surrounding whitespace). */
 export function renderMarker(ref: OriginRef): string {
-  const fields = KEYS.map(
-    (key) => `${key}=${encodeURIComponent(ref[key])}`,
-  ).join(' ');
-  return `<!-- reflector:origin ${fields} -->`;
+  return devonianMarker.renderMarker(ref, NAMESPACE);
 }
 
-/** Whether `body` already carries a reflector origin marker. */
 export function hasMarker(body: string): boolean {
-  MARKER_RE.lastIndex = 0;
-  return MARKER_RE.test(body);
+  return devonianMarker.hasMarker(body, NAMESPACE);
 }
 
-/**
- * Reads the origin ref out of `body`, or `undefined` if there is none. If a
- * body somehow carries more than one marker the first is used. A marker
- * missing any required key is treated as absent (returns `undefined`) rather
- * than yielding a partial ref.
- */
 export function parseMarker(body: string): OriginRef | undefined {
-  MARKER_RE.lastIndex = 0;
-  const match = MARKER_RE.exec(body);
-  if (!match) {
-    return undefined;
-  }
-  const payload = match[1] ?? '';
-  const fields: Record<string, string> = {};
-  for (const pair of payload.split(/\s+/)) {
-    const eq = pair.indexOf('=');
-    if (eq <= 0) {
-      continue;
-    }
-    const key = pair.slice(0, eq);
-    try {
-      fields[key] = decodeURIComponent(pair.slice(eq + 1));
-    } catch {
-      return undefined; // malformed percent-encoding → treat as no marker
-    }
-  }
-  if (KEYS.every((key) => typeof fields[key] === 'string')) {
-    return { system: fields.system!, kind: fields.kind!, id: fields.id! };
-  }
-  return undefined;
+  return devonianMarker.parseMarker(body, NAMESPACE);
 }
 
-/** Removes every reflector origin marker (and trailing blank lines it leaves). */
 export function stripMarker(body: string): string {
-  return body
-    .replace(MARKER_RE, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return devonianMarker.stripMarker(body, NAMESPACE);
 }
 
-/**
- * Embeds `ref` into `body` as a hidden marker, idempotently: any existing
- * reflector marker is removed first, so calling this twice does not stack
- * duplicate markers. The marker is appended after the visible text, separated
- * by a blank line (or is the whole body when `body` is empty).
- */
 export function embedMarker(body: string, ref: OriginRef): string {
-  const base = stripMarker(body ?? '');
-  const marker = renderMarker(ref);
-  return base ? `${base}\n\n${marker}` : marker;
+  return devonianMarker.embedMarker(body, ref, NAMESPACE);
 }
