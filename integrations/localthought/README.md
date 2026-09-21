@@ -181,14 +181,25 @@ projected Calendar day/all-day columns are display fields refreshed on import.
 Atomic-only fields are preserved. Outbound editing of existing events remains manual. Inbound refresh runs in
 the browser; this is not a complete Calendar mirror.
 
-**Deployment requirement:** deploy the companion integration-proxy change in
-`calendar-proxy.patch` (based on proxy main `71115c2`). It requests
-`calendar.events` and `calendar.calendarlist.readonly` and forwards/allows
-`If-Match` through CORS. Reconnect existing Google accounts for write access.
-Calendar reconnection retains the original installation identity and imported tables.
-The companion worktree is `/private/tmp/calendar-sync-proxy`, branch
-`codex/google-calendar-two-way`. No production deployment or live account writes
-were performed as part of these checks.
+**Deployment requirement:** `integration-proxy`'s CORS/`If-Match` forwarding
+and the `calendar.events`/`calendar.calendarlist.readonly` OAuth scopes are
+already generic, already-shipped behavior there — not gated behind any patch
+in this repo. What was still missing was narrower: the composed
+`google-calendar` catalog `integration-proxy` loads (from
+`localthought/overlays`) only ever declared `GET` operations, so a `PATCH`
+never reached Google no matter what the proxy or scope allowed. That catalog
+gap is closed by
+[overlays#166](https://github.com/localthought/overlays/pull/166) (adds the
+one write operation this lens sends — a partial event update, matching
+`applyCalendarEdit`'s `summary`/`description`/`location`/`start`/`end` fields
+and `If-Match`) and
+[integration-proxy#75](https://github.com/localthought/integration-proxy/pull/75)
+(bumps the deployed `DEFAULT_CATALOG_PATH` pin to it). Both need merging and
+the service needs restarting to pick up the new pin before any write reaches
+Google. Reconnect existing Google accounts if the wider `calendar.events`
+scope wasn't already exercised in this deployment; Calendar reconnection
+retains the original installation identity and imported tables. No production
+deployment or live account writes have been performed as part of this work.
 
 `calendar-sync.test.ts` covers minimal patches, conflict detection, stale local
 and remote previews, write-in-flight edits, lost checkpoints, date validation,
