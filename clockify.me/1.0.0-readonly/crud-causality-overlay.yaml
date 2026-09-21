@@ -1,11 +1,27 @@
 overlay: 1.0.0
 info:
   title: Clockify API Time Entry CRUD Causality
-  version: 1.0.0
+  version: 1.1.0
 # The initial Clockify integration is deliberately read-only. A time entry
 # is listed for a user on a workspace and read by its own id. workspaceId
 # and userId are supplied as constants (like GitHub Issues' owner/repo),
 # not discovered — Clockify has no auto-discovery step in this catalog.
+#
+# Phase A adds `project` and `member`, also read-only, so a time entry's
+# `projectId`/`userId` can be resolved against named records instead of
+# staying opaque ids (see localthought/atomic-plugins#4). Neither the base
+# clockify.me OAD nor Clockify's other overlays in this repo describe these
+# endpoints yet, so their path items and schemas are defined here in full,
+# the same way the Google Calendar identity-overlay introduces its
+# `/v1/userinfo` operation from scratch — not merged onto something the
+# base document already had, the way the timeEntry operations above are.
+#
+# timeEntry.references links projectId/userId to project/member using the
+# Reference Object from CRUD Causality 0.3.0 (pondersource/openapi-extensions
+# spec/crud-causality#references, added for this exact case). It asserts
+# identity only, the same way identity.bindings does for an object's own
+# URL — resolving the referenced project/member from a time entry, and any
+# enrichment into Atomic Project/Person records, is a devonian lens concern.
 actions:
   - target: $.components
     update:
@@ -17,12 +33,173 @@ actions:
             urlTemplate: /v1/workspaces/{workspaceId}/time-entries/{id}
             bindings:
               id: {field: id}
+          references:
+            project:
+              resource: project
+              required: false
+              description: TimeEntry.projectId is nullable — not every time
+                entry is booked against a project.
+              bindings:
+                id: {field: projectId}
+            member:
+              resource: member
+              bindings:
+                id: {field: userId}
           collections:
             timeEntries:
               urlTemplate: /v1/workspaces/{workspaceId}/user/{userId}/time-entries
+        project:
+          schema: {$ref: '#/components/schemas/Project'}
+          description: A project on a Clockify workspace, referenced by time
+            entries' projectId.
+          identity:
+            urlTemplate: /v1/workspaces/{workspaceId}/projects/{id}
+            bindings:
+              id: {field: id}
+          collections:
+            projects:
+              urlTemplate: /v1/workspaces/{workspaceId}/projects
+        member:
+          schema: {$ref: '#/components/schemas/Member'}
+          description: A member of a Clockify workspace, referenced by time
+            entries' userId.
+          identity:
+            urlTemplate: /v1/workspaces/{workspaceId}/users/{id}
+            bindings:
+              id: {field: id}
+          collections:
+            members:
+              urlTemplate: /v1/workspaces/{workspaceId}/users
   - target: $.paths['/v1/workspaces/{workspaceId}/user/{userId}/time-entries'].get
     update:
       x-crud: {action: list, resource: timeEntry, collection: timeEntries}
   - target: $.paths['/v1/workspaces/{workspaceId}/time-entries/{id}'].get
     update:
       x-crud: {action: read, resource: timeEntry}
+
+  # --- Projects (path items defined here from scratch; see note above) ----
+  - target: $.paths
+    update:
+      /v1/workspaces/{workspaceId}/projects:
+        get:
+          operationId: listClockifyProjects
+          summary: List projects in a workspace
+          parameters:
+            - name: workspaceId
+              in: path
+              required: true
+              schema: {type: string}
+            - name: page
+              in: query
+              schema: {type: integer, minimum: 1}
+            - name: page-size
+              in: query
+              schema: {type: integer}
+          responses:
+            '200':
+              description: A page of the workspace's projects.
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items: {$ref: '#/components/schemas/Project'}
+          x-crud: {action: list, resource: project, collection: projects}
+      /v1/workspaces/{workspaceId}/projects/{id}:
+        get:
+          operationId: getClockifyProject
+          summary: Read a single project by id
+          parameters:
+            - name: workspaceId
+              in: path
+              required: true
+              schema: {type: string}
+            - name: id
+              in: path
+              required: true
+              schema: {type: string}
+          responses:
+            '200':
+              description: The requested project.
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/Project'}
+          x-crud: {action: read, resource: project}
+
+      # --- Members --------------------------------------------------------
+      /v1/workspaces/{workspaceId}/users:
+        get:
+          operationId: listClockifyMembers
+          summary: List members of a workspace
+          parameters:
+            - name: workspaceId
+              in: path
+              required: true
+              schema: {type: string}
+            - name: page
+              in: query
+              schema: {type: integer, minimum: 1}
+            - name: page-size
+              in: query
+              schema: {type: integer}
+          responses:
+            '200':
+              description: A page of the workspace's members.
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items: {$ref: '#/components/schemas/Member'}
+          x-crud: {action: list, resource: member, collection: members}
+      /v1/workspaces/{workspaceId}/users/{id}:
+        get:
+          operationId: getClockifyMember
+          summary: Read a single workspace member by id
+          parameters:
+            - name: workspaceId
+              in: path
+              required: true
+              schema: {type: string}
+            - name: id
+              in: path
+              required: true
+              schema: {type: string}
+          responses:
+            '200':
+              description: The requested workspace member.
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/Member'}
+          x-crud: {action: read, resource: member}
+
+  # --- New schemas, since the base OAD only defines TimeEntry/TimeInterval.
+  # Field lists are representative (id/name plus what a reconciliation lens
+  # needs to display a name), assembled from third-party client libraries
+  # in the absence of a mirrored official schema; narrow rather than a full
+  # transcription of Clockify's actual response.
+  - target: $.components.schemas
+    update:
+      Project:
+        type: object
+        required: [id, workspaceId, name]
+        properties:
+          id: {type: string}
+          workspaceId: {type: string}
+          name: {type: string}
+          clientId: {type: string, nullable: true}
+          color: {type: string}
+          note: {type: string, nullable: true}
+          isPublic: {type: boolean}
+          billable: {type: boolean}
+          archived: {type: boolean}
+      Member:
+        type: object
+        required: [id, email, name]
+        properties:
+          id: {type: string}
+          email: {type: string}
+          name: {type: string}
+          status:
+            type: string
+            description: Workspace membership status, e.g. ACTIVE,
+              PENDING_EMAIL_VERIFICATION, DECLINED.
+          profilePicture: {type: string, nullable: true}
