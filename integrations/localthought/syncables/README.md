@@ -100,7 +100,7 @@ but not Atomic-Data-typed) along the way.
 | Ontology derivation | `sync::ontology` | ported and tested |
 | `Storage` trait, `InMemoryStorage` | `sync::storage` | ported and tested |
 | `SyncClient::sync()` — full read | `sync::client` | ported and tested |
-| `SyncClient` — local-first write-back | `sync::client` | **not implemented** — [#9](https://github.com/localthought/syncables-rs/issues/9) |
+| `SyncClient::create`/`update`/`remove` | `sync::client` | **prototype** — sends immediately, no local-first write queue or retry/backoff yet — [#9](https://github.com/localthought/syncables-rs/issues/9) |
 
 ```rust,ignore
 use std::sync::Arc;
