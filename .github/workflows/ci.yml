@@ -132,19 +132,25 @@ jobs:
         working-directory: atomic-server
         run: node integrations/tooling/certify.mjs --layer js
 
+      # github-issues no longer has a Rust-sandbox pilot or a live tier (its
+      # sync now runs entirely in-browser via Devonian, outside this
+      # certification pipeline); its remaining adapter/automation unit tests
+      # don't need the pinned atomic-server, but run them here anyway since
+      # this is the one place browser/ is available for their relative imports.
+      - name: github-issues unit tests (adapter mapping + automation starter)
+        working-directory: atomic-server
+        run: browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
+
       # certify.mjs deliberately strips ATOMIC_*_TEST_SERVER before running
       # tests (a normal certification run must never opt into live tests),
-      # so the .live.test.ts suites are run directly here instead, against
-      # the atomic-server started above. github-issues and notion are the
-      # only certified packages with a live tier today.
+      # so the .live.test.ts suite is run directly here instead, against
+      # the atomic-server started above. notion is the only certified
+      # package with a live tier today.
       - name: Live tests against the pinned atomic-server
         working-directory: atomic-server
         env:
-          ATOMIC_GITHUB_TEST_SERVER: http://localhost:9883
           ATOMIC_NOTION_TEST_SERVER: http://localhost:9883
-        run: |
-          browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
-          browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts
+        run: browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts
 
       - name: Upload certification report
         if: always()
