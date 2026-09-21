@@ -78,6 +78,63 @@ test('failed certification checks surface a concise useful diagnostic', () => {
     'reproducible-bundle: generated bundle differs from committed plugin.js; fixtures',
   );
 });
+test('a catalog card whose shortname matches the package id must carry the same version', () => {
+  const base = mkdtempSync(join(tmpdir(), 'atomic-catalog-version-'));
+  try {
+    const providerDir = join(base, 'integrations/fixture-provider');
+    mkdirSync(providerDir, { recursive: true });
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        atomicCertification: {
+          owner: 'Fixture',
+          support: 'experimental',
+          apiVersion: 'fixture-v1',
+          capabilities: ['fixture:import'],
+          sandboxTests: ['plugins::fixture_tests::fixture_test'],
+        },
+      }),
+    );
+    for (const file of [
+      'plugin.ts',
+      'plugin.js',
+      'tsconfig.json',
+      'vitest.config.ts',
+      'README.md',
+    ])
+      writeFileSync(join(providerDir, file), '');
+    const catalogEntry = shortnameVersion => ({
+      'https://atomicdata.dev/properties/shortname': 'fixture-provider',
+      ...(shortnameVersion !== undefined
+        ? { 'https://atomicdata.dev/integrations/properties/version': shortnameVersion }
+        : {}),
+    });
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify([catalogEntry('0.9.0')]),
+    );
+    assert.throws(
+      () => discover(base),
+      /catalog\.json version \(0\.9\.0\) does not match package\.json version \(1\.0\.0\)/,
+    );
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify([catalogEntry('1.0.0')]),
+    );
+    assert.ok(discover(base).some(p => p.id === 'fixture-provider'));
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify([catalogEntry(undefined)]),
+    );
+    assert.throws(
+      () => discover(base),
+      /catalog\.json version \(missing\) does not match package\.json version \(1\.0\.0\)/,
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
 test('both current providers are discovered with exact sandbox tests', () => {
   const ids = discover().map(p => p.id);
   assert.ok(ids.includes('github-issues'));

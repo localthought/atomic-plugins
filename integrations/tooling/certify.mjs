@@ -24,6 +24,10 @@ export function bundleArguments(entry) {
   ];
 }
 export function discover(base = root) {
+  const catalogPath = resolve(base, 'integrations/catalog.json');
+  const catalog = existsSync(catalogPath)
+    ? JSON.parse(readFileSync(catalogPath, 'utf8'))
+    : [];
   return readdirSync(resolve(base, 'integrations'), { withFileTypes: true })
     .filter(
       d =>
@@ -68,6 +72,20 @@ export function discover(base = root) {
       ])
         if (!existsSync(resolve(base, path, file)))
           throw new Error(`${path}: missing ${file}`);
+      // A catalog card only speaks for this same directory when its shortname
+      // matches the package id; entries reached through pluginUrl or the
+      // Devonian/LocalThought bridge (a different shortname, or none at all)
+      // are not this package's card and are left alone.
+      const card = catalog.find(
+        e => e['https://atomicdata.dev/properties/shortname'] === d.name,
+      );
+      if (card) {
+        const cardVersion = card['https://atomicdata.dev/integrations/properties/version'];
+        if (cardVersion !== pkg.version)
+          throw new Error(
+            `${path}: catalog.json version (${cardVersion ?? 'missing'}) does not match package.json version (${pkg.version})`,
+          );
+      }
       return {
         id: d.name,
         path,
