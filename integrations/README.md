@@ -70,6 +70,25 @@ field to set, instead of on whatever `run()` throws when it destructures
 `undefined`. The declaration is optional: a plugin that omits it is run exactly
 as before, so guard `ctx.config` in `run()` too.
 
+## Version and catalog entry
+
+Each bundled package's `package.json` `version` is this repo's record of which
+published version of that integration is currently shipped. When a
+`catalog.json` card's `shortname` matches the package directory name (as it
+does today for `mt940`, `notion` and `pets`), that card also carries a
+`version` field and it must equal the package's. `certify.mjs` enforces this
+alongside the existing bundle/owner/apiVersion checks, so the catalog can
+never advertise a version other than the one actually shipped. A card whose
+`shortname` differs from any package directory — reached through `pluginUrl`
+or the generic LocalThought/Devonian bridge — carries no `version` here,
+since this repo is not the source of its published releases.
+
+A host reads a package's `version` (directly, or via `catalog.json`) at
+install time to record which release an installation is pinned to, and later
+compares it against this repo's current `version` to offer an update. Bump
+`package.json` `version` (and the matching catalog entry) whenever an
+integration's shipped `plugin.js` changes.
+
 ## Building an uploader plugin
 
 A file-upload importer — like **Bank statements** (`integrations/mt940/`,

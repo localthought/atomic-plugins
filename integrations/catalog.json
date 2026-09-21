@@ -20,7 +20,8 @@
       "https://atomicdata.dev/integrations/properties/requires-api-plugins",
       "https://atomicdata.dev/integrations/properties/platform",
       "https://atomicdata.dev/integrations/properties/callback-platform",
-      "https://atomicdata.dev/integrations/properties/pluginUrl"
+      "https://atomicdata.dev/integrations/properties/pluginUrl",
+      "https://atomicdata.dev/integrations/properties/version"
     ]
   },
   {
@@ -47,7 +48,8 @@
       "https://atomicdata.dev/integrations/properties/requires-api-plugins",
       "https://atomicdata.dev/integrations/properties/platform",
       "https://atomicdata.dev/integrations/properties/callback-platform",
-      "https://atomicdata.dev/integrations/properties/pluginUrl"
+      "https://atomicdata.dev/integrations/properties/pluginUrl",
+      "https://atomicdata.dev/integrations/properties/version"
     ]
   },
   {
@@ -208,7 +210,8 @@
     "https://atomicdata.dev/integrations/properties/capabilities": "Preview exact amounts, dates, account references and original descriptions in a Bank transactions table.",
     "https://atomicdata.dev/integrations/properties/events": "Upload an MT940 or camt.053 statement when you need it. No bank token required.",
     "https://atomicdata.dev/integrations/properties/limitation": "MT940 (up to 512 KB) and camt.053 XML (up to 5 MB) files only, up to 500 transactions. No payment initiation or live bank sync. Bank-specific formats may need additional support.",
-    "https://atomicdata.dev/integrations/properties/keywords": "bank bunq banking finance accounting statement mt940 camt camt.053 iso20022 xml sepa import swift"
+    "https://atomicdata.dev/integrations/properties/keywords": "bank bunq banking finance accounting statement mt940 camt camt.053 iso20022 xml sepa import swift",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0"
   },
   {
     "https://atomicdata.dev/properties/localId": "moneybird",
@@ -261,7 +264,8 @@
     "https://atomicdata.dev/integrations/properties/limitation": "Formatted text, relations, formulas and filtered views need additional mappings.",
     "https://atomicdata.dev/integrations/properties/keywords": "notion database table board rows knowledge tasks automation",
     "https://atomicdata.dev/integrations/properties/requires-api-plugins": true,
-    "https://atomicdata.dev/integrations/properties/callback-platform": "notion"
+    "https://atomicdata.dev/integrations/properties/callback-platform": "notion",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0"
   },
   {
     "@id": "https://atomicdata.dev/integrations/properties/pluginUrl",
@@ -272,6 +276,16 @@
     "https://atomicdata.dev/properties/shortname": "plugin-url",
     "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
     "https://atomicdata.dev/properties/description": "Where this integration's source can be fetched from, for entries not bundled as a local package.json in this folder. Optional — omitted for integrations developed in this repo."
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/properties/version",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "version",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
+    "https://atomicdata.dev/properties/description": "The version of this integration currently published in this repository, mirrored from its package.json (see integrations/README.md). Omitted for an entry with no local package.json, such as one reached through the generic LocalThought/Devonian bridge or fetched from pluginUrl. A host compares this against what an installation has pinned to offer an update."
   },
   {
     "https://atomicdata.dev/properties/localId": "pets",
@@ -287,6 +301,7 @@
     "https://atomicdata.dev/integrations/properties/capabilities": "Imports five static demo pets into a Pets table with a small ontology (species, breed, age, mood).",
     "https://atomicdata.dev/integrations/properties/events": "A one-off, on-demand import. Nothing runs in the background.",
     "https://atomicdata.dev/integrations/properties/limitation": "No external account, API key or network call. Static sample data only, not a live provider.",
-    "https://atomicdata.dev/integrations/properties/keywords": "pets demo example sample ontology test touch points"
+    "https://atomicdata.dev/integrations/properties/keywords": "pets demo example sample ontology test touch points",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0"
   }
 ]
