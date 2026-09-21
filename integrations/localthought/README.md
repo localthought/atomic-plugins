@@ -201,15 +201,6 @@ scope wasn't already exercised in this deployment; Calendar reconnection
 retains the original installation identity and imported tables. No production
 deployment or live account writes have been performed as part of this work.
 
-`calendar-sync.test.ts` covers minimal patches, conflict detection, stale local
-and remote previews, write-in-flight edits, lost checkpoints, date validation,
-identity isolation, unsupported fields and denied writes. The browser transport
-test checks conditional headers alongside rotating credentials.
-
-`calendar.test.ts` exercises mixed dates, offset boundaries, exclusive ends,
-recurrence/attendee notes, cancellations, malformed starts, cross-calendar
-identity and repeated imports with private local fields.
-
 ## Todoist tasks lens
 
 The `devonian-todoist` catalog entry connects the proxy's `todoist` platform

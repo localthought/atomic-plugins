@@ -1,16 +1,7 @@
 # GitHub issues ↔ Atomic kanban
 
-A two-way sync for one repository and one ordinary Atomic kanban table, running
-entirely in-browser via Devonian. Provider code (`adapter.ts`,
-`tracker-actions.ts`) stays here and is shared between Devonian's
-`ports.mjs`/`bridge.mjs` browser transport and this package's mapping tests.
-
-## Browser-only Devonian demo
-
-Open `/app/devonian-demo` for a browser-side issue/comment sync demo using
-Devonian and this integration's mappings. It uses a local-only Atomic drive and
-direct integration-proxy requests, with an explicit sample mode. See
-[setup, source and the current live proxy CORS limitation](devonian/README.md).
+A two-way sync for one repository and one ordinary Atomic kanban table. Provider
+code (`adapter.ts`, `tracker-actions.ts`) stays here.
 
 ## Mapping
 
@@ -37,9 +28,7 @@ not permission to delete the other side.
 ```
 
 These check `adapter.ts`'s pagination, PR exclusion and mapping, and the generic
-event-to-JavaScript starter (`automation.test.ts`). See
-[the Devonian demo's own README](devonian/README.md) for its browser-side
-verification, including the Playwright two-way sync regression.
+event-to-JavaScript starter (`automation.test.ts`).
 
 API reference: https://docs.github.com/en/rest/issues/issues
 Label operations: https://docs.github.com/en/rest/issues/labels
