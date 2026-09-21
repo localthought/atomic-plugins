@@ -854,6 +854,15 @@ mod tests {
         assert!(catalog
             .allows("github-issues", "GET", "/repositories/123/issues")
             .is_some());
+        // atomic-plugins#5 Phase 1: the composed google-calendar document
+        // now allows the one write operation Devonian's lens sends.
+        assert!(catalog
+            .allows(
+                "google-calendar",
+                "PATCH",
+                "/calendar/v3/calendars/team%40example.com/events/id"
+            )
+            .is_some());
     }
 
     /// Tests a specific, separately identified catalog revision (not the
