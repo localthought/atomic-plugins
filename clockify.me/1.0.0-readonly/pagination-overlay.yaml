@@ -2,7 +2,7 @@
 overlay: 1.0.0
 info:
   title: Clockify API Pagination Schemes
-  version: 1.0.0
+  version: 1.1.0
 actions:
 - target: "$.components"
   update:
@@ -23,6 +23,14 @@ actions:
             page-size:
               role: pageSize
 - target: "$.paths['/v1/workspaces/{workspaceId}/user/{userId}/time-entries'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v1/workspaces/{workspaceId}/projects'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v1/workspaces/{workspaceId}/users'].get"
   update:
     x-pagination:
     - scheme: pageNumber
