@@ -10,6 +10,11 @@ name: Devonian CI
 
 on:
   pull_request:
+  # Required so the merge queue's temporary gh-readonly-queue/... commit gets
+  # a CI run at all: GitHub gates required checks on the merge_group event,
+  # not on the pull_request run from the PR head. See ci.yml, which has the
+  # same fix.
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -24,10 +29,15 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      devonian: ${{ steps.filter.outputs.devonian }}
+      devonian: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.devonian }}
     steps:
+      # dorny/paths-filter reads changed files from the pull_request API, which
+      # doesn't exist for a merge_group event, so this step is skipped there and
+      # the output above is forced to 'true' instead: the queue always runs the
+      # suite rather than misdetecting an empty diff.
       - name: Path filters
         id: filter
+        if: github.event_name != 'merge_group'
         uses: dorny/paths-filter@v3
         with:
           filters: |
