@@ -1,0 +1,80 @@
+name: Reflector publish to npm
+
+# Publishes reflector/ to npm automatically whenever reflector/package.json's
+# version on `main` is one npm doesn't have yet — so a normal "bump the
+# version in the PR, merge it" is the whole release process; nobody needs
+# to run `npm publish` by hand.
+#
+# reflector's package.json still says "name": "reflector", but that name is
+# already taken on npm by an unrelated package — this workflow will fail at
+# the "Check whether this version is already on npm" step until the name is
+# changed (e.g. to a scoped name like @localthought/reflector) and npm's
+# Trusted Publisher is configured for it.
+#
+# This mirrors devonian-publish.yml's shape (itself a straight path
+# translation of localthought/devonian's own publish.yml): same trigger
+# logic, same version-check gate, same `prepublishOnly` build guarantee.
+# reflector/package.json has no `prepublishOnly` script yet — add one
+# (`"prepublishOnly": "npm run clean && npm run build"`, matching its
+# existing `build:release` script) before relying on this, so the published
+# tarball can't ship a stale build/.
+#
+# Auth is npm Trusted Publishing (OIDC) — configured on npmjs.com under the
+# package's Settings -> Trusted Publisher, pointing at this repo
+# (ontola/atomic-plugins) and this exact workflow filename
+# (reflector-publish.yml). No NPM_TOKEN secret: `id-token: write` below is
+# what lets this job mint a short-lived, run-scoped publish credential
+# instead.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - reflector/package.json
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: reflector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: reflector/pnpm-lock.yaml
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run prettier:check
+      - run: pnpm test
+      # Trusted Publishing needs a recent npm CLI; Node 22's bundled npm
+      # predates OIDC support, so this can't rely on whatever setup-node gave us.
+      - run: npm install -g npm@latest
+      - name: Check whether this version is already on npm
+        id: version-check
+        run: |
+          local_name=$(node -p "require('./package.json').name")
+          local_version=$(node -p "require('./package.json').version")
+          published_version=$(npm view "$local_name" version 2>/dev/null || echo "none")
+          echo "package: $local_name; local version: $local_version; published version: $published_version"
+          if [ "$local_version" = "$published_version" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      # `npm publish` runs the package's own `prepublishOnly` first (once
+      # added, see the note above), so the tarball always matches the
+      # source at this commit.
+      - name: Publish
+        if: steps.version-check.outputs.should_publish == 'true'
+        run: npm publish
