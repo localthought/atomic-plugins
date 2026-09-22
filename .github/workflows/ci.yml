@@ -293,6 +293,7 @@ jobs:
             integrations/tooling/certify.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
+            integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs
 
       # plugin.js is a committed esbuild output (verified byte-for-byte against
@@ -633,3 +634,39 @@ jobs:
         run: |
           [ -f serve.pid ] && kill "$(cat serve.pid)" 2>/dev/null || true
           cat serve.log || true
+
+  # The single context the `main merge queue` ruleset should require.
+  #
+  # Per-lane job names are dynamic (`Lane: pets (e2e)` only exists on a run
+  # that selected the pets lane), so requiring them directly makes any PR that
+  # does not touch that plugin wait forever on a check that never reports —
+  # exactly the failure the stale `Integration tests (pinned atomic-server)`
+  # requirement causes today. This job's name never changes and it reports on
+  # every run, including runs where the whole graph is skipped.
+  ci:
+    name: CI
+    if: always()
+    needs:
+      - changes
+      - build-server
+      - shared-checks
+      - lane
+      - hosting-surface
+      - e2e-plugin-system
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        # Passed through the environment rather than interpolated into the
+        # script, so nothing in the results can be parsed as shell.
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -eu
+          echo "$RESULTS"
+          # `skipped` counts as a pass: lanes are path-gated, and every job
+          # below `changes` is skipped when nothing under integrations/ changed.
+          if printf '%s' "$RESULTS" | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "at least one job failed or was cancelled — see the jobs above" >&2
+            exit 1
+          fi
+          echo "all selected jobs succeeded or were skipped"
