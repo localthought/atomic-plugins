@@ -23,8 +23,8 @@ not permission to delete the other side.
 ## Verification
 
 ```sh
-./browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
-./browser/node_modules/.bin/tsc -p integrations/github-issues/tsconfig.json
+./browser/node_modules/.bin/vitest run --config integrations/issue-tracker/vitest.config.ts
+./browser/node_modules/.bin/tsc -p integrations/issue-tracker/tsconfig.json
 ```
 
 These check `adapter.ts`'s pagination, PR exclusion and mapping, and the generic

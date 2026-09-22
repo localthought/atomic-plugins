@@ -233,7 +233,7 @@ function importRecords(host, records) {
   return { intents, problems, summary: { created, updated, unchanged } };
 }
 
-// integrations/mt940/parser.ts
+// integrations/money/parser.ts
 function decimal(raw, negative = false) {
   if (!/^\d{1,15},\d{0,5}$/.test(raw)) throw new Error("Invalid MT940 amount");
   const [whole, fraction = ""] = raw.split(",");
@@ -420,7 +420,7 @@ function rejectJsonNarratives(statements) {
     }
 }
 
-// integrations/mt940/camt053.ts
+// integrations/money/camt053.ts
 var CAMT053_MAX_BYTES = 5e6;
 var local = (name) => name.replace(/^[^:]*:/, "");
 function decode(text) {
@@ -639,7 +639,7 @@ function parseCamt053(text) {
   return statements;
 }
 
-// integrations/mt940/statement.ts
+// integrations/money/statement.ts
 function detectStatementFormat(text) {
   return text.replace(/^﻿/, "").trimStart().startsWith("<") ? "camt053" : "mt940";
 }
@@ -652,7 +652,7 @@ function parseBankStatement(text) {
   };
 }
 
-// integrations/mt940/plugin.ts
+// integrations/money/plugin.ts
 var manifest = {
   schemaVersion: 1,
   operations: [],
@@ -660,7 +660,7 @@ var manifest = {
   // The host checks this before starting the sandbox, so an importer installed
   // without a destination pauses on the field to set.
   config: {
-    key: "mt940",
+    key: "money",
     properties: {
       table: {
         type: "string",

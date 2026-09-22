@@ -180,11 +180,11 @@
     "https://atomicdata.dev/integrations/properties/platform": "todoist"
   },
   {
-    "@id": "https://atomicdata.dev/integrations/catalog/mt940",
+    "@id": "https://atomicdata.dev/integrations/catalog/money",
     "https://atomicdata.dev/properties/isA": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
     ],
-    "https://atomicdata.dev/properties/shortname": "mt940",
+    "https://atomicdata.dev/properties/shortname": "money",
     "https://atomicdata.dev/integrations/properties/experimental": true,
     "https://atomicdata.dev/integrations/properties/enabled": true,
     "https://atomicdata.dev/properties/name": "Bank statements",
@@ -215,11 +215,11 @@
     "https://atomicdata.dev/integrations/properties/platform": "moneybird"
   },
   {
-    "https://atomicdata.dev/properties/localId": "clockify",
+    "https://atomicdata.dev/properties/localId": "timesheets",
     "https://atomicdata.dev/properties/isA": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
     ],
-    "https://atomicdata.dev/properties/shortname": "clockify",
+    "https://atomicdata.dev/properties/shortname": "timesheets",
     "https://atomicdata.dev/integrations/properties/experimental": true,
     "https://atomicdata.dev/integrations/properties/enabled": true,
     "https://atomicdata.dev/properties/name": "Clockify",

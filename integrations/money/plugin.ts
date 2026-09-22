@@ -11,7 +11,7 @@ export const manifest = {
   // The host checks this before starting the sandbox, so an importer installed
   // without a destination pauses on the field to set.
   config: {
-    key: 'mt940',
+    key: 'money',
     properties: {
       table: {
         type: 'string',

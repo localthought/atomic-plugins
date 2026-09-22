@@ -139,8 +139,8 @@ test('sandbox-hosted providers are discovered with exact sandbox tests', () => {
   const ids = discover().map(p => p.id);
   assert.ok(ids.includes('notion'));
   assert.ok(
-    !ids.includes('github-issues'),
-    'github-issues runs entirely in-browser via Devonian and is not a Rust-sandbox-certified package',
+    !ids.includes('issue-tracker'),
+    'issue-tracker runs entirely in-browser via Devonian and is not a Rust-sandbox-certified package',
   );
   assert.equal(new Set(ids).size, ids.length);
 });
