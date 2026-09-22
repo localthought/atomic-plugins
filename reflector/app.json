@@ -1,0 +1,32 @@
+{
+  "name": "reflector",
+  "description": "A local-first web app for your Google Calendar. Reads your calendar into a local JSON copy you can browse, edit, sync back, and download as a ZIP.",
+  "repository": "https://github.com/localthought/reflector",
+  "keywords": ["google-calendar", "local-first", "remotestorage", "openapi", "syncables"],
+  "stack": "heroku-24",
+  "buildpacks": [{ "url": "heroku/nodejs" }],
+  "env": {
+    "OAUTH_CLIENT_ID": {
+      "description": "Google OAuth 2.0 client id (from the Google Cloud console).",
+      "required": true
+    },
+    "OAUTH_CLIENT_SECRET": {
+      "description": "Google OAuth 2.0 client secret.",
+      "required": true
+    },
+    "BASE_URL": {
+      "description": "Public origin of this app, e.g. https://reflector-prod.herokuapp.com (or your custom domain). Used to build the OAuth redirect URI, so it must match the app's real URL and the authorized redirect URI on the OAuth client.",
+      "required": true
+    },
+    "DATABASE_URL": {
+      "description": "Optional. Postgres connection string used to persist connected users, so connections survive the dyno's ephemeral filesystem. Set automatically by `heroku addons:create heroku-postgresql`. Without it, users are stored on disk and lost on each restart/redeploy.",
+      "required": false
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  }
+}

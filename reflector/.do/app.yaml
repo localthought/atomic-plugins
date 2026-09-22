@@ -1,0 +1,50 @@
+# DigitalOcean App Platform spec.
+#
+#   doctl apps create --spec .do/app.yaml
+#   # or paste into the App Platform UI, or point the app at this repo.
+#
+# Note: App Platform instances have an EPHEMERAL filesystem, so anything under
+# DATA_DIR is wiped on every deploy/restart. This spec attaches a managed dev
+# Postgres database and binds DATABASE_URL to it, so connected users persist
+# across restarts. The local-first calendar copy still lives on the ephemeral
+# disk unless a user connects their own remoteStorage account (a full read
+# re-fetches it otherwise). For fully durable, file-based state use a Droplet or
+# a Docker host with a mounted volume (see the Dockerfile). See README "Deploying".
+name: reflector
+region: nyc
+databases:
+  - name: db
+    engine: PG
+    production: false
+services:
+  - name: web
+    github:
+      repo: localthought/reflector
+      branch: main
+      deploy_on_push: true
+    environment_slug: node-js
+    build_command: npm run build
+    run_command: npm start
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /
+    envs:
+      # PORT is injected by App Platform (8080) and read automatically.
+      # BASE_URL is bound to the app's public URL so the OAuth redirect
+      # (${BASE_URL}/auth/callback) resolves without hardcoding the hostname.
+      - key: BASE_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: OAUTH_CLIENT_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: OAUTH_CLIENT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      # Persist connected users in the attached database rather than on the
+      # ephemeral disk.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}

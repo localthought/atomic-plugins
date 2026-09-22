@@ -1,0 +1,12 @@
+/**
+ * The persisted correspondence between originals and their reflected copies —
+ * moved to `devonian/reflect` (localthought/atomic-plugins#6); re-exported
+ * here since it was already fully generic and reflector still needs it
+ * directly (e.g. to build a `FileIdMap` under `DATA_DIR`).
+ */
+export {
+  InMemoryIdMap,
+  FileIdMap,
+  type IdMap,
+  type Link,
+} from 'devonian/reflect';
