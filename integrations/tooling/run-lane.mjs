@@ -17,17 +17,16 @@
  * INTEGRATION_PROXY_URL, so one unmodified binary now serves any lane.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, symlinkSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
 import { bringUp } from './serve.mjs';
-
 const config = loadLanes();
 const args = process.argv.slice(2);
 const laneId = args.find(a => !a.startsWith('--'));
 const tierArg = args.includes('--tier')
   ? args[args.indexOf('--tier') + 1]
   : undefined;
-
 const lane = config.lanes.find(l => l.id === laneId);
 
 if (!lane) {
@@ -60,6 +59,25 @@ if (!tiers.length) {
  */
 const bin = `${root}/browser/node_modules/.bin`;
 const e2eBin = `${root}/browser/e2e/node_modules/.bin`;
+
+/**
+ * Bare `@playwright/test` / `@tomic/lib` imports in a lane's e2e spec resolve
+ * by walking up from integrations/<lane>/e2e/, which reaches nothing without
+ * this. Both are dependencies of the `@tomic/e2e` workspace package, so
+ * pointing integrations/node_modules at browser/e2e/node_modules resolves
+ * them the ordinary way — which matters, because `@playwright/test` is
+ * CommonJS and a tsconfig `paths` mapping of it breaks the interop.
+ */
+function linkE2eModules() {
+  const target = resolve(root, 'integrations/node_modules');
+  if (existsSync(target)) return;
+
+  try {
+    symlinkSync('../browser/e2e/node_modules', target, 'dir');
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+}
 
 function requireTool(path, hint) {
   if (!existsSync(path)) {
@@ -102,7 +120,6 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     cleanup();
     process.exit(1);
   });
-
 // Cheapest first, so a lane fails before paying for a server it won't reach.
 const order = ['typecheck', 'unit', 'live', 'e2e'];
 
@@ -135,6 +152,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
     );
     cleanup();
   } else if (tier === 'e2e') {
+    linkE2eModules();
     stop = await bringUp({
       ports,
       platforms: lane.platforms,

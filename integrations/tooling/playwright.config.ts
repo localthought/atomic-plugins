@@ -19,9 +19,16 @@
  */
 import base from '../../browser/e2e/playwright.config';
 
+// `testDir` and `tsconfig` are resolved by Playwright relative to this file,
+// so they are plain relative paths. They were built with
+// `new URL(..., import.meta.url)` at first, which threw `Cannot use
+// 'import.meta' outside a module`: Playwright loads a config through
+// `requireOrImport`, and with no `"type": "module"` in any package.json above
+// this directory — this repo has no root package.json at all — that lands in
+// the CJS branch.
 export default {
   ...base,
-  testDir: new URL('..', import.meta.url).pathname,
+  testDir: '..',
   testMatch: '*/e2e/*.spec.ts',
-  tsconfig: new URL('../tsconfig.e2e.json', import.meta.url).pathname,
+  tsconfig: '../tsconfig.e2e.json',
 };

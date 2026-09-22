@@ -328,8 +328,15 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
+      # The second symlink is what makes a lane spec's bare `@playwright/test`
+      # and `@tomic/lib` imports resolve: node walks up from
+      # integrations/<lane>/e2e/ and finds nothing otherwise. Both packages are
+      # dependencies of the `@tomic/e2e` workspace package, so they live in
+      # browser/e2e/node_modules. run-lane.mjs creates the same link locally.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        run: |
+          ln -s ../atomic-server/browser atomic-plugins/browser
+          ln -s ../browser/e2e/node_modules atomic-plugins/integrations/node_modules
 
       - uses: actions/setup-node@v4
         with:
@@ -359,6 +366,16 @@ jobs:
       - name: Make the server binary executable
         if: contains(matrix.tiers, 'live') || contains(matrix.tiers, 'e2e')
         run: chmod +x atomic-server/target/e2e/atomic-server
+
+      # plugins.spec.ts resolves `@tomic/lib` to its built `dist/index.cjs`.
+      # In the old single-job workflow that file happened to exist because
+      # build.rs had already built the frontend in the same job; now the cargo
+      # build runs on a different runner and only the server binary travels
+      # between them, so the package has to be built here. tsup, a few seconds.
+      - name: Build @tomic/lib
+        if: contains(matrix.tiers, 'e2e') || contains(matrix.tiers, 'live')
+        working-directory: atomic-server/browser
+        run: pnpm --filter @tomic/lib build
 
       - name: Install Playwright (chromium)
         if: contains(matrix.tiers, 'e2e')
@@ -520,6 +537,15 @@ jobs:
       - name: Install JS dependencies
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
+
+      # plugins.spec.ts resolves `@tomic/lib` to its built `dist/index.cjs`.
+      # In the old single-job workflow that file happened to exist because
+      # build.rs had already built the frontend in the same job; now the cargo
+      # build runs on a different runner and only the server binary travels
+      # between them, so the package has to be built here. tsup, a few seconds.
+      - name: Build @tomic/lib
+        working-directory: atomic-server/browser
+        run: pnpm --filter @tomic/lib build
 
       - name: Download the server binary
         uses: actions/download-artifact@v4
