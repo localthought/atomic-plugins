@@ -1,0 +1,43 @@
+# Vendored, unmodified, from https://github.com/localthought/overlays:
+# giphy.com/1.0/pagination-overlay.yaml (retrieved 2026-07-03, updated 2026-07-03
+# after https://github.com/localthought/overlays/pull/139 fixed the scheme's
+# invalid `type`/response `role`)
+overlay: 1.0.0
+info:
+  title: Giphy API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >
+            Giphy list endpoints (search, trending) use offset-based pagination.
+            Pass `limit` to control the page size and `offset` to skip results.
+            Responses include a `pagination` object with `count` (items returned),
+            `offset` (current position), and `total_count` (total available items).
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of records to return. Defaults to 25.
+              offset:
+                role: offset
+                description: >
+                  The starting position/offset into the results. Defaults to 0.
+          response:
+            bodyFields:
+              pagination.total_count:
+                role: totalCount
+                description: >
+                  Total number of items available for the current query.
+              pagination.count:
+                role: pageSize
+                description: >
+                  Number of items returned in the current response.
+              pagination.offset:
+                role: x-offset
+                description: >
+                  The current offset position into the result set.

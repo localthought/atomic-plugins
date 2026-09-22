@@ -5,6 +5,13 @@ consent, PKCE-protected return handling, paginated Syncables reads, ontology
 creation and local Store/OPFS writes. Installation validates access once, creates
 a folder, and starts an automatic inbound import without a proposal dialog. No AtomicServer HTTP
 instance is needed. LocalThought remains the remote OAuth and API proxy.
+Of that, `BrowserIntegrations` (`browser.ts`, this directory) provides only
+catalog discovery, OAuth/PKCE and the rotating-code authenticated proxy call
+— see [Building a LocalThought connector](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector)
+in the parent README for exactly where that boundary sits. The paginated
+Syncables read and ontology creation are done by a sync engine that
+`atomic-server` composes on top of it; that engine's code does not live in
+this repo.
 
 Open Integrations, select a platform and choose **Install and connect**. The
 browser creates a PKCE verifier and opens LocalThought's consent page, where
@@ -22,12 +29,15 @@ Web Locks serialize rotating codes across tabs; a request consumes its code
 before dispatch and saves the replacement before processing data. Uncertain
 requests cannot silently replay credentials.
 
-Syncables is vendored temporarily under `syncables/` with upstream provenance in
-`UPSTREAM.md`; the matching upstream branch is `codex/browser-integrations`.
-`wasm/src/integrations.rs` exposes its in-memory engine through wasm-bindgen.
-The shipped pure import mapper reads a local snapshot and produces the existing
-reviewed intents; user-edited plugin source is not executed on this path.
+The pure import mapper produces the existing reviewed intents from what the
+sync engine reads; user-edited plugin source is not executed on this path.
 Local edits and repeated imports retain the existing reconciliation behavior.
+(This paragraph used to describe a Rust `syncables` crate vendored under
+`integrations/localthought/syncables/` and exposed to the browser via
+`atomic-server`'s `wasm/src/integrations.rs` — that vendoring has been
+removed from this repo; see the parent README's note on where the engine
+now lives. The standalone TypeScript `syncables` package is unrelated and
+lives at [`syncables/`](../../syncables/) in this repo's root.)
 
 ## Installation and browser refresh
 
@@ -35,7 +45,9 @@ After connecting, choose the scope and select **Complete installation**. The
 browser checks one catalog-selected provider API URL (HTTP success and a JSON
 response), without following pagination or saving that response. This is an
 access check, not a guarantee that every collection can be imported. Catalog
-metadata requests are separate from that one provider request.
+metadata requests are separate from that one provider request. This access
+check is performed by the sync engine `atomic-server` composes over
+`BrowserIntegrations.request()`, not by anything in this repo.
 
 Installation immediately creates a normal folder and offers **Open folder**.
 The full, paginated import runs in the background and creates typed tables and
