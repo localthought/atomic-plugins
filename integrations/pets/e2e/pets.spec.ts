@@ -1,10 +1,11 @@
 // @wc-ignore-file
 /**
- * Split out of atomic-server's `browser/e2e/tests/plugins.spec.ts` (pinned
- * commit 4969872c) so this repo's `pets` CI lane can be gated on
+ * Split out of atomic-server's `browser/e2e/tests/plugins.spec.ts` (deleted there by
+ * atomic-server#1621) so this repo's `pets` CI lane can be gated on
  * `integrations/pets/**` alone — see `integrations/PARALLEL_LANES.md`.
- * The six tests left behind there drive the generic plugin editor and sandbox
- * rather than any one integration, and stay upstream.
+ * The tests left behind there drive the generic plugin editor and sandbox
+ * rather than any one integration, and stay upstream — the `e2e-plugin-system`
+ * CI job runs them.
  *
  * Run it the way CI does:
  *   node integrations/tooling/run-lane.mjs pets --tier e2e

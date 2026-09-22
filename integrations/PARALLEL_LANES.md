@@ -184,28 +184,30 @@ roleOffset: atomic-server 0, dev-server 1, mock-proxy 2, 3–9 reserved
 A block of 10 leaves room for a second server instance per lane (multi-tenant
 tests) without renumbering.
 
-### The build-time constraint on ports
+### One binary, any ports
 
-This is the one place the scheme does not come for free. `VITE_PLUGIN_CATALOG_URL`
-and `VITE_INTEGRATION_PROXY_URL` are **baked into the frontend by `build.rs`**,
-and ci.yml has an explicit step that greps `data-browser/dist` to prove it. A
-binary built for `:9880` cannot be pointed at `:19051` at runtime. So:
+This used to be the one place the scheme did not come for free.
+`VITE_PLUGIN_CATALOG_URL` and `VITE_INTEGRATION_PROXY_URL` were baked into the
+frontend by `build.rs`, so a binary built for one port set could not be pointed
+at another: every e2e run had to reuse one fixed port block, and locally only
+one could exist at a time.
 
-- **`certify` / `unit` / `live` tiers** read their URLs from env at runtime
-  (`ATOMIC_PORT`, `DEV_SERVER_PORT`, `MOCK_PROXY_PORT`, `ATOMIC_*_TEST_SERVER`).
-  These are fully port-parameterized — run all seven lanes at once locally.
-- **`e2e` tier** needs the baked URLs to match. Two options:
-  - _CI_: keep one shared build using the canonical lane-0 URLs; every matrix
-    job is a separate machine, so every e2e lane can bind the same ports. One
-    build, N parallel e2e lanes.
-  - _Locally_: one shared build means only **one** e2e lane at a time. Guard it
-    with a lockfile (`flock integrations/.e2e.lock`) rather than letting two
-    worktrees race for the port. If you genuinely need concurrent local e2e,
-    build per-lane with that lane's ports in the `VITE_*` vars — the Rust
-    compile is cached, only the Vite embed and the final link re-run.
+`atomic-server#1621` removed that. Both URLs were already runtime-overridable
+through the `plugin-catalog-url` and `integration-proxy-url` localStorage keys
+— the `VITE_*` vars only ever supplied the _default_ — and its
+`playwright.config.ts` now seeds those keys through `storageState` from
+`PLUGIN_CATALOG_URL` and `INTEGRATION_PROXY_URL`. `storageState` is applied
+when the browser context is created, so the first script on the page already
+sees them.
 
-Document that asymmetry loudly; it is the most likely thing to confuse someone
-running two worktrees.
+So every tier, e2e included, uses its lane's own derived block. One
+`build-server` job's binary serves all of them, the lockfile is gone, and the
+CI step that used to grep `data-browser/dist` for the baked literals is gone
+with the bake.
+
+Index 9 (`sharedIndex`) is reserved for the two CI jobs that are not a lane —
+the hosting-surface check and the generic plugin-system suite — so they get a
+block from the same formula rather than a second fixed one.
 
 ### Local runner
 
@@ -303,18 +305,24 @@ Rules that keep parallel worktrees from fighting:
   option), so no `--only` flag was needed. It is not used per lane anyway:
   certification stays unsharded in `shared-checks` so the
   `integration-certification` report is published whole rather than in pieces.
-- **`plugins.spec.ts` split cleanly after all.** At the pinned commit it holds
-  ten tests, of which four touch a real integration — Pets, Notion and two
-  Clockify ones. Those moved here as `integrations/<lane>/e2e/*.spec.ts`. The
-  other six drive the generic plugin editor and sandbox and stay upstream, so
-  no `--grep` on prose test titles was needed. They run in the
-  `e2e-plugin-system` job alongside `plugin.spec.ts`.
+- **`plugins.spec.ts` split cleanly after all**, and upstream did half of it.
+  `atomic-server#1621` deleted its Pets and Notion tests; they live here now as
+  `integrations/pets/e2e/` and `integrations/notion/e2e/`. What remains
+  upstream — six generic editor/sandbox tests plus two Clockify ones — runs
+  whole in the `e2e-plugin-system` job, so nothing is duplicated and no
+  `--grep` on prose test titles was needed.
 - **`notion` is `enabled: false` in `catalog.json`** but keeps both a live and
   an e2e tier: the catalog flag gates whether the card is _offered_ to
   visitors, not whether the package works. Revisit if it is ever removed.
 
 ## Still open
 
+- **The two Clockify tests are still upstream**, so `timesheets` has no e2e
+  tier: they run ungated in `e2e-plugin-system` instead of behind
+  `integrations/timesheets/**`. Deleting them from
+  `browser/e2e/tests/plugins.spec.ts` and moving them to
+  `integrations/timesheets/e2e/` is the remaining half of the split — see
+  [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has a lane entry with no tiers, so it produces no job.
   Its typecheck, bundle and fixture tests run inside the unsharded
   certification step. That is correct today but means a `money`-only change

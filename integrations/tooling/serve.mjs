@@ -5,10 +5,10 @@
  *
  * Used by run-lane.mjs (per-lane ports) and by the CI jobs that are not a
  * plugin lane — the hosting-surface check and the generic plugin-system e2e
- * suite — which use lanes.json's canonicalPorts. As a CLI it starts the stack
- * on the canonical ports and stays in the foreground:
+ * suite — which use lanes.json's reserved sharedIndex block. As a CLI it starts
+ * the stack on those ports and stays in the foreground:
  *
- *   node integrations/tooling/serve.mjs            # canonical ports
+ *   node integrations/tooling/serve.mjs            # the shared block
  *   node integrations/tooling/serve.mjs --lane pets
  */
 import { spawn } from 'node:child_process';
@@ -16,7 +16,7 @@ import { createServer } from 'node:net';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadLanes, lanePorts, root } from './lanes.mjs';
+import { loadLanes, lanePorts, sharedPorts, root } from './lanes.mjs';
 
 export const serverCheckout = () =>
   process.env.ATOMIC_SERVER_CHECKOUT ?? '/tmp/atomic-server';
@@ -38,8 +38,6 @@ export function portOwner(port, config) {
   for (const lane of config.lanes)
     for (const [role, p] of Object.entries(lanePorts(lane, config)))
       if (p === port) return `lane ${lane.id} (${role})`;
-  for (const [role, p] of Object.entries(config.canonicalPorts))
-    if (p === port) return `the shared e2e build (${role})`;
 
   return 'an unknown process';
 }
@@ -169,7 +167,7 @@ if (
     process.exit(1);
   }
 
-  const ports = lane ? lanePorts(lane, config) : config.canonicalPorts;
+  const ports = lane ? lanePorts(lane, config) : sharedPorts(config);
   const stop = await bringUp({
     ports,
     platforms: lane?.platforms ?? [],

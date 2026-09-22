@@ -24,13 +24,8 @@ export function validateConfig(config) {
     throw new Error('lanes.json must declare a non-empty lanes array');
   if (!Number.isInteger(config.portBase))
     throw new Error('lanes.json must declare an integer portBase');
-  // Every value here is iterated as a port, so a stray "//" comment key would
-  // be treated as one — which is exactly what happened once.
-  for (const [role, port] of Object.entries(config.canonicalPorts ?? {}))
-    if (!Number.isInteger(port))
-      throw new Error(
-        `canonicalPorts.${role} must be an integer port, got ${JSON.stringify(port)}`,
-      );
+  if (!Number.isInteger(config.sharedIndex))
+    throw new Error('lanes.json must declare an integer sharedIndex');
 
   const seenIds = new Set();
   const seenIndexes = new Map();
@@ -43,6 +38,10 @@ export function validateConfig(config) {
     if (seenIds.has(lane.id)) throw new Error(`duplicate lane id: ${lane.id}`);
     // An index is permanent: it is what the port block is derived from, so
     // reusing one silently points two lanes at the same three ports.
+    if (lane.index === config.sharedIndex)
+      throw new Error(
+        `lane ${lane.id}: index ${lane.index} is reserved for the non-lane CI jobs`,
+      );
     if (seenIndexes.has(lane.index))
       throw new Error(
         `duplicate lane index ${lane.index} (${seenIndexes.get(lane.index)} and ${lane.id}); indexes are permanent, leave holes instead of renumbering`,
@@ -81,14 +80,9 @@ export function lanePorts(lane, config) {
   );
 }
 
-/**
- * The e2e tier must use canonicalPorts: those values are compiled into the
- * shared atomic-server build's frontend and cannot be overridden at runtime
- * (integrations/HANDOFF-runtime-urls.md is the task that removes this).
- */
-export function portsForTier(lane, config, tier) {
-  return tier === 'e2e' ? config.canonicalPorts : lanePorts(lane, config);
-}
+/** Ports for the CI jobs that are not a plugin lane. */
+export const sharedPorts = config =>
+  lanePorts({ index: config.sharedIndex }, config);
 
 /** The directories a lane owns, for dorny/paths-filter. */
 export const laneFilter = lane => [`integrations/${lane.id}/**`];

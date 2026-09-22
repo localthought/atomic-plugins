@@ -6,7 +6,7 @@ import {
   loadLanes,
   validateConfig,
   lanePorts,
-  portsForTier,
+  sharedPorts,
   activeLanes,
   unlanedDirectories,
   danglingLanes,
@@ -45,23 +45,19 @@ test('lane port blocks never overlap', () => {
     }
 });
 
-// The canonical ports are compiled into the shared atomic-server build, so a
-// derived block colliding with one would make a local lane fight the e2e run.
-test('no derived port collides with a canonical port', () => {
-  const canonical = new Set(Object.values(config.canonicalPorts));
+// The non-lane CI jobs run beside the lanes, so their block must be disjoint.
+test('the shared block collides with no lane', () => {
+  const shared = new Set(Object.values(sharedPorts(config)));
   for (const lane of config.lanes)
     for (const port of Object.values(lanePorts(lane, config)))
-      assert.ok(
-        !canonical.has(port),
-        `${lane.id} derives canonical port ${port}`,
-      );
+      assert.ok(!shared.has(port), `${lane.id} derives shared port ${port}`);
 });
 
-test('the e2e tier uses the canonical ports, other tiers do not', () => {
-  const lane = config.lanes.find(l => l.tiers.includes('e2e'));
-  assert.ok(lane, 'expected at least one e2e lane');
-  assert.deepEqual(portsForTier(lane, config, 'e2e'), config.canonicalPorts);
-  assert.deepEqual(portsForTier(lane, config, 'unit'), lanePorts(lane, config));
+test('a lane may not claim the reserved shared index', () => {
+  assert.throws(
+    () => validateConfig({ ...cfg(lane({ index: 9 })), sharedIndex: 9 }),
+    /reserved for the non-lane CI jobs/,
+  );
 });
 
 test('declared e2e specs exist', () => {
@@ -97,23 +93,7 @@ test('activeLanes drops tier-less lanes', () => {
 });
 
 const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
-const cfg = (...lanes) => ({ portBase: 19100, lanes });
-
-test('a non-numeric canonicalPorts value is rejected', () => {
-  assert.throws(
-    () =>
-      validateConfig({
-        ...cfg(lane()),
-        canonicalPorts: { devServer: 9880, '//': 'a comment' },
-      }),
-    /canonicalPorts\.\/\/ must be an integer port/,
-  );
-});
-
-test('every canonicalPorts value in lanes.json is a port number', () => {
-  for (const [role, port] of Object.entries(config.canonicalPorts))
-    assert.equal(typeof port, 'number', `${role} is not a number`);
-});
+const cfg = (...lanes) => ({ portBase: 19100, sharedIndex: 9, lanes });
 
 test('duplicate indexes are rejected, and the message names both lanes', () => {
   assert.throws(

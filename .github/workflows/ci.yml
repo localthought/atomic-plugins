@@ -49,7 +49,9 @@ name: CI
 #
 # Each `lane` job runs `run-lane.mjs`, the same entry point a developer runs
 # locally, so a failing lane's reproduction is one command with no env to
-# reassemble.
+# reassemble. Every lane — e2e included — uses its own derived port block:
+# atomic-server#1621 made the plugin-catalog and integration-proxy URLs
+# seedable at runtime, so one shared binary serves all of them.
 #
 # No Rust/WASM tests run here: not the sandboxTests declared in each
 # package's atomicCertification (those are atomic-server's own `cargo test`
@@ -182,16 +184,6 @@ jobs:
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
-      - name: Read the canonical e2e ports
-        id: ports
-        working-directory: atomic-plugins
-        run: |
-          node -e '
-            const p = require("./integrations/lanes.json").canonicalPorts;
-            for (const [k, v] of Object.entries(p))
-              console.log(`${k}=${v}`);
-          ' >> "$GITHUB_OUTPUT"
-
       # --no-default-features trims the default `https`, `telemetry` and
       # `img` features: nothing below uses TLS/ACME, OTel export
       # (tonic/opentelemetry-otlp pull in a heavy gRPC stack) or image
@@ -208,35 +200,19 @@ jobs:
       # atomic-server's own downstream-saas CI job sets, for the same "the
       # embed only needs to exist" reason) skips it.
       #
-      # The three VITE_* vars are build-time defaults baked into the embedded
-      # frontend by its Vite build, which build.rs runs as a child process
-      # that inherits this step's env (verified the next step down). Because
-      # they are baked, the two URLs cannot be repointed at a different port
-      # afterwards — which is exactly why every e2e lane has to reuse
-      # lanes.json's `canonicalPorts` instead of its own derived block. That
-      # is the constraint integrations/HANDOFF-runtime-urls.md removes;
-      # when it lands, these two vars and the verification step below go.
+      # VITE_E2E surfaces /app/dev-drive, the Playwright suite's sign-in path
+      # — the same var atomic-server's own dagger e2e pipeline sets on this
+      # build. The catalog and proxy URLs are NOT baked in any more: since
+      # atomic-server#1621 both are seeded into localStorage by its
+      # playwright.config.ts from PLUGIN_CATALOG_URL / INTEGRATION_PROXY_URL,
+      # so one unmodified binary serves every lane on its own ports and the
+      # step that used to grep dist/ for the baked literals is gone with them.
       - name: Build atomic-server (e2e profile, unmodified pinned checkout)
         working-directory: atomic-server
         env:
           SKIP_WASM_BUILD: "1"
-          VITE_PLUGIN_CATALOG_URL: http://localhost:${{ steps.ports.outputs.devServer }}/integrations/catalog.json
           VITE_E2E: "true"
-          VITE_INTEGRATION_PROXY_URL: http://127.0.0.1:${{ steps.ports.outputs.mockProxy }}
         run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins
-
-      - name: Verify the built frontend uses this repo's catalog and proxy URLs
-        working-directory: atomic-server
-        run: |
-          set -eu
-          for needle in \
-            "http://localhost:${{ steps.ports.outputs.devServer }}/integrations/catalog.json" \
-            "http://127.0.0.1:${{ steps.ports.outputs.mockProxy }}"; do
-            if ! grep -rl -- "$needle" browser/data-browser/dist >/dev/null; then
-              echo "'$needle' was not baked into the built frontend" >&2
-              exit 1
-            fi
-          done
 
       - name: Upload the server binary
         uses: actions/upload-artifact@v4
@@ -390,10 +366,9 @@ jobs:
         run: browser/e2e/node_modules/.bin/playwright install --with-deps chromium
 
       # The same command a developer runs locally. run-lane.mjs starts
-      # atomic-server, the mock proxy and the dev-server on this lane's ports
-      # (lanes.json), runs the lane's tiers in cheapest-first order, and tears
-      # them down. Every matrix job is its own runner, so the e2e tier's fixed
-      # `canonicalPorts` cannot clash with another lane's.
+      # atomic-server, the mock proxy and the dev-server on this lane's own
+      # derived ports (lanes.json), runs the lane's tiers cheapest-first, and
+      # tears them down.
       - name: Run the lane
         working-directory: atomic-plugins
         env:
@@ -465,8 +440,10 @@ jobs:
         run: |
           set -eu
           ports=$(node -e '
-            const p = require("./integrations/lanes.json").canonicalPorts;
-            console.log(p.devServer, p.atomicServer);
+            import("./integrations/tooling/lanes.mjs").then(m => {
+              const p = m.sharedPorts(m.loadLanes());
+              console.log(p.devServer, p.atomicServer);
+            });
           ')
           dev=$(echo "$ports" | cut -d' ' -f1)
           upstream=$(echo "$ports" | cut -d' ' -f2)
@@ -499,15 +476,13 @@ jobs:
           [ -f serve.pid ] && kill "$(cat serve.pid)" 2>/dev/null || true
           cat serve.log || true
 
-  # plugin.spec.ts drives atomic-server's generic uploaded-plugin system
-  # (bootstrap sandbox, custom views) and is not tied to any one integration
-  # package, so it is not a lane: it runs whenever any integration or shared
-  # code changed. It lives upstream in atomic-server and runs with atomic-server's
-  # own Playwright config; the two integration-specific tests that used to sit
-  # beside it in plugins.spec.ts are now lanes (integrations/pets/e2e/ and
-  # integrations/notion/e2e/).
+  # plugin.spec.ts and plugins.spec.ts drive atomic-server's generic
+  # uploaded-plugin system (bootstrap sandbox, custom views, the manual
+  # propose/approve path). Neither is tied to one integration package, so this
+  # is not a lane: it runs whenever any integration or shared code changed.
+  # Both live upstream and run with atomic-server's own Playwright config.
   e2e-plugin-system:
-    name: "E2E: plugin sandbox and bootstrap"
+    name: "E2E: generic plugin system"
     needs: [changes, build-server]
     if: needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
@@ -572,15 +547,29 @@ jobs:
           cat serve.log
           exit 1
 
-      - name: Run plugin.spec.ts
+      # Both generic suites, with atomic-server's own config. plugins.spec.ts
+      # still holds the two Clockify tests; the Pets and Notion ones were
+      # deleted upstream by atomic-server#1621 and are lanes here instead, so
+      # nothing runs twice. When the Clockify pair is deleted upstream too it
+      # becomes the timesheets lane's e2e tier.
+      - name: Run the generic plugin-system specs
         working-directory: atomic-plugins
         run: |
           set -eu
-          dev=$(node -e 'console.log(require("./integrations/lanes.json").canonicalPorts.devServer)')
-          SERVER_URL="http://localhost:$dev" FRONTEND_URL="http://localhost:$dev" \
+          eval "$(node -e '
+            import("./integrations/tooling/lanes.mjs").then(m => {
+              const p = m.sharedPorts(m.loadLanes());
+              console.log(`dev=${p.devServer}; mock=${p.mockProxy}`);
+            });
+          ')"
+          SERVER_URL="http://localhost:$dev" \
+          FRONTEND_URL="http://localhost:$dev" \
+          PLUGIN_CATALOG_URL="http://localhost:$dev/integrations/catalog.json" \
+          INTEGRATION_PROXY_URL="http://127.0.0.1:$mock" \
+          ATOMIC_MOCK_INTEGRATION_PROXY=1 \
             browser/e2e/node_modules/.bin/playwright test \
               --config=browser/e2e/playwright.config.ts --project=chromium \
-              browser/e2e/tests/plugin.spec.ts
+              browser/e2e/tests/plugin.spec.ts browser/e2e/tests/plugins.spec.ts
 
       - name: Upload Playwright report
         if: always()

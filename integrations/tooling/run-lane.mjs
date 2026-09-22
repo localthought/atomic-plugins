@@ -9,17 +9,16 @@
  * with `browser` symlinked into this repo. Point ATOMIC_SERVER_CHECKOUT at it
  * (default /tmp/atomic-server) and build it once; every lane shares it.
  *
- * The typecheck/unit/live tiers read their URLs from env, so any number of
- * lanes can run at once locally. The e2e tier cannot: its two URLs are
- * compiled into the shared build's frontend, so it uses lanes.json's
- * canonicalPorts and takes an exclusive lock. In CI that lock is never
- * contended — each matrix job is its own runner.
- * integrations/HANDOFF-runtime-urls.md is the task that removes all of this.
+ * Every tier uses this lane's own derived ports, so any number of lanes can
+ * run at once. The e2e tier used to be the exception — the catalog and proxy
+ * URLs were compiled into the frontend by build.rs, so every e2e run had to
+ * reuse one fixed port set behind a lock. atomic-server#1621 made both URLs
+ * seedable through Playwright's `storageState` from PLUGIN_CATALOG_URL and
+ * INTEGRATION_PROXY_URL, so one unmodified binary now serves any lane.
  */
 import { spawnSync } from 'node:child_process';
-import { openSync, closeSync, rmSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { loadLanes, portsForTier, root, TIERS } from './lanes.mjs';
+import { existsSync } from 'node:fs';
+import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
 import { bringUp } from './serve.mjs';
 
 const config = loadLanes();
@@ -84,23 +83,6 @@ function run(command, commandArgs, env = {}) {
   return result.status ?? 1;
 }
 
-/**
- * Serialize the e2e tier across worktrees: every e2e run must bind
- * canonicalPorts, so only one can exist on a machine. Advisory, and it goes
- * away with the canonicalPorts block itself.
- */
-const lockPath = resolve(root, 'integrations/.e2e.lock');
-
-function takeE2eLock() {
-  try {
-    return openSync(lockPath, 'wx');
-  } catch {
-    throw new Error(
-      `another e2e run holds ${lockPath}. The e2e tier binds the shared build's fixed ports, so only one can run at a time — wait for it, or delete that file if it is stale.`,
-    );
-  }
-}
-
 let stop = () => {};
 let lock;
 
@@ -125,7 +107,7 @@ for (const signal of ['SIGINT', 'SIGTERM'])
 const order = ['typecheck', 'unit', 'live', 'e2e'];
 
 for (const tier of order.filter(t => tiers.includes(t))) {
-  const ports = portsForTier(lane, config, tier);
+  const ports = lanePorts(lane, config);
   console.log(`\n=== ${lane.id}: ${tier} ===`);
   let status = 0;
 
@@ -153,7 +135,6 @@ for (const tier of order.filter(t => tiers.includes(t))) {
     );
     cleanup();
   } else if (tier === 'e2e') {
-    lock = takeE2eLock();
     stop = await bringUp({
       ports,
       platforms: lane.platforms,
@@ -170,6 +151,11 @@ for (const tier of order.filter(t => tiers.includes(t))) {
       {
         SERVER_URL: `http://localhost:${ports.devServer}`,
         FRONTEND_URL: `http://localhost:${ports.devServer}`,
+        // Seeded into localStorage by atomic-server's playwright.config.ts
+        // (atomic-server#1621) rather than baked into the binary, which is
+        // what lets this lane use its own ports.
+        PLUGIN_CATALOG_URL: `http://localhost:${ports.devServer}/integrations/catalog.json`,
+        INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
         ATOMIC_MOCK_INTEGRATION_PROXY: '1',
       },
     );
