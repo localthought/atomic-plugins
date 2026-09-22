@@ -6,7 +6,14 @@
     "moduleResolution": "NodeNext",
     "typeRoots": ["../../browser/node_modules/@types"],
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "devonian/platform-lenses/clockify": [
+        "../../devonian/platform-lenses/clockify/index.ts"
+      ],
+      "@tomic/lib": ["../../browser/lib/src/index.ts"]
+    }
   },
   "include": ["localthought.ts"]
 }
