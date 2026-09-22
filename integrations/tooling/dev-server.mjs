@@ -79,11 +79,25 @@ export function createDevServer({ upstream, assetsRoot = root } = {}) {
       return;
     }
 
+    /*
+     * The client's own `Host` is forwarded unchanged, and deliberately not
+     * rewritten to the upstream's `host:port`. atomic-server derives the
+     * origin every request is answered under from `Host`
+     * (server/src/context.rs::RequestContext::new), and that origin is what
+     * signed auth proofs are checked against
+     * (lib/src/authentication.rs::check_auth_signature). A client that signs
+     * `http://localhost:19141/did?subject=...` and reaches a server that
+     * rebuilt the message as `http://localhost:19140/...` is rejected with
+     * "Incorrect signature for auth headers", which is what every
+     * authenticated request through this proxy used to hit. Passing the
+     * header through makes the proxy transparent: atomic-server answers as
+     * the dev-server's own origin, which is the whole point of fronting it.
+     */
     const proxied = request(
       upstream + req.url,
       {
         method: req.method,
-        headers: { ...req.headers, host: upstreamUrl.host },
+        headers: req.headers,
       },
       upstreamRes => {
         res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
