@@ -1,0 +1,67 @@
+name: Reflector CI
+
+# reflector/ was migrated in from the standalone localthought/reflector repo
+# (see .github/workflows/reflector-publish.yml for the other half of that
+# migration). It is a self-contained TypeScript package with its own
+# package.json/pnpm-lock.yaml and does not depend on an atomic-server
+# checkout the way integrations/ does (see ci.yml), so this workflow never
+# touches atomic-server and skips its work entirely when a change doesn't
+# touch reflector/.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: reflector-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect reflector changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      reflector: ${{ steps.filter.outputs.reflector }}
+    steps:
+      - name: Path filters
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            reflector:
+              - 'reflector/**'
+              - '.github/workflows/reflector-ci.yml'
+
+  build:
+    name: Lint, test, build
+    needs: changes
+    if: needs.changes.outputs.reflector == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reflector
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: reflector/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run prettier:check
+      - run: pnpm test
+      # In-memory today, so safe to gate on. Gate/remove once it talks to real
+      # platforms (needs secrets and would be flaky in CI).
+      - run: pnpm run test:harness
+      - run: pnpm run build

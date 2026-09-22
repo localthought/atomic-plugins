@@ -1,0 +1,12 @@
+node_modules
+build
+coverage
+tmp
+data
+tokens.json
+.git
+.github
+*.log
+.DS_Store
+.vscode
+.idea

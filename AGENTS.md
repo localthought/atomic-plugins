@@ -1,6 +1,6 @@
 # Working in this repo
 
-This repo holds two independent things — read the section for whichever
+This repo holds three independent things — read the section for whichever
 one you're touching before making changes.
 
 ## integrations/
@@ -68,6 +68,25 @@ they are unrelated to the style notes below, which apply to `integrations/`
 only. Its CI and publish workflows are
 [`.github/workflows/devonian-ci.yml`](.github/workflows/devonian-ci.yml) and
 [`.github/workflows/devonian-publish.yml`](.github/workflows/devonian-publish.yml).
+
+## reflector/
+
+Unlike `integrations/`, `reflector/` is a self-contained, independently
+buildable TypeScript package (own `package.json`, `pnpm-lock.yaml`,
+`tsconfig.json`) migrated in from the standalone `localthought/reflector`
+repo, full commit history included via `git subtree`. It is the
+sync-engine/plugin-runtime layer described above as **Reflector** — one
+level above the syncables engine that `integrations/localthought/syncables/`
+vendors a snapshot of. See [`reflector/CLAUDE.md`](reflector/CLAUDE.md) and
+[`reflector/README.md`](reflector/README.md) for its own conventions — they
+are unrelated to the style notes below, which apply to `integrations/` only.
+Its CI and publish workflows are
+[`.github/workflows/reflector-ci.yml`](.github/workflows/reflector-ci.yml)
+and
+[`.github/workflows/reflector-publish.yml`](.github/workflows/reflector-publish.yml).
+`reflector/package.json`'s `"name": "reflector"` is not yet publishable as
+written — that name is already taken on npm by an unrelated package; see the
+comment at the top of `reflector-publish.yml`.
 
 ## Style notes for docs and code in `integrations/`
 

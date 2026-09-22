@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connecting remoteStorage…</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="view centered">
+      <div class="card connect-card">
+        <span class="logo big">🪞</span>
+        <h2 id="headline">Connecting your remoteStorage…</h2>
+        <p id="detail" class="muted">Finishing up.</p>
+      </div>
+    </main>
+    <script>
+      // The remoteStorage OAuth implicit grant returns the access token in the
+      // URL *fragment*, which the browser never sends to the server. Read it
+      // here and POST it back so the server can store the connection.
+      (async () => {
+        const headline = document.getElementById('headline');
+        const detail = document.getElementById('detail');
+        const fail = (message) => {
+          headline.textContent = 'Could not connect remoteStorage';
+          detail.textContent = message;
+          setTimeout(() => (window.location.href = '/'), 2500);
+        };
+
+        const fromHash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+        const fromQuery = new URLSearchParams(location.search);
+        const token = fromHash.get('access_token') || fromQuery.get('access_token');
+        const state = fromHash.get('state') || fromQuery.get('state') || undefined;
+        const error = fromHash.get('error') || fromQuery.get('error');
+
+        if (error) {
+          fail(`The provider returned "${error}".`);
+          return;
+        }
+        if (!token) {
+          fail('No access token was returned.');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/remotestorage/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, state }),
+          });
+          if (!res.ok) {
+            let message = res.statusText;
+            try {
+              message = (await res.json()).error || message;
+            } catch (_) {
+              /* ignore */
+            }
+            throw new Error(message);
+          }
+          headline.textContent = 'remoteStorage connected';
+          detail.textContent = 'Returning to Reflector…';
+          window.location.href = '/';
+        } catch (err) {
+          fail(err.message);
+        }
+      })();
+    </script>
+  </body>
+</html>
