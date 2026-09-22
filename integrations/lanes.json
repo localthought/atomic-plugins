@@ -1,0 +1,62 @@
+{
+  "//": "One source of truth for the per-plugin CI lanes. Read by integrations/tooling/lanes.mjs, which .github/workflows/ci.yml and integrations/tooling/run-lane.mjs both go through. See integrations/PARALLEL_LANES.md.",
+
+  "canonicalPorts": {
+    "//": "The ports the shared atomic-server build bakes into its frontend (VITE_PLUGIN_CATALOG_URL / VITE_INTEGRATION_PROXY_URL), so they cannot be changed without rebuilding. Every CI lane uses these — each matrix job is its own runner, so there is nothing to clash with. Locally only the e2e tier needs them, behind a lock. Removing this whole block is the point of integrations/HANDOFF-runtime-urls.md.",
+    "atomicServer": 9883,
+    "devServer": 9880,
+    "mockProxy": 19090
+  },
+
+  "portBase": 19100,
+  "roleOffsets": { "atomicServer": 0, "devServer": 1, "mockProxy": 2 },
+
+  "lanes": [
+    {
+      "id": "calendar",
+      "index": 0,
+      "platforms": ["google-calendar"],
+      "tiers": ["typecheck", "unit"]
+    },
+    {
+      "id": "issue-tracker",
+      "index": 1,
+      "platforms": ["github-issues", "todoist"],
+      "tiers": ["unit"]
+    },
+    {
+      "id": "localthought",
+      "index": 2,
+      "platforms": ["pets", "github-issues", "google-calendar", "clockify"],
+      "tiers": ["typecheck", "unit"]
+    },
+    {
+      "id": "money",
+      "index": 3,
+      "platforms": ["moneybird"],
+      "tiers": [],
+      "note": "No lane job: money has no package.json-less suite and no server-dependent tier. certify.mjs discovers it (it has an atomicCertification block) and the unsharded certification step covers its typecheck, bundle and fixture tests. The entry exists so the lanes-cover-every-directory check passes and so the index stays reserved."
+    },
+    {
+      "id": "notion",
+      "index": 4,
+      "platforms": ["notion"],
+      "tiers": ["live", "e2e"],
+      "e2e": ["integrations/notion/e2e/notion.spec.ts"],
+      "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
+    },
+    {
+      "id": "pets",
+      "index": 5,
+      "platforms": ["pets"],
+      "tiers": ["e2e"],
+      "e2e": ["integrations/pets/e2e/pets.spec.ts"]
+    },
+    {
+      "id": "timesheets",
+      "index": 6,
+      "platforms": ["clockify"],
+      "tiers": ["typecheck", "unit"]
+    }
+  ]
+}
