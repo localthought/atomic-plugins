@@ -1,11 +1,14 @@
 /** Stateful provider fixture, shared by the HTTP proxy and its test-side driver. */
 export function githubTracker() {
   const repositories = new Map();
+
   const repo = name => {
     if (!repositories.has(name))
       repositories.set(name, { issues: [], comments: [] });
+
     return repositories.get(name);
   };
+
   let id = 0;
   const now = () => new Date().toISOString();
   const api = {
@@ -27,6 +30,7 @@ export function githubTracker() {
         updated_at: now(),
       };
       state.issues.push(issue);
+
       return structuredClone(issue);
     },
     updateIssue(name, number, input) {
@@ -35,6 +39,7 @@ export function githubTracker() {
       for (const field of ['title', 'body', 'state', 'labels'])
         if (input[field] !== undefined) issue[field] = input[field];
       issue.updated_at = now();
+
       return structuredClone(issue);
     },
     createComment(name, number, input) {
@@ -48,6 +53,7 @@ export function githubTracker() {
         updated_at: now(),
       };
       repo(name).comments.push(comment);
+
       return structuredClone(comment);
     },
     request(method, url, input = {}) {
@@ -61,6 +67,7 @@ export function githubTracker() {
       const size = Number(url.searchParams.get('per_page') ?? 100);
       const paginate = rows => rows.slice((page - 1) * size, page * size);
       let value;
+
       if (!tail) {
         if (method === 'GET') value = paginate(state.issues);
         if (method === 'POST') value = api.createIssue(name, input);
@@ -78,6 +85,7 @@ export function githubTracker() {
         const [numberText, resource, label] = tail.split('/');
         const number = Number(numberText);
         const issue = state.issues.find(i => i.number === number);
+
         if (issue && !resource) {
           if (method === 'GET') value = issue;
           if (method === 'PATCH') value = api.updateIssue(name, number, input);
@@ -98,11 +106,13 @@ export function githubTracker() {
             );
         }
       }
+
       return {
         status: value === undefined ? 404 : method === 'POST' ? 201 : 200,
         body: structuredClone(value ?? {}),
       };
     },
   };
+
   return api;
 }

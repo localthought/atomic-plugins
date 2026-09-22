@@ -27,6 +27,10 @@ import {
   viewPatch,
   type Config,
   type Projection,
+  type NotionDataSourceSchema,
+  type NotionPage,
+  type NotionView,
+  type NotionQueryPage,
 } from './model.js';
 globalThis.structuredClone ??= ((v: unknown) =>
   v === undefined
@@ -58,11 +62,12 @@ interface Input {
   connection: ConnectionState;
   proposal?: Proposal;
   cursor?: Cursor;
-  result?: any;
+  result?: unknown;
   http(r: unknown): ExternalReceipt;
-  read(s: string): Record<string, any>;
+  read(s: string): Record<string, unknown>;
   query(p: string, v: string): string[];
 }
+
 export function run(input: Input): unknown {
   const c = input.config;
   uuid(c.dataSource);
@@ -72,29 +77,37 @@ export function run(input: Input): unknown {
     new Set(c.fields.map(f => f.property)).size !== c.fields.length
   )
     throw new Error('Invalid or duplicate Notion field mappings');
-  const read = (operation: string, path: string, body?: unknown) =>
-    parse(
+  const read = <T>(operation: string, path: string, body?: unknown) =>
+    parse<T>(
       input.http(
         request(operation, body === undefined ? 'GET' : 'POST', path, body),
       ),
     );
+
   const schema = () => {
-    const source = read('schema', `/data_sources/${c.dataSource}`);
+    const source = read<NotionDataSourceSchema>(
+      'schema',
+      `/data_sources/${c.dataSource}`,
+    );
     if (uuid(source.id) !== uuid(c.dataSource))
       throw new Error('Unexpected data source');
+
     for (const f of c.fields) {
-      const p: any = Object.values(source.properties).find(
-        (p: any) => p.id === f.id,
-      );
+      const p = Object.values(source.properties).find(prop => prop.id === f.id);
       if (!p || p.type !== f.type)
         throw new Error(`Mapped property ${f.id} changed type or was removed`);
+
       if (f.options) {
-        const ids = (p[f.type]?.options ?? []).map((o: any) => o.id).sort();
+        const selectOptions = p[f.type] as
+          | { options?: { id: string; name: string }[] }
+          | undefined;
+        const ids = (selectOptions?.options ?? []).map(o => o.id).sort();
         if (!equal(ids, Object.keys(f.options).sort()))
           throw new Error(
             'Select options changed; refresh mapping before syncing',
           );
-        for (const option of p[f.type].options) {
+
+        for (const option of selectOptions!.options!) {
           if (
             f.optionNames &&
             (option.name !== f.optionNames[option.id] ||
@@ -107,34 +120,40 @@ export function run(input: Input): unknown {
         }
       }
     }
+
     return source;
   };
+
   const row = (subject: string) => {
     const value = input.read(subject);
     const binding = input.connection.records[`page:${value[c.identity]}`];
+
     return projectRow(value, c, binding?.baseline as Projection | undefined);
   };
+
   const page = (id: string) => {
-    const p = read('page', `/pages/${uuid(id)}`);
+    const p = read<NotionPage>('page', `/pages/${uuid(id)}`);
     if (uuid(p.id) !== uuid(id)) throw new Error('Unexpected Notion page');
+
     return p;
   };
+
   const view = (id: string) => {
-    const v = read('view', `/views/${uuid(id)}`);
+    const v = read<NotionView>('view', `/views/${uuid(id)}`);
     if (uuid(v.id) !== uuid(id)) throw new Error('Unexpected Notion view');
+
     return v;
   };
+
   const remote = (change: Change): Projection =>
     change.kind === 'page'
       ? projectPage(page(change.id!), c)
       : change.kind === 'view'
         ? projectView(view(change.id!), c)
         : {
-            name: (
-              Object.values(schema().properties).find(
-                (p: any) => p.id === change.id,
-              ) as any
-            ).name,
+            name: Object.values(schema().properties).find(
+              p => p.id === change.id,
+            )!.name,
           };
   const local = (
     change: Change,
@@ -145,12 +164,13 @@ export function run(input: Input): unknown {
       : change.kind === 'page'
         ? row(subject)
         : change.kind === 'schema'
-          ? { name: input.read(subject)[P.name] }
+          ? { name: input.read(subject)[P.name] as string }
           : projectLocalView(
               input.read(subject),
               c,
               c.views.find(v => v.id === change.id)!,
             );
+
   if (input.phase === 'preview') {
     const source = schema();
     const proposal: Proposal = {
@@ -158,28 +178,35 @@ export function run(input: Input): unknown {
       changes: [],
       conflicts: [],
     };
+
     const add = (change: Omit<Change, 'desired'>) => {
       const key = change.id ? `${change.kind}:${change.id}` : undefined;
       const bound = key ? input.connection.records[key] : undefined;
+
       if (bound && bound.local !== change.subject) {
         proposal.conflicts.push({
           id: change.id,
           fields: ['Missing or rebound Atomic identity'],
         });
+
         return;
       }
+
       const decision = reconcileRecord(
         bound?.baseline as SyncRecord,
         change.local,
         change.remote,
       );
+
       if (decision.conflicts.length) {
         proposal.conflicts.push({
           id: change.id,
           fields: decision.conflicts.map(x => x.property),
         });
+
         return;
       }
+
       proposal.changes.push({
         ...change,
         desired: {
@@ -188,18 +215,18 @@ export function run(input: Input): unknown {
         } as Projection,
       });
     };
+
     for (const f of c.fields) {
-      const p: any = Object.values(source.properties).find(
-        (p: any) => p.id === f.id,
-      );
+      const p = Object.values(source.properties).find(prop => prop.id === f.id);
       add({
         kind: 'schema',
         id: f.id,
         subject: f.property,
-        local: { name: input.read(f.property)[P.name] },
-        remote: { name: p.name },
+        local: { name: input.read(f.property)[P.name] as string },
+        remote: { name: p!.name },
       });
     }
+
     for (const v of c.views)
       add({
         kind: 'view',
@@ -215,30 +242,40 @@ export function run(input: Input): unknown {
       });
     const rows = input
       .query(P.parent, c.table)
-      .filter(s => input.read(s)[P.isA]?.includes(c.rowClass));
+      .filter(s =>
+        (input.read(s)[P.isA] as string[] | undefined)?.includes(c.rowClass),
+      );
     const byId = new Map<string, string>();
+
     for (const s of rows) {
-      const id = input.read(s)[c.identity];
+      const id = input.read(s)[c.identity] as string | undefined;
       if (id) {
         uuid(id);
         if (byId.has(id)) throw new Error('Duplicate Notion page identity');
         byId.set(id, s);
       } else add({ kind: 'page', subject: s, local: row(s) });
     }
+
     const seen = new Set<string>();
     const cursors = new Set<string>();
     let cursor: string | undefined;
+
     for (let batch = 0; ; batch++) {
       if (batch >= 100) throw new Error('Notion pilot scan exceeds 100 pages');
-      const result = read('query', `/data_sources/${c.dataSource}/query`, {
-        page_size: 100,
-        ...(cursor ? { start_cursor: cursor } : {}),
-      });
+      const result = read<NotionQueryPage>(
+        'query',
+        `/data_sources/${c.dataSource}/query`,
+        {
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        },
+      );
       if (
         !Array.isArray(result.results) ||
         typeof result.has_more !== 'boolean'
       )
         throw new Error('Invalid Notion query page');
+
       for (const p of result.results) {
         const id = uuid(p.id);
         if (seen.has(id))
@@ -253,6 +290,7 @@ export function run(input: Input): unknown {
           remote: projectPage(p, c),
         });
       }
+
       if (!result.has_more) break;
       if (
         typeof result.next_cursor !== 'string' ||
@@ -263,6 +301,7 @@ export function run(input: Input): unknown {
       cursor = result.next_cursor;
       cursors.add(cursor!);
     }
+
     for (const [id] of byId)
       if (!seen.has(id))
         proposal.conflicts.push({
@@ -276,6 +315,7 @@ export function run(input: Input): unknown {
           id: key.slice(5),
           fields: ['Previously synced page missing'],
         });
+
     return {
       kind: 'preview',
       proposal,
@@ -285,6 +325,7 @@ export function run(input: Input): unknown {
       })),
     };
   }
+
   if (
     !input.proposal ||
     input.proposal.dataSource !== c.dataSource ||
@@ -317,6 +358,7 @@ export function run(input: Input): unknown {
       },
       next,
     );
+
   for (let i = 0; i < 8; i++) {
     if (cursor.stage === 'done') return { kind: 'complete' };
     if (cursor.index === input.proposal.changes.length)
@@ -337,6 +379,7 @@ export function run(input: Input): unknown {
         subject: change.subject,
         stage: 'local',
       };
+
       if (change.kind === 'page') {
         const properties = pagePatch(change.desired, change.remote, c);
         if (!change.id)
@@ -369,7 +412,7 @@ export function run(input: Input): unknown {
           return external('view-update', `/views/${change.id}`, patch, cursor);
       }
     } else if (cursor.stage === 'created') {
-      const p = parse(input.result);
+      const p = parse<NotionPage>(input.result as ExternalReceipt);
       projectPage(p, c);
       cursor = { ...cursor, id: uuid(p.id), stage: 'local' };
     } else if (cursor.stage === 'local') {
@@ -383,6 +426,7 @@ export function run(input: Input): unknown {
         throw new Error('Atomic data changed during sync');
       let set: Record<string, unknown>;
       let remove: string[] = [];
+
       if (change.kind === 'page') {
         // Ensure a resumed import cannot create a second card with the same ID.
         const matches = input
@@ -419,6 +463,7 @@ export function run(input: Input): unknown {
           )!.property;
         else remove.push(P.group);
       }
+
       if (
         equal(here, change.desired) &&
         (change.kind !== 'page' ||
@@ -455,6 +500,7 @@ export function run(input: Input): unknown {
                 set,
               },
             ];
+
         return effect(
           {
             kind: 'atomic',
@@ -465,7 +511,9 @@ export function run(input: Input): unknown {
         );
       }
     } else if (cursor.stage === 'written') {
-      const subject = input.result.outcomes?.[0]?.subject;
+      const subject = (
+        input.result as { outcomes?: { subject?: string }[] } | undefined
+      )?.outcomes?.[0]?.subject;
       if (!subject) throw new Error('Missing Atomic receipt');
       cursor = { ...cursor, subject, stage: 'verify' };
     } else if (cursor.stage === 'verify') {
@@ -486,8 +534,10 @@ export function run(input: Input): unknown {
           },
         ],
       };
+
       return { kind: 'continue', cursor };
     } else throw new Error('Unknown Notion continuation');
   }
+
   throw new Error('Notion continuation exceeded transition budget');
 }

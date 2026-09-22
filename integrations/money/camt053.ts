@@ -53,6 +53,7 @@ function attributes(raw: string): Record<string, string> {
     /([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g,
   ))
     attrs[local(match[1])] = decode(match[2] ?? match[3] ?? '');
+
   return attrs;
 }
 
@@ -64,6 +65,7 @@ export function parseXml(source: string): Node {
   const token =
     /<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE[^>]*>|<\/([^\s>]+)\s*>|<([^\s/>]+)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/y;
   let position = 0;
+
   while (position < source.length) {
     token.lastIndex = position;
     const match = token.exec(source);
@@ -86,18 +88,23 @@ export function parseXml(source: string): Node {
       if (!match[5]) stack.push(node);
     } else if (match[6] !== undefined) current.text += decode(match[6]);
   }
+
   if (stack.length !== 1)
     throw new Error('Malformed camt.053 XML: unclosed element');
+
   return root;
 }
 
 const all = (node: Node | undefined, name: string): Node[] =>
   node?.children.filter(child => child.name === name) ?? [];
+
 function one(node: Node | undefined, ...path: string[]): Node | undefined {
   let current = node;
   for (const name of path) current = all(current, name)[0];
+
   return current;
 }
+
 const textOf = (node: Node | undefined, ...path: string[]): string =>
   one(node, ...path)?.text.trim() ?? '';
 
@@ -110,6 +117,7 @@ function isoDate(raw: string): string {
     parsed.toISOString().slice(0, 10) !== result
   )
     throw new Error('Invalid camt.053 date');
+
   return result;
 }
 
@@ -122,6 +130,7 @@ function amount(node: Node | undefined, currency: string, negative: boolean) {
     throw new Error(
       'camt.053 entry currency differs from the account currency',
     );
+
   return decimal(
     raw.includes('.') ? raw.replace('.', ',') : raw + ',',
     negative,
@@ -132,6 +141,7 @@ function direction(node: Node | undefined): boolean {
   const indicator = textOf(node, 'CdtDbtInd');
   if (indicator !== 'CRDT' && indicator !== 'DBIT')
     throw new Error('Invalid camt.053 credit/debit indicator');
+
   return indicator === 'DBIT';
 }
 
@@ -143,6 +153,7 @@ function balance(node: Node, currency: string) {
   const type = textOf(node, 'Tp', 'CdOrPrtry', 'Cd');
   const raw = dateOf(node, 'Dt');
   if (!raw) throw new Error('camt.053 balance is missing its date');
+
   return {
     type,
     date: isoDate(raw),
@@ -162,6 +173,7 @@ function transactionCode(entry: Node): string {
     textOf(domain, 'Fmly', 'Cd'),
     textOf(domain, 'Fmly', 'SubFmlyCd'),
   ].filter(Boolean);
+
   return structured.length
     ? structured.join('/')
     : textOf(entry, 'BkTxCd', 'Prtry', 'Cd');
@@ -179,9 +191,11 @@ function transaction(entry: Node, currency: string): Transaction {
     .map(refs => textOf(refs, 'EndToEndId'))
     .find(value => value && value !== 'NOTPROVIDED');
   const lines: string[] = [];
+
   const add = (line: string) => {
     if (line && !lines.includes(line)) lines.push(line);
   };
+
   for (const detail of details) {
     const parties = one(detail, 'RltdPties');
     // The other side of the money: the creditor of a debit, the debtor of a credit.
@@ -201,7 +215,9 @@ function transaction(entry: Node, currency: string): Transaction {
       add(textOf(structured, 'CdtrRefInf', 'Ref'));
     add(textOf(detail, 'AddtlTxInf'));
   }
+
   add(textOf(entry, 'AddtlNtryInf'));
+
   return {
     date: isoDate(valueRaw || bookingRaw),
     bookingDate: isoDate(bookingRaw || valueRaw),
@@ -227,6 +243,7 @@ export function parseCamt053(text: string): Statement[] {
     );
   const statements: Statement[] = [];
   let count = 0;
+
   for (const stmt of all(report, 'Stmt')) {
     const acct = one(stmt, 'Acct');
     const account = accountId(acct);
@@ -251,6 +268,7 @@ export function parseCamt053(text: string): Statement[] {
     if (closing.date < opening.date)
       throw new Error('Statement currency or date range is inconsistent');
     const transactions: Transaction[] = [];
+
     for (const entry of all(stmt, 'Ntry')) {
       // Only booked entries move the booked balances; pending ones are left out.
       const status = textOf(entry, 'Sts') || textOf(entry, 'Sts', 'Cd');
@@ -261,6 +279,7 @@ export function parseCamt053(text: string): Statement[] {
         );
       transactions.push(transaction(entry, currency));
     }
+
     if (
       units(opening.amount) +
         transactions.reduce((sum, row) => sum + units(row.amount), 0n) !==
@@ -280,8 +299,10 @@ export function parseCamt053(text: string): Statement[] {
       transactions,
     });
   }
+
   if (!statements.length)
     throw new Error('camt.053 file contains no statements');
   rejectJsonNarratives(statements);
+
   return statements;
 }

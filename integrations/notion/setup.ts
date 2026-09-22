@@ -2,23 +2,24 @@
 import {
   validateSetupArguments,
   type SetupDeclaration,
-} from "../../browser/lib/src/plugin-setup.js";
-import { uuid } from "./model.js";
+} from '../../browser/lib/src/plugin-setup.js';
+import { uuid } from './model.js';
 
 /** Manual credentials stay with the host; OAuth remains the default connection flow. */
 export const setupDeclaration: SetupDeclaration = {
-  title: "Connect Notion",
-  description: "Connect a Notion database, then review what will sync before making changes.",
+  title: 'Connect Notion',
+  description:
+    'Connect a Notion database, then review what will sync before making changes.',
   inputSchema: {
-    type: "object",
+    type: 'object',
     additionalProperties: false,
-    required: ["dataSource"],
+    required: ['dataSource'],
     properties: {
       dataSource: {
-        type: "string",
-        title: "Data source ID",
+        type: 'string',
+        title: 'Data source ID',
         description:
-          "Use the data source UUID from Notion. Share its database with your Notion connection first.",
+          'Use the data source UUID from Notion. Share its database with your Notion connection first.',
         minLength: 1,
       },
     },

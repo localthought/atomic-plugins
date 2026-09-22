@@ -28,6 +28,7 @@ export function discover(base = root) {
   const catalog = existsSync(catalogPath)
     ? JSON.parse(readFileSync(catalogPath, 'utf8'))
     : [];
+
   return readdirSync(resolve(base, 'integrations'), { withFileTypes: true })
     .filter(
       d =>
@@ -79,13 +80,16 @@ export function discover(base = root) {
       const card = catalog.find(
         e => e['https://atomicdata.dev/properties/shortname'] === d.name,
       );
+
       if (card) {
-        const cardVersion = card['https://atomicdata.dev/integrations/properties/version'];
+        const cardVersion =
+          card['https://atomicdata.dev/integrations/properties/version'];
         if (cardVersion !== pkg.version)
           throw new Error(
             `${path}: catalog.json version (${cardVersion ?? 'missing'}) does not match package.json version (${pkg.version})`,
           );
       }
+
       return {
         id: d.name,
         path,
@@ -115,6 +119,7 @@ export function summarizeFailure({ error, stderr, stdout }) {
     .map(value => value.trim())
     .find(Boolean);
   if (!line) return 'command failed without output';
+
   return line.length > 240 ? `${line.slice(0, 237)}...` : line;
 }
 export function formatFailureSummary(checks) {
@@ -148,6 +153,7 @@ export function certify({
     JSON.stringify({ ...report, status: 'running' }, null, 2) + '\n',
   );
   let packages;
+
   try {
     packages = discover();
     if (only && !packages.some(p => p.id === only))
@@ -163,11 +169,13 @@ export function certify({
     );
     throw e;
   }
+
   // A normal certification run must never inherit opt-in live-test switches.
   const env = { ...process.env, ATOMICSERVER_SKIP_JS_BUILD: 'true' };
   for (const key of Object.keys(env))
     if (/^ATOMIC_(LIVE_|GITHUB_TEST_SERVER|NOTION_TEST_SERVER)/.test(key))
       delete env[key];
+
   const run = (command, args, log) => {
     const r = spawnSync(command, args, {
       cwd: root,
@@ -178,6 +186,7 @@ export function certify({
     });
     const text = `${r.stdout ?? ''}${r.stderr ?? ''}${r.error ? '\n' + r.error.message : ''}\nexit=${r.status} signal=${r.signal ?? 'none'}`;
     writeFileSync(resolve(output, log), text);
+
     return {
       ok: r.status === 0,
       text,
@@ -186,7 +195,8 @@ export function certify({
       error: r.error?.message,
     };
   };
-  for (const p of packages.filter(p => !only || p.id === only)) {
+
+  for (const p of packages.filter(pkg => !only || pkg.id === only)) {
     const shipped = readFileSync(resolve(root, p.path, 'plugin.js'));
     const item = {
       id: p.id,
@@ -200,6 +210,7 @@ export function certify({
       status: 'pending',
     };
     report.integrations.push(item);
+
     const check = (name, r, extra = true, failedValidation) => {
       const passed = r.ok && extra;
       item.checks.push({
@@ -214,6 +225,7 @@ export function certify({
             }),
       });
     };
+
     if (layer !== 'sandbox') {
       const bundle = run(
         resolve(root, 'browser/node_modules/.bin/esbuild'),
@@ -248,9 +260,11 @@ export function certify({
         `${p.id}-tests.log`,
       );
       let counts = {};
+
       try {
         counts = JSON.parse(readFileSync(resultPath, 'utf8'));
       } catch {}
+
       check(
         'fixtures',
         tests,
@@ -263,6 +277,7 @@ export function certify({
         failed: counts.numFailedTests ?? 0,
       };
     }
+
     if (layer !== 'js')
       for (const test of p.sandboxTests) {
         const r = run(
@@ -288,6 +303,7 @@ export function certify({
           'sandbox output did not report exactly one passing test',
         );
       }
+
     item.status = item.checks.every(c => c.status === 'passed')
       ? 'passed'
       : 'failed';
@@ -300,6 +316,7 @@ export function certify({
       `${p.id}: ${item.status} (${layer}; live not run)${failures ? ` — ${failures}` : ''}`,
     );
   }
+
   report.status =
     report.integrations.length &&
     report.integrations.every(i => i.status === 'passed')
@@ -309,8 +326,10 @@ export function certify({
     resolve(output, 'report.json'),
     JSON.stringify(report, null, 2) + '\n',
   );
+
   return report;
 }
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -318,6 +337,7 @@ if (
   try {
     const args = process.argv.slice(2),
       options = {};
+
     for (let i = 0; i < args.length; i += 2) {
       const key = {
         '--layer': 'layer',
@@ -330,6 +350,7 @@ if (
         );
       options[key] = key === 'output' ? resolve(args[i + 1]) : args[i + 1];
     }
+
     process.exitCode = certify(options).status === 'passed' ? 0 : 1;
   } catch (e) {
     console.error(e.message);

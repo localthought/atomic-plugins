@@ -6,6 +6,7 @@ page.setDefaultTimeout(45000);
 await page.route('http://127.0.0.1:19999/**', route => route.abort());
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
+
 try {
   console.log('Opening offline dev drive');
   await page.goto('http://localhost:6748/app/dev-drive');
@@ -28,7 +29,10 @@ try {
   await page.getByRole('button', { name: 'Complete installation' }).click();
   await page.getByRole('link', { name: 'Open folder', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Last synced' }).waitFor();
-  await page.locator('[data-test="folder-list"]').getByRole('link', { name: 'Pets', exact: true }).click();
+  await page
+    .locator('[data-test="folder-list"]')
+    .getByRole('link', { name: 'Pets', exact: true })
+    .click();
   for (const name of ['Rex', 'Whiskers', 'Tweety', 'Nibbles', 'Bubbles'])
     await page
       .getByRole('main')

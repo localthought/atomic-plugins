@@ -12,9 +12,11 @@ export async function runWithAsyncReads<I, Request, Receipt, Result>(
 ): Promise<Result> {
   const receipts: { key: string; value: Receipt }[] = [];
   const suspended = {};
+
   for (;;) {
     let index = 0;
     let pending: Request | undefined;
+
     try {
       return run({
         ...(Object.fromEntries(
@@ -26,11 +28,14 @@ export async function runWithAsyncReads<I, Request, Receipt, Result>(
         http: (next: Request) => {
           const key = JSON.stringify(next);
           const previous = receipts[index++];
+
           if (previous) {
             if (previous.key !== key)
               throw new Error('Plugin reads changed while replaying receipts');
+
             return structuredClone(previous.value);
           }
+
           pending = next;
           throw suspended;
         },

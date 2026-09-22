@@ -40,8 +40,8 @@ describe('clockifyImportQuery', () => {
   });
 
   it('rejects unsupported windows', () => {
-    expect(() =>
-      clockifyImportQuery({ lookbackDays: 90 as 7 }),
-    ).toThrow(/7 or 30/);
+    expect(() => clockifyImportQuery({ lookbackDays: 90 as 7 })).toThrow(
+      /7 or 30/,
+    );
   });
 });

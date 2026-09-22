@@ -25,7 +25,11 @@ import {
   P,
   type Config,
   type FieldType,
+  type NotionDataSourceSchema,
+  type NotionView,
+  type NotionPaginated,
 } from './model.js';
+
 export interface Connection extends Config {
   drive: string;
   plugin: string;
@@ -52,8 +56,7 @@ export async function install(
     throw new Error('A Notion connection token is required');
   if (typeof source !== 'string' || !source.trim())
     throw new Error('Notion provider bundle did not load');
-  if (typeof token === 'string')
-    await requireInstallationServer(store, drive);
+  if (typeof token === 'string') await requireInstallationServer(store, drive);
   const schema = await ensureSchema(
     typeof token === 'string' ? store : token.schemaStore,
     drive,
@@ -73,6 +76,7 @@ export async function install(
     throw new Error(
       'The app has not synced to AtomicServer yet. Check workspace sync before continuing.',
     );
+
   if (typeof token === 'string') {
     const secretUrl = `${store.getServerUrl()}/plugin-secret`;
     const response = await fetch(secretUrl, {
@@ -91,6 +95,7 @@ export async function install(
     });
     if (!response.ok) throw new Error('Could not store Notion credential');
   }
+
   const pinned =
     typeof token === 'string'
       ? await pinPluginRelease(store, {
@@ -98,8 +103,8 @@ export async function install(
           plugin: plugin.subject,
         })
       : { id: 'browser-proxy-v1' };
-  const read = async (operation: string, path: string) =>
-    parse(
+  const read = async <T>(operation: string, path: string) =>
+    parse<T>(
       typeof token !== 'string'
         ? await token.request(`/v1${path}`)
         : await readExternalOperation(store, {
@@ -110,9 +115,13 @@ export async function install(
             intent: request(operation, 'GET', path),
           }),
     );
-  const sourceSchema = await read('schema', `/data_sources/${id}`);
+  const sourceSchema = await read<NotionDataSourceSchema>(
+    'schema',
+    `/data_sources/${id}`,
+  );
   if (uuid(sourceSchema.id) !== id) throw new Error('Unexpected data source');
   const warnings: string[] = [];
+
   const create = async (
     parent: string,
     isA: string[],
@@ -128,8 +137,10 @@ export async function install(
     });
     if ((await r.save()) === 'offline' && typeof token === 'string')
       throw new Error('AtomicServer disconnected during installation');
+
     return r;
   };
+
   const prop = async (
     label: string,
     shortname: string,
@@ -165,11 +176,13 @@ export async function install(
     Datatype.STRING,
   );
   const fields: Config['fields'] = [];
-  for (const p of Object.values(sourceSchema.properties) as any[]) {
-    if (!types.includes(p.type)) {
+
+  for (const p of Object.values(sourceSchema.properties)) {
+    if (!(types as readonly string[]).includes(p.type)) {
       warnings.push(`${p.name}: ${p.type} is preserved in Notion, not synced`);
       continue;
     }
+
     const select = ['select', 'multi_select', 'status'].includes(p.type);
     const property = await prop(
       p.name,
@@ -188,10 +201,16 @@ export async function install(
       property: property.subject,
       type: p.type as FieldType,
     };
+
     if (select) {
       field.options = {};
       field.optionNames = {};
-      for (const o of p[p.type].options) {
+
+      const selectOptions = p[p.type] as {
+        options: { id: string; name: string }[];
+      };
+
+      for (const o of selectOptions.options) {
         const tag = await create(property.subject, [dataBrowser.classes.tag], {
           [core.properties.name]: o.name,
           [core.properties.shortname]:
@@ -200,14 +219,17 @@ export async function install(
         field.options[o.id] = tag.subject;
         field.optionNames[o.id] = o.name;
       }
+
       await property.set(
         core.properties.allowsOnly,
         Object.values(field.options),
       );
       await property.save();
     }
+
     fields.push(field);
   }
+
   if (fields.filter(f => f.type === 'title').length !== 1)
     throw new Error('Data source needs exactly one title property');
   const rowClass = await create(plugin.subject, [core.classes.class], {
@@ -234,39 +256,48 @@ export async function install(
   };
   let cursor: string | undefined;
   const seen = new Set<string>();
+
   for (let i = 0; ; i++) {
     if (i >= 100) throw new Error('View listing exceeds pilot limit');
-    const list = await read(
+    const list = await read<NotionPaginated<{ id: string }>>(
       'views',
       `/views?data_source_id=${id}${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ''}`,
     );
     if (!Array.isArray(list.results) || typeof list.has_more !== 'boolean')
       throw new Error('Invalid view listing');
+
     for (const ref of list.results) {
-      const view = await read('view', `/views/${uuid(ref.id)}`);
+      const view = await read<NotionView>('view', `/views/${uuid(ref.id)}`);
       let projection;
+
       try {
         projection = projectView(view, c);
       } catch (e) {
         warnings.push(`${view.name ?? ref.id}: ${String(e)}`);
         continue;
       }
+
       const v = await create(table.subject, [dataBrowser.classes.view], {
         [P.name]: String(projection.name),
         [P.kind]: view.type === 'board' ? 'kanban' : 'table',
         [P.columns]: (projection.columns as string[]).map(
-          id => fields.find(f => f.id === id)!.property,
+          columnId => fields.find(f => f.id === columnId)!.property,
         ),
         ...(projection.group
           ? { [P.group]: fields.find(f => f.id === projection.group)!.property }
           : {}),
       });
-      c.views.push({ id: uuid(view.id), subject: v.subject, kind: view.type });
+      c.views.push({
+        id: uuid(view.id),
+        subject: v.subject,
+        kind: view.type as 'table' | 'board',
+      });
       if (view.configuration)
         warnings.push(
           `${view.name}: widths, covers and other presentation details remain Notion-only; only name, visible columns and supported grouping sync`,
         );
     }
+
     if (!list.has_more) break;
     if (
       typeof list.next_cursor !== 'string' ||
@@ -277,7 +308,9 @@ export async function install(
     cursor = list.next_cursor;
     seen.add(cursor!);
   }
+
   const views = c.views.map(v => v.subject);
+
   if (!views.length) {
     const v = await create(table.subject, [dataBrowser.classes.view], {
       [P.name]: 'Atomic table',
@@ -287,6 +320,7 @@ export async function install(
     views.push(v.subject);
     warnings.push('No compatible Notion view; the Atomic table is local-only');
   }
+
   await table.set(dataBrowser.properties.tableViews, views);
   await table.set(dataBrowser.properties.tableDefaultView, views[0]);
   await table.save();
@@ -296,10 +330,7 @@ export async function install(
     config: c as unknown as JSONValue,
     warnings,
     labels: Object.fromEntries(
-      (Object.values(sourceSchema.properties) as any[]).map(p => [
-        p.id,
-        p.name,
-      ]),
+      Object.values(sourceSchema.properties).map(p => [p.id, p.name]),
     ),
     events: [
       {
@@ -314,6 +345,7 @@ export async function install(
       },
     ],
   };
+
   if (typeof token === 'string') {
     await plugin.set(schema.properties['plugin-connection'], details);
   } else {
@@ -327,6 +359,8 @@ export async function install(
       },
     });
   }
+
   await plugin.save();
+
   return c;
 }

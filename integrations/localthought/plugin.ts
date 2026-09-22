@@ -1,6 +1,7 @@
 // @wc-ignore-file
-import type { JSONValue } from "../../browser/lib/src/value.js";
-import { importRecords } from "../../browser/lib/src/import-records.js";
+import type { JSONValue } from '../../browser/lib/src/value.js';
+import { importRecords } from '../../browser/lib/src/import-records.js';
+
 export const manifest = { schemaVersion: 1, operations: [], secrets: [] };
 export interface Config {
   platform: string;
@@ -23,24 +24,43 @@ export function run(ctx: {
   // incomplete one, and must read like it rather than throw a TypeError.
   const c = ctx.config ?? ({} as Config);
   if (!c.destinations || !c.properties || !Array.isArray(c.records))
-    throw new Error("Fetch records from the connection before previewing this import");
+    throw new Error(
+      'Fetch records from the connection before previewing this import',
+    );
   const identities = new Set<string>();
-  const records = c.records.map((row) => {
-    if (!row.id || !row.resource) throw new Error("Provider record is missing a stable identity");
+  const records = c.records.map(row => {
+    if (!row.id || !row.resource)
+      throw new Error('Provider record is missing a stable identity');
     const target = c.destinations[row.resource];
-    if (!target) throw new Error("No typed destination for provider collection");
-    const sourceId = JSON.stringify([c.platform, row.resource, row.namespace, row.id]);
-    if (identities.has(sourceId)) throw new Error("Provider returned duplicate record identity");
+    if (!target)
+      throw new Error('No typed destination for provider collection');
+    const sourceId = JSON.stringify([
+      c.platform,
+      row.resource,
+      row.namespace,
+      row.id,
+    ]);
+    if (identities.has(sourceId))
+      throw new Error('Provider returned duplicate record identity');
     identities.add(sourceId);
     const values: Record<string, JSONValue> = {
-      "https://atomicdata.dev/properties/name": String(row.name),
+      'https://atomicdata.dev/properties/name': String(row.name),
     };
+
     for (const [field, value] of Object.entries(row.values)) {
       const property = c.properties[field];
       if (!property) throw new Error(`No ontology property for ${field}`);
       values[property] = value;
     }
-    return { sourceId, localId: sourceId, parent: target.table, isA: [target.rowClass], values };
+
+    return {
+      sourceId,
+      localId: sourceId,
+      parent: target.table,
+      isA: [target.rowClass],
+      values,
+    };
   });
+
   return importRecords(ctx, records);
 }

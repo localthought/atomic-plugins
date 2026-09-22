@@ -1,5 +1,9 @@
 // @wc-ignore-file
-import { core, Datatype, type SchemaSpec } from '../../browser/lib/src/index.js';
+import {
+  core,
+  Datatype,
+  type SchemaSpec,
+} from '../../browser/lib/src/index.js';
 
 /**
  * Code-first ontology for the trivial demo Pets collection. Shared within a
@@ -8,10 +12,25 @@ import { core, Datatype, type SchemaSpec } from '../../browser/lib/src/index.js'
  */
 export function petsSchema(): SchemaSpec {
   const fields: Array<[string, string, string, Datatype]> = [
-    ['pet-species', 'Species', 'The kind of animal, e.g. Dog or Cat.', Datatype.STRING],
-    ['pet-breed', 'Breed', 'The breed or variety of the animal.', Datatype.STRING],
+    [
+      'pet-species',
+      'Species',
+      'The kind of animal, e.g. Dog or Cat.',
+      Datatype.STRING,
+    ],
+    [
+      'pet-breed',
+      'Breed',
+      'The breed or variety of the animal.',
+      Datatype.STRING,
+    ],
     ['pet-age', 'Age', 'Age in years.', Datatype.INTEGER],
-    ['pet-mood', 'Mood', 'A playful, one-word description of the demo pet.', Datatype.STRING],
+    [
+      'pet-mood',
+      'Mood',
+      'A playful, one-word description of the demo pet.',
+      Datatype.STRING,
+    ],
     [
       'pet-source-id',
       'Source identity',
@@ -19,6 +38,7 @@ export function petsSchema(): SchemaSpec {
       Datatype.STRING,
     ],
   ];
+
   return {
     properties: [
       {

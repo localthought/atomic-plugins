@@ -21,6 +21,7 @@ const output = JSON.parse(
   await fetchIntegration(document, 'pets', '{}', undefined, async url => {
     urls.push(url);
     const second = url.includes('page=2');
+
     return JSON.stringify({
       status: 200,
       headers: second

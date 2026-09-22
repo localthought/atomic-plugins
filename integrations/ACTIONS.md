@@ -39,11 +39,11 @@ are independent.
 
 ```js
 const result = ctx.integration({
-  connection: "did:ad:...", // included in automation-integrations
-  release: "...", // exact release from listIntegrationActions
+  connection: 'did:ad:...', // included in automation-integrations
+  release: '...', // exact release from listIntegrationActions
   call: {
-    action: "create_issue",
-    arguments: { title: "A new request" },
+    action: 'create_issue',
+    arguments: { title: 'A new request' },
     id: `${ctx.trigger.id}:create-issue`,
   },
 });

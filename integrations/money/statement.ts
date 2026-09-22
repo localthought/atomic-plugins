@@ -18,6 +18,7 @@ export function parseBankStatement(text: string): {
 } {
   if (typeof text !== 'string') throw new Error('Choose a bank statement file');
   const format = detectStatementFormat(text);
+
   return {
     format,
     statements: format === 'camt053' ? parseCamt053(text) : parseMT940(text),

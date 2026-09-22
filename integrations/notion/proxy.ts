@@ -17,6 +17,7 @@ export function proxyOperation(
   effect: 'read' | 'write',
 ) {
   const declarations = manifest(dataSource).operations;
+
   return async (intent: ExternalIntent) => {
     const operation = declarations.find(
       o =>
@@ -46,11 +47,24 @@ export function proxyOperation(
       )
     )
       throw new Error('Notion operation escaped its declared endpoint');
+
     return request(url.pathname + url.search, {
       method: intent.method,
       body: intent.body,
     });
   };
+}
+
+interface NotionSearchResult {
+  object: string;
+  id: string;
+  title?: { plain_text?: string; text?: { content?: string } }[];
+  icon?: { emoji?: string };
+}
+interface NotionSearchResponse {
+  results: NotionSearchResult[];
+  has_more: boolean;
+  next_cursor?: string | null;
 }
 
 export async function discoverDatabases(
@@ -60,7 +74,7 @@ export async function discoverDatabases(
 ) {
   if (query.length > 256 || (cursor?.length ?? 0) > 1024)
     throw new Error('Search is too long');
-  const data = parse(
+  const data = parse<NotionSearchResponse>(
     await request('/v1/search', {
       method: 'POST',
       body: JSON.stringify({
@@ -80,16 +94,17 @@ export async function discoverDatabases(
         data.next_cursor === cursor))
   )
     throw new Error('Invalid Notion search pagination');
+
   return {
     results: data.results
-      .filter((r: any) => r.object === 'data_source')
-      .map((r: any) => ({
+      .filter(r => r.object === 'data_source')
+      .map(r => ({
         id: uuid(r.id),
         name: (r.title ?? [])
-          .map((t: any) => t.plain_text ?? t.text?.content ?? '')
+          .map(t => t.plain_text ?? t.text?.content ?? '')
           .join(''),
         icon: r.icon?.emoji ?? '📓',
-      })) as { id: string; name: string; icon: string }[],
+      })),
     cursor: data.has_more ? (data.next_cursor as string) : undefined,
   };
 }

@@ -10,6 +10,7 @@ if (!input)
     'Usage: node integrations/tooling/publish-evidence.mjs report.json',
   );
 const report = JSON.parse(readFileSync(resolve(input), 'utf8'));
+
 for (const p of discover()) {
   const hash = createHash('sha256')
     .update(readFileSync(resolve(root, p.path, 'plugin.js')))
@@ -28,6 +29,7 @@ for (const p of discover()) {
   )
     throw new Error(`${p.id}: current complete evidence is required`);
 }
+
 writeFileSync(
   resolve(root, 'integrations/evidence.json'),
   JSON.stringify(report, null, 2) + '\n',

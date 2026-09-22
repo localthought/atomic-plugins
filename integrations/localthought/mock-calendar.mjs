@@ -8,6 +8,7 @@ const dateTime = {
     timeZone: string,
   },
 };
+
 export const calendarDocument = {
   openapi: '3.0.3',
   info: { title: 'Synthetic Calendar', version: 'v3' },
@@ -122,6 +123,7 @@ export function calendarFixture(day = new Date().toISOString().slice(0, 10)) {
     },
   ];
   const requests = [];
+
   return {
     events,
     requests,
@@ -145,10 +147,14 @@ export function calendarFixture(day = new Date().toISOString().slice(0, 10)) {
         url.searchParams.get('showDeleted') !== 'true' ||
         (series
           ? url.searchParams.has('timeMin') || url.searchParams.has('timeMax')
-          : !url.searchParams.has('timeMin') || !url.searchParams.has('timeMax') || url.searchParams.get('singleEvents') !== 'true')
-      ) return { status: 400, body: { error: 'Invalid recurrence query' } };
+          : !url.searchParams.has('timeMin') ||
+            !url.searchParams.has('timeMax') ||
+            url.searchParams.get('singleEvents') !== 'true')
+      )
+        return { status: 400, body: { error: 'Invalid recurrence query' } };
       const token = url.searchParams.get('pageToken');
       if (token && token !== 'second') return { status: 400, body: {} };
+
       return {
         status: 200,
         body: structuredClone(

@@ -5,13 +5,13 @@ code (`adapter.ts`, `tracker-actions.ts`) stays here.
 
 ## Mapping
 
-| GitHub | Atomic |
-|---|---|
-| Issue title | Card title |
+| GitHub                                    | Atomic      |
+| ----------------------------------------- | ----------- |
+| Issue title                               | Card title  |
 | Markdown body (`null` becomes empty text) | Description |
-| Open, without `atomic:doing` | Todo |
-| Open, with `atomic:doing` | Doing |
-| Closed | Done |
+| Open, without `atomic:doing`              | Todo        |
+| Open, with `atomic:doing`                 | Doing       |
+| Closed                                    | Done        |
 
 Dragging a card to Done closes its issue; moving it back reopens it. Other labels
 are preserved: the adapter adds/removes only `atomic:doing`, never replaces the

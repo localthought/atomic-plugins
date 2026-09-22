@@ -65,6 +65,7 @@ it.skipIf(!process.env.ATOMIC_NOTION_TEST_SERVER)(
                       ],
                     },
                   };
+
           return new Response(
             JSON.stringify({ status: 200, body: JSON.stringify(body) }),
             {
@@ -72,10 +73,13 @@ it.skipIf(!process.env.ATOMIC_NOTION_TEST_SERVER)(
             },
           );
         }
+
         if (String(url).startsWith('https://api.notion.com'))
           throw new Error('Installer must use host-owned egress');
+
         return original(url, init);
       });
+
     try {
       const c = await install(
         store,

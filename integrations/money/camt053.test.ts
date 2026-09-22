@@ -36,6 +36,11 @@ const host = {
   query: () => [] as string[],
   read: () => ({}),
 };
+interface Intent {
+  parent: string;
+  isA?: string[];
+  set: Record<string, unknown>;
+}
 describe('camt.053 parser and import proposals', () => {
   it('reads namespaced, prefixed and self-closing XML with entities and CDATA', () => {
     const root = parseXml(
@@ -133,7 +138,7 @@ describe('camt.053 parser and import proposals', () => {
     expect(parseBankStatement('﻿\n' + fixture).format).toBe('camt053');
     const verdict = run(host);
     expect(verdict.intents).toHaveLength(2);
-    const first = verdict.intents[0] as any;
+    const first = verdict.intents[0] as Intent;
     expect(first.set[p['bank-amount']]).toBe('-12.34');
     expect(first.set[p['bank-source-id']]).toBe(
       JSON.stringify([
@@ -145,7 +150,7 @@ describe('camt.053 parser and import proposals', () => {
     );
     expect(first.set[p['bank-fingerprint']]).toMatch(/^camt053-content:/);
     expect(
-      (run({ ...host, text: mt940Fixture }).intents[0] as any).set[
+      (run({ ...host, text: mt940Fixture }).intents[0] as Intent).set[
         p['bank-source-id']
       ],
     ).toBe(

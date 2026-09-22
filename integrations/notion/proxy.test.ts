@@ -6,6 +6,21 @@ import { request } from './model';
 import { runWithAsyncReads } from '../localthought/async-plugin';
 import { continueBrowserSync, type Step } from '../localthought/browser-sync';
 import { P } from './model';
+interface Intent {
+  subject?: string;
+  op: string;
+  parent?: string;
+  isA?: string[];
+  set?: Record<string, unknown>;
+  properties?: string[];
+}
+interface Verdict {
+  intents: Intent[];
+}
+interface PreviewResult {
+  proposal: unknown;
+  problems: unknown[];
+}
 it('discovers database names and POST cursor pagination entirely through the proxy', async () => {
   const proxy = vi.fn(
     async (_path: string, _init?: { method?: string; body?: string }) => ({
@@ -76,11 +91,13 @@ it('imports, checkpoints, then sends an Atomic edit back through the proxy', asy
         const body = JSON.parse(init.body!);
         f.page.properties.Name.title = body.properties.title.title;
       }
+
       const data = path.endsWith('/query')
         ? f.responses.query
         : path.includes('/pages/')
           ? f.page
           : f.responses.schema;
+
       return { status: 200, body: JSON.stringify(data) };
     },
   );
@@ -88,8 +105,10 @@ it('imports, checkpoints, then sends an Atomic edit back through the proxy', asy
   const write = proxyOperation(id, proxy, 'write');
   const invoke = (input: object) =>
     runWithAsyncReads(run, { ...f.input, ...input }, read);
-  const atomic = async (verdict: any) => {
+
+  const atomic = async (verdict: Verdict) => {
     const outcomes: { subject: string }[] = [];
+
     for (const intent of verdict.intents) {
       const subject = intent.subject ?? 'row';
       if (intent.op === 'create')
@@ -99,9 +118,11 @@ it('imports, checkpoints, then sends an Atomic edit back through the proxy', asy
         delete f.records[subject][property];
       outcomes.push({ subject });
     }
+
     return { outcomes };
   };
-  const first: any = await invoke({ phase: 'preview' });
+
+  const first: PreviewResult = await invoke({ phase: 'preview' });
   const host = {
     save: vi.fn(),
     external: write,
@@ -116,7 +137,7 @@ it('imports, checkpoints, then sends an Atomic edit back through the proxy', asy
   expect(imported.complete).toBe(true);
   expect(f.records.row[P.name]).toBe('Task');
   f.records.row[P.name] = 'Edited in Atomic';
-  const next: any = await invoke({
+  const next: PreviewResult = await invoke({
     phase: 'preview',
     connection: imported.connection,
   });
@@ -127,7 +148,7 @@ it('imports, checkpoints, then sends an Atomic edit back through the proxy', asy
   expect(synced.complete).toBe(true);
   expect(f.page.properties.Name.title[0].text.content).toBe('Edited in Atomic');
   f.page.properties.Name.title[0].text.content = 'Edited in Notion';
-  const refreshed: any = await invoke({
+  const refreshed: PreviewResult = await invoke({
     phase: 'preview',
     connection: synced.connection,
   });

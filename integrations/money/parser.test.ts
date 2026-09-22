@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseMT940 } from './parser';
 import { run } from './plugin';
+
 export const fixture = `:20:SYNTHETIC
 :25:NL00BUNQ0000000000
 :28C:1/1
@@ -38,6 +39,11 @@ const host = {
   query: () => [] as string[],
   read: () => ({}),
 };
+interface Intent {
+  parent: string;
+  isA?: string[];
+  set: Record<string, unknown>;
+}
 describe('MT940 parser and import proposals', () => {
   it('rejects JSON-shaped narratives rather than letting legacy persistence reinterpret text', () => {
     expect(() =>
@@ -89,11 +95,11 @@ describe('MT940 parser and import proposals', () => {
   });
   it('nests rows under the table and skips identical reimports', () => {
     const verdict = run(host);
-    const first = verdict.intents[0] as any;
+    const first = verdict.intents[0] as Intent;
     expect(first.parent).toBe(config.table);
     expect(first.set[p['bank-amount']]).toBe('-12.34');
     const saved = new Map(
-      (verdict.intents as any[]).map((i, n) => [
+      (verdict.intents as Intent[]).map((i, n) => [
         String(n),
         {
           ...i.set,
@@ -112,8 +118,8 @@ describe('MT940 parser and import proposals', () => {
     ).toHaveLength(0);
   });
   it('blocks changed referenced transactions and ambiguous reference-free overlap', () => {
-    const first = run(host).intents[0] as any;
-    const saved = {
+    const first = run(host).intents[0] as Intent;
+    const saved: Record<string, unknown> = {
       ...first.set,
       'https://atomicdata.dev/properties/parent': config.table,
       'https://atomicdata.dev/properties/isA': [config.rowClass],
@@ -124,7 +130,9 @@ describe('MT940 parser and import proposals', () => {
       query: (property, value) => (saved[property] === value ? ['saved'] : []),
       read: () => saved,
     });
-    expect(changed.problems.some(p => p.severity === 'error')).toBe(true);
+    expect(changed.problems.some(problem => problem.severity === 'error')).toBe(
+      true,
+    );
     expect(() =>
       run({
         ...host,

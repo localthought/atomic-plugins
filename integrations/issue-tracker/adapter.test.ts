@@ -21,6 +21,7 @@ describe('GitHub package', () => {
       {
         read: async intent => {
           const page = Number(new URL(intent.url).searchParams.get('page'));
+
           return {
             status: 200,
             body: JSON.stringify(issues.slice((page - 1) * 100, page * 100)),

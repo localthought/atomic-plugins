@@ -2,13 +2,18 @@ import { it, expect } from 'vitest';
 import { run } from './plugin.js';
 import { P } from './model.js';
 // Authored API fixtures, not live Notion conformance evidence.
-import { id, pid, fixture } from './fixture.js';
+import { pid, fixture } from './fixture.js';
+interface RunResult {
+  kind: string;
+  problems: { message: string }[];
+  proposal: { changes: { kind: string; desired?: unknown }[] };
+}
 it('discovers rows and stable property identities without writes', () => {
   const f = fixture();
-  const out: any = run(f.input);
+  const out = run(f.input) as RunResult;
   expect(out.kind).toBe('preview');
   expect(out.problems).toEqual([]);
-  expect(out.proposal.changes.map((x: any) => x.kind)).toEqual([
+  expect(out.proposal.changes.map(x => x.kind)).toEqual([
     'schema',
     'schema',
     'page',
@@ -37,18 +42,18 @@ it('uses acknowledged baselines for independent field edits and conflicts', () =
       [`page:${pid}`]: { local: 'row', baseline: { title: 'Task', n: 1 } },
     },
   };
-  let out: any = run(f.input);
-  expect(out.proposal.changes.at(-1).desired).toEqual({
+  let out = run(f.input) as RunResult;
+  expect(out.proposal.changes.at(-1)!.desired).toEqual({
     title: 'Local title',
     n: 2,
   });
   f.records.row['did:ad:n'] = 3;
-  out = run(f.input);
+  out = run(f.input) as RunResult;
   expect(out.problems[0].message).toContain('n');
 });
 it('rejects edits made after preview before proposing any writes', () => {
   const f = fixture();
-  const out: any = run(f.input);
+  const out = run(f.input) as RunResult;
   f.input.phase = 'step';
   f.input.proposal = out.proposal;
   f.records['did:ad:title'][P.name] = 'Changed';
