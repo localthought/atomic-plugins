@@ -1,2 +1,2 @@
 # atomic-plugins
-Temporary repo for quick iteration. https://github.com/ontola/atomic-server/tree/develop/integrations remains the source of truth
+This repo is now the source of truth for all atomic plugins. https://github.com/ontola/atomic-server/tree/develop/integrations is deprecated.

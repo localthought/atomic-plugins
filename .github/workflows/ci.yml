@@ -52,6 +52,10 @@ name: CI
 
 on:
   pull_request:
+  # Required so the merge queue's temporary gh-readonly-queue/... commit gets
+  # a CI run at all: GitHub gates required checks on the merge_group event,
+  # not on the pull_request run from the PR head.
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -66,21 +70,27 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      any: ${{ steps.filter.outputs.any }}
-      shared: ${{ steps.filter.outputs.shared }}
-      github-issues: ${{ steps.filter.outputs.github-issues }}
-      notion: ${{ steps.filter.outputs.notion }}
-      mt940: ${{ steps.filter.outputs.mt940 }}
-      pets: ${{ steps.filter.outputs.pets }}
-      clockify: ${{ steps.filter.outputs.clockify }}
-      localthought: ${{ steps.filter.outputs.localthought }}
+      any: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.any }}
+      shared: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.shared }}
+      github-issues: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.github-issues }}
+      notion: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.notion }}
+      mt940: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.mt940 }}
+      pets: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.pets }}
+      clockify: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.clockify }}
+      localthought: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.localthought }}
     steps:
       # `shared` paths can affect every plugin (tooling, the catalog gate,
       # the pinned server commit, this workflow itself), so every `if:`
       # below ORs its own package flag with `shared` rather than this job
       # trying to fold that in on its own.
+      #
+      # dorny/paths-filter reads changed files from the pull_request API, which
+      # doesn't exist for a merge_group event, so this step is skipped there and
+      # every lane above is forced to 'true' instead: the queue always runs the
+      # full suite rather than misdetecting an empty diff.
       - name: Path filters
         id: filter
+        if: github.event_name != 'merge_group'
         uses: dorny/paths-filter@v3
         with:
           filters: |
