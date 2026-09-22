@@ -8,7 +8,9 @@
     "owner": "Ontola",
     "support": "experimental",
     "apiVersion": "demo-v1",
-    "capabilities": ["demo-pets:import"],
+    "capabilities": [
+      "demo-pets:import"
+    ],
     "sandboxTests": [
       "plugins::pets_tests::demo_pets_are_proposed_in_the_real_sandbox"
     ]

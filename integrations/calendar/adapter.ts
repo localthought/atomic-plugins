@@ -68,10 +68,12 @@ const headers = {
 function civilDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const time = Date.parse(`${value}T00:00:00Z`);
+
   return (
     Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value
   );
 }
+
 function offsetDateTime(value: string): boolean {
   return (
     /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
@@ -88,6 +90,7 @@ export function project(event: Event): Projection | undefined {
   if (typeof event.id !== 'string' || !event.id)
     throw new Error('Google returned an invalid event');
   const allDay = typeof event.start.date === 'string';
+
   if (allDay) {
     if (
       event.start.dateTime !== undefined ||
@@ -115,6 +118,7 @@ export function project(event: Event): Projection | undefined {
         `Calendar event ${event.id} has an invalid timed interval`,
       );
   }
+
   return {
     title: event.summary ?? '',
     description: event.description ?? '',
@@ -124,6 +128,7 @@ export function project(event: Event): Projection | undefined {
     allDay,
   };
 }
+
 function validate(value: Projection) {
   if (typeof value.title !== 'string' || !value.title.trim())
     throw new Error('Events require a non-empty title');
@@ -141,11 +146,12 @@ function validate(value: Projection) {
         ? 'All-day events need plain YYYY-MM-DD dates'
         : 'Timed events need an explicit UTC offset',
     );
-  const parse = (d: string) =>
+  const parseDate = (d: string) =>
     value.allDay ? Date.parse(`${d}T00:00:00Z`) : Date.parse(d);
-  if (parse(value.end) <= parse(value.start))
+  if (parseDate(value.end) <= parseDate(value.start))
     throw new Error('Event end must follow its start');
 }
+
 export function endpoint(calendarId: string): string {
   if (
     !calendarId ||
@@ -153,10 +159,12 @@ export function endpoint(calendarId: string): string {
     ['.', '..'].includes(calendarId)
   )
     throw new Error('Calendar id must not contain path separators');
+
   return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 }
 export function manifest(calendarId: string) {
   const url = endpoint(calendarId);
+
   return {
     schemaVersion: 1,
     actions: [
@@ -193,7 +201,10 @@ export function manifest(calendarId: string) {
               type: 'string',
               description: 'YYYY-MM-DD or an offset-qualified date-time',
             },
-            allDay: { type: 'boolean' },
+            allDay: {
+              type: 'boolean',
+              description: 'Whether this is an all-day event',
+            },
           },
           required: ['title', 'start', 'end', 'allDay'],
           additionalProperties: false,
@@ -216,13 +227,16 @@ export function manifest(calendarId: string) {
     ],
   };
 }
+
 function parse<T>(response: ExternalReceipt): T {
   if (response.status < 200 || response.status >= 300)
     throw new Error(
       `Google Calendar returned ${response.status}; no checkpoint was advanced. Resolve access/reconnect before retrying.`,
     );
+
   return JSON.parse(response.body) as T;
 }
+
 export function request(
   operation: string,
   method: string,
@@ -252,6 +266,7 @@ export async function get(
   );
   if (event.id !== id)
     throw new Error('Expected an event with the requested id');
+
   return event;
 }
 
@@ -269,6 +284,7 @@ export async function preview(
   const events = new Map<string, Projection>();
   let pageToken: string | undefined;
   let pages = 0;
+
   do {
     if (++pages > 100)
       throw new Error('Pilot supports at most 25,000 events per scan');
@@ -280,41 +296,50 @@ export async function preview(
     );
     if (!Array.isArray(page.items))
       throw new Error('Google Calendar event page must include an items array');
+
     for (const event of page.items) {
       const projection = project(event);
       if (projection) events.set(event.id, projection);
     }
+
     pageToken = page.nextPageToken;
   } while (pageToken);
 
   const cards = await host.cards();
   const byId = new Map<string, Card>();
+
   for (const card of cards) {
     validate(card.value);
+
     if (card.id !== undefined) {
       if (byId.has(card.id))
         throw new Error(`Duplicate cards for event ${card.id}`);
       byId.set(card.id, card);
     }
   }
+
   const result: Preview = {
     calendarId,
     revision: state.revision,
     changes: [],
     conflicts: [],
   };
+
   for (const [id, remote] of events) {
     const binding = state.records[id];
     const card = byId.get(id);
+
     if (binding && (!card || binding.local !== card.subject)) {
       result.conflicts.push({ id, fields: ['Missing or rebound local card'] });
       continue;
     }
+
     const decision = reconcileRecord(
       binding?.baseline as SyncRecord,
       card?.value,
       remote,
     );
+
     if (decision.conflicts.length) {
       result.conflicts.push({
         subject: card?.subject,
@@ -323,21 +348,36 @@ export async function preview(
       });
       continue;
     }
+
     const desired = { ...remote, ...decision.remote } as Projection;
     validate(desired);
     // Include unchanged records so their identity/baseline is established on first import.
-    result.changes.push({ subject: card?.subject, id, local: card?.value, remote, desired });
+    result.changes.push({
+      subject: card?.subject,
+      id,
+      local: card?.value,
+      remote,
+      desired,
+    });
   }
+
   for (const card of cards) {
     if (card.id === undefined)
-      result.changes.push({ subject: card.subject, local: card.value, desired: card.value });
+      result.changes.push({
+        subject: card.subject,
+        local: card.value,
+        desired: card.value,
+      });
     else if (!events.has(card.id))
       result.conflicts.push({
         subject: card.subject,
         id: card.id,
-        fields: ['Event cancelled, recurring or inaccessible; no deletion inferred'],
+        fields: [
+          'Event cancelled, recurring or inaccessible; no deletion inferred',
+        ],
       });
   }
+
   return result;
 }
 
@@ -352,9 +392,11 @@ export interface Edit {
     end: EventTime;
   }>;
 }
+
 function eventTime(value: string, allDay: boolean): EventTime {
   return allDay ? { date: value } : { dateTime: value };
 }
+
 /** Only the fields a title/description/location/start/end edit actually
  * touches; never a full event replacement. */
 export function planEdit(
@@ -373,6 +415,7 @@ export function planEdit(
   if (desired.end !== remote.end || desired.allDay !== remote.allDay)
     patch.end = eventTime(desired.end, desired.allDay);
   if (!Object.keys(patch).length) return undefined;
+
   return { id, subject, patch };
 }
 /** Conditions the write on the ETag captured at preview time so a change to
@@ -395,5 +438,6 @@ export async function applyEdit(
   );
   if (response.status === 412)
     throw new Error('Google event changed after preview; preview again');
+
   return parse<Event>(response);
 }

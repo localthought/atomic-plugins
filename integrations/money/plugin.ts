@@ -4,6 +4,7 @@ import {
   type ImportRecord,
 } from '../../browser/lib/src/import-records.js';
 import { parseBankStatement } from './statement.js';
+
 export const manifest = {
   schemaVersion: 1,
   operations: [],
@@ -41,6 +42,7 @@ interface Host {
   query(property: string, value: string): string[];
   read(subject: string): Record<string, unknown>;
 }
+
 export function run(ctx: Host) {
   const text = ctx.text ?? ctx.trigger?.payload?.text;
   if (!text)
@@ -66,6 +68,7 @@ export function run(ctx: Host) {
   const records: ImportRecord[] = [];
   const seen = new Map<string, string>();
   let fallback = 0;
+
   for (const statement of statements) {
     const statementKey = JSON.stringify([
       statement.number,
@@ -74,6 +77,7 @@ export function run(ctx: Host) {
       statement.opening,
       statement.closing,
     ]);
+
     for (const [index, row] of statement.transactions.entries()) {
       // Identities are per export format: the same booking exported twice as
       // MT940 and camt.053 carries different narratives, which would otherwise
@@ -100,6 +104,7 @@ export function run(ctx: Host) {
         statement.currency,
         reference ? ['bank', reference] : ['statement', statementKey, index],
       ]);
+
       if (seen.has(identity)) {
         if (seen.get(identity) !== fingerprint)
           throw new Error(
@@ -109,7 +114,9 @@ export function run(ctx: Host) {
           'Repeated bank transaction reference in this file; export non-overlapping statements',
         );
       }
+
       seen.set(identity, fingerprint);
+
       if (!reference) {
         fallback++;
         if (
@@ -134,6 +141,7 @@ export function run(ctx: Host) {
             'This statement overlaps an earlier import without unique bank references. Use the original statement or export a non-overlapping period.',
           );
       }
+
       const values: Record<string, string> = {
         'https://atomicdata.dev/properties/name':
           row.description || row.reference,
@@ -160,7 +168,9 @@ export function run(ctx: Host) {
       });
     }
   }
+
   const result = importRecords(ctx, records);
+
   return {
     intents: result.intents,
     problems: [

@@ -1,10 +1,13 @@
 export default {
   // Keep module IDs independent of the caller, especially a container cwd of /.
-  root: new URL(".", import.meta.url).pathname,
+  root: new URL('.', import.meta.url).pathname,
   resolve: {
     alias: {
-      vitest: new URL("../../browser/node_modules/vitest/dist/index.js", import.meta.url).pathname,
+      vitest: new URL(
+        '../../browser/node_modules/vitest/dist/index.js',
+        import.meta.url,
+      ).pathname,
     },
   },
-  test: { include: ["*.test.ts"] },
+  test: { include: ['*.test.ts'] },
 };

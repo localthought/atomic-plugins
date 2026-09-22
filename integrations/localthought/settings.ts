@@ -1,28 +1,42 @@
 /** Browser-local proxy preferences and origin-scoped connection discovery. */
-import { DEFAULT_PROXY, proxyOrigin } from "./browser";
+import { DEFAULT_PROXY, proxyOrigin } from './browser';
 
-export const proxySettingKey = "integration-proxy-url";
+export const proxySettingKey = 'integration-proxy-url';
 
-export function configuredProxy(storage: Pick<Storage, "getItem">, fallback = DEFAULT_PROXY) {
+export function configuredProxy(
+  storage: Pick<Storage, 'getItem'>,
+  fallback = DEFAULT_PROXY,
+) {
   return proxyOrigin(storage.getItem(proxySettingKey) || fallback);
 }
 
-export function saveProxy(storage: Pick<Storage, "setItem" | "removeItem">, value: string) {
+export function saveProxy(
+  storage: Pick<Storage, 'setItem' | 'removeItem'>,
+  value: string,
+) {
   const trimmed = value.trim();
+
   if (!trimmed) {
     storage.removeItem(proxySettingKey);
+
     return;
   }
-  const origin = proxyOrigin(trimmed.replace(/\/$/, ""));
+
+  const origin = proxyOrigin(trimmed.replace(/\/$/, ''));
   storage.setItem(proxySettingKey, origin);
 }
 
-export function savedConnectionKey(origin: string, drive: string, actor: string, platform: string) {
+export function savedConnectionKey(
+  origin: string,
+  drive: string,
+  actor: string,
+  platform: string,
+) {
   return `localthought-browser:${JSON.stringify([proxyOrigin(origin), drive, actor, platform])}`;
 }
 
 export function readSavedConnection(
-  storage: Pick<Storage, "getItem" | "setItem">,
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
   origin: string,
   drive: string,
   actor: string,
@@ -35,10 +49,11 @@ export function readSavedConnection(
     `localthought-browser:${JSON.stringify([drive, actor, platform])}`,
   );
   if (!legacy) return;
+
   try {
     const saved = JSON.parse(legacy);
     const credential = JSON.parse(
-      storage.getItem(`localthought-browser-v1:${saved.connection}`) || "null",
+      storage.getItem(`localthought-browser-v1:${saved.connection}`) || 'null',
     );
     if (
       credential?.origin !== origin ||
@@ -48,6 +63,7 @@ export function readSavedConnection(
     )
       return;
     storage.setItem(key, legacy);
+
     return legacy;
   } catch {
     return;
@@ -59,7 +75,7 @@ export function readSavedConnection(
 export function importInstallationIdentity(
   connection: { connection: string },
   constants: Record<string, string>,
-  selectionSuffix = "",
+  selectionSuffix = '',
 ) {
   return `localthought:${connection.connection}:${JSON.stringify(Object.entries(constants).sort())}${selectionSuffix}`;
 }

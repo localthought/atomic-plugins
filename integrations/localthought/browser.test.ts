@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { BrowserIntegrations, proxyOrigin } from './browser';
 const origin = 'https://proxy.example';
+
 function setup() {
   const values = new Map<string, string>();
   const storage = {
@@ -22,6 +23,7 @@ function setup() {
     if (url.endsWith('/catalog')) return new Response('["pets"]');
     if (url.endsWith('/connect/redeem'))
       return Response.json({ connection_code: 'first', platform: 'pets' });
+
     return new Response('{}');
   });
   const client = new BrowserIntegrations(storage, origin, http as typeof fetch);
@@ -32,9 +34,14 @@ function setup() {
       'pets',
       'https://atomic.example/app/integrations',
     );
+
   return { values, storage, http, client, start };
 }
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 it('rejects non-origin proxy URLs', () => {
   expect(() => proxyOrigin('https://proxy.example/path')).toThrow();
   expect(() => proxyOrigin('http://proxy.example')).toThrow();
@@ -92,6 +99,7 @@ it('binds redemption to actor, drive, platform and expiry', async () => {
       code: 'code',
       code_verifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     });
+
     return Response.json({ connection_code: 'first', platform: 'pets' });
   });
   await expect(client.finish('drive', 'actor', state, 'code')).resolves.toEqual(
@@ -165,6 +173,7 @@ it('consumes before dispatch and preserves rotation', async () => {
   http.mockImplementation(async (_url, init) => {
     expect(JSON.parse([...values.values()][0]).code).toBeUndefined();
     codes.push((init!.headers as Record<string, string>).Authorization);
+
     return new Response('[]', {
       headers: { 'x-connection-code': 'second' },
     });
@@ -193,6 +202,7 @@ it('calls the browser fetch function without binding it to the client', async ()
   const { storage } = setup();
   vi.stubGlobal('fetch', function (this: unknown) {
     expect(this).not.toBeInstanceOf(BrowserIntegrations);
+
     return Promise.resolve(new Response('["pets"]'));
   });
   const client = new BrowserIntegrations(storage, origin);
@@ -212,6 +222,7 @@ it('supports the demo callback and write credentials', async () => {
     expect(JSON.parse([...values.values()][0]).code).toBeUndefined();
     expect(init?.method).toBe('POST');
     expect(init?.body).toBe('{"title":"new"}');
+
     return new Response('{"id":1}', {
       status: 201,
       headers: { 'X-Connection-Code': 'next' },
@@ -243,6 +254,7 @@ it('forwards the conditional event version while keeping authorization host-owne
     });
     expect(init?.method).toBe('PATCH');
     expect(init?.body).toBe('{"summary":"Updated"}');
+
     return new Response('{}', { headers: { 'x-connection-code': 'next' } });
   });
   await client.request('drive', 'actor', state, 'pets', '/events/id', {

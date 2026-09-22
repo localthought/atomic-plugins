@@ -1,9 +1,14 @@
 // @wc-ignore-file
-import { core, Datatype, type SchemaSpec } from "../../browser/lib/src/index.js";
-import type { JSONValue } from "../../browser/lib/src/value.js";
+import {
+  core,
+  Datatype,
+  type SchemaSpec,
+} from '../../browser/lib/src/index.js';
+import type { JSONValue } from '../../browser/lib/src/value.js';
+
 export interface Term {
   path: string;
-  kind: "class" | "property";
+  kind: 'class' | 'property';
   shortname: string;
   description: string;
   datatype: Datatype;
@@ -24,27 +29,35 @@ export interface FetchedPlatform {
   /** Non-fatal problems from a partial fetch, e.g. a host-imposed record cap. */
   errors?: string[];
 }
-export const termKey = (platform: string, term: Pick<Term, "kind" | "shortname">) =>
-  `lt-${platform}-${term.kind}-${term.shortname}`;
+export const termKey = (
+  platform: string,
+  term: Pick<Term, 'kind' | 'shortname'>,
+) => `lt-${platform}-${term.kind}-${term.shortname}`;
+
 /** A column header from a term shortname: `work-start` reads as `Work start`. */
 const displayName = (shortname: string) => {
-  const words = shortname.replaceAll("-", " ");
+  const words = shortname.replaceAll('-', ' ');
+
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
+
 export function platformSchema(platform: string, terms: Term[]): SchemaSpec {
-  const paths = new Map(terms.map((term) => [term.path, termKey(platform, term)]));
+  const paths = new Map(
+    terms.map(term => [term.path, termKey(platform, term)]),
+  );
+
   return {
     properties: [
       {
         subject: core.properties.name,
-        shortname: "name",
-        name: "Name",
-        description: "Display name of the imported record.",
+        shortname: 'name',
+        name: 'Name',
+        description: 'Display name of the imported record.',
         datatype: Datatype.STRING,
       },
       ...terms
-        .filter((t) => t.kind === "property")
-        .map((t) => ({
+        .filter(t => t.kind === 'property')
+        .map(t => ({
           shortname: termKey(platform, t),
           name: displayName(t.shortname),
           description: t.description,
@@ -52,8 +65,8 @@ export function platformSchema(platform: string, terms: Term[]): SchemaSpec {
         })),
     ],
     classes: terms
-      .filter((t) => t.kind === "class")
-      .map((t) => ({
+      .filter(t => t.kind === 'class')
+      .map(t => ({
         shortname: termKey(platform, t),
         name: displayName(t.shortname),
         description: t.description,
@@ -61,10 +74,11 @@ export function platformSchema(platform: string, terms: Term[]): SchemaSpec {
         // Keep them typed and recommended without forbidding those valid responses.
         requires: [],
         recommends: [
-          "name",
-          ...[...t.requires, ...t.recommends].map((path) => {
+          'name',
+          ...[...t.requires, ...t.recommends].map(path => {
             const key = paths.get(path);
             if (!key) throw new Error(`Unknown ontology property ${path}`);
+
             return key;
           }),
         ],

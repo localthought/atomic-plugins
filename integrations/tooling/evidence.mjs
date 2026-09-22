@@ -32,6 +32,7 @@ export function assessEvidence(report, id, bundleSha256, now = Date.now()) {
     )
   )
     return null;
+
   return {
     owner: item.owner,
     version: item.version,

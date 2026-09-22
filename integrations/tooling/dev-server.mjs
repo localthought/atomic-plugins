@@ -24,20 +24,25 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export function hostedAssets(base = root) {
   const integrationsDir = resolve(base, 'integrations');
   const assets = new Map();
+
   const walk = (dir, depth) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
+
       if (entry.isDirectory()) {
         walk(full, depth + 1);
         continue;
       }
+
       const isPluginBundle = entry.name === 'plugin.js';
       const isRootCatalog = entry.name === 'catalog.json' && depth === 1;
       if (!isPluginBundle && !isRootCatalog) continue;
       assets.set(relative(integrationsDir, full).split(sep).join('/'), full);
     }
   };
+
   walk(integrationsDir, 1);
+
   return assets;
 }
 
@@ -53,21 +58,27 @@ export function createDevServer({ upstream, assetsRoot = root } = {}) {
   const upstreamUrl = new URL(upstream);
   const request =
     upstreamUrl.protocol === 'https:' ? httpsRequest : httpRequest;
+
   return createHttpServer((req, res) => {
     if (req.url === '/integrations' || req.url.startsWith('/integrations/')) {
       const key = req.url.slice('/integrations/'.length).split('?')[0];
       const file = assets.get(key);
+
       if (!file) {
         res.writeHead(404).end();
+
         return;
       }
+
       res.writeHead(200, {
         'content-type':
           CONTENT_TYPES[key.endsWith('.json') ? 'catalog' : 'plugin'],
       });
       res.end(readFileSync(file));
+
       return;
     }
+
     const proxied = request(
       upstream + req.url,
       {
@@ -92,6 +103,7 @@ if (
 ) {
   const port = Number(process.env.DEV_SERVER_PORT || 9880);
   const upstream = process.env.DEV_SERVER_UPSTREAM;
+
   if (!upstream) {
     console.error(
       'Usage: DEV_SERVER_UPSTREAM=http://localhost:9883 ' +
@@ -99,6 +111,7 @@ if (
     );
     process.exit(1);
   }
+
   const server = createDevServer({ upstream });
   server.on('error', e => {
     console.error(`dev-server: ${e.message}`);

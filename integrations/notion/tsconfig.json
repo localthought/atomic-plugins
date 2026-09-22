@@ -1,1 +1,4 @@
-{ "extends": "../issue-tracker/tsconfig.json", "include": ["model.ts", "plugin.ts", "atomic.ts"] }
+{
+  "extends": "../issue-tracker/tsconfig.json",
+  "include": ["model.ts", "plugin.ts", "atomic.ts"]
+}

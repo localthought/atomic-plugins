@@ -109,10 +109,13 @@ contract every importer plugin follows.
 
 2. **Read the uploaded text from `ctx`.** The host hands file contents in as
    plain text on the trigger payload:
+
    ```ts
    const text = ctx.text ?? ctx.trigger?.payload?.text;
-   if (!text) throw new Error('Open <Your importer> in Integrations and choose a file');
+   if (!text)
+     throw new Error('Open <Your importer> in Integrations and choose a file');
    ```
+
    Support a **dry validate** call before installation completes:
    `ctx.trigger?.payload?.validate` — when set, parse/validate and return
    `{ intents: [], problems: [] }` without writing anything.
@@ -124,11 +127,20 @@ contract every importer plugin follows.
    advisory — `run()` must still guard `ctx.config` and throw a
    configuration-shaped error (naming the missing fields), never let a
    destructure of `undefined` throw a raw `TypeError`:
+
    ```ts
    const { table, rowClass, properties: p } = ctx.config ?? ({} as Config);
-   const missing = [['table', table], ['rowClass', rowClass], ['properties', p]]
-     .filter(([, value]) => !value).map(([name]) => name);
-   if (missing.length) throw new Error(`Configure this importer before running it: missing ${missing.join(', ')}`);
+   const missing = [
+     ['table', table],
+     ['rowClass', rowClass],
+     ['properties', p],
+   ]
+     .filter(([, value]) => !value)
+     .map(([name]) => name);
+   if (missing.length)
+     throw new Error(
+       `Configure this importer before running it: missing ${missing.join(', ')}`,
+     );
    ```
 
 4. **Give every row a stable identity, keyed by what makes reimport safe.**
@@ -143,15 +155,27 @@ contract every importer plugin follows.
    file (a real conflict), and rejecting overlapping imports that lack
    unique references at all. Feed the result to the shared reconciliation
    helper:
+
    ```ts
-   import { importRecords, type ImportRecord } from '../../browser/lib/src/import-records.js';
+   import {
+     importRecords,
+     type ImportRecord,
+   } from '../../browser/lib/src/import-records.js';
    const records: ImportRecord[] = rows.map(row => ({
-     sourceId: identity, mode: 'append', legacy: { property: p['source-id'], value: identity },
-     localId: `row-${records.length}`, parent: table, isA: [rowClass], values: { /* ... */ },
+     sourceId: identity,
+     mode: 'append',
+     legacy: { property: p['source-id'], value: identity },
+     localId: `row-${records.length}`,
+     parent: table,
+     isA: [rowClass],
+     values: {
+       /* ... */
+     },
    }));
    const result = importRecords(ctx, records);
    return { intents: result.intents, problems: result.problems };
    ```
+
    `importRecords` (`browser/lib/src/import-records.js`) is the shared
    import/reconciliation contract point every importer calls, whether the
    source is a file (`money`, `pets`) or a fetched provider (`issue-tracker`,
@@ -229,15 +253,11 @@ section explains where the terms **reflector**, **syncables** and
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
   (`components.crudResources`) block, discovers a resource model (identity
   bindings, collections, nested collections — e.g. a repo's issues, then
-  each issue's comments), and drives a full paginated read, deriving a
-  neutral Atomic-Data-shaped ontology as it goes — the mechanism that lets a
-  connector support a new platform's *shape* purely from spec annotations.
-  Two independent implementations exist: the TypeScript original, vendored
-  with full history at [`syncables/`](../syncables/) in this repo's root
-  (published to npm as `syncables`; unrelated to `integrations/`, see
-  [`syncables/README.md`](../syncables/README.md)), and a Rust port
-  (`localthought/syncables-rs`) that `atomic-server`'s WASM build depends on
-  directly — that one is vendored in `atomic-server`, not here.
+  each issue's comments), and drives a full paginated read into local
+  storage, deriving a neutral Atomic-Data-shaped ontology as it goes. This
+  is the mechanism that lets a connector support a new platform's _shape_
+  purely from spec annotations, "nothing about issues, comments, calendars
+  or events is compiled in" (`sync/resource_model.rs`).
 - **Reflector** ([`localthought/reflector`](https://github.com/localthought/reflector) /
   `reflector-rs`) — the sync-engine/plugin-runtime layer one level above
   syncables; `SyncClient`'s `ClientConfig` contract is written to match
@@ -264,17 +284,31 @@ generic `integrations/localthought/plugin.ts` maps fetched records onto
 Atomic properties/classes via `Config.destinations`/`.properties`/`.records`.
 Write a **lens** only if the platform's raw fields need reshaping before
 they become a table — a pure function over `FetchedPlatform`/`FetchedRecord`
-(types in `integrations/localthought/schema.ts`), run *after* the engine has
+(types in `integrations/localthought/schema.ts`), run _after_ the engine has
 already fetched and paginated:
-```ts
-import type { FetchedPlatform, FetchedRecord, Term } from '../localthought/schema.js';
 
-export function myPlatformProjection(fetched: FetchedPlatform): FetchedPlatform {
+```ts
+import type {
+  FetchedPlatform,
+  FetchedRecord,
+  Term,
+} from '../localthought/schema.js';
+
+export function myPlatformProjection(
+  fetched: FetchedPlatform,
+): FetchedPlatform {
   if (fetched.platform !== 'my-platform') return fetched;
   // add/derive fields on fetched.records, extend fetched.ontology.terms
-  return { ...fetched, ontology: { /* ... */ }, records: [] /* ... */ };
+  return {
+    ...fetched,
+    ontology: {
+      /* ... */
+    },
+    records: [] /* ... */,
+  };
 }
 ```
+
 `integrations/timesheets/localthought.ts` (`clockifyProjection`) is the
 reference: it adds two derived `start`/`end` timestamp terms, drops
 in-progress/break entries, and leaves every other provider field untouched.
@@ -291,6 +325,7 @@ discovered `Term`s into a `SchemaSpec` generically — prefixed
 connector must let local edits flow back to the provider (closing an issue,
 editing a title) without a server round-trip. Model this on
 `integrations/issue-tracker/devonian/`:
+
 - `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
 - `ports.mjs` — native-Atomic and provider-side projections/transports.
 - `build.mjs` — regenerates the vendored Devonian bundle:
@@ -430,12 +465,20 @@ validated setup metadata. No provider module needs to be imported by the host.
 
 ```ts
 import {
-  appPackageSchema, ensureSchema, prepareAppPackageImport,
-  planVerdict, planHostFromStore,
+  appPackageSchema,
+  ensureSchema,
+  prepareAppPackageImport,
+  planVerdict,
+  planHostFromStore,
 } from '@tomic/lib';
 
 const schema = await ensureSchema(store, drive, appPackageSchema());
-const verdict = prepareAppPackageImport(importHost, json, packageFolder, schema);
+const verdict = prepareAppPackageImport(
+  importHost,
+  json,
+  packageFolder,
+  schema,
+);
 const plan = await planVerdict(verdict, planHostFromStore(store));
 // Show this plan for review, then use the existing applyPlan path.
 ```

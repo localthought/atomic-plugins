@@ -1,5 +1,6 @@
 // @wc-ignore-file
 import { Datatype, type SchemaSpec } from '../../browser/lib/src/index.js';
+
 export function bankingSchema(): SchemaSpec {
   const fields = [
     [
@@ -54,6 +55,7 @@ export function bankingSchema(): SchemaSpec {
       'Original imported transaction content used to detect conflicting reimports.',
     ],
   ];
+
   return {
     properties: fields.map(([shortname, name, description]) => ({
       shortname,

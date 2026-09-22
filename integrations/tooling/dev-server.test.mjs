@@ -8,6 +8,7 @@ import { hostedAssets, createDevServer, root } from './dev-server.mjs';
 
 async function withFixture(fn) {
   const base = mkdtempSync(join(tmpdir(), 'atomic-dev-server-'));
+
   try {
     mkdirSync(join(base, 'integrations/alpha'), { recursive: true });
     mkdirSync(join(base, 'integrations/beta/nested'), { recursive: true });
@@ -23,6 +24,7 @@ async function withFixture(fn) {
       'beta-bundle',
     );
     writeFileSync(join(base, 'integrations/beta/catalog.json'), 'not root');
+
     return await fn(base);
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -41,6 +43,7 @@ async function withServers(assetsRoot, run) {
   const dev = createDevServer({ upstream: upstreamUrl, assetsRoot });
   await new Promise(r => dev.listen(0, r));
   const devUrl = `http://localhost:${dev.address().port}`;
+
   try {
     await run({ devUrl, upstreamHits });
   } finally {
@@ -106,10 +109,7 @@ test('proxies every other request straight through to the upstream server', asyn
       const res = await fetch(`${devUrl}/some/atomic-data/resource?x=1`);
       assert.equal(res.status, 200);
       assert.equal(res.headers.get('x-from'), 'upstream');
-      assert.equal(
-        await res.text(),
-        'upstream:/some/atomic-data/resource?x=1',
-      );
+      assert.equal(await res.text(), 'upstream:/some/atomic-data/resource?x=1');
       assert.deepEqual(upstreamHits, ['/some/atomic-data/resource?x=1']);
     });
   });

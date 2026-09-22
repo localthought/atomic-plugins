@@ -13,9 +13,7 @@
       "owner": "Ontola",
       "support": "experimental",
       "apiVersion": "MT940 subset, camt.053 subset",
-      "declaredCapabilities": [
-        "bank-statements:import"
-      ],
+      "declaredCapabilities": ["bank-statements:import"],
       "bundleSha256": "2182af61007960de073434407a0e683b8c43473c8a85e3a939a545550d16419d",
       "checks": [
         {
@@ -91,9 +89,7 @@
       "owner": "Ontola",
       "support": "experimental",
       "apiVersion": "demo-v1",
-      "declaredCapabilities": [
-        "demo-pets:import"
-      ],
+      "declaredCapabilities": ["demo-pets:import"],
       "bundleSha256": "bf9a687dda16d1ba2d8bae4b80a26d2c7e011a102d6c15b55b83132685fb7a4f",
       "checks": [
         {

@@ -23,13 +23,16 @@ export function decimal(raw: string, negative = false): string {
   if (!/^\d{1,15},\d{0,5}$/.test(raw)) throw new Error('Invalid MT940 amount');
   const [whole, fraction = ''] = raw.split(',');
   const value = `${whole.replace(/^0+(?=\d)/, '')}${fraction.replace(/0+$/, '') ? '.' + fraction.replace(/0+$/, '') : ''}`;
+
   return negative && value !== '0' ? '-' + value : value;
 }
 export function units(value: string): bigint {
   const negative = value.startsWith('-');
   const [whole, fraction = ''] = value.replace(/^-/, '').split('.');
+
   return BigInt(whole + fraction.padEnd(5, '0')) * (negative ? -1n : 1n);
 }
+
 function date(raw: string): string {
   const year = Number(raw.slice(0, 2));
   const full = year >= 70 ? 1900 + year : 2000 + year;
@@ -41,17 +44,21 @@ function date(raw: string): string {
     parsed.toISOString().slice(0, 10) !== result
   )
     throw new Error('Invalid MT940 date');
+
   return result;
 }
+
 function balance(value: string) {
   const match = value.match(/^([CD])(\d{6})([A-Z]{3})(\d+,\d*)$/);
   if (!match) throw new Error('Invalid MT940 balance');
+
   return {
     date: date(match[2]),
     currency: match[3],
     amount: decimal(match[4], match[1] === 'D'),
   };
 }
+
 function transaction(value: string): Transaction {
   const [line, ...extra] = value.split('\n');
   const match = line.match(
@@ -60,6 +67,7 @@ function transaction(value: string): Transaction {
   if (!match) throw new Error('Unsupported MT940 transaction line');
   const valueDate = date(match[1]);
   let bookingDate = valueDate;
+
   if (match[2]) {
     const valueYear = Number(valueDate.slice(0, 4));
     const month = Number(match[2].slice(0, 2));
@@ -69,9 +77,11 @@ function transaction(value: string): Transaction {
       (month - valueMonth > 6 ? -1 : valueMonth - month > 6 ? 1 : 0);
     bookingDate = date(String(year % 100).padStart(2, '0') + match[2]);
   }
+
   const [reference, bankReference = '', ...unexpected] = match[7].split('//');
   if (!reference || unexpected.length)
     throw new Error('Invalid MT940 transaction reference');
+
   return {
     date: valueDate,
     bookingDate,
@@ -82,6 +92,7 @@ function transaction(value: string): Transaction {
     description: extra.join('\n'),
   };
 }
+
 export function parseMT940(text: string): Statement[] {
   if (typeof text !== 'string' || text.length > 512_000)
     throw new Error('Choose an MT940 file smaller than 512 KB');
@@ -90,9 +101,11 @@ export function parseMT940(text: string): Statement[] {
     .replace(/\r\n?/g, '\n')
     .trim();
   const fields: Array<{ tag: string; value: string }> = [];
+
   for (const line of normalized.split('\n')) {
     if (/^(?:\{1:.*\{4:|\{4:| -\}|-\}|\{5:.*\})$/.test(line)) continue;
     const match = line.match(/^:(\d{2}[A-Z]?):(.*)$/);
+
     if (match) fields.push({ tag: match[1], value: match[2] });
     else if (line.trim()) {
       const previous = fields[fields.length - 1];
@@ -101,12 +114,14 @@ export function parseMT940(text: string): Statement[] {
       previous.value += '\n' + line;
     }
   }
+
   const statements: Statement[] = [];
   let account = '',
     number = '',
     current: Statement | undefined;
   let closed = true,
     count = 0;
+
   for (const { tag, value } of fields) {
     switch (tag) {
       case '20':
@@ -129,6 +144,7 @@ export function parseMT940(text: string): Statement[] {
         number = value.trim();
         break;
       case '60F':
+
       case '60M': {
         if (!closed || !account || !number)
           throw new Error('Missing or out-of-order MT940 statement fields');
@@ -147,6 +163,7 @@ export function parseMT940(text: string): Statement[] {
         closed = false;
         break;
       }
+
       case '61':
         if (!current || closed)
           throw new Error('Transaction outside an open statement');
@@ -156,6 +173,7 @@ export function parseMT940(text: string): Statement[] {
           );
         current.transactions.push(transaction(value));
         break;
+
       case '86': {
         if (!current || closed)
           throw new Error('Unsupported statement-level narrative');
@@ -164,7 +182,9 @@ export function parseMT940(text: string): Statement[] {
         row.description = [row.description, value].filter(Boolean).join('\n');
         break;
       }
+
       case '62F':
+
       case '62M': {
         if (!current || closed)
           throw new Error('Closing balance without an open statement');
@@ -190,6 +210,7 @@ export function parseMT940(text: string): Statement[] {
         closed = true;
         break;
       }
+
       case '64':
       case '65':
         balance(value);
@@ -198,11 +219,13 @@ export function parseMT940(text: string): Statement[] {
         throw new Error(`Unsupported MT940 field :${tag}:`);
     }
   }
+
   if (!statements.length || !closed)
     throw new Error(
       'Incomplete MT940 statement: opening and closing balances are required',
     );
   rejectJsonNarratives(statements);
+
   return statements;
 }
 // Current Atomic legacy materialization interprets JSON-shaped strings as
@@ -211,13 +234,16 @@ export function rejectJsonNarratives(statements: Statement[]): void {
   for (const statement of statements)
     for (const row of statement.transactions) {
       const narrative = row.description.trim();
+
       if (narrative.startsWith('[') || narrative.startsWith('{')) {
         let parsed: unknown;
+
         try {
           parsed = JSON.parse(narrative);
         } catch {
           continue;
         }
+
         if (parsed && typeof parsed === 'object')
           throw new Error(
             'JSON-shaped bank narratives are not supported yet; the statement was not imported',

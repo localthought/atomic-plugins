@@ -17,11 +17,11 @@ export {
   type FetchedPlatform,
   type FetchedRecord,
   type Term,
-} from "devonian/platform-lenses/clockify";
+} from 'devonian/platform-lenses/clockify';
 
-export const CLOCKIFY_APP = "https://app.clockify.me";
+export const CLOCKIFY_APP = 'https://app.clockify.me';
 export const TIME_ENTRIES_PATH =
-  "/v1/workspaces/{workspaceId}/user/{userId}/time-entries";
+  '/v1/workspaces/{workspaceId}/user/{userId}/time-entries';
 export const LOOKBACK_OPTIONS = [7, 30] as const;
 export type LookbackDays = (typeof LOOKBACK_OPTIONS)[number];
 
@@ -34,7 +34,7 @@ export const defaultClockifySelection = (): ClockifySelection => ({
 
 /** Clockify wants `yyyy-MM-ddThh:mm:ssZ`; drop the milliseconds. */
 const clockifyInstant = (ms: number) =>
-  new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /**
  * Query overrides for one refresh. Computed at each run, never stored, so the
@@ -45,7 +45,7 @@ export function clockifyImportQuery(
   now = Date.now(),
 ) {
   if (!LOOKBACK_OPTIONS.includes(selection.lookbackDays))
-    throw new Error("Clockify look-back must be 7 or 30 days");
+    throw new Error('Clockify look-back must be 7 or 30 days');
   const start = now - selection.lookbackDays * 86_400_000;
 
   return {
@@ -55,7 +55,7 @@ export function clockifyImportQuery(
         values: {
           start: clockifyInstant(start),
           end: clockifyInstant(now),
-          "page-size": 50,
+          'page-size': 50,
         },
       },
     ],

@@ -207,7 +207,8 @@ function parse(receipt) {
 function plainText(parts) {
   if (!Array.isArray(parts)) throw new Error("Invalid Notion text");
   let text = "";
-  for (const p of parts) {
+  for (const part of parts) {
+    const p = part;
     if (p.type !== "text" || typeof p.text?.content !== "string" || p.text.link || p.annotations && Object.entries(p.annotations).some(
       ([k, v]) => k === "color" ? v !== "default" : v !== false
     ))
@@ -220,9 +221,7 @@ function plainText(parts) {
 }
 function validateValue(field, value) {
   const t = field.type;
-  if (t === "number" ? value !== null && (typeof value !== "number" || !Number.isFinite(value)) : t === "checkbox" ? typeof value !== "boolean" : t === "multi_select" ? !Array.isArray(value) || value.some(
-    (id) => typeof id !== "string" || !field.options?.[id]
-  ) : t === "select" || t === "status" ? value !== null && (typeof value !== "string" || !field.options?.[value]) : value !== null && typeof value !== "string")
+  if (t === "number" ? value !== null && (typeof value !== "number" || !Number.isFinite(value)) : t === "checkbox" ? typeof value !== "boolean" : t === "multi_select" ? !Array.isArray(value) || value.some((id) => typeof id !== "string" || !field.options?.[id]) : t === "select" || t === "status" ? value !== null && (typeof value !== "string" || !field.options?.[value]) : value !== null && typeof value !== "string")
     throw new Error(`Invalid or unmapped ${t} value for property ${field.id}`);
   if ((t === "title" || t === "rich_text") && typeof value !== "string")
     throw new Error("Text must be a string");
@@ -348,7 +347,7 @@ function projectView(view, c) {
     throw new Error("Board requires an explicit mapped grouping property");
   if (view.type === "table" && group)
     throw new Error("Grouped table views are not mapped yet");
-  return { name: view.name, columns, group, kind: view.type };
+  return { name: view.name ?? "", columns, group, kind: view.type };
 }
 function projectLocalView(row, c, binding) {
   if (row["https://atomicdata.dev/properties/view-filters"]?.length || row["https://atomicdata.dev/properties/view-sort-by"])
@@ -357,7 +356,7 @@ function projectLocalView(row, c, binding) {
   if (kind !== binding.kind)
     throw new Error("Changing a connected view type is not supported");
   const find = (subject) => {
-    const f = c.fields.find((f2) => f2.property === subject);
+    const f = c.fields.find((field) => field.property === subject);
     if (!f) throw new Error("View uses an unmapped Atomic property");
     return f.id;
   };
@@ -388,7 +387,7 @@ function viewPatch(desired, current, c) {
       ...existing.filter((p) => !ids.includes(p.property_id)).map((p) => ({ ...p, visible: false }))
     ];
     if (desired.group !== before.group) {
-      const f = c.fields.find((f2) => f2.id === desired.group);
+      const f = c.fields.find((field) => field.id === desired.group);
       if (!f?.options || desired.kind !== "board")
         throw new Error("Unsupported view grouping change");
       cfg.group_by = {
@@ -416,22 +415,24 @@ function run(input) {
     )
   );
   const schema = () => {
-    const source = read("schema", `/data_sources/${c.dataSource}`);
+    const source = read(
+      "schema",
+      `/data_sources/${c.dataSource}`
+    );
     if (uuid(source.id) !== uuid(c.dataSource))
       throw new Error("Unexpected data source");
     for (const f of c.fields) {
-      const p = Object.values(source.properties).find(
-        (p2) => p2.id === f.id
-      );
+      const p = Object.values(source.properties).find((prop) => prop.id === f.id);
       if (!p || p.type !== f.type)
         throw new Error(`Mapped property ${f.id} changed type or was removed`);
       if (f.options) {
-        const ids = (p[f.type]?.options ?? []).map((o) => o.id).sort();
+        const selectOptions = p[f.type];
+        const ids = (selectOptions?.options ?? []).map((o) => o.id).sort();
         if (!equal2(ids, Object.keys(f.options).sort()))
           throw new Error(
             "Select options changed; refresh mapping before syncing"
           );
-        for (const option of p[f.type].options) {
+        for (const option of selectOptions.options) {
           if (f.optionNames && (option.name !== f.optionNames[option.id] || input.read(f.options[option.id])[P.name] !== f.optionNames[option.id]))
             throw new Error(
               "Select option names changed; review the mapping before syncing"
@@ -504,9 +505,7 @@ function run(input) {
       });
     };
     for (const f of c.fields) {
-      const p = Object.values(source.properties).find(
-        (p2) => p2.id === f.id
-      );
+      const p = Object.values(source.properties).find((prop) => prop.id === f.id);
       add({
         kind: "schema",
         id: f.id,
@@ -528,7 +527,9 @@ function run(input) {
         }),
         remote: projectView(view(v.id), c)
       });
-    const rows = input.query(P.parent, c.table).filter((s) => input.read(s)[P.isA]?.includes(c.rowClass));
+    const rows = input.query(P.parent, c.table).filter(
+      (s) => input.read(s)[P.isA]?.includes(c.rowClass)
+    );
     const byId = /* @__PURE__ */ new Map();
     for (const s of rows) {
       const id = input.read(s)[c.identity];
@@ -543,10 +544,14 @@ function run(input) {
     let cursor2;
     for (let batch = 0; ; batch++) {
       if (batch >= 100) throw new Error("Notion pilot scan exceeds 100 pages");
-      const result = read("query", `/data_sources/${c.dataSource}/query`, {
-        page_size: 100,
-        ...cursor2 ? { start_cursor: cursor2 } : {}
-      });
+      const result = read(
+        "query",
+        `/data_sources/${c.dataSource}/query`,
+        {
+          page_size: 100,
+          ...cursor2 ? { start_cursor: cursor2 } : {}
+        }
+      );
       if (!Array.isArray(result.results) || typeof result.has_more !== "boolean")
         throw new Error("Invalid Notion query page");
       for (const p of result.results) {
@@ -739,7 +744,7 @@ function run(input) {
         );
       }
     } else if (cursor.stage === "written") {
-      const subject = input.result.outcomes?.[0]?.subject;
+      const subject = input.result?.outcomes?.[0]?.subject;
       if (!subject) throw new Error("Missing Atomic receipt");
       cursor = { ...cursor, subject, stage: "verify" };
     } else if (cursor.stage === "verify") {

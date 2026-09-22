@@ -238,14 +238,24 @@ var manifest = { schemaVersion: 1, operations: [], secrets: [] };
 function run(ctx) {
   const c = ctx.config ?? {};
   if (!c.destinations || !c.properties || !Array.isArray(c.records))
-    throw new Error("Fetch records from the connection before previewing this import");
+    throw new Error(
+      "Fetch records from the connection before previewing this import"
+    );
   const identities = /* @__PURE__ */ new Set();
   const records = c.records.map((row) => {
-    if (!row.id || !row.resource) throw new Error("Provider record is missing a stable identity");
+    if (!row.id || !row.resource)
+      throw new Error("Provider record is missing a stable identity");
     const target = c.destinations[row.resource];
-    if (!target) throw new Error("No typed destination for provider collection");
-    const sourceId = JSON.stringify([c.platform, row.resource, row.namespace, row.id]);
-    if (identities.has(sourceId)) throw new Error("Provider returned duplicate record identity");
+    if (!target)
+      throw new Error("No typed destination for provider collection");
+    const sourceId = JSON.stringify([
+      c.platform,
+      row.resource,
+      row.namespace,
+      row.id
+    ]);
+    if (identities.has(sourceId))
+      throw new Error("Provider returned duplicate record identity");
     identities.add(sourceId);
     const values = {
       "https://atomicdata.dev/properties/name": String(row.name)
@@ -255,7 +265,13 @@ function run(ctx) {
       if (!property) throw new Error(`No ontology property for ${field}`);
       values[property] = value;
     }
-    return { sourceId, localId: sourceId, parent: target.table, isA: [target.rowClass], values };
+    return {
+      sourceId,
+      localId: sourceId,
+      parent: target.table,
+      isA: [target.rowClass],
+      values
+    };
   });
   return importRecords(ctx, records);
 }

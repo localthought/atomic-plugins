@@ -172,6 +172,7 @@ Atomic-only fields and local edits. Cancellation records are retained with a
 note; absence from a bounded fetch never deletes an Atomic resource. Google
 may omit cancelled events from list results, so this is not a deletion feed.
 Removed optional provider fields are not cleared by the shared snapshot importer.
+
 ### Reviewed two-way event edits
 
 From the installed folder or table, use **Preview edits for

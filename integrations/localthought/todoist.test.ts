@@ -23,7 +23,12 @@ const fixture = (): FetchedPlatform => ({
   ontology: {
     description: '',
     terms: [
-      term('task', 'class', Datatype.STRING, ['content', 'checked', 'due', 'priority']),
+      term('task', 'class', Datatype.STRING, [
+        'content',
+        'checked',
+        'due',
+        'priority',
+      ]),
       term('project', 'class', Datatype.STRING, ['name']),
       term('content', 'property'),
       term('checked', 'property', Datatype.BOOLEAN),
@@ -103,9 +108,7 @@ it('adds the projected properties to the task class and the shared schema', () =
   const task = projected.ontology.terms.find(t => t.shortname === 'task')!;
 
   for (const shortname of Object.values(fields)) {
-    const extra = projected.ontology.terms.find(
-      t => t.shortname === shortname,
-    );
+    const extra = projected.ontology.terms.find(t => t.shortname === shortname);
     expect(extra?.kind).toBe('property');
     expect(task.recommends).toContain(extra!.path);
   }

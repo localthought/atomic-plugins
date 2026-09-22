@@ -10,11 +10,14 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
   const server = mockProxy();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+
   try {
-    assert.deepEqual(
-      await (await fetch(`${base}/catalog`)).json(),
-      ['clockify', 'github-issues', 'google-calendar', 'pets'],
-    );
+    assert.deepEqual(await (await fetch(`${base}/catalog`)).json(), [
+      'clockify',
+      'github-issues',
+      'google-calendar',
+      'pets',
+    ]);
     const callback =
       'http://localhost:6747/app/integrations?integration_state=abc&platform=pets';
     const url = new URL(`${base}/connect`);
@@ -70,7 +73,10 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
     assert.equal((await first.json()).length, 2);
     assert.match(first.headers.get('link'), /page=2/);
     assert.equal((await read(result.connection_code)).status, 401);
-    const second = await read(first.headers.get('x-connection-code'), '?page=2');
+    const second = await read(
+      first.headers.get('x-connection-code'),
+      '?page=2',
+    );
     assert.equal((await second.json()).length, 3);
     assert.equal(
       (
@@ -82,5 +88,8 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
       ).status,
       403,
     );
-  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
 });

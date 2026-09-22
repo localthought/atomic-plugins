@@ -335,9 +335,14 @@ jobs:
         working-directory: atomic-plugins
         run: node --test integrations/tooling/certify.test.mjs integrations/tooling/dev-server.test.mjs
 
+      # plugin.js is a committed esbuild output (verified byte-for-byte against
+      # a fresh bundle by the "reproducible-bundle" check below), not
+      # hand-written source, so it is excluded here rather than made to
+      # satisfy hand-written-code style rules like eqeqeq — esbuild's own
+      # __toESM interop helper (pulled in by notion's plugin.js) uses `!=`.
       - name: Lint (oxlint)
         working-directory: atomic-plugins
-        run: browser/node_modules/.bin/oxlint -c browser/.oxlintrc.json integrations
+        run: browser/node_modules/.bin/oxlint -c browser/.oxlintrc.json --ignore-pattern '**/plugin.js' integrations
 
       - name: Format check (oxfmt)
         working-directory: atomic-plugins

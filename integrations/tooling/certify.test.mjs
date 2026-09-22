@@ -48,6 +48,7 @@ test('zero executed tests cannot certify an integration', () => {
 });
 test('new packages cannot silently escape certification', () => {
   const base = mkdtempSync(join(tmpdir(), 'atomic-certification-'));
+
   try {
     mkdirSync(join(base, 'integrations/new-provider'), { recursive: true });
     writeFileSync(join(base, 'integrations/new-provider/package.json'), '{}');
@@ -80,6 +81,7 @@ test('failed certification checks surface a concise useful diagnostic', () => {
 });
 test('a catalog card whose shortname matches the package id must carry the same version', () => {
   const base = mkdtempSync(join(tmpdir(), 'atomic-catalog-version-'));
+
   try {
     const providerDir = join(base, 'integrations/fixture-provider');
     mkdirSync(providerDir, { recursive: true });
@@ -107,7 +109,10 @@ test('a catalog card whose shortname matches the package id must carry the same 
     const catalogEntry = shortnameVersion => ({
       'https://atomicdata.dev/properties/shortname': 'fixture-provider',
       ...(shortnameVersion !== undefined
-        ? { 'https://atomicdata.dev/integrations/properties/version': shortnameVersion }
+        ? {
+            'https://atomicdata.dev/integrations/properties/version':
+              shortnameVersion,
+          }
         : {}),
     });
     writeFileSync(
@@ -216,9 +221,11 @@ test('store evidence rejects partial, failed and changed bundles; labels old evi
 
 test('bundles are reproducible with CI browser and integration symlinks', () => {
   const base = mkdtempSync(join(tmpdir(), 'atomic-bundle-paths-'));
+
   try {
     symlinkSync(join(root, 'browser'), join(base, 'browser'));
     symlinkSync(join(root, 'integrations'), join(base, 'integrations'));
+
     for (const provider of discover()) {
       const generated = execFileSync(
         join(root, 'browser/node_modules/.bin/esbuild'),

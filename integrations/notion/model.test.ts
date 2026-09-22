@@ -10,6 +10,7 @@ import {
   P,
   type Config,
 } from './model.js';
+
 export const id = '11111111-1111-1111-1111-111111111111';
 export const c: Config = {
   dataSource: id,
@@ -47,7 +48,7 @@ export const page = () => ({
   },
 });
 it('maps by property ID across renames and omits unmapped properties from writes', () => {
-  const p: any = page();
+  const p = page();
   p.properties.Renamed = p.properties.Name;
   delete p.properties.Name;
   const before = projectPage(p, c);
@@ -65,7 +66,7 @@ it('round-trips explicit clears, zero, false and option IDs', () => {
   ).toEqual(desired);
 });
 it('rejects rich text loss, changed types, foreign pages and unknown options', () => {
-  const p: any = page();
+  const p = page();
   p.properties.Name.title[0].annotations = { bold: true };
   expect(() => projectPage(p, c)).toThrow('lossless');
   p.properties.Name.title[0].annotations = { bold: false, color: 'default' };
@@ -83,15 +84,13 @@ it('rejects rich text loss, changed types, foreign pages and unknown options', (
 });
 it('chunks long text without truncating or splitting surrogate pairs', () => {
   const text = 'x'.repeat(1999) + '😀' + 'y'.repeat(2010);
-  const p: any = pagePatch(
+  const p = pagePatch(
     { title: text, n: 0, check: false, s: null },
     undefined,
     c,
-  );
-  expect(p.title.title.every((t: any) => t.text.content.length <= 2000)).toBe(
-    true,
-  );
-  expect(p.title.title.map((t: any) => t.text.content).join('')).toBe(text);
+  ) as { title: { title: { text: { content: string } }[] } };
+  expect(p.title.title.every(t => t.text.content.length <= 2000)).toBe(true);
+  expect(p.title.title.map(t => t.text.content).join('')).toBe(text);
 });
 it('preserves provider-only layout values while changing visible order', () => {
   const v = {
@@ -139,7 +138,7 @@ it('rejects path injection and normalizes compact UUIDs', () => {
   expect(() => uuid('../pages')).toThrow('UUID');
 });
 it('reconciles the row title and Atomic display name against their shared baseline', () => {
-  const row: any = {
+  const row: Record<string, unknown> = {
     [P.parent]: c.table,
     [P.isA]: [c.rowClass],
     [P.name]: 'New title',

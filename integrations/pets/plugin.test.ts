@@ -84,6 +84,7 @@ describe('pets plugin', () => {
         set: Record<string, unknown>;
       }>;
     };
+
     for (const [index, intent] of first.intents.entries()) {
       written.set(`https://example.com/pet-${index}`, {
         'https://atomicdata.dev/properties/parent': config.table,
@@ -91,6 +92,7 @@ describe('pets plugin', () => {
         ...intent.set,
       });
     }
+
     const bySourceId = new Map(
       [...written.entries()].map(([subject, value]) => [
         value[p['pet-source-id']] as string,
