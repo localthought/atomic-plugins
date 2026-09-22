@@ -11,5 +11,8 @@ deprecated.
 - `reflector/` — the sync-engine/plugin-runtime layer above syncables,
   migrated in from the standalone `localthought/reflector` repo with its
   history intact.
+- `syncables/` — the `syncables` npm package (OpenAPI-driven mock server and
+  sync client), migrated in from the standalone `localthought/syncables`
+  repo with its history intact.
 
 See [AGENTS.md](AGENTS.md) for how to work in each.

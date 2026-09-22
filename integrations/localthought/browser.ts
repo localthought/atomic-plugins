@@ -11,92 +11,6 @@ export interface Connection {
   codeVerifier?: string;
   ready: boolean;
 }
-export interface Engine {
-  describeIntegration(text: string): Promise<string>;
-  fetchIntegration(
-    text: string,
-    platform: string,
-    constants: string,
-    range: string | undefined,
-    fetch: (url: string) => Promise<string>,
-  ): Promise<string>;
-}
-export interface ImportLimits {
-  minRequestIntervalMs: number;
-  maxRequests: number;
-  timeoutMs: number;
-}
-interface QuerySelection {
-  query_overrides: { path: string; values: Record<string, unknown> }[];
-}
-function querySelection(value: unknown): QuerySelection {
-  if (value === undefined || value === null) return { query_overrides: [] };
-  if (typeof value !== 'object' || Array.isArray(value))
-    throw new Error('Invalid catalog selection');
-  const raw = value as Record<string, unknown>;
-  if (raw.query_overrides === undefined) return { query_overrides: [] };
-  if (
-    !Array.isArray(raw.query_overrides) ||
-    raw.query_overrides.some(
-      item =>
-        typeof item !== 'object' ||
-        item === null ||
-        Array.isArray(item) ||
-        typeof (item as Record<string, unknown>).path !== 'string' ||
-        typeof (item as Record<string, unknown>).values !== 'object' ||
-        (item as Record<string, unknown>).values === null ||
-        Array.isArray((item as Record<string, unknown>).values),
-    )
-  )
-    throw new Error('Invalid catalog selection');
-  return raw as unknown as QuerySelection;
-}
-export function mergeQuerySelections(defaults: unknown, explicit?: unknown) {
-  const merged = new Map<string, Record<string, unknown>>();
-  for (const selection of [querySelection(defaults), querySelection(explicit)]) {
-    for (const override of selection.query_overrides) {
-      merged.set(override.path, {
-        ...merged.get(override.path),
-        ...override.values,
-      });
-    }
-  }
-  return merged.size
-    ? { query_overrides: [...merged].map(([path, values]) => ({ path, values })) }
-    : undefined;
-}
-const DEFAULT_IMPORT_LIMITS: ImportLimits = {
-  minRequestIntervalMs: 0,
-  maxRequests: 10000,
-  timeoutMs: 1800000,
-};
-const MAX_IMPORT_LIMITS: ImportLimits = {
-  minRequestIntervalMs: 300000,
-  maxRequests: 10000,
-  timeoutMs: 1800000,
-};
-function importLimits(value: unknown): ImportLimits {
-  if (value === undefined || value === null) return DEFAULT_IMPORT_LIMITS;
-  if (typeof value !== 'object' || Array.isArray(value))
-    throw new Error('Invalid import limits');
-  const raw = value as Record<string, unknown>;
-  const result = { ...DEFAULT_IMPORT_LIMITS };
-  for (const key of Object.keys(result) as (keyof ImportLimits)[]) {
-    if (raw[key] !== undefined) {
-      if (
-        typeof raw[key] !== 'number' ||
-        !Number.isInteger(raw[key]) ||
-        raw[key] < 0 ||
-        raw[key] > MAX_IMPORT_LIMITS[key]
-      )
-        throw new Error(`Invalid import limits ${key}`);
-      result[key] = raw[key];
-    }
-  }
-  if (result.maxRequests < 1 || result.timeoutMs < 1000)
-    throw new Error('Invalid import limits');
-  return result;
-}
 export function proxyOrigin(value = DEFAULT_PROXY): string {
   const u = new URL(value);
   if (
@@ -138,12 +52,8 @@ async function limitedText(response: Response): Promise<string> {
 export class BrowserIntegrations {
   constructor(
     private storage: Storage,
-    private engine: () => Promise<Engine>,
     readonly origin = DEFAULT_PROXY,
     private http: typeof fetch = (...args) => fetch(...args),
-    private sleep: (milliseconds: number) => Promise<void> = milliseconds =>
-      new Promise(resolve => setTimeout(resolve, milliseconds)),
-    private limits: Partial<ImportLimits> = {},
   ) {
     proxyOrigin(origin);
   }
@@ -166,27 +76,6 @@ export class BrowserIntegrations {
     )
       throw new Error('Invalid platform catalog');
     return names;
-  }
-  private async document(platform: string) {
-    if (!/^[a-z0-9-]{1,80}$/.test(platform))
-      throw new Error('Invalid platform');
-    return this.get(`/catalog/${platform}.yaml`);
-  }
-  private async selection(platform: string) {
-    if (!/^[a-z0-9-]{1,80}$/.test(platform))
-      throw new Error('Invalid platform');
-    return JSON.parse(await this.get(`/catalog/${platform}.selection.json`));
-  }
-  async describe(platform: string) {
-    return JSON.parse(
-      await (
-        await this.engine()
-      ).describeIntegration(await this.document(platform)),
-    ) as {
-      parameters: string[];
-      collections: string[];
-      upstream: string;
-    };
   }
   async start(
     drive: string,
@@ -362,154 +251,5 @@ export class BrowserIntegrations {
       );
     this.storage.setItem(key + id, JSON.stringify({ ...current, code: next }));
     return response;
-  }
-  /** Check one catalog-selected API URL without importing or following pagination. */
-  async validateConnection(
-    drive: string,
-    actor: string,
-    id: string,
-    constants: Record<string, string>,
-    selection?: unknown,
-  ): Promise<void> {
-    await this.fetchRecords(drive, actor, id, constants, selection, true);
-  }
-  async fetchRecords(
-    drive: string,
-    actor: string,
-    id: string,
-    constants: Record<string, string>,
-    selection?: unknown,
-    validateOnly = false,
-  ) {
-    // Web Locks serialize rotating credentials across tabs as well as UI actions.
-    if (!navigator.locks)
-      throw new Error('This browser needs Web Locks for integrations');
-    return navigator.locks.request(key + id, async () => {
-      const c = this.connection(id, drive, actor);
-      if (!c.ready || !c.code) throw new Error('Reconnect your account');
-      const [text, defaults] = await Promise.all([
-        this.document(c.platform),
-        this.selection(c.platform),
-      ]);
-      const engine = await this.engine();
-      const description = JSON.parse(await engine.describeIntegration(text));
-      const { upstream } = description;
-      // Resource budgets belong to this consumer, not the API description.
-      const policy = importLimits(this.limits);
-      const base = new URL(upstream);
-      let requests = 0;
-      const signal = AbortSignal.timeout(policy.timeoutMs);
-      const deadline = Date.now() + policy.timeoutMs;
-      let lastRequestAt: number | undefined;
-      let probeAttempted = false;
-      let probeError: unknown;
-      const probeComplete = new Error('Access check complete');
-      const transport = async (raw: string) => {
-        if (validateOnly && probeAttempted) throw probeComplete;
-        signal.throwIfAborted();
-        const target = new URL(raw);
-        if (
-          target.origin !== base.origin ||
-          target.username ||
-          target.password ||
-          target.hash
-        )
-          throw new Error('Pagination left the catalog API origin');
-        if (validateOnly) {
-          probeAttempted = true;
-          try {
-            const response = await this.send(
-              id,
-              drive,
-              actor,
-              `${target.pathname}${target.search}`,
-              {},
-              AbortSignal.any([signal, AbortSignal.timeout(30000)]),
-            );
-            if (!response.ok)
-              throw new Error(`LocalThought returned HTTP ${response.status}`);
-            const body = JSON.parse(await limitedText(response));
-            if (!body || typeof body !== 'object')
-              throw new Error('Expected a JSON collection response');
-          } catch (error) {
-            probeError = error;
-          }
-          // Syncables owns URL expansion. Stop its traversal at the first
-          // request; the access-check response is deliberately never imported.
-          throw probeComplete;
-        }
-        if (lastRequestAt !== undefined) {
-          const wait = policy.minRequestIntervalMs - (Date.now() - lastRequestAt);
-          if (wait > 0) await this.sleep(wait);
-          signal.throwIfAborted();
-        }
-        lastRequestAt = Date.now();
-        let response: Response;
-        let retries = 0;
-        for (;;) {
-          if (++requests > policy.maxRequests)
-            throw new Error(
-              `Import exceeds ${policy.maxRequests} requests; narrow its scope`,
-            );
-          const requestSignal = AbortSignal.any([
-            signal,
-            AbortSignal.timeout(30000),
-          ]);
-          response = await this.send(
-            id,
-            drive,
-            actor,
-            `${target.pathname}${target.search}`,
-            {},
-            requestSignal,
-          );
-          if (response.status !== 429 || retries >= 3) break;
-          const retryAfter = response.headers.get('retry-after');
-          const seconds = retryAfter === null ? NaN : Number(retryAfter);
-          const retryAt = Number.isFinite(seconds)
-            ? Date.now() + Math.max(0, seconds) * 1000
-            : retryAfter
-              ? Date.parse(retryAfter)
-              : NaN;
-          if (!Number.isFinite(retryAt)) break;
-          const delay = Math.max(0, retryAt - Date.now());
-          if (delay > deadline - Date.now())
-            throw new Error('API retry delay exceeds remaining import time');
-          retries++;
-          await this.sleep(delay);
-          signal.throwIfAborted();
-          lastRequestAt = Date.now();
-        }
-        const headers = Object.fromEntries(
-          [...response.headers].filter(
-            ([name]) => name !== 'x-connection-code',
-          ),
-        );
-        return JSON.stringify({
-          status: response.status,
-          headers,
-          body: await limitedText(response),
-        });
-      };
-      let result: string;
-      try {
-        result = await engine.fetchIntegration(
-          text,
-          c.platform,
-          JSON.stringify(constants),
-          JSON.stringify(mergeQuerySelections(defaults, selection)),
-          transport,
-        );
-      } catch (error) {
-        if (!validateOnly || !probeAttempted) throw error;
-      }
-      if (validateOnly) {
-        if (probeError) throw probeError;
-        if (!probeAttempted) throw new Error('No collection available to check');
-        return;
-      }
-      signal.throwIfAborted();
-      return JSON.parse(result!);
-    });
   }
 }

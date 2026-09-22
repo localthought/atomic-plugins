@@ -212,26 +212,32 @@ section explains where the terms **reflector**, **syncables** and
   `"platform"` field.
 - **`BrowserIntegrations`** (`integrations/localthought/browser.ts`) — the
   browser-side client class; an instance of it, constructed with browser
-  `Storage`, an `Engine` factory and the proxy origin, **is** "a
-  localthought instance" from a plugin's point of view. It runs PKCE OAuth,
-  fetches the platform's OpenAPI document and default selection, and calls
-  into the injected `Engine`.
-- **`Engine`** (the `describeIntegration`/`fetchIntegration` interface in
-  `browser.ts`) — the WASM-exposed façade over the **syncables** sync
-  engine (`wasm/src/integrations.rs`). This is where an OpenAPI document
-  actually gets read.
-- **Syncables** (`localthought/syncables/`, vendored here from
-  [`localthought/syncables-rs`](https://github.com/localthought/syncables-rs),
-  itself a Rust port of [`localthought/syncables`](https://github.com/localthought/syncables))
-  — reads the platform's OpenAPI document plus its
+  `Storage` and the proxy origin, **is** "a localthought instance" from a
+  plugin's point of view. It runs PKCE OAuth, manages the rotating-code
+  connection, and exposes `catalog()`/`request()` as a generic authenticated
+  proxy call. **It does not read or sync an OpenAPI document itself** —
+  that used to happen through an injected `Engine`
+  (`describeIntegration`/`fetchIntegration`) backed by a WASM build of a
+  vendored **syncables** Rust crate, but that bridge lived in the wrong
+  repo: it depended on `atomic-server`'s WASM build
+  (`wasm/src/integrations.rs`, `wasm/Cargo.toml`) and has been removed from
+  here entirely. A caller that needs full OpenAPI-driven sync composes its
+  own such engine on top of `BrowserIntegrations`'s `request()` — that's
+  `atomic-server`'s responsibility now, not this repo's.
+- **Syncables** — the OpenAPI-mock/sync-client engine that reads a
+  platform's document plus its
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
   (`components.crudResources`) block, discovers a resource model (identity
   bindings, collections, nested collections — e.g. a repo's issues, then
-  each issue's comments), and drives a full paginated read into local
-  storage, deriving a neutral Atomic-Data-shaped ontology as it goes. This
-  is the mechanism that lets a connector support a new platform's *shape*
-  purely from spec annotations, "nothing about issues, comments, calendars
-  or events is compiled in" (`sync/resource_model.rs`).
+  each issue's comments), and drives a full paginated read, deriving a
+  neutral Atomic-Data-shaped ontology as it goes — the mechanism that lets a
+  connector support a new platform's *shape* purely from spec annotations.
+  Two independent implementations exist: the TypeScript original, vendored
+  with full history at [`syncables/`](../syncables/) in this repo's root
+  (published to npm as `syncables`; unrelated to `integrations/`, see
+  [`syncables/README.md`](../syncables/README.md)), and a Rust port
+  (`localthought/syncables-rs`) that `atomic-server`'s WASM build depends on
+  directly — that one is vendored in `atomic-server`, not here.
 - **Reflector** ([`localthought/reflector`](https://github.com/localthought/reflector) /
   `reflector-rs`) — the sync-engine/plugin-runtime layer one level above
   syncables; `SyncClient`'s `ClientConfig` contract is written to match
@@ -273,8 +279,10 @@ export function myPlatformProjection(fetched: FetchedPlatform): FetchedPlatform 
 reference: it adds two derived `start`/`end` timestamp terms, drops
 in-progress/break entries, and leaves every other provider field untouched.
 Pair it with a query-override function if the connector needs per-run
-parameters (`clockifyImportQuery()` supplies a rolling look-back window,
-merged through `mergeQuerySelections()` in `browser.ts`). Use
+parameters (`clockifyImportQuery()` supplies a rolling look-back window) —
+merging that with the platform's default selection is done by whatever
+composes `BrowserIntegrations` with a sync engine (see above), not by
+anything in this repo. Use
 `platformSchema()`/`termKey()` from `localthought/schema.ts` to turn
 discovered `Term`s into a `SchemaSpec` generically — prefixed
 `lt-<platform>-<kind>-<shortname>` to avoid collisions across platforms.
@@ -306,10 +314,12 @@ LocalThought layers **overlays** on top of it — small YAML/JSON documents
 following the [OpenAPI Overlay Specification](https://spec.openapis.org/overlay/v1.0.0.html):
 a list of `{target: <JSONPath-ish string>, update: {...}}` or `{target,
 remove: true}` actions, applied in order onto the resolved document (a later
-overlay may refine what an earlier one added). `localthought/syncables/src/openapi/overlay.rs`
-implements a deliberately minimal subset — `$`, dot-paths (`$.components`),
-and quoted-bracket segments (`$.paths['/pets/{petId}'].get`); no wildcards
-or array indexing.
+overlay may refine what an earlier one added). `integration-proxy/` (this
+repo's LocalThought proxy) is what actually applies overlays server-side;
+[`syncables/src/openapi/overlay.ts`](../syncables/src/openapi/overlay.ts)
+is a reference implementation of the same deliberately minimal subset —
+`$`, dot-paths (`$.components`), and quoted-bracket segments
+(`$.paths['/pets/{petId}'].get`); no wildcards or array indexing.
 
 Two overlay-carried spec extensions from the
 [`pondersource/openapi-extensions`](https://github.com/pondersource/openapi-extensions)
@@ -321,31 +331,35 @@ project do the actual work:
   list-query fixed params) and an `x-crud` block on individual operations
   (`action: list|read|create|update|delete`, `resource`, `collection`,
   `mode`, `patchFormat`, `addedFields`, `memberOf`, `removesFrom`). This is
-  what `sync::resource_model` in syncables reads to discover a platform's
-  resource graph, including nested collections.
+  what a syncables engine reads to discover a platform's resource graph,
+  including nested collections; see
+  [`syncables/src/resources/discover.ts`](../syncables/src/resources/discover.ts)
+  for the reference implementation.
 - **[OpenAPI Pagination Schemes Extension](https://github.com/pondersource/openapi-pagination-schemes-extension)**
   — adds `components.paginationSchemes`, describing how the API paginates
   (cursor, offset, page, link-header, ...). Providers essentially never
   declare this natively either, so it is applied the same way, via an
-  overlay. `syncables/src/pagination/` implements it, deliberately keeping
-  scheme/role strings open-ended rather than closed enums, since the spec
-  allows `x-` extension roles.
+  overlay. [`syncables/src/pagination/`](../syncables/src/pagination/)
+  implements it, deliberately keeping scheme/role strings open-ended rather
+  than closed enums, since the spec allows `x-` extension roles.
 
 **`localthought/overlays`** is the upstream collection of ready-made overlay
 files for real providers (an external repo/catalog, not a directory in this
-checkout) — `syncables/tests/fixtures/real-world/` vendors overlay and
-OpenAPI fixtures unmodified from it and from apis.guru, with provenance in
-each file's header comment. When adding a new platform connector, check
-there first for an existing overlay before writing a new one; when you do
-write a new overlay, keep the same minimal-diff spirit — patch what the
-provider's spec is missing, don't restate what it already declares
-correctly.
+checkout) —
+[`syncables/__tests__/fixtures/real-world/`](../syncables/__tests__/fixtures/real-world/)
+vendors overlay and OpenAPI fixtures unmodified from it and from apis.guru,
+with provenance in each file's header comment. When adding a new platform
+connector, check there first for an existing overlay before writing a new
+one; when you do write a new overlay, keep the same minimal-diff spirit —
+patch what the provider's spec is missing, don't restate what it already
+declares correctly.
 
-In the browser/WASM path (no filesystem), overlays are never read from
-disk by syncables itself: LocalThought applies them server-side before
-serving the platform's document, or the browser applies them in memory
-before calling into the sync engine — `ClientConfig.document`/`.overlays`
-file paths are a native-only convenience.
+Overlays are applied before an OpenAPI document ever reaches this repo's
+`BrowserIntegrations`: `integration-proxy/` (LocalThought) applies them
+server-side and serves the already-patched document. A native (non-browser)
+caller of the `syncables` npm package can instead apply them itself via
+`ClientConfig.document`/`.overlays` file paths — a convenience that only
+exists off the browser/WASM path.
 
 ## Adding or changing an integration
 

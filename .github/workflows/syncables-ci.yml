@@ -1,0 +1,76 @@
+name: Syncables CI
+
+# syncables/ was migrated in from the standalone localthought/syncables repo
+# (see .github/workflows/syncables-publish.yml for the other half of that
+# migration). It is a self-contained TypeScript package with its own
+# package.json/package-lock.json and does not depend on an atomic-server
+# checkout the way integrations/ does (see ci.yml), so this workflow never
+# touches atomic-server and skips its work entirely when a change doesn't
+# touch syncables/.
+#
+# Do not confuse this with integrations/localthought/syncables/, an
+# unrelated vendored Rust port ("syncables-rs") of the same upstream
+# project — see that directory's UPSTREAM.md. That one is covered (if at
+# all) by ci.yml/certify.mjs, not this workflow.
+
+on:
+  pull_request:
+  # Required so the merge queue's temporary gh-readonly-queue/... commit gets
+  # a CI run at all: GitHub gates required checks on the merge_group event,
+  # not on the pull_request run from the PR head. See ci.yml, which has the
+  # same fix.
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: syncables-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect syncables changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      syncables: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.syncables }}
+    steps:
+      # dorny/paths-filter reads changed files from the pull_request API, which
+      # doesn't exist for a merge_group event, so this step is skipped there and
+      # the output above is forced to 'true' instead: the queue always runs the
+      # suite rather than misdetecting an empty diff.
+      - name: Path filters
+        id: filter
+        if: github.event_name != 'merge_group'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            syncables:
+              - 'syncables/**'
+              - '.github/workflows/syncables-ci.yml'
+
+  build:
+    name: Lint, test, build
+    needs: changes
+    if: needs.changes.outputs.syncables == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: syncables
+    steps:
+      - uses: actions/checkout@v4
+
+      # Matches package.json's "engines" (>= 22.11 < 23) and "volta" pin
+      # (22.12.0).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: syncables/package-lock.json
+
+      - run: npm ci --no-audit
+      - run: npm run lint
+      - run: npm run prettier:check
+      - run: npm test
+      - run: npm run build
