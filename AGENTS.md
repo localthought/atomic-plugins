@@ -33,15 +33,15 @@ things. Pick the right one before writing code:
 1. **Server-executed sandbox plugins** — a bundled `plugin.js` with a
    `manifest` and a `run(ctx)`, executed server-side in a QuickJS/WASM
    sandbox against scoped `ctx.query`/`ctx.read`/`ctx.http`/`ctx.config`.
-   File-upload importers (**Bank statements**, `integrations/mt940/`) and
-   most existing integrations (`pets`, `github-issues`, `notion`) are this
+   File-upload importers (**Bank statements**, `integrations/money/`) and
+   most existing integrations (`pets`, `issue-tracker`, `notion`) are this
    shape. See [Building an uploader plugin](integrations/README.md#building-an-uploader-plugin).
 2. **Browser-only LocalThought/Devonian connectors** — no server sandbox,
    no AtomicServer HTTP dependency; runs entirely client-side, driven by
    `BrowserIntegrations` (`integrations/localthought/browser.ts`) and the
    syncables/reflector engine, optionally with a Devonian lens for local-first
-   two-way sync. `integrations/localthought/`, `integrations/clockify/`, and
-   `integrations/github-issues/devonian/` are this shape. See
+   two-way sync. `integrations/localthought/`, `integrations/timesheets/`, and
+   `integrations/issue-tracker/devonian/` are this shape. See
    [Building a LocalThought (reflector/syncables/Devonian) connector](integrations/README.md#building-a-localthought-reflectorsyncablesdevonian-connector).
 
 Do not mix the two: a sandbox plugin never reaches the network itself for a

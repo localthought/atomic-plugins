@@ -8,7 +8,7 @@
   },
   "integrations": [
     {
-      "id": "mt940",
+      "id": "money",
       "version": "0.1.0",
       "owner": "Ontola",
       "support": "experimental",

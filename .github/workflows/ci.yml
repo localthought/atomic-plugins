@@ -72,11 +72,11 @@ jobs:
     outputs:
       any: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.any }}
       shared: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.shared }}
-      github-issues: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.github-issues }}
+      issue-tracker: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.issue-tracker }}
       notion: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.notion }}
-      mt940: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.mt940 }}
+      money: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.money }}
       pets: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.pets }}
-      clockify: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.clockify }}
+      timesheets: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.timesheets }}
       localthought: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.localthought }}
     steps:
       # `shared` paths can affect every plugin (tooling, the catalog gate,
@@ -100,16 +100,16 @@ jobs:
               - 'integrations/*.md'
               - '.atomic-server-ref'
               - '.github/workflows/ci.yml'
-            github-issues:
-              - 'integrations/github-issues/**'
+            issue-tracker:
+              - 'integrations/issue-tracker/**'
             notion:
               - 'integrations/notion/**'
-            mt940:
-              - 'integrations/mt940/**'
+            money:
+              - 'integrations/money/**'
             pets:
               - 'integrations/pets/**'
-            clockify:
-              - 'integrations/clockify/**'
+            timesheets:
+              - 'integrations/timesheets/**'
             localthought:
               - 'integrations/localthought/**'
             any:
@@ -322,7 +322,7 @@ jobs:
           for plugin in integrations/*/plugin.js; do
             check "$plugin"
           done
-          curl -sf -o /dev/null http://localhost:9880/integrations/github-issues/README.md && \
+          curl -sf -o /dev/null http://localhost:9880/integrations/issue-tracker/README.md && \
             { echo "dev-server must not host non-catalog integration files" >&2; exit 1; }
           direct=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9883/)
           proxied=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9880/)
@@ -352,26 +352,26 @@ jobs:
         working-directory: atomic-plugins
         run: node integrations/tooling/certify.mjs --layer js
 
-      # github-issues no longer has a Rust-sandbox pilot or a live tier (its
+      # issue-tracker no longer has a Rust-sandbox pilot or a live tier (its
       # sync now runs entirely in-browser via Devonian, outside this
       # certification pipeline); its remaining adapter/automation unit tests
       # don't need the pinned atomic-server, but run them here anyway since
       # this is the one place browser/ is available for their relative imports.
-      - name: github-issues unit tests (adapter mapping + automation starter)
+      - name: issue-tracker unit tests (adapter mapping + automation starter)
         working-directory: atomic-plugins
-        run: browser/node_modules/.bin/vitest run --config integrations/github-issues/vitest.config.ts
+        run: browser/node_modules/.bin/vitest run --config integrations/issue-tracker/vitest.config.ts
 
-      # clockify and localthought have no package.json/atomicCertification
+      # timesheets and localthought have no package.json/atomicCertification
       # (they're the generic LocalThought engine and a lens on top of it,
       # not a certified provider integration), so certify.mjs's discover()
       # never picks them up. Typecheck and unit-test them directly instead
       # of leaving their *.test.ts suites unrun, gated on their own changes.
-      - name: Typecheck and unit test clockify
-        if: needs.changes.outputs.clockify == 'true' || needs.changes.outputs.shared == 'true'
+      - name: Typecheck and unit test timesheets
+        if: needs.changes.outputs.timesheets == 'true' || needs.changes.outputs.shared == 'true'
         working-directory: atomic-plugins
         run: |
-          browser/node_modules/.bin/tsc -p integrations/clockify/tsconfig.json
-          browser/node_modules/.bin/vitest run --config integrations/clockify/vitest.config.ts
+          browser/node_modules/.bin/tsc -p integrations/timesheets/tsconfig.json
+          browser/node_modules/.bin/vitest run --config integrations/timesheets/vitest.config.ts
 
       - name: Typecheck and unit test localthought
         if: needs.changes.outputs.localthought == 'true' || needs.changes.outputs.shared == 'true'
@@ -415,7 +415,7 @@ jobs:
       # in; the Notion/GitHub tests always route through the mock proxy
       # started above regardless of that var.
       - name: "E2E: Integrations page (Pets, Notion, GitHub)"
-        if: needs.changes.outputs.pets == 'true' || needs.changes.outputs.notion == 'true' || needs.changes.outputs.github-issues == 'true' || needs.changes.outputs.shared == 'true'
+        if: needs.changes.outputs.pets == 'true' || needs.changes.outputs.notion == 'true' || needs.changes.outputs.issue-tracker == 'true' || needs.changes.outputs.shared == 'true'
         working-directory: atomic-plugins
         env:
           SERVER_URL: http://localhost:9880

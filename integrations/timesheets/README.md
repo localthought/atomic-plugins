@@ -29,7 +29,7 @@ Refresh, conflict handling, limits and storage follow the generic LocalThought
 flow (see `../localthought/README.md`): import only, local edits preserved,
 nothing written back to Clockify.
 
-## Not covered (v1 reductions, see `planning/clockify.md`)
+## Not covered (v1 reductions, see `planning/timesheets.md`)
 
 - Project and Person linked records: Clockify only returns raw `projectId` /
   `userId` strings on entries.

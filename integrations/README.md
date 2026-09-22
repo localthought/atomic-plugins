@@ -75,7 +75,7 @@ as before, so guard `ctx.config` in `run()` too.
 Each bundled package's `package.json` `version` is this repo's record of which
 published version of that integration is currently shipped. When a
 `catalog.json` card's `shortname` matches the package directory name (as it
-does today for `mt940`, `notion` and `pets`), that card also carries a
+does today for `money`, `notion` and `pets`), that card also carries a
 `version` field and it must equal the package's. `certify.mjs` enforces this
 alongside the existing bundle/owner/apiVersion checks, so the catalog can
 never advertise a version other than the one actually shipped. A card whose
@@ -91,7 +91,7 @@ integration's shipped `plugin.js` changes.
 
 ## Building an uploader plugin
 
-A file-upload importer — like **Bank statements** (`integrations/mt940/`,
+A file-upload importer — like **Bank statements** (`integrations/money/`,
 which reads MT940 and camt.053 bank statement exports) — is not a special
 plugin kind with its own base class or interface. It is an ordinary
 server-executed sandbox plugin (see [Two plugin runtimes](../AGENTS.md#two-plugin-runtimes))
@@ -102,7 +102,7 @@ contract every importer plugin follows.
 
 1. **Declare no network access.** `operations: []` and `secrets: []` in the
    manifest is what marks a plugin as needing neither: contrast with
-   `github-issues`/`notion`, which declare secrets and call `ctx.http`.
+   `issue-tracker`/`notion`, which declare secrets and call `ctx.http`.
    File acquisition (choosing/reading the file) is UI code, not plugin code;
    parsing can run first in an isolated browser Worker, but the sandboxed
    `run()` itself never touches the network.
@@ -136,7 +136,7 @@ contract every importer plugin follows.
    from content that uniquely identifies a row within your source scope
    (account/currency/format plus a bank reference, or statement position as
    a fallback), and a separate content fingerprint to detect a genuinely
-   conflicting reimport versus a harmless repeat. `mt940/plugin.ts` is the
+   conflicting reimport versus a harmless repeat. `money/plugin.ts` is the
    reference: it keys `identity` by `[format, account, currency, reference-or-statement-position]`
    and a parallel `fingerprint` by the row's actual field values, throwing
    when the same identity carries two different fingerprints within one
@@ -154,22 +154,22 @@ contract every importer plugin follows.
    ```
    `importRecords` (`browser/lib/src/import-records.js`) is the shared
    import/reconciliation contract point every importer calls, whether the
-   source is a file (`mt940`, `pets`) or a fetched provider (`github-issues`,
+   source is a file (`money`, `pets`) or a fetched provider (`issue-tracker`,
    `notion`, the generic `localthought` plugin).
 
-5. **Keep parsing pure and separate from the manifest.** `mt940/parser.ts`
-   (MT940), `mt940/camt053.ts` (camt.053 XML — the sandbox has no
+5. **Keep parsing pure and separate from the manifest.** `money/parser.ts`
+   (MT940), `money/camt053.ts` (camt.053 XML — the sandbox has no
    `DOMParser`, so this carries its own namespace-agnostic reader) and
-   `mt940/statement.ts` (format detection + dispatch) contain no manifest or
+   `money/statement.ts` (format detection + dispatch) contain no manifest or
    `ctx` references at all; `plugin.ts` only wires their output into
    `ImportRecord`s. This keeps the parser unit-testable without a sandbox
    host and reusable if a second file format needs the same importer later.
    Represent amounts, dates and other precision-sensitive fields as exact
-   strings (`mt940/parser.ts` reconciles balances with `BigInt`, never
+   strings (`money/parser.ts` reconciles balances with `BigInt`, never
    floating point).
 
 6. **Declare the destination ontology in a `schema.ts`.** A code-first
-   `SchemaSpec` (`mt940/schema.ts`'s `bankingSchema()`): an array of
+   `SchemaSpec` (`money/schema.ts`'s `bankingSchema()`): an array of
    `[shortname, displayName, description]` triples turned into `properties`,
    plus one or more `classes` entries with `requires`/`recommends`. This is
    what a fresh installation provisions before the importer's first run.
@@ -180,7 +180,7 @@ contract every importer plugin follows.
    `package.json` with `atomicCertification`, and a `README.md` with an
    `## Architecture` and `## Supported scope and gaps` section (state exact
    limits — record counts, byte sizes — and what is out of scope, don't
-   just describe what works). Bundle and test exactly as `mt940` does:
+   just describe what works). Bundle and test exactly as `money` does:
    ```sh
    ./browser/node_modules/.bin/vitest run --config integrations/<name>/vitest.config.ts
    ./browser/node_modules/.bin/esbuild integrations/<name>/plugin.ts --preserve-symlinks --bundle --format=esm --platform=neutral --target=es2022 > integrations/<name>/plugin.js
@@ -269,7 +269,7 @@ export function myPlatformProjection(fetched: FetchedPlatform): FetchedPlatform 
   return { ...fetched, ontology: { /* ... */ }, records: [] /* ... */ };
 }
 ```
-`integrations/clockify/localthought.ts` (`clockifyProjection`) is the
+`integrations/timesheets/localthought.ts` (`clockifyProjection`) is the
 reference: it adds two derived `start`/`end` timestamp terms, drops
 in-progress/break entries, and leaves every other provider field untouched.
 Pair it with a query-override function if the connector needs per-run
@@ -282,11 +282,11 @@ discovered `Term`s into a `SchemaSpec` generically — prefixed
 **(b) Two-way, local-first sync — a Devonian lens.** Needed when the
 connector must let local edits flow back to the provider (closing an issue,
 editing a title) without a server round-trip. Model this on
-`integrations/github-issues/devonian/`:
+`integrations/issue-tracker/devonian/`:
 - `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
 - `ports.mjs` — native-Atomic and provider-side projections/transports.
 - `build.mjs` — regenerates the vendored Devonian bundle:
-  `DEVONIAN_PATH=/path/to/devonian node integrations/github-issues/devonian/build.mjs`.
+  `DEVONIAN_PATH=/path/to/devonian node integrations/issue-tracker/devonian/build.mjs`.
 
 Give every native resource a stable identity independent of matching text
 (explicit provider IDs bind existing rows; nothing infers identity from
