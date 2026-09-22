@@ -162,11 +162,27 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          # wasm32-wasip2 builds the server-side plugin runtime component
-          # (server/build.rs); without it atomic-server still builds but
-          # plugins don't run, which the live and e2e tiers need.
-          targets: wasm32-wasip2
+
+      # wasm32-wasip2 builds the server-side plugin runtime component
+      # (server/build.rs). Without it atomic-server still builds, but
+      # build.rs degrades *silently* and the binary answers every plugin run
+      # with "this server was built without the plugin runtime" — so the live
+      # and e2e tiers fail late and confusingly rather than the build failing.
+      #
+      # It cannot be the action's `targets:` input. atomic-server pins
+      # `channel = "1.98.1"` in rust-toolchain.toml (added upstream in #1499),
+      # so `targets:` adds wasm32-wasip2 to *stable* while cargo then runs
+      # under 1.98.1, which still lacks it. `rustup target add` from inside
+      # the checkout resolves the pinned toolchain and adds it there —
+      # the same thing atomic-server's own dagger pipeline does.
+      - name: Add the plugin-runtime target to the pinned toolchain
+        working-directory: atomic-server
+        run: |
+          set -eu
+          rustup show active-toolchain
+          rustup target add wasm32-wasip2
+          # Fail here rather than let build.rs degrade quietly.
+          rustup target list --installed | grep -qx wasm32-wasip2
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
