@@ -162,11 +162,27 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          # wasm32-wasip2 builds the server-side plugin runtime component
-          # (server/build.rs); without it atomic-server still builds but
-          # plugins don't run, which the live and e2e tiers need.
-          targets: wasm32-wasip2
+
+      # wasm32-wasip2 builds the server-side plugin runtime component
+      # (server/build.rs). Without it atomic-server still builds, but
+      # build.rs degrades *silently* and the binary answers every plugin run
+      # with "this server was built without the plugin runtime" — so the live
+      # and e2e tiers fail late and confusingly rather than the build failing.
+      #
+      # It cannot be the action's `targets:` input. atomic-server pins
+      # `channel = "1.98.1"` in rust-toolchain.toml (added upstream in #1499),
+      # so `targets:` adds wasm32-wasip2 to *stable* while cargo then runs
+      # under 1.98.1, which still lacks it. `rustup target add` from inside
+      # the checkout resolves the pinned toolchain and adds it there —
+      # the same thing atomic-server's own dagger pipeline does.
+      - name: Add the plugin-runtime target to the pinned toolchain
+        working-directory: atomic-server
+        run: |
+          set -eu
+          rustup show active-toolchain
+          rustup target add wasm32-wasip2
+          # Fail here rather than let build.rs degrade quietly.
+          rustup target list --installed | grep -qx wasm32-wasip2
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -277,6 +293,7 @@ jobs:
             integrations/tooling/certify.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
+            integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs
 
       # plugin.js is a committed esbuild output (verified byte-for-byte against
@@ -328,8 +345,15 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
+      # The second symlink is what makes a lane spec's bare `@playwright/test`
+      # and `@tomic/lib` imports resolve: node walks up from
+      # integrations/<lane>/e2e/ and finds nothing otherwise. Both packages are
+      # dependencies of the `@tomic/e2e` workspace package, so they live in
+      # browser/e2e/node_modules. run-lane.mjs creates the same link locally.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        run: |
+          ln -s ../atomic-server/browser atomic-plugins/browser
+          ln -s ../browser/e2e/node_modules atomic-plugins/integrations/node_modules
 
       - uses: actions/setup-node@v4
         with:
@@ -359,6 +383,16 @@ jobs:
       - name: Make the server binary executable
         if: contains(matrix.tiers, 'live') || contains(matrix.tiers, 'e2e')
         run: chmod +x atomic-server/target/e2e/atomic-server
+
+      # plugins.spec.ts resolves `@tomic/lib` to its built `dist/index.cjs`.
+      # In the old single-job workflow that file happened to exist because
+      # build.rs had already built the frontend in the same job; now the cargo
+      # build runs on a different runner and only the server binary travels
+      # between them, so the package has to be built here. tsup, a few seconds.
+      - name: Build @tomic/lib
+        if: contains(matrix.tiers, 'e2e') || contains(matrix.tiers, 'live')
+        working-directory: atomic-server/browser
+        run: pnpm --filter @tomic/lib build
 
       - name: Install Playwright (chromium)
         if: contains(matrix.tiers, 'e2e')
@@ -462,12 +496,18 @@ jobs:
           done
           curl -sf -o /dev/null "http://localhost:$dev/integrations/issue-tracker/README.md" && \
             { echo "dev-server must not host non-catalog integration files" >&2; exit 1; }
-          direct=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$upstream/")
-          proxied=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$dev/")
-          if [ "$direct" != "$proxied" ]; then
-            echo "dev-server did not transparently proxy a non-integrations request (direct=$direct proxied=$proxied)" >&2
+          # It is a static host, not a proxy: anything outside /integrations is a 404.
+          outside=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$dev/some/atomic-data/resource")
+          if [ "$outside" != "404" ]; then
+            echo "dev-server should 404 outside /integrations, got $outside" >&2
             exit 1
           fi
+          # The SPA reads the catalog cross-origin from atomic-server's page.
+          curl -sf -D- -o /dev/null "http://localhost:$dev/integrations/catalog.json" \
+            | grep -qi '^access-control-allow-origin: \*' || {
+              echo "dev-server did not send permissive CORS on the catalog" >&2; exit 1; }
+          curl -sf -o /dev/null "http://localhost:$upstream/" || {
+            echo "atomic-server is not answering on its own port" >&2; exit 1; }
 
       - name: Stop the stack
         if: always()
@@ -521,6 +561,15 @@ jobs:
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
+      # plugins.spec.ts resolves `@tomic/lib` to its built `dist/index.cjs`.
+      # In the old single-job workflow that file happened to exist because
+      # build.rs had already built the frontend in the same job; now the cargo
+      # build runs on a different runner and only the server binary travels
+      # between them, so the package has to be built here. tsup, a few seconds.
+      - name: Build @tomic/lib
+        working-directory: atomic-server/browser
+        run: pnpm --filter @tomic/lib build
+
       - name: Download the server binary
         uses: actions/download-artifact@v4
         with:
@@ -559,11 +608,11 @@ jobs:
           eval "$(node -e '
             import("./integrations/tooling/lanes.mjs").then(m => {
               const p = m.sharedPorts(m.loadLanes());
-              console.log(`dev=${p.devServer}; mock=${p.mockProxy}`);
+              console.log(`dev=${p.devServer}; mock=${p.mockProxy}; atomic=${p.atomicServer}`);
             });
           ')"
-          SERVER_URL="http://localhost:$dev" \
-          FRONTEND_URL="http://localhost:$dev" \
+          SERVER_URL="http://localhost:$atomic" \
+          FRONTEND_URL="http://localhost:$atomic" \
           PLUGIN_CATALOG_URL="http://localhost:$dev/integrations/catalog.json" \
           INTEGRATION_PROXY_URL="http://127.0.0.1:$mock" \
           ATOMIC_MOCK_INTEGRATION_PROXY=1 \
@@ -585,3 +634,39 @@ jobs:
         run: |
           [ -f serve.pid ] && kill "$(cat serve.pid)" 2>/dev/null || true
           cat serve.log || true
+
+  # The single context the `main merge queue` ruleset should require.
+  #
+  # Per-lane job names are dynamic (`Lane: pets (e2e)` only exists on a run
+  # that selected the pets lane), so requiring them directly makes any PR that
+  # does not touch that plugin wait forever on a check that never reports —
+  # exactly the failure the stale `Integration tests (pinned atomic-server)`
+  # requirement causes today. This job's name never changes and it reports on
+  # every run, including runs where the whole graph is skipped.
+  ci:
+    name: CI
+    if: always()
+    needs:
+      - changes
+      - build-server
+      - shared-checks
+      - lane
+      - hosting-surface
+      - e2e-plugin-system
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        # Passed through the environment rather than interpolated into the
+        # script, so nothing in the results can be parsed as shell.
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -eu
+          echo "$RESULTS"
+          # `skipped` counts as a pass: lanes are path-gated, and every job
+          # below `changes` is skipped when nothing under integrations/ changed.
+          if printf '%s' "$RESULTS" | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "at least one job failed or was cancelled — see the jobs above" >&2
+            exit 1
+          fi
+          echo "all selected jobs succeeded or were skipped"
