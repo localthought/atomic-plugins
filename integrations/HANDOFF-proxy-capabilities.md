@@ -74,8 +74,12 @@ agent already exists and is already the thing writes are attributed to:
 - Its **secret** is never in the graph. `createApp` returns it once and stores
   it nowhere; callers hand it to the node via `handOverAppKey` → `POST
   /app-agent` (`browser/data-browser/src/chunks/AppPage/appAgent.ts:19-31`),
-  which keeps it in `PluginMeta.agent_secret`, its own redb table keyed by
-  `(drive, namespace, name)` (`lib/src/db/plugin_meta.rs:12`).
+  which keeps it in `Tree::AppAgent`, keyed by `(drive, app)`
+  (`lib/src/db/app_agent.rs`), wrapped with the node key. That tree is
+  deliberately separate from `plugin_secret`: *"If an app's signing key lived
+  in the same store under a name, a plugin could write `Authorization:
+  secret:app-key` and post its own identity to any origin it is allowed to
+  reach."*
 
 **Minting follows the `/app-write` pattern exactly.** Today the browser signs
 as the *user* to `POST /app-write` and the node performs the write as the *app*
@@ -125,17 +129,18 @@ else. A new node learns the app's DID and public key for free.
 
 **The secret half does not, and there is no copy left to send.**
 
-- `PluginMeta` is node-local host state. It is the same redb tree that holds
-  the device name, the Iroh secret key and the known-peer list
-  (`lib/src/sync/peer.rs:86-123`, `:2270-2315`) — explicitly the "this node,
-  not this drive" tree. Nothing replicates it.
+- `Tree::AppAgent` is node-local host state, like the `PluginMeta` tree beside
+  it that holds the device name, the Iroh secret key and the known-peer list
+  (`lib/src/sync/peer.rs:86-123`, `:2270-2315`) — "this node, not this drive"
+  state. Nothing replicates it.
 - Its contents are wrapped with the node key, which lives in `node.key` beside
   the config at mode 0600 and deliberately **not** in the database it protects
   (`server/src/node_key.rs:1-26`). So even a copied store carries ciphertext.
 - The browser hands the secret over exactly once at creation and drops it
   (`plugin-app.ts:66` — "returned once and stored nowhere by this function";
-  `appAgent.ts:19-31` → `POST /app-agent`). No party retains a copy to give a
-  second node.
+  `appAgent.ts:19-31` → `POST /app-agent`, whose handler is explicit: *"posted
+  here once. It is never returned"*). No party retains a copy to give a second
+  node.
 
 So a person's devices share an app agent only as far as they share a *node*.
 This is not a regression — today a second device has no connection at all —
@@ -145,8 +150,9 @@ that should be said out loud rather than discovered.
 **It also looks like a pre-existing gap wider than this feature.** A second
 node knows the app exists and cannot act as it, which would affect the app's
 ordinary writes and scheduled runs, not just its proxy calls. *Inferred, not
-verified* — worth confirming with whoever built the app-agent model before
-treating it as a finding.
+verified* — tracked as
+[ontola/atomic-plugins#41](https://github.com/ontola/atomic-plugins/issues/41),
+which says how to settle it.
 
 Three ways out, none of them chosen here:
 
