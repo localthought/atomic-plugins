@@ -148,7 +148,10 @@ for (const tier of order.filter(t => tiers.includes(t))) {
     status = run(
       requireTool(`${bin}/vitest`, 'run pnpm install in browser/'),
       ['run', '--config', `integrations/${lane.id}/vitest.config.ts`],
-      { [lane.liveEnv]: `http://localhost:${ports.devServer}` },
+      // Straight at atomic-server: @tomic/lib signs the URL it fetches, and
+      // atomic-server verifies against the origin it answers under. Those
+      // agree only when the client talks to it directly.
+      { [lane.liveEnv]: `http://localhost:${ports.atomicServer}` },
     );
     cleanup();
   } else if (tier === 'e2e') {
@@ -167,11 +170,13 @@ for (const tier of order.filter(t => tiers.includes(t))) {
         ...lane.e2e,
       ],
       {
-        SERVER_URL: `http://localhost:${ports.devServer}`,
-        FRONTEND_URL: `http://localhost:${ports.devServer}`,
-        // Seeded into localStorage by atomic-server's playwright.config.ts
-        // (atomic-server#1621) rather than baked into the binary, which is
-        // what lets this lane use its own ports.
+        // The SPA and the API are one origin — atomic-server's own — which is
+        // the topology its dagger e2e pipeline uses. Only the plugin catalog
+        // comes from somewhere else, and since atomic-server#1621 that URL is
+        // seeded at runtime instead of compiled in, so it no longer has to be
+        // same-origin with the server.
+        SERVER_URL: `http://localhost:${ports.atomicServer}`,
+        FRONTEND_URL: `http://localhost:${ports.atomicServer}`,
         PLUGIN_CATALOG_URL: `http://localhost:${ports.devServer}/integrations/catalog.json`,
         INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
         ATOMIC_MOCK_INTEGRATION_PROXY: '1',

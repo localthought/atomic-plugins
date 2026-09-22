@@ -1,20 +1,33 @@
 /**
- * Stands in for the `/integrations` route atomic-server embeds at build
- * time (see server/build.rs::embed_integrations and server/src/routes.rs).
- * CI no longer drops this repo's integrations/ into the atomic-server
- * checkout before building it, so nothing atomic-server itself serves at
+ * Stands in for the `/integrations` route atomic-server embeds at build time
+ * (see server/build.rs::embed_integrations and server/src/routes.rs). CI no
+ * longer drops this repo's integrations/ into the atomic-server checkout
+ * before building it, so nothing atomic-server itself serves at
  * `/integrations` reflects this repo's plugins. This process serves them
- * instead — same filter atomic-server's embed uses (a `plugin.js` file
- * anywhere under integrations/, plus the root `catalog.json`) — and
- * proxies every other request through to a real running atomic-server, so
- * a single URL behaves like one atomic-server that happens to host this
- * repo's plugin catalog.
+ * instead, using the same filter the embed does: a `plugin.js` anywhere under
+ * integrations/, plus the root `catalog.json`.
+ *
+ * That is all it does. It used to also reverse-proxy everything else through
+ * to a real atomic-server, so that one origin looked like an atomic-server
+ * hosting this repo's catalog. That existed only because the catalog URL was
+ * compiled into the frontend and therefore had to be same-origin with the
+ * server. Since atomic-server#1621 the catalog URL is seeded at runtime and
+ * independently of `SERVER_URL`, so clients talk to atomic-server directly —
+ * the topology atomic-server's own dagger e2e pipeline uses — and fetch the
+ * catalog from here cross-origin.
+ *
+ * Fronting atomic-server could not be made to work anyway: it derives the
+ * origin it answers under from the request's `Host`
+ * (server/src/context.rs::RequestContext::new), while its stored resources
+ * are bootstrapped under `config.rs::get_origin()`, which is built from
+ * `ATOMIC_PORT` — the bind port, with no override. Forwarding `Host` made
+ * signed auth proofs verify but left every resource lookup resolving under an
+ * origin with no data (`/server` → 401); rewriting `Host` fixed the lookups
+ * and broke the proofs. There is no setting of that header that satisfies
+ * both, which is why the proxy is gone rather than fixed.
  */
-import {
-  createServer as createHttpServer,
-  request as httpRequest,
-} from 'node:http';
-import { request as httpsRequest } from 'node:https';
+import { createServer as createHttpServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,63 +64,69 @@ const CONTENT_TYPES = {
   catalog: 'application/json',
 };
 
-export function createDevServer({ upstream, assetsRoot = root } = {}) {
-  if (!upstream)
-    throw new Error('createDevServer requires an upstream atomic-server URL');
+export function createDevServer({ assetsRoot = root } = {}) {
   const assets = hostedAssets(assetsRoot);
-  const upstreamUrl = new URL(upstream);
-  const request =
-    upstreamUrl.protocol === 'https:' ? httpsRequest : httpRequest;
 
   return createHttpServer((req, res) => {
-    if (req.url === '/integrations' || req.url.startsWith('/integrations/')) {
-      const key = req.url.slice('/integrations/'.length).split('?')[0];
-      const file = assets.get(key);
+    // The SPA is served from atomic-server's origin and fetches the catalog
+    // from here, so every read of it is cross-origin. These assets are public
+    // build artifacts of this repository and carry no credentials.
+    const cors = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET, OPTIONS',
+      'access-control-allow-headers': 'Content-Type, If-None-Match',
+      'access-control-expose-headers': 'ETag',
+    };
 
-      if (!file) {
-        res.writeHead(404).end();
-
-        return;
-      }
-
-      res.writeHead(200, {
-        'content-type':
-          CONTENT_TYPES[key.endsWith('.json') ? 'catalog' : 'plugin'],
-      });
-      res.end(readFileSync(file));
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, cors).end();
 
       return;
     }
 
-    /*
-     * The client's own `Host` is forwarded unchanged, and deliberately not
-     * rewritten to the upstream's `host:port`. atomic-server derives the
-     * origin every request is answered under from `Host`
-     * (server/src/context.rs::RequestContext::new), and that origin is what
-     * signed auth proofs are checked against
-     * (lib/src/authentication.rs::check_auth_signature). A client that signs
-     * `http://localhost:19141/did?subject=...` and reaches a server that
-     * rebuilt the message as `http://localhost:19140/...` is rejected with
-     * "Incorrect signature for auth headers", which is what every
-     * authenticated request through this proxy used to hit. Passing the
-     * header through makes the proxy transparent: atomic-server answers as
-     * the dev-server's own origin, which is the whole point of fronting it.
-     */
-    const proxied = request(
-      upstream + req.url,
-      {
-        method: req.method,
-        headers: req.headers,
-      },
-      upstreamRes => {
-        res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
-        upstreamRes.pipe(res);
-      },
-    );
-    proxied.on('error', err => {
-      res.writeHead(502).end(`dev-server: upstream error: ${err.message}`);
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, cors).end();
+
+      return;
+    }
+
+    if (req.url !== '/integrations' && !req.url.startsWith('/integrations/')) {
+      res.writeHead(404, cors).end();
+
+      return;
+    }
+
+    const key = req.url.slice('/integrations/'.length).split('?')[0];
+    const file = assets.get(key);
+
+    if (!file) {
+      res.writeHead(404, cors).end();
+
+      return;
+    }
+
+    const body = readFileSync(file);
+    // atomic-server serves its embedded copy of these assets as cacheable
+    // static files; this matches that. Content-addressed, so it stays correct
+    // when a plugin bundle is rebuilt. Note this did NOT fix the Integrations
+    // page refetching the catalog on every render (7 times per run, with or
+    // without it) — that churn is in the data-browser component, not here.
+    const etag = `"${createHash('sha256').update(body).digest('base64url').slice(0, 27)}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ...cors, etag }).end();
+
+      return;
+    }
+
+    res.writeHead(200, {
+      ...cors,
+      etag,
+      'cache-control': 'no-cache',
+      'content-type':
+        CONTENT_TYPES[key.endsWith('.json') ? 'catalog' : 'plugin'],
     });
-    req.pipe(proxied);
+    res.end(req.method === 'HEAD' ? undefined : body);
   });
 }
 
@@ -116,17 +135,7 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const port = Number(process.env.DEV_SERVER_PORT || 9880);
-  const upstream = process.env.DEV_SERVER_UPSTREAM;
-
-  if (!upstream) {
-    console.error(
-      'Usage: DEV_SERVER_UPSTREAM=http://localhost:9883 ' +
-        '[DEV_SERVER_PORT=9880] node dev-server.mjs',
-    );
-    process.exit(1);
-  }
-
-  const server = createDevServer({ upstream });
+  const server = createDevServer();
   server.on('error', e => {
     console.error(`dev-server: ${e.message}`);
     process.exit(1);
@@ -135,7 +144,7 @@ if (
     const assets = [...hostedAssets().keys()];
     console.log(
       `dev-server: hosting ${assets.length} integration asset(s) ` +
-        `(${assets.join(', ')}) on :${port}, proxying everything else to ${upstream}`,
+        `(${assets.join(', ')}) on :${port}`,
     );
   });
 }

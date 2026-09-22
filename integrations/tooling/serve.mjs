@@ -42,7 +42,25 @@ export function portOwner(port, config) {
   return 'an unknown process';
 }
 
+/**
+ * Wait for a port block to come free rather than failing the instant it is
+ * busy. atomic-server shuts down *gracefully* on SIGTERM (it finishes open
+ * connections, ~1-2s), so a lane running two server-backed tiers in a row —
+ * notion's live then e2e — tore the first stack down and immediately failed
+ * `assertFree` on its own still-closing listener.
+ */
+async function waitUntilFree(ports, seconds = 20) {
+  for (let i = 0; i < seconds * 4; i++) {
+    const busy = [];
+    for (const [role, port] of Object.entries(ports))
+      if (!(await free(port))) busy.push(role);
+    if (!busy.length) return;
+    await new Promise(r => setTimeout(r, 250));
+  }
+}
+
 export async function assertFree(ports, config) {
+  await waitUntilFree(ports);
   for (const [role, port] of Object.entries(ports))
     if (!(await free(port)))
       throw new Error(

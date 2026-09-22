@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,27 +31,15 @@ async function withFixture(fn) {
 }
 
 async function withServers(assetsRoot, run) {
-  const upstreamHits = [];
-  const upstreamHosts = [];
-  const upstream = createServer((req, res) => {
-    upstreamHits.push(req.url);
-    upstreamHosts.push(req.headers.host);
-    res.writeHead(200, { 'x-from': 'upstream' });
-    res.end(`upstream:${req.url}`);
-  });
-  await new Promise(r => upstream.listen(0, r));
-  const upstreamUrl = `http://localhost:${upstream.address().port}`;
-  const dev = createDevServer({ upstream: upstreamUrl, assetsRoot });
+  const dev = createDevServer({ assetsRoot });
   await new Promise(r => dev.listen(0, r));
   const devUrl = `http://localhost:${dev.address().port}`;
 
   try {
-    await run({ devUrl, upstreamHits, upstreamHosts });
+    await run({ devUrl });
   } finally {
     dev.closeAllConnections();
-    upstream.closeAllConnections();
     await new Promise(r => dev.close(r));
-    await new Promise(r => upstream.close(r));
   }
 }
 
@@ -68,7 +55,7 @@ test('hostedAssets collects only plugin.js files and the root catalog.json', () 
 
 test('serves catalog.json and plugin.js, 404s everything else under /integrations', async () => {
   await withFixture(async base => {
-    await withServers(base, async ({ devUrl, upstreamHits }) => {
+    await withServers(base, async ({ devUrl }) => {
       const catalog = await fetch(`${devUrl}/integrations/catalog.json`);
       assert.equal(catalog.status, 200);
       assert.equal(catalog.headers.get('content-type'), 'application/json');
@@ -100,41 +87,45 @@ test('serves catalog.json and plugin.js, 404s everything else under /integration
         (await fetch(`${devUrl}/integrations/nope/plugin.js`)).status,
         404,
       );
-      assert.equal(upstreamHits.length, 0);
-    });
-  });
-});
-
-test('proxies every other request straight through to the upstream server', async () => {
-  await withFixture(async base => {
-    await withServers(base, async ({ devUrl, upstreamHits }) => {
-      const res = await fetch(`${devUrl}/some/atomic-data/resource?x=1`);
-      assert.equal(res.status, 200);
-      assert.equal(res.headers.get('x-from'), 'upstream');
-      assert.equal(await res.text(), 'upstream:/some/atomic-data/resource?x=1');
-      assert.deepEqual(upstreamHits, ['/some/atomic-data/resource?x=1']);
     });
   });
 });
 
 /*
- * atomic-server derives the origin it answers under — and therefore the
- * message it verifies signed auth headers against — from `Host`. Rewriting it
- * to the upstream's host:port made every authenticated request through this
- * proxy fail with "Incorrect signature for auth headers", because the client
- * had signed the dev-server's URL. The proxy must stay transparent.
+ * Everything outside /integrations is a 404 now, not a proxy hop. Fronting
+ * atomic-server is what forced a choice between signed auth proofs (which
+ * need the client's Host forwarded) and resource lookups (which need the
+ * server's own origin) — see the module docstring. Clients talk to
+ * atomic-server directly instead.
  */
-test('forwards the client Host header instead of the upstream one', async () => {
+test('404s anything outside /integrations instead of proxying it', async () => {
   await withFixture(async base => {
-    await withServers(base, async ({ devUrl, upstreamHosts }) => {
-      await fetch(`${devUrl}/commit`, { method: 'POST' });
-      assert.deepEqual(upstreamHosts, [new URL(devUrl).host]);
+    await withServers(base, async ({ devUrl }) => {
+      const res = await fetch(`${devUrl}/some/atomic-data/resource?x=1`);
+      assert.equal(res.status, 404);
     });
   });
 });
 
-test('createDevServer requires an upstream', () => {
-  assert.throws(() => createDevServer({}), /requires an upstream/);
+/* The SPA loads from atomic-server's origin, so every catalog read is cross-origin. */
+test('serves the catalog with permissive CORS, and answers preflight', async () => {
+  await withFixture(async base => {
+    await withServers(base, async ({ devUrl }) => {
+      const res = await fetch(`${devUrl}/integrations/catalog.json`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('access-control-allow-origin'), '*');
+
+      const preflight = await fetch(`${devUrl}/integrations/catalog.json`, {
+        method: 'OPTIONS',
+      });
+      assert.equal(preflight.status, 204);
+      assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+    });
+  });
+});
+
+test('createDevServer needs no upstream', () => {
+  assert.doesNotThrow(() => createDevServer());
 });
 
 test('hosts the certified integration bundles in this repository', () => {
