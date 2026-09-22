@@ -24,6 +24,13 @@ export function validateConfig(config) {
     throw new Error('lanes.json must declare a non-empty lanes array');
   if (!Number.isInteger(config.portBase))
     throw new Error('lanes.json must declare an integer portBase');
+  // Every value here is iterated as a port, so a stray "//" comment key would
+  // be treated as one — which is exactly what happened once.
+  for (const [role, port] of Object.entries(config.canonicalPorts ?? {}))
+    if (!Number.isInteger(port))
+      throw new Error(
+        `canonicalPorts.${role} must be an integer port, got ${JSON.stringify(port)}`,
+      );
 
   const seenIds = new Set();
   const seenIndexes = new Map();

@@ -8,7 +8,7 @@ below are baked into the SPA bundle at build time — so a binary built for one
 lane's ports cannot serve another's, and parallel local e2e needs either a
 per-lane rebuild or a lockfile. Fixing this is what removes that asymmetry.
 
-Everything below was read at the pinned commit `02cac45c`
+Everything below was read at the pinned commit `4969872c`
 (`.atomic-server-ref`). Re-check against `feat/plugin-debug` HEAD before
 starting; these files were changing.
 
@@ -39,10 +39,13 @@ assert the bake worked:
 
 ```yaml
 env:
-  VITE_PLUGIN_CATALOG_URL: http://localhost:9880/integrations/catalog.json
-  VITE_INTEGRATION_PROXY_URL: http://127.0.0.1:19090
+  VITE_PLUGIN_CATALOG_URL: http://localhost:${{ steps.ports.outputs.devServer }}/integrations/catalog.json
+  VITE_INTEGRATION_PROXY_URL: http://127.0.0.1:${{ steps.ports.outputs.mockProxy }}
 run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins
 ```
+
+(those two values come from `canonicalPorts` in `integrations/lanes.json` —
+9880 and 19090 — which exists only because they cannot be set at runtime)
 
 followed by a step that greps `browser/data-browser/dist` for both strings and
 fails the build if either is absent. `build.rs` runs the Vite build
@@ -120,10 +123,18 @@ In `ontola/atomic-plugins`, once this ships and `.atomic-server-ref` is bumped:
 
 ## Unrelated but needed on the same branch
 
-`plugins.spec.ts` has been split in `ontola/atomic-plugins`: the Pets test
-moved to `integrations/pets/e2e/pets.spec.ts` and the Notion test to
-`integrations/notion/e2e/notion.spec.ts`. The six remaining tests are generic
-plugin editor/sandbox coverage and belong upstream. **Delete those two tests
-from `browser/e2e/tests/plugins.spec.ts`** in the same commit that the pin is
-bumped to, or they run twice. `newPlugin()` and `setSource()` stay — the six
-remaining tests use them; neither moved test did.
+`plugins.spec.ts` has been split in `ontola/atomic-plugins`. Four of its ten
+tests moved there, verbatim apart from the import paths:
+
+| test                                                                                           | now at                                           |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `Pets imports in the background after account connection`                                      | `integrations/pets/e2e/pets.spec.ts`             |
+| `Notion discovers databases through the proxy and reports revoked access without server OAuth` | `integrations/notion/e2e/notion.spec.ts`         |
+| `Clockify discovers named workspaces and surfaces preview transport errors`                    | `integrations/timesheets/e2e/timesheets.spec.ts` |
+| `Clockify applies linked entries through the real sandbox and skips repeats`                   | `integrations/timesheets/e2e/timesheets.spec.ts` |
+
+The six remaining tests are generic plugin editor/sandbox coverage and belong
+upstream. **Delete those four from `browser/e2e/tests/plugins.spec.ts`** in the
+same commit that bumps the pin past this, or they run twice — once upstream and
+once in a lane. `newPlugin()` and `setSource()` stay: the six remaining tests
+use them, and none of the four moved tests did.

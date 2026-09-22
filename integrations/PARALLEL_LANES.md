@@ -1,24 +1,26 @@
 # Parallel plugin lanes
 
-**Status: proposal, not implemented.** Nothing in `.github/workflows/ci.yml`,
-`integrations/tooling/` or `integrations/localthought/mock-proxy.mjs` has been
-changed to match this document yet. It describes the target shape so the work
-can be split across several agents/worktrees without them colliding.
+**Status: §§1–3 and §5 are implemented; §4 (fixtures) is not.**
+`integrations/lanes.json`, `integrations/tooling/lanes.mjs`,
+`serve.mjs`, `run-lane.mjs` and the rewritten `.github/workflows/ci.yml`
+are live. `integrations/localthought/mock-proxy.mjs` is untouched: it still
+dispatches on `platform` through an `if` chain and ignores the
+`MOCK_PROXY_PLATFORMS` the runner already passes it. §4 describes that work.
 
 The goal: every package under `integrations/` gets its own CI lane and its own
 locally reproducible server, so N plugins can be worked on at once without
 sharing a job, a port, or a fixture.
 
-## What exists today
+## What this replaced
 
-`ci.yml` is one `test` job, `timeout-minutes: 75`, that does everything in
+`ci.yml` was one `test` job, `timeout-minutes: 75`, that does everything in
 sequence: build atomic-server from the pinned commit, start it on `:9883`,
 start `mock-proxy.mjs` on `:19090`, start `dev-server.mjs` on `:9880`, then run
 lint, certification, unit tests, the notion live tier and two Playwright specs.
-A `changes` job path-filters the diff and each per-plugin step carries its own
+A `changes` job path-filtered the diff and each per-plugin step carried its own
 `if: needs.changes.outputs.<pkg> == 'true' || ... shared == 'true'`.
 
-Three consequences this proposal addresses:
+Three consequences this addressed:
 
 1. **No parallelism.** A one-line change to `integrations/pets/` still waits
    behind the Rust build _and_ behind every other plugin's steps in the same
@@ -207,18 +209,26 @@ running two worktrees.
 
 ### Local runner
 
-One entry point, so nobody hand-assembles the env:
+One entry point, and the same one CI uses:
 
 ```sh
 node integrations/tooling/run-lane.mjs pets --tier e2e
+node integrations/tooling/run-lane.mjs timesheets            # all its tiers
 ```
 
-It reads `lanes.json`, computes the ports, starts atomic-server (from a local
-`ATOMIC_SERVER_CHECKOUT`, defaulting to the AGENTS.md `/tmp/atomic-server`
-layout), starts the mock proxy with only that lane's `platforms`, starts the
-dev-server, waits on all three, runs the tier, and tears down on exit. It must
-also fail loudly if a port in its block is already bound, naming which other
-lane owns that block — that is the port-clash symptom you actually want.
+It reads `lanes.json`, computes the ports, and for a server-dependent tier
+calls `serve.mjs` to start atomic-server (from `ATOMIC_SERVER_CHECKOUT`,
+defaulting to the AGENTS.md `/tmp/atomic-server` layout), the mock proxy and
+the dev-server, waits on all three, runs the tier, and tears down on exit.
+Tiers run cheapest-first, so a lane fails before paying for a server it will
+not reach.
+
+Two failure modes are reported by cause rather than by symptom:
+
+- a bound port names the lane that owns it, instead of an `EADDRINUSE` from
+  whichever process lost the race;
+- a missing `target/e2e/atomic-server` prints the `cargo build` line, instead
+  of an async spawn `ENOENT` followed by the full readiness timeout.
 
 ## 4. Mock fixtures per platform
 
@@ -287,14 +297,28 @@ Rules that keep parallel worktrees from fighting:
 - Per AGENTS.md's worktree note: never bare `git stash`/`git stash pop` — the
   stack is shared across all of these.
 
-## Open questions
+## Resolved while implementing this
 
-- `certify.mjs` has no `--only` flag; adding one changes the report shape the
-  `integration-certification` artifact publishes. Does anything downstream
-  consume that report's structure?
-- `browser/e2e/tests/plugins.spec.ts` covers Pets, Notion and GitHub in **one
-  file**, which is why ci.yml gates it on three packages at once. Splitting it
-  per lane means either `--grep` on prose test titles (fragile, as the comment
-  there already notes) or splitting the spec upstream in atomic-server.
-- `notion` is `enabled: false` in `catalog.json` but is the only package with a
-  live tier. Confirm whether its lane should run e2e at all.
+- **`certify.mjs` already takes `--integration <id>`** (mapped to its `only`
+  option), so no `--only` flag was needed. It is not used per lane anyway:
+  certification stays unsharded in `shared-checks` so the
+  `integration-certification` report is published whole rather than in pieces.
+- **`plugins.spec.ts` split cleanly after all.** At the pinned commit it holds
+  ten tests, of which four touch a real integration — Pets, Notion and two
+  Clockify ones. Those moved here as `integrations/<lane>/e2e/*.spec.ts`. The
+  other six drive the generic plugin editor and sandbox and stay upstream, so
+  no `--grep` on prose test titles was needed. They run in the
+  `e2e-plugin-system` job alongside `plugin.spec.ts`.
+- **`notion` is `enabled: false` in `catalog.json`** but keeps both a live and
+  an e2e tier: the catalog flag gates whether the card is _offered_ to
+  visitors, not whether the package works. Revisit if it is ever removed.
+
+## Still open
+
+- `integrations/money/` has a lane entry with no tiers, so it produces no job.
+  Its typecheck, bundle and fixture tests run inside the unsharded
+  certification step. That is correct today but means a `money`-only change
+  gets no lane feedback beyond certification.
+- The `MOCK_PROXY_PLATFORMS` the runner passes is ignored until §4 lands, so
+  every lane's mock proxy currently serves the full built-in platform set
+  rather than just its own.

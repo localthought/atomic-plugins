@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLanes, lanePorts, root } from './lanes.mjs';
@@ -75,6 +76,13 @@ async function waitFor(url, what) {
  */
 export async function bringUp({ ports, platforms = [], label = 'shared' }) {
   const config = loadLanes();
+  const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
+  // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
+  // the caller waits out the full readiness timeout before seeing the cause.
+  if (!existsSync(binary))
+    throw new Error(
+      `${binary} does not exist. Build it first:\n  cd ${serverCheckout()} && cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins\nOr point ATOMIC_SERVER_CHECKOUT at a checkout that already has one.`,
+    );
   await assertFree(ports, config);
 
   const children = [];

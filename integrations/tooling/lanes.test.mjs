@@ -99,6 +99,22 @@ test('activeLanes drops tier-less lanes', () => {
 const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
 const cfg = (...lanes) => ({ portBase: 19100, lanes });
 
+test('a non-numeric canonicalPorts value is rejected', () => {
+  assert.throws(
+    () =>
+      validateConfig({
+        ...cfg(lane()),
+        canonicalPorts: { devServer: 9880, '//': 'a comment' },
+      }),
+    /canonicalPorts\.\/\/ must be an integer port/,
+  );
+});
+
+test('every canonicalPorts value in lanes.json is a port number', () => {
+  for (const [role, port] of Object.entries(config.canonicalPorts))
+    assert.equal(typeof port, 'number', `${role} is not a number`);
+});
+
 test('duplicate indexes are rejected, and the message names both lanes', () => {
   assert.throws(
     () => validateConfig(cfg(lane(), lane({ id: 'b' }))),

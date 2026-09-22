@@ -1,8 +1,8 @@
 {
   "//": "One source of truth for the per-plugin CI lanes. Read by integrations/tooling/lanes.mjs, which .github/workflows/ci.yml and integrations/tooling/run-lane.mjs both go through. See integrations/PARALLEL_LANES.md.",
 
+  "canonicalPortsNote": "The ports the shared atomic-server build bakes into its frontend (VITE_PLUGIN_CATALOG_URL / VITE_INTEGRATION_PROXY_URL), so they cannot be changed without rebuilding. Every CI lane uses these — each matrix job is its own runner, so there is nothing to clash with. Locally only the e2e tier needs them, behind a lock. Removing this block is the point of integrations/HANDOFF-runtime-urls.md. Keep it free of comment keys: every value here is iterated as a port number.",
   "canonicalPorts": {
-    "//": "The ports the shared atomic-server build bakes into its frontend (VITE_PLUGIN_CATALOG_URL / VITE_INTEGRATION_PROXY_URL), so they cannot be changed without rebuilding. Every CI lane uses these — each matrix job is its own runner, so there is nothing to clash with. Locally only the e2e tier needs them, behind a lock. Removing this whole block is the point of integrations/HANDOFF-runtime-urls.md.",
     "atomicServer": 9883,
     "devServer": 9880,
     "mockProxy": 19090
@@ -56,7 +56,8 @@
       "id": "timesheets",
       "index": 6,
       "platforms": ["clockify"],
-      "tiers": ["typecheck", "unit"]
+      "tiers": ["typecheck", "unit", "e2e"],
+      "e2e": ["integrations/timesheets/e2e/timesheets.spec.ts"]
     }
   ]
 }
