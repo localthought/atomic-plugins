@@ -1,7 +1,7 @@
 name: Devonian CI
 
 # devonian/ was migrated in from the standalone localthought/devonian repo
-# (see .github/workflows/devonian-publish.yml for the other half of that
+# (see .github/workflows/publish-devonian.yml for the other half of that
 # migration). It is a self-contained TypeScript package with its own
 # package.json/pnpm-lock.yaml and does not depend on an atomic-server
 # checkout the way integrations/ does (see ci.yml), so this workflow never

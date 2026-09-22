@@ -67,7 +67,7 @@ and [`devonian/README.md`](devonian/README.md) for its own conventions —
 they are unrelated to the style notes below, which apply to `integrations/`
 only. Its CI and publish workflows are
 [`.github/workflows/devonian-ci.yml`](.github/workflows/devonian-ci.yml) and
-[`.github/workflows/devonian-publish.yml`](.github/workflows/devonian-publish.yml).
+[`.github/workflows/publish-devonian.yml`](.github/workflows/publish-devonian.yml).
 
 ## reflector/
 

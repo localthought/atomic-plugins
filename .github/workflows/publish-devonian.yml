@@ -14,7 +14,7 @@ name: Devonian publish to npm
 # Auth is npm Trusted Publishing (OIDC) — configured on npmjs.com under the
 # `devonian` package's Settings -> Trusted Publisher. That configuration
 # has to be re-pointed at this repo (ontola/atomic-plugins) and this exact
-# workflow filename (devonian-publish.yml) before this can publish; no
+# workflow filename (publish-devonian.yml) before this can publish; no
 # NPM_TOKEN secret is used, `id-token: write` below is what lets this job
 # mint a short-lived, run-scoped publish credential instead.
 

@@ -1,0 +1,64 @@
+name: Syncables publish to crates.io
+
+# Publishes integrations/localthought/syncables/ to crates.io automatically
+# whenever its Cargo.toml version on `main` is one crates.io doesn't have
+# yet — so a normal "bump the version in the PR, merge it" is the whole
+# release process; nobody needs to run `cargo publish` by hand.
+#
+# This mirrors publish-devonian.yml's shape (same trigger logic, same
+# version-check gate) adapted to cargo/crates.io instead of npm.
+#
+# Auth is crates.io Trusted Publishing (OIDC) via rust-lang/crates-io-auth-action
+# — configured on crates.io under the `syncables` crate's Trusted Publishing
+# settings, pointing at this repo (ontola/atomic-plugins), this workflow
+# filename (publish-syncables.yml), and the `publish` job name below. No
+# CARGO_REGISTRY_TOKEN secret is stored: `id-token: write` is what lets this
+# job mint a short-lived, run-scoped publish token instead.
+#
+# integrations/localthought/syncables/ is vendored from the standalone
+# localthought/syncables-rs repo (see its UPSTREAM.md) and is still marked
+# as scaffolding there; this workflow only fires on an actual version bump,
+# so it stays inert until a version bump is deliberately made.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - integrations/localthought/syncables/Cargo.toml
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: integrations/localthought/syncables
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check whether this version is already on crates.io
+        id: version-check
+        run: |
+          local_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          published_version=$(curl -sf https://crates.io/api/v1/crates/syncables | jq -r '.crate.max_version' || echo "none")
+          echo "local version: $local_version; published version: $published_version"
+          if [ "$local_version" = "$published_version" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run tests
+        if: steps.version-check.outputs.should_publish == 'true'
+        run: cargo test --all-features
+      - name: Authenticate with crates.io
+        if: steps.version-check.outputs.should_publish == 'true'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish
+        if: steps.version-check.outputs.should_publish == 'true'
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

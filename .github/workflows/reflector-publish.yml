@@ -11,7 +11,7 @@ name: Reflector publish to npm
 # changed (e.g. to a scoped name like @localthought/reflector) and npm's
 # Trusted Publisher is configured for it.
 #
-# This mirrors devonian-publish.yml's shape (itself a straight path
+# This mirrors publish-devonian.yml's shape (itself a straight path
 # translation of localthought/devonian's own publish.yml): same trigger
 # logic, same version-check gate, same `prepublishOnly` build guarantee.
 # reflector/package.json has no `prepublishOnly` script yet — add one
