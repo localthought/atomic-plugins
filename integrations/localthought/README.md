@@ -189,12 +189,17 @@ in this repo. What was still missing was narrower: the composed
 `localthought/overlays`) only ever declared `GET` operations, so a `PATCH`
 never reached Google no matter what the proxy or scope allowed. That catalog
 gap is closed by
-[overlays#166](https://github.com/localthought/overlays/pull/166) (adds the
+[overlays#168](https://github.com/localthought/overlays/pull/168) (adds the
 one write operation this lens sends — a partial event update, matching
 `applyCalendarEdit`'s `summary`/`description`/`location`/`start`/`end` fields
 and `If-Match`) and
-[integration-proxy#75](https://github.com/localthought/integration-proxy/pull/75)
-(bumps the deployed `DEFAULT_CATALOG_PATH` pin to it). Both need merging and
+[integration-proxy#76](https://github.com/localthought/integration-proxy/pull/76)
+(bumps the deployed `DEFAULT_CATALOG_PATH` pin to it). overlays#168 also
+migrates the underlying base document: `ontola/openapi-directory` removed the
+hand-written, read-only `google-calendar/v3` subset the earlier
+[overlays#166](https://github.com/localthought/overlays/pull/166) was built
+against, replacing it with a regenerated, full `calendar/v3` document
+converted from Google's own Discovery document. Both PRs need merging and
 the service needs restarting to pick up the new pin before any write reaches
 Google. Reconnect existing Google accounts if the wider `calendar.events`
 scope wasn't already exercised in this deployment; Calendar reconnection

@@ -1,0 +1,49 @@
+overlay: 1.0.0
+info:
+  title: Google Calendar API Authentication Profile
+  version: 1.0.0
+# Reflector drives its whole OAuth flow from the OpenAPI document: which endpoints
+# to hit, which scopes to request, how to obtain a refresh token, and where to
+# read the connected account's profile all come from the security scheme below,
+# not from code. The base Google document already declares two OAuth schemes
+# (`Oauth2` implicit, `Oauth2c` authorizationCode) but neither is quite what a
+# local-first client needs — the implicit flow yields no refresh token, and the
+# authorizationCode scheme points at the legacy token endpoint and omits the
+# identity scopes. This overlay replaces them with a single, complete
+# authorizationCode scheme using standard OpenAPI OAuth-flow vocabulary plus a
+# couple of `x-` extensions for the provider-specific request details.
+actions:
+  - target: $.components.securitySchemes.Oauth2
+    remove: true
+  - target: $.components.securitySchemes.Oauth2c
+    remove: true
+  - target: $.components.securitySchemes
+    update:
+      oauth:
+        type: oauth2
+        description: >
+          OAuth 2.0 authorization-code flow used by the local-first client.
+          The refresh URL lets it mint new access tokens in the background
+          without user interaction.
+        flows:
+          authorizationCode:
+            authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
+            tokenUrl: https://oauth2.googleapis.com/token
+            refreshUrl: https://oauth2.googleapis.com/token
+            scopes:
+              https://www.googleapis.com/auth/calendar: >
+                See, edit, share, and permanently delete all the calendars you
+                can access using Google Calendar
+              https://www.googleapis.com/auth/userinfo.email: >
+                See the email address of the connected account
+              openid: Authenticate the connected account
+        # Extra parameters added to the authorization request. `offline` +
+        # `consent` are what guarantee a refresh_token is returned so the
+        # client can keep syncing after the short-lived access token expires.
+        x-authorization-params:
+          access_type: offline
+          prompt: consent
+          include_granted_scopes: 'true'
+        # OpenID Connect userinfo endpoint used to read the connected account's
+        # email for display. Optional — if absent, the account is left blank.
+        x-userinfo-url: https://openidconnect.googleapis.com/v1/userinfo

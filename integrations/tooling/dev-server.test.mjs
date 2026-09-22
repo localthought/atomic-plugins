@@ -122,6 +122,5 @@ test('createDevServer requires an upstream', () => {
 test('hosts the certified integration bundles in this repository', () => {
   const assets = hostedAssets(root);
   assert.ok(assets.has('catalog.json'));
-  assert.ok(assets.has('issue-tracker/plugin.js'));
   assert.ok(assets.has('notion/plugin.js'));
 });

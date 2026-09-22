@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reflector — sync your systems of record</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🪞</span>
+        <div>
+          <h1>Reflector</h1>
+          <p class="tagline">Local-first sync between your systems of record</p>
+        </div>
+      </div>
+      <div id="topbar-actions" class="topbar-actions">
+        <span id="sync-indicator" class="sync-indicator idle" title="Sync status">All changes synced</span>
+        <button id="storage-btn" class="btn ghost" title="Choose where your data is stored">Storage: Local files</button>
+        <span id="account" class="account"></span>
+        <button id="disconnect-btn" class="btn ghost" hidden>Disconnect</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Reflection-mode state: an unattended background sync between two
+           systems of record, with no per-user connect flow to show. -->
+      <section id="reflection-view" class="view centered" hidden>
+        <div class="card connect-card">
+          <span class="logo big">🪞</span>
+          <h2>Reflecting in the background</h2>
+          <p id="reflection-summary"></p>
+        </div>
+      </section>
+
+      <!-- Disconnected state -->
+      <section id="connect-view" class="view centered" hidden>
+        <div class="card connect-card">
+          <span class="logo big">🪞</span>
+          <h2>Connect your Google account</h2>
+          <p>
+            Reflector reads everything the Google Calendar API has for your account into a local
+            copy, and keeps that copy synced in the background — the local-first foundation for
+            reflecting the same data across your other systems of record, such as your own
+            remoteStorage account.
+          </p>
+          <a id="connect-btn" class="btn primary" href="/auth/login">Connect Google</a>
+          <p id="not-configured" class="muted" hidden>
+            Server is missing <code>OAUTH_CLIENT_ID</code> /
+            <code>OAUTH_CLIENT_SECRET</code>.
+          </p>
+        </div>
+      </section>
+
+      <!-- Connected state -->
+      <section id="app-view" class="view" hidden>
+        <div class="toolbar">
+          <button id="read-btn" class="btn primary">Sync now</button>
+          <span id="read-summary" class="muted"></span>
+        </div>
+
+        <div class="card systems-card">
+          <h3>Systems of record</h3>
+          <ul class="systems-list">
+            <li>
+              <span class="swatch" style="background: #4285f4"></span>
+              <span>Google Calendar — connected as <span id="google-account"></span></span>
+            </li>
+            <li>
+              <span class="swatch" style="background: #6366f1"></span>
+              <span>Storage — <span id="storage-summary">Local files</span></span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="side-feature">
+          <p class="muted">Side feature: export the local copy as a portable file.</p>
+          <button id="download-btn" class="btn ghost small">Download ZIP backup</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Storage chooser dialog -->
+    <dialog id="storage-dialog">
+      <form id="rs-form">
+        <h3>Where your data is stored</h3>
+        <p class="muted">
+          By default Reflector keeps the local-first copy in JSON files on this server. Connect
+          your <a href="https://remotestorage.io/" target="_blank" rel="noreferrer">remoteStorage</a>
+          account to store the copy in your own storage instead — your data, under your control.
+        </p>
+        <p id="storage-current" class="muted"></p>
+        <label>remoteStorage address
+          <input name="address" type="text" placeholder="you@storage.example" autocomplete="off" />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="rs-disconnect" class="btn danger" hidden>Use local files</button>
+          <span class="spacer"></span>
+          <button type="button" id="storage-close" class="btn ghost">Close</button>
+          <button type="submit" id="rs-connect" class="btn primary">Connect</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toasts" class="toasts"></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
