@@ -10,13 +10,13 @@ this package is the atomic-server sandbox-plugin equivalent, modeled on
 
 ## Mapping
 
-| Google Calendar | Atomic |
-|---|---|
-| `summary` | Card title |
-| `description` (missing becomes empty text) | Description |
-| `location` (missing becomes empty text) | Location |
-| All-day `start.date` / `end.date` | Start / End (plain `YYYY-MM-DD`) |
-| Timed `start.dateTime` / `end.dateTime` | Start / End (offset-qualified) |
+| Google Calendar                            | Atomic                           |
+| ------------------------------------------ | -------------------------------- |
+| `summary`                                  | Card title                       |
+| `description` (missing becomes empty text) | Description                      |
+| `location` (missing becomes empty text)    | Location                         |
+| All-day `start.date` / `end.date`          | Start / End (plain `YYYY-MM-DD`) |
+| Timed `start.dateTime` / `end.dateTime`    | Start / End (offset-qualified)   |
 
 Editing title, description, location, start or end locally patches only that
 field back to Google, conditioned on the event's ETag; a change to the event

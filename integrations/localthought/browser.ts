@@ -1,6 +1,7 @@
 /** Browser-owned credentials. Never store these in Atomic graph resources. */
 export const DEFAULT_PROXY = 'https://localthought.io';
 const key = 'localthought-browser-v1:';
+
 export interface Connection {
   drive: string;
   actor: string;
@@ -22,19 +23,23 @@ export function proxyOrigin(value = DEFAULT_PROXY): string {
       ))
   )
     throw new Error('Proxy must be an HTTPS origin or localhost');
+
   return value;
 }
+
 const base64url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))
     .replaceAll('+', '-')
     .replaceAll('/', '_')
     .replaceAll('=', '');
+
 async function limitedText(response: Response): Promise<string> {
   if (!response.body) throw new Error('Empty proxy response');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let size = 0,
     text = '';
+
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -44,11 +49,13 @@ async function limitedText(response: Response): Promise<string> {
         throw new Error('Proxy response exceeds 10 MB');
       text += decoder.decode(value, { stream: true });
     }
+
     return text + decoder.decode();
   } finally {
     await reader.cancel();
   }
 }
+
 export class BrowserIntegrations {
   constructor(
     private storage: Storage,
@@ -65,6 +72,7 @@ export class BrowserIntegrations {
     });
     if (!response.ok)
       throw new Error(`LocalThought returned HTTP ${response.status}`);
+
     return limitedText(response);
   }
   async catalog(signal?: AbortSignal): Promise<string[]> {
@@ -75,6 +83,7 @@ export class BrowserIntegrations {
       names.some(s => typeof s !== 'string' || !/^[a-z0-9-]{1,80}$/.test(s))
     )
       throw new Error('Invalid platform catalog');
+
     return names;
   }
   async start(
@@ -130,6 +139,7 @@ export class BrowserIntegrations {
         ready: false,
       } satisfies Connection),
     );
+
     return { state, url: url.href };
   }
   private connection(id: string, drive: string, actor: string) {
@@ -138,6 +148,7 @@ export class BrowserIntegrations {
     const c: Connection = JSON.parse(raw);
     if (c.drive !== drive || c.actor !== actor || c.origin !== this.origin)
       throw new Error('Connection belongs to another drive, agent or proxy');
+
     return c;
   }
   cancel(drive: string, actor: string, state: string) {
@@ -146,10 +157,12 @@ export class BrowserIntegrations {
   }
   async finish(drive: string, actor: string, state: string, code: string) {
     const c = this.connection(state, drive, actor);
+
     if (c.expires < Date.now()) {
       this.storage.removeItem(key + state);
       throw new Error('Reconnect your account');
     }
+
     if (c.ready || !c.codeVerifier || !code || code.length > 4096)
       throw new Error('Reconnect your account');
     const verifier = c.codeVerifier;
@@ -182,6 +195,7 @@ export class BrowserIntegrations {
       key + state,
       JSON.stringify({ ...c, ready: true, code: result.connection_code }),
     );
+
     return { connection: state, platform: c.platform };
   }
   /** Shared rotating-code transport for browser-owned writes as well as reads. */
@@ -200,6 +214,7 @@ export class BrowserIntegrations {
     const destination = new URL(`/proxy/${platform}${path}`, this.origin);
     if (!destination.pathname.startsWith(`/proxy/${platform}/`))
       throw new Error('Invalid proxy path');
+
     return navigator.locks.request(key + id, async () => {
       const c = this.connection(id, drive, actor);
       if (c.platform !== platform)
@@ -212,6 +227,7 @@ export class BrowserIntegrations {
         init,
         AbortSignal.timeout(30000),
       );
+
       return { status: response.status, body: await limitedText(response) };
     });
   }
@@ -250,6 +266,7 @@ export class BrowserIntegrations {
         'Proxy did not expose a rotated code; reconnect and check CORS',
       );
     this.storage.setItem(key + id, JSON.stringify({ ...current, code: next }));
+
     return response;
   }
 }

@@ -42,6 +42,7 @@ describe('Google Calendar package', () => {
           const items = pages[index];
           const nextPageToken =
             index + 1 < pages.length ? String(index + 1) : undefined;
+
           return {
             status: 200,
             body: JSON.stringify({ items, nextPageToken }),
@@ -106,8 +107,12 @@ describe('Google Calendar package', () => {
   });
 
   it('skips recurring instances and cancelled events without throwing', () => {
-    expect(project(timed('e5', { recurringEventId: 'series-1' }))).toBeUndefined();
-    expect(project(timed('e6', { recurrence: ['RRULE:FREQ=WEEKLY'] }))).toBeUndefined();
+    expect(
+      project(timed('e5', { recurringEventId: 'series-1' })),
+    ).toBeUndefined();
+    expect(
+      project(timed('e6', { recurrence: ['RRULE:FREQ=WEEKLY'] })),
+    ).toBeUndefined();
     expect(project(timed('e7', { status: 'cancelled' }))).toBeUndefined();
   });
 
