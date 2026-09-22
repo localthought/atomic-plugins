@@ -1,23 +1,28 @@
-name: Publish to npm
+name: Devonian publish to npm
 
-# Publishes automatically whenever package.json's version on `main` is one
-# npm doesn't have yet — so a normal "bump the version in the PR, merge it"
-# is the whole release process; nobody needs to run `npm publish` by hand.
-# (This is exactly the gap that shipped devonian@0.6.0 with a stale build/:
-# a manual publish skipped `npm run build` first. `prepublishOnly` in
-# package.json now forces that build, and this workflow removes the manual
-# step entirely.)
+# Publishes devonian/ to npm automatically whenever devonian/package.json's
+# version on `main` is one npm doesn't have yet — so a normal "bump the
+# version in the PR, merge it" is the whole release process; nobody needs
+# to run `npm publish` by hand.
+#
+# This is a straight path translation of localthought/devonian's own
+# publish.yml from when devonian lived in its own repo: same trigger logic,
+# same version-check gate, same `prepublishOnly` build guarantee, just
+# scoped under devonian/ now that it lives in this monorepo alongside
+# integrations/.
 #
 # Auth is npm Trusted Publishing (OIDC) — configured on npmjs.com under the
-# package's Settings → Trusted Publisher, pointing at this exact repo and
-# workflow filename. No NPM_TOKEN secret: `id-token: write` below is what
-# lets this job mint a short-lived, run-scoped publish credential instead.
+# `devonian` package's Settings -> Trusted Publisher. That configuration
+# has to be re-pointed at this repo (ontola/atomic-plugins) and this exact
+# workflow filename (devonian-publish.yml) before this can publish; no
+# NPM_TOKEN secret is used, `id-token: write` below is what lets this job
+# mint a short-lived, run-scoped publish credential instead.
 
 on:
   push:
     branches: [main]
     paths:
-      - package.json
+      - devonian/package.json
   workflow_dispatch: {}
 
 jobs:
@@ -26,6 +31,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    defaults:
+      run:
+        working-directory: devonian
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -35,6 +43,7 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
+          cache-dependency-path: devonian/pnpm-lock.yaml
           registry-url: 'https://registry.npmjs.org'
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint

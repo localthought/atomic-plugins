@@ -1,0 +1,64 @@
+name: Devonian CI
+
+# devonian/ was migrated in from the standalone localthought/devonian repo
+# (see .github/workflows/devonian-publish.yml for the other half of that
+# migration). It is a self-contained TypeScript package with its own
+# package.json/pnpm-lock.yaml and does not depend on an atomic-server
+# checkout the way integrations/ does (see ci.yml), so this workflow never
+# touches atomic-server and skips its work entirely when a change doesn't
+# touch devonian/.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: devonian-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect devonian changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      devonian: ${{ steps.filter.outputs.devonian }}
+    steps:
+      - name: Path filters
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            devonian:
+              - 'devonian/**'
+              - '.github/workflows/devonian-ci.yml'
+
+  build:
+    name: Lint, test, build
+    needs: changes
+    if: needs.changes.outputs.devonian == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: devonian
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: devonian/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run prettier:check
+      - run: pnpm test
+      - run: pnpm build
