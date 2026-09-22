@@ -33,8 +33,10 @@ async function withFixture(fn) {
 
 async function withServers(assetsRoot, run) {
   const upstreamHits = [];
+  const upstreamHosts = [];
   const upstream = createServer((req, res) => {
     upstreamHits.push(req.url);
+    upstreamHosts.push(req.headers.host);
     res.writeHead(200, { 'x-from': 'upstream' });
     res.end(`upstream:${req.url}`);
   });
@@ -45,7 +47,7 @@ async function withServers(assetsRoot, run) {
   const devUrl = `http://localhost:${dev.address().port}`;
 
   try {
-    await run({ devUrl, upstreamHits });
+    await run({ devUrl, upstreamHits, upstreamHosts });
   } finally {
     dev.closeAllConnections();
     upstream.closeAllConnections();
@@ -111,6 +113,22 @@ test('proxies every other request straight through to the upstream server', asyn
       assert.equal(res.headers.get('x-from'), 'upstream');
       assert.equal(await res.text(), 'upstream:/some/atomic-data/resource?x=1');
       assert.deepEqual(upstreamHits, ['/some/atomic-data/resource?x=1']);
+    });
+  });
+});
+
+/*
+ * atomic-server derives the origin it answers under — and therefore the
+ * message it verifies signed auth headers against — from `Host`. Rewriting it
+ * to the upstream's host:port made every authenticated request through this
+ * proxy fail with "Incorrect signature for auth headers", because the client
+ * had signed the dev-server's URL. The proxy must stay transparent.
+ */
+test('forwards the client Host header instead of the upstream one', async () => {
+  await withFixture(async base => {
+    await withServers(base, async ({ devUrl, upstreamHosts }) => {
+      await fetch(`${devUrl}/commit`, { method: 'POST' });
+      assert.deepEqual(upstreamHosts, [new URL(devUrl).host]);
     });
   });
 });
