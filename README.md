@@ -1,9 +1,10 @@
 # atomic-plugins
 
-- `integrations/` — temporary repo for quick iteration on
-  `ontola/atomic-server`'s `integrations/` folder;
-  https://github.com/ontola/atomic-server/tree/develop/integrations remains
-  the source of truth.
+This repo is now the source of truth for all atomic plugins.
+https://github.com/ontola/atomic-server/tree/develop/integrations is
+deprecated.
+
+- `integrations/` — `ontola/atomic-server`'s former `integrations/` folder.
 - `devonian/` — the `devonian` npm package (bidirectional lenses for data
   portability), migrated in from the standalone `localthought/devonian`
   repo with its history intact.
