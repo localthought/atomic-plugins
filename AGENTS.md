@@ -1,6 +1,6 @@
 # Working in this repo
 
-This repo holds two independent things — read the section for whichever
+This repo holds three independent things — read the section for whichever
 one you're touching before making changes.
 
 ## integrations/
@@ -52,6 +52,22 @@ things. Pick the right one before writing code:
 Do not mix the two: a sandbox plugin never reaches the network itself for a
 LocalThought-flow provider, and a browser connector is never loaded into the
 QuickJS sandbox.
+
+## devonian/
+
+Unlike `integrations/`, `devonian/` is a self-contained, independently
+buildable and publishable TypeScript package (own `package.json`,
+`pnpm-lock.yaml`, `tsconfig.json`) migrated in from the standalone
+`localthought/devonian` repo, full commit history included via `git
+subtree`. It publishes to npm as `devonian` and is what
+`integrations/localthought/`, `integrations/clockify/`, and
+`integrations/github-issues/devonian/` depend on for the reflector/syncables
+lens engine described above. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
+and [`devonian/README.md`](devonian/README.md) for its own conventions —
+they are unrelated to the style notes below, which apply to `integrations/`
+only. Its CI and publish workflows are
+[`.github/workflows/devonian-ci.yml`](.github/workflows/devonian-ci.yml) and
+[`.github/workflows/devonian-publish.yml`](.github/workflows/devonian-publish.yml).
 
 ## reflector/
 
