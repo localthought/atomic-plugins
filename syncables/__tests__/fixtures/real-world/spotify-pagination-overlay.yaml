@@ -1,0 +1,39 @@
+# Vendored, unmodified, from https://github.com/localthought/overlays:
+# spotify.com/1.0.0/pagination-overlay.yaml (retrieved 2026-07-03)
+overlay: 1.0.0
+info:
+  title: Spotify Web API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >-
+            Most Spotify list endpoints use offset-based pagination. The response
+            includes a `next` URL for the next page and `total` for the total
+            item count.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+              limit:
+                role: pageSize
+          response:
+            bodyFields:
+              next:
+                role: nextLink
+              total:
+                role: totalCount
+        cursor:
+          type: pageToken
+          description: >-
+            Some endpoints (e.g. recently played tracks, followed artists) use
+            cursor-based pagination via an `after` parameter.
+          request:
+            queryParameters:
+              after:
+                role: pageToken
+              limit:
+                role: pageSize

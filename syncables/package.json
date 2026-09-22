@@ -1,0 +1,61 @@
+{
+  "name": "syncables",
+  "version": "0.17.1",
+  "description": "Reads an OpenAPI document to run a mock API server and a client that syncs a local copy of the API's dataset.",
+  "type": "module",
+  "main": "build/src/index.js",
+  "types": "build/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/src/index.d.ts",
+      "default": "./build/src/index.js"
+    }
+  },
+  "files": [
+    "build/src"
+  ],
+  "engines": {
+    "node": ">= 22.11 < 23"
+  },
+  "devDependencies": {
+    "@eslint/js": "~9.17",
+    "@types/eslint__js": "~8.42",
+    "@types/js-yaml": "~4.0",
+    "@types/node": "~20",
+    "@typescript-eslint/parser": "~8.19",
+    "@vitest/coverage-v8": "~2.1",
+    "@vitest/eslint-plugin": "~1.1",
+    "eslint-config-prettier": "~9.1",
+    "eslint": "~9.17",
+    "globals": "~15.14",
+    "prettier": "~3.4",
+    "rimraf": "~6.0",
+    "ts-api-utils": "~2.0",
+    "typescript-eslint": "~8.19",
+    "typescript": "~5.7",
+    "vitest": "~2.1"
+  },
+  "scripts": {
+    "clean": "rimraf coverage build tmp",
+    "prebuild": "npm run lint",
+    "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -w -p tsconfig.json",
+    "build:release": "npm run clean && tsc -p tsconfig.release.json",
+    "lint": "eslint .",
+    "test": "vitest run unit --config __tests__/vitest.config.ts",
+    "test:coverage": "vitest run unit --config __tests__/vitest.config.ts --coverage.enabled --coverage.all",
+    "prettier": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --write",
+    "prettier:check": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --check",
+    "test:watch": "vitest unit",
+    "prepare": "npm run build:release"
+  },
+  "author": "Michiel de Jong <michiel@unhosted.org>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "js-yaml": "~4.1",
+    "tslib": "~2.8"
+  },
+  "volta": {
+    "node": "22.12.0"
+  }
+}
