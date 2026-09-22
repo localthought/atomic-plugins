@@ -1,9 +1,13 @@
-name: CI
+name: integration-proxy CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - "integration-proxy/**"
   pull_request:
+    paths:
+      - "integration-proxy/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,6 +15,9 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integration-proxy
     services:
       postgres:
         image: postgres:16-alpine
@@ -34,6 +41,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: integration-proxy -> target
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy
