@@ -109,6 +109,30 @@ The API version remains `2026-03-11`.
 Automated proxy tests use authored responses. Successful local tests do not
 certify live Notion authorization or production deployment.
 
+## E2E entry point (quarantined, #68)
+
+`e2e/notion.spec.ts` began at the `[data-integration=notion]` card. The
+`ConnectNotion.tsx` that rendered it was removed in atomic-server
+`4bab16ee6`. At the pinned `50cf5151c`, catalog install does not replace it:
+
+- `catalog.json` entries only produce the visibility toggles and
+  `LocalThoughtCatalog`'s `proxy:${platform}` cards. No data-browser code
+  loads a `plugin.js` bundle from the catalog URL.
+- The server marketplace (`/plugin-catalog`, then Open, review and
+  `installRelease`) installs an `Installation` of a release that is already
+  published on that server. The shipped `plugin.js` exports no manifest.
+  The manifest is per data source (`model.ts` `manifest(dataSource)`), and
+  `atomic.ts` appends it when it installs. The Installation page runs neither
+  that installer nor a sync.
+- Sandbox sync in the data-browser is server-side only (`/plugin-sync-preview`
+  and `/plugin-sync-apply`, which need a `/plugin-secret`). `page.route`
+  cannot stub server-side requests, and the spec asserts that neither
+  endpoint is called. The browser-side runner, `browserPluginSync.ts`, has
+  no importers at the pin.
+
+The planned entry point is a `proxy:notion` card, which is blocked on #52.
+Until then the lane runs the live tier only (`integrations/lanes.json`).
+
 ## LocalThought/Devonian lens (read-only, first slice)
 
 Issue #8 moves Notion onto the standard reflector/syncables/Devonian stack.
