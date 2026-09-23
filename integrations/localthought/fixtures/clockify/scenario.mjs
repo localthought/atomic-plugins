@@ -424,3 +424,9 @@ export function clockifyFixture() {
     },
   };
 }
+
+export default {
+  title: 'Clockify',
+  document: clockifyDocument,
+  create: clockifyFixture,
+};

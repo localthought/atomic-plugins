@@ -7,7 +7,7 @@ const verifier = 'a'.repeat(64);
 const challenge = createHash('sha256').update(verifier).digest('base64url');
 
 test('catalog, selected-platform PKCE consent, redemption and single-use rotation', async () => {
-  const server = mockProxy();
+  const server = mockProxy({ platforms: '' });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -88,6 +88,67 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
       ).status,
       403,
     );
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('MOCK_PROXY_PLATFORMS restricts the catalog, consent and catalog documents', async () => {
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = message => warnings.push(message);
+  const server = mockProxy({ platforms: 'pets,todoist,pets' });
+  console.warn = warn;
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    assert.deepEqual(await (await fetch(`${base}/catalog`)).json(), ['pets']);
+    assert.deepEqual(warnings, [
+      'mock-proxy: no fixture for todoist; not served',
+    ]);
+    assert.equal((await fetch(`${base}/catalog/pets.yaml`)).status, 200);
+    assert.equal((await fetch(`${base}/catalog/clockify.yaml`)).status, 404);
+    assert.equal(
+      (await fetch(`${base}/catalog/clockify.selection.json`)).status,
+      404,
+    );
+    const url = new URL(`${base}/connect`);
+    url.search = new URLSearchParams({
+      redirect_uri:
+        'http://localhost:6747/app/integrations?integration_state=abc&platform=clockify',
+      platform: 'clockify',
+      user_id: 'synthetic-agent',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      credentials: 'connection',
+    });
+    assert.equal((await fetch(url)).status, 400);
+    assert.equal(server.clockify, undefined);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('an empty platform list serves every fixture', async () => {
+  const server = mockProxy({ platforms: '' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    assert.deepEqual(await (await fetch(`${base}/catalog`)).json(), [
+      'clockify',
+      'github-issues',
+      'google-calendar',
+      'pets',
+    ]);
+    for (const id of ['clockify', 'google-calendar', 'pets'])
+      assert.equal((await fetch(`${base}/catalog/${id}.yaml`)).status, 200);
+    assert.ok(server.github.createIssue);
+    assert.ok(server.calendar.events);
+    assert.ok(server.clockify.state);
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

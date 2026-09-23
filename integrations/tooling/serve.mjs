@@ -84,11 +84,10 @@ async function waitFor(url, what) {
 
 /**
  * Start the stack on `ports`. Returns a `stop()` that kills all three.
- * `platforms` is the mock proxy's fixture set; it is passed as
- * MOCK_PROXY_PLATFORMS, which mock-proxy.mjs does not read yet — it serves
- * its full built-in set regardless. Wiring that up is §4 of
- * integrations/PARALLEL_LANES.md; passing it now costs nothing and means the
- * callers do not change when it lands.
+ * `platforms` is the mock proxy's fixture set, passed as
+ * MOCK_PROXY_PLATFORMS: the mock serves only those of them that have a
+ * fixture under integrations/localthought/fixtures/, and every fixture when
+ * the list is empty. See §4 of integrations/PARALLEL_LANES.md.
  */
 export async function bringUp({ ports, platforms = [], label = 'shared' }) {
   const config = loadLanes();
