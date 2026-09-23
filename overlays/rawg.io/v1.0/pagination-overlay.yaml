@@ -1,0 +1,42 @@
+overlay: 1.0.0
+info:
+  title: RAWG Video Games Database API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            The RAWG API uses page-number pagination with `next` / `previous`
+            link navigation. Pass `page` (1-based) to select a page and
+            `page_size` to control how many items are returned. Responses
+            include a `count` field with the total number of matching records
+            and `next` / `previous` URIs for navigating between pages.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  Page number within the paginated result set. 1-based.
+              page_size:
+                role: pageSize
+                description: >
+                  Number of results to return per page.
+          response:
+            bodyFields:
+              count:
+                role: totalCount
+                description: >
+                  Total number of items available across all pages.
+              next:
+                role: nextLink
+                description: >
+                  URI of the next page of results, or null if this is the
+                  last page.
+              previous:
+                role: prevLink
+                description: >
+                  URI of the previous page of results, or null if this is
+                  the first page.

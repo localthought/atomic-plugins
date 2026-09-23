@@ -1,0 +1,43 @@
+overlay: 1.0.0
+info:
+  title: Svix API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            Svix uses cursor-based pagination with an `iterator` token.
+            List responses wrap results in an envelope containing a `data`
+            array, a `done` boolean, and a `next_iterator` cursor string.
+            When `done` is false, pass `next_iterator` as the `iterator`
+            query parameter on the next request to retrieve the following
+            page. The default page size is 50 and the maximum is 250.
+          request:
+            queryParameters:
+              iterator:
+                role: pageToken
+                description: >
+                  The pagination cursor returned as `next_iterator` from a
+                  previous response. Omit or pass null to start from the
+                  first page.
+              limit:
+                role: pageSize
+                description: >
+                  The number of items to return per page. Defaults to 50.
+                  Maximum is 250.
+          response:
+            bodyFields:
+              next_iterator:
+                role: nextPageToken
+                description: >
+                  Cursor token to pass as `iterator` on the next request to
+                  retrieve the following page of results. Present when
+                  `done` is false.
+              done:
+                role: hasMore
+                description: >
+                  `false` when additional pages exist; `true` when the
+                  current page is the last page of results.

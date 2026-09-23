@@ -1,0 +1,26 @@
+overlay: 1.0.0
+info:
+  title: Netlify API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Netlify uses page-number pagination across its list endpoints.
+            Pass `page` (1-based) and `per_page` to control the result window.
+            These parameters appear consistently on endpoints such as audit
+            logs, form submissions, site builds, and deploys.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. 1-based index; omit or pass
+                  1 to start from the beginning.
+              per_page:
+                role: pageSize
+                description: >
+                  The number of results to return per page.

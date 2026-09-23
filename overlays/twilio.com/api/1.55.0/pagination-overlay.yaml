@@ -1,0 +1,78 @@
+overlay: 1.0.0
+info:
+  title: Twilio API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >
+            Twilio list responses include `next_page_uri` (a relative URI) for
+            the next page. Follow this URI to retrieve the next page of results.
+            An absent or null `next_page_uri` indicates the last page.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          request:
+            queryParameters:
+              PageSize:
+                role: pageSize
+                description: >
+                  How many resources to return in each list page. The default
+                  is 50, and the maximum is 1000.
+          response:
+            bodyFields:
+              next_page_uri:
+                role: nextLink
+                description: >
+                  The URI of the next page of results, relative to the API
+                  root. Null when there are no more pages.
+        pageToken:
+          type: pageToken
+          description: >
+            Twilio supports token-based pagination via the `PageToken`
+            parameter. Use the token returned in the response's `next_page_uri`
+            query string to fetch subsequent pages without manually tracking
+            offsets.
+          request:
+            queryParameters:
+              PageToken:
+                role: pageToken
+                description: >
+                  The page token. This is provided by the API in the
+                  `next_page_uri` query string of the previous response.
+              PageSize:
+                role: pageSize
+                description: >
+                  How many resources to return in each list page. The default
+                  is 50, and the maximum is 1000.
+        pageNumber:
+          type: pageNumber
+          description: >
+            Twilio also supports offset-based pagination via the `Page`
+            parameter. Note: Twilio recommends using token-based pagination
+            (`PageToken`) for reliability.
+          request:
+            queryParameters:
+              Page:
+                role: page
+                description: >
+                  The page index. This value is simply for client state and
+                  is not used server-side.
+              PageSize:
+                role: pageSize
+                description: >
+                  How many resources to return in each list page. The default
+                  is 50, and the maximum is 1000.
+          response:
+            bodyFields:
+              page:
+                role: currentPage
+                description: Current page number.
+              page_size:
+                role: pageSize
+                description: Number of records returned per page.

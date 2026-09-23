@@ -1,0 +1,35 @@
+overlay: 1.0.0
+info:
+  title: Todoist API v1 Pagination Schemes
+  version: 1.0.0
+# Todoist API v1 uses opaque cursor pagination. List responses contain a
+# `results` array and `next_cursor`; the cursor is omitted (or null) on the
+# final page. `limit` is the page-size control on both collections.
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          request:
+            queryParameters:
+              cursor:
+                role: cursor
+                description: Opaque cursor returned by the preceding page.
+              limit:
+                role: pageSize
+                description: Maximum number of results per page.
+          response:
+            bodyFields:
+              next_cursor:
+                role: nextCursor
+                description: Opaque cursor for the next page, when present.
+
+  - target: $.paths['/projects'].get
+    update:
+      x-pagination:
+        - scheme: cursor
+  - target: $.paths['/tasks'].get
+    update:
+      x-pagination:
+        - scheme: cursor

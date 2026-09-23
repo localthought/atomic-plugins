@@ -1,0 +1,50 @@
+overlay: 1.0.0
+info:
+  title: Hetzner Cloud API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            The Hetzner Cloud API uses page-number pagination. Pass `page`
+            (1-based, default 1) and `per_page` (default 25, maximum 50) to
+            control the result window. Responses include a `meta.pagination`
+            object with the current page, per_page, total_entries count, and
+            next_page / previous_page / last_page navigation values.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page to fetch. First page is 1. Defaults to 1.
+              per_page:
+                role: pageSize
+                description: >
+                  Number of items per page. Defaults to 25. Maximum is 50.
+          response:
+            bodyFields:
+              meta.pagination.next_page:
+                role: nextPage
+                description: >
+                  The page number of the next page, or null if this is the
+                  last page.
+              meta.pagination.previous_page:
+                role: prevPage
+                description: >
+                  The page number of the previous page, or null if this is
+                  the first page.
+              meta.pagination.last_page:
+                role: totalPages
+                description: >
+                  The page number of the last page. Null when unknown.
+              meta.pagination.total_entries:
+                role: totalCount
+                description: >
+                  The total number of entries available across all pages.
+              meta.pagination.page:
+                role: page
+                description: >
+                  The current page number returned in this response.

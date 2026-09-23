@@ -1,0 +1,26 @@
+overlay: 1.0.0
+info:
+  title: AWS ECS API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            ECS list operations (e.g. ListClusters, ListServices, ListTasks,
+            ListContainerInstances) use nextToken-based pagination in the
+            JSON request body. `maxResults` limits the number of results
+            per request, and `nextToken` from the previous response continues
+            pagination.
+          request:
+            bodyFields:
+              nextToken:
+                role: pageToken
+              maxResults:
+                role: pageSize
+          response:
+            bodyFields:
+              nextToken:
+                role: nextPageToken

@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS DynamoDB API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            DynamoDB operations use a NextToken (or ExclusiveStartKey for
+            Query/Scan) in the JSON request body to resume pagination. The
+            response returns a NextToken when more results are available.
+            Limit controls the maximum number of items evaluated per request.
+          request:
+            bodyFields:
+              NextToken:
+                role: pageToken
+              Limit:
+                role: pageSize
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

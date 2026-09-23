@@ -1,0 +1,195 @@
+overlay: 1.0.0
+info:
+  title: Google Calendar API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        aclSync:
+          type: incrementalSync
+          description: >
+            The acl.list method uses page-token pagination combined with
+            incremental sync. Pass `pageToken` to page through the current
+            result set. The last page of a full listing omits
+            `nextPageToken` and returns `nextSyncToken` instead; persist it
+            and send it back as `syncToken` on a later request to receive
+            only the ACL rules that changed since then. If the syncToken
+            expires, the server returns 410 GONE and the client must
+            perform a full sync without a syncToken.
+          autoDetect: false
+          request:
+            queryParameters:
+              maxResults:
+                role: pageSize
+                description: >
+                  Maximum number of entries returned on one result page. By
+                  default the value is 100 entries. The page size can never
+                  be larger than 250 entries.
+              pageToken:
+                role: pageToken
+                description: Token specifying which result page to return.
+              syncToken:
+                role: syncToken
+                description: >
+                  Token obtained from the nextSyncToken field returned on
+                  the last page of results from the previous list request.
+          response:
+            envelope:
+              itemsField: items
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken
+                description: >
+                  Token used to access the next page of this result.
+                  Omitted if no further results are available, in which
+                  case nextSyncToken is provided.
+              nextSyncToken:
+                role: nextSyncToken
+                description: >
+                  Token used at a later point in time to retrieve only the
+                  entries that have changed since this result was returned.
+                  Omitted if further results are available, in which case
+                  nextPageToken is provided.
+        calendarListSync:
+          type: incrementalSync
+          description: >
+            The calendarList.list method uses page-token pagination
+            combined with incremental sync, identical in shape to
+            aclSync but scoped to the authenticated user's calendar list.
+          autoDetect: false
+          request:
+            queryParameters:
+              maxResults:
+                role: pageSize
+                description: >
+                  Maximum number of entries returned on one result page. By
+                  default the value is 100 entries. The page size can never
+                  be larger than 250 entries.
+              pageToken:
+                role: pageToken
+                description: Token specifying which result page to return.
+              syncToken:
+                role: syncToken
+                description: >
+                  Token obtained from the nextSyncToken field returned on
+                  the last page of results from the previous list request.
+          response:
+            envelope:
+              itemsField: items
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken
+                description: >
+                  Token used to access the next page of this result.
+                  Omitted if no further results are available, in which
+                  case nextSyncToken is provided.
+              nextSyncToken:
+                role: nextSyncToken
+                description: >
+                  Token used at a later point in time to retrieve only the
+                  entries that have changed since this result was returned.
+                  Omitted if further results are available, in which case
+                  nextPageToken is provided.
+        eventSync:
+          type: incrementalSync
+          description: >
+            The events.list method uses page-token pagination combined
+            with incremental sync. Pass `pageToken` to page through the
+            current result set. The last page of a full listing omits
+            `nextPageToken` and returns `nextSyncToken` instead; persist it
+            and send it back as `syncToken` on a later request to receive
+            only the events that changed since then. Several filter
+            parameters (iCalUID, orderBy, privateExtendedProperty, q,
+            sharedExtendedProperty, timeMin, timeMax, updatedMin) cannot be
+            combined with `syncToken`.
+          autoDetect: false
+          request:
+            queryParameters:
+              maxResults:
+                role: pageSize
+                description: >
+                  Maximum number of events returned on one result page. By
+                  default the value is 250 events. The page size can never
+                  be larger than 2500 events.
+              pageToken:
+                role: pageToken
+                description: Token specifying which result page to return.
+              syncToken:
+                role: syncToken
+                description: >
+                  Token obtained from the nextSyncToken field returned on
+                  the last page of results from the previous list request.
+          response:
+            envelope:
+              itemsField: items
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken
+                description: >
+                  Token used to access the next page of this result.
+                  Omitted if no further results are available, in which
+                  case nextSyncToken is provided.
+              nextSyncToken:
+                role: nextSyncToken
+                description: >
+                  Token used at a later point in time to retrieve only the
+                  entries that have changed since this result was returned.
+                  Omitted if further results are available, in which case
+                  nextPageToken is provided.
+        settingsSync:
+          type: incrementalSync
+          description: >
+            The settings.list method uses page-token pagination combined
+            with incremental sync, identical in shape to aclSync but
+            scoped to the authenticated user's settings.
+          autoDetect: false
+          request:
+            queryParameters:
+              maxResults:
+                role: pageSize
+                description: >
+                  Maximum number of entries returned on one result page. By
+                  default the value is 100 entries. The page size can never
+                  be larger than 250 entries.
+              pageToken:
+                role: pageToken
+                description: Token specifying which result page to return.
+              syncToken:
+                role: syncToken
+                description: >
+                  Token obtained from the nextSyncToken field returned on
+                  the last page of results from the previous list request.
+          response:
+            envelope:
+              itemsField: items
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken
+                description: >
+                  Token used to access the next page of this result.
+                  Omitted if no further results are available, in which
+                  case nextSyncToken is provided.
+              nextSyncToken:
+                role: nextSyncToken
+                description: >
+                  Token used at a later point in time to retrieve only the
+                  entries that have changed since this result was returned.
+                  Omitted if further results are available, in which case
+                  nextPageToken is provided.
+  - target: $.paths['/calendars/{calendarId}/acl'].get
+    update:
+      x-pagination:
+        - scheme: aclSync
+  - target: $.paths['/users/me/calendarList'].get
+    update:
+      x-pagination:
+        - scheme: calendarListSync
+  - target: $.paths['/calendars/{calendarId}/events'].get
+    update:
+      x-pagination:
+        - scheme: eventSync
+  - target: $.paths['/users/me/settings'].get
+    update:
+      x-pagination:
+        - scheme: settingsSync

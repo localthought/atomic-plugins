@@ -1,0 +1,32 @@
+overlay: 1.0.0
+info:
+  title: Braze API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        page:
+          type: pageNumber
+          description: >-
+            Many Braze list endpoints (campaigns, canvases, segments, etc.)
+            use page-number pagination. `page` is zero-based (default 0) and
+            `limit` controls results per page (default 100).
+          request:
+            queryParameters:
+              page:
+                role: page
+              limit:
+                role: pageSize
+        offset:
+          type: pageNumber
+          description: >-
+            Some Braze endpoints (e.g. content blocks, email templates) use
+            offset-based pagination with `offset` (records to skip) and
+            `limit` (max results to return).
+          request:
+            queryParameters:
+              offset:
+                role: offset
+              limit:
+                role: pageSize

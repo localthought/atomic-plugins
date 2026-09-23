@@ -1,0 +1,118 @@
+overlay: 1.0.0
+info:
+  title: MarketCheck Cars API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Despite its name, `start` is documented as a 1-based page number
+          ("Page number to fetch the results for the given criteria"), not
+          an item offset. `rows` is the page size (default 10, max 50).
+          Response envelopes report `num_found` as the total match count.
+        request:
+          queryParameters:
+            start:
+              role: page
+            rows:
+              role: pageSize
+        response:
+          bodyFields:
+            num_found:
+              role: totalCount
+      pageOnly:
+        type: pageNumber
+        description: >-
+          Used by the recall/history lookups, which only expose a 1-based
+          `page` parameter with no client-controlled page size.
+        request:
+          queryParameters:
+            page:
+              role: page
+- target: "$.paths['/car/recall/{vin}'].get"
+  update:
+    x-pagination:
+    - scheme: pageOnly
+- target: "$.paths['/history/car/uk/{vrm}'].get"
+  update:
+    x-pagination:
+    - scheme: pageOnly
+- target: "$.paths['/history/car/{vin}'].get"
+  update:
+    x-pagination:
+    - scheme: pageOnly
+- target: "$.paths['/car/dealer/inventory/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/dealers/car'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/dealers/car/uk'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/dealers/heavy-equipment'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/dealers/motorcycle'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/dealers/rv'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/active/rank'].post"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/auction/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/fsbo/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/incentive/oem'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/recents'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/uk/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/car/uk/recents'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/heavy-equipment/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/motorcycle/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/rv/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/search/rv/uk/active'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: Deutsche Bahn Station Data (STADA) API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >-
+            The Deutsche Bahn STADA API uses offset-based pagination. `offset`
+            sets the starting position for results (default 0) and `limit`
+            controls the maximum number of items returned (default/max 10000).
+          request:
+            queryParameters:
+              offset:
+                role: offset
+              limit:
+                role: pageSize

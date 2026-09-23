@@ -1,0 +1,29 @@
+overlay: 1.0.0
+info:
+  title: CircleCI API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            CircleCI uses offset-based pagination on collection endpoints
+            such as recent builds and project builds. Pass `limit` to
+            control how many items are returned per request (default 30,
+            maximum 100) and `offset` to skip a number of records from the
+            beginning of the result set (default 0).
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The number of items to return. Default is 30. Maximum
+                  is 100.
+              offset:
+                role: offset
+                description: >
+                  The number of items to skip from the start of the result
+                  set. Default is 0. Increment by `limit` to fetch
+                  successive pages.

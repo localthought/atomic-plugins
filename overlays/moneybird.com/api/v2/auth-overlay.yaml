@@ -1,0 +1,504 @@
+---
+overlay: 1.0.0
+info:
+  title: Moneybird API Authentication Profile
+  version: 1.0.0
+actions:
+- target: "$.components.securitySchemes"
+  update:
+    moneybirdOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://moneybird.com/oauth/authorize
+          tokenUrl: https://moneybird.com/oauth/token
+          scopes:
+            sales_invoices: Read Moneybird sales invoices data.
+            documents: Read Moneybird documents data.
+            estimates: Read Moneybird estimates data.
+            bank: Read Moneybird bank data.
+            time_entries: Read Moneybird time entries data.
+            settings: Read Moneybird settings data.
+- target: "$.paths['/administrations.json'].get"
+  update:
+    security:
+    - moneybirdOAuth: []
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/assets/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/assets.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/contacts/{contact_id}/contact_people/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - bank
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/contacts/{contact_id}/moneybird_payments_mandate.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - bank
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/contacts/{contact_id}/additional_charges.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/contacts/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - bank
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/contacts.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - bank
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/custom_fields.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/document_styles.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/general_documents/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/general_documents.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/general_journal_documents/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/general_journal_documents.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/purchase_invoices/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/purchase_invoices.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/receipts/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/receipts.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/typeless_documents/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/documents/typeless_documents.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - documents
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/downloads.json'].get"
+  update:
+    security:
+    - moneybirdOAuth: []
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/estimates/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/estimates.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/external_sales_invoices/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/external_sales_invoices.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/financial_accounts.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/financial_mutations/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/financial_mutations.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/identities/default.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/identities/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/identities.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/ledger_accounts/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/ledger_accounts.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/payments/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth: []
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/products/identifier/{identifier}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/products/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/products.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/projects/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/projects.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/purchase_transactions/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/purchase_transactions.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/recurring_sales_invoices/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/recurring_sales_invoices.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/sales_invoices/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/sales_invoices.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/subscription_templates.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/subscriptions/{id}/additional_charges.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/subscriptions/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/subscriptions.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - sales_invoices
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_list_groups/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_list_tasks/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_list_templates/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_list_templates.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_lists/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/task_lists.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - bank
+      - documents
+      - estimates
+      - sales_invoices
+      - settings
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/tax_rates.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/time_entries/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/time_entries.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - time_entries
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/users.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/verifications.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/webhooks.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/workflows/{id}.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []
+- target: "$.paths['/{administration_id}/workflows.json'].get"
+  update:
+    security:
+    - moneybirdOAuth:
+      - settings
+    - moneybirdOAuth:
+      - sales_invoices
+    - moneybirdOAuth:
+      - documents
+    - moneybirdOAuth:
+      - estimates
+    - moneybirdOAuth:
+      - bank
+    - bearerAuth: []

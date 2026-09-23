@@ -1,0 +1,27 @@
+overlay: 1.0.0
+info:
+  title: Spotify Web API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >
+            Spotify playlist collections use offset-based pagination. The
+            response contains `next`, `total`, and the current page's `limit`.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+              offset:
+                role: offset
+          response:
+            bodyFields:
+              next:
+                role: nextLink
+              total:
+                role: totalCount
+              limit:
+                role: pageSize

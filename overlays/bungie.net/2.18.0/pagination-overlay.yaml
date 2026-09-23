@@ -1,0 +1,40 @@
+overlay: 1.0.0
+info:
+  title: Bungie.net API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      armorySearch:
+        type: pageNumber
+        description: >-
+          0-based page number. The response is wrapped in the API's
+          standard `Response` envelope; `hasMore`/`useTotalResults` are
+          reported but don't map to a role this extension defines, so
+          only the total result count is described here.
+        request:
+          queryParameters:
+            page:
+              role: page
+        response:
+          bodyFields:
+            Response.results.totalResults:
+              role: totalCount
+      activityHistory:
+        type: pageNumber
+        description: 0-based page number with a client-controlled row count.
+        request:
+          queryParameters:
+            page:
+              role: page
+            count:
+              role: pageSize
+- target: "$.paths['/Destiny2/Armory/Search/{type}/{searchTerm}/'].get"
+  update:
+    x-pagination:
+    - scheme: armorySearch
+- target: "$.paths['/Destiny2/{membershipType}/Account/{destinyMembershipId}/Character/{characterId}/Stats/Activities/'].get"
+  update:
+    x-pagination:
+    - scheme: activityHistory

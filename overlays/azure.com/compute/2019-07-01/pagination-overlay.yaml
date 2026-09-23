@@ -1,0 +1,28 @@
+overlay: 1.0.0
+info:
+  title: Azure Compute API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            Azure Compute list operations use nextLink-style pagination (marked
+            with x-ms-pageable). When a response includes a `nextLink` field,
+            follow that URL to retrieve the next page of results. `$top`
+            limits the maximum number of items returned per page.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          request:
+            queryParameters:
+              $top:
+                role: pageSize
+          response:
+            bodyFields:
+              nextLink:
+                role: nextLink

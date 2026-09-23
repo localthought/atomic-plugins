@@ -1,0 +1,26 @@
+overlay: 1.0.0
+info:
+  title: Vimeo API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Vimeo uses page-number pagination across its collection
+            endpoints. Pass `page` (1-based) to select which page of results
+            to retrieve and `per_page` to control how many items are returned
+            per page. The maximum `per_page` value is 100.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page number of results to return. 1-based. Defaults
+                  to 1 when omitted.
+              per_page:
+                role: pageSize
+                description: >
+                  The number of items to return per page. Maximum is 100.

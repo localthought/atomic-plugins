@@ -1,0 +1,21 @@
+overlay: 1.0.0
+info:
+  title: Clever Data API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            Clever uses cursor-based pagination. Pass an item ID as
+            `starting_after` to fetch the next page of results (items
+            appearing after that ID), or `ending_before` to fetch the
+            previous page. `limit` controls the page size.
+          request:
+            queryParameters:
+              starting_after:
+                role: pageToken
+              limit:
+                role: pageSize

@@ -1,0 +1,44 @@
+overlay: 1.0.0
+info:
+  title: Salesloft API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Salesloft uses page-number pagination across all list endpoints.
+            Pass `page` (1-based, default 1) and `per_page` (default 25,
+            range 1–100). Set `include_paging_counts` to true to receive
+            `total_pages` and `total_count` in the response body, which
+            indicate the total number of pages and records available.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. 1-based; defaults to 1.
+              per_page:
+                role: pageSize
+                description: >
+                  Number of records to return per page. Range [1, 100];
+                  defaults to 25.
+              include_paging_counts:
+                role: metadata
+                description: >
+                  When true, the response includes `total_pages` and
+                  `total_count` pagination metadata. Defaults to false.
+          response:
+            bodyFields:
+              total_pages:
+                role: totalPages
+                description: >
+                  Total number of pages available. Only present when
+                  `include_paging_counts` is true.
+              total_count:
+                role: totalCount
+                description: >
+                  Total number of records matching the query. Only present
+                  when `include_paging_counts` is true.

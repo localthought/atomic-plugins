@@ -1,0 +1,24 @@
+overlay: 1.0.0
+info:
+  title: BigRedCloud API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            BigRedCloud uses hypermedia-style pagination via a `NextPageLink`
+            response body field. When the field is non-empty, it contains the
+            full URL for the next page of results. The `Count` field indicates
+            the number of items returned in the current page.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          response:
+            bodyFields:
+              NextPageLink:
+                role: nextLink

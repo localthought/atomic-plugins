@@ -1,0 +1,692 @@
+---
+overlay: 1.0.0
+info:
+  title: Moneybird Readable Record Resource Model
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      asset:
+        schema:
+          "$ref": "#/components/schemas/asset_response"
+        identity:
+          urlTemplate: "/{administration_id}/assets/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          assets:
+            urlTemplate: "/{administration_id}/assets.json"
+      contact_additional_charge:
+        schema:
+          "$ref": "#/components/schemas/subscription_additional_charge_response"
+        collections:
+          contact_additional_charges:
+            urlTemplate: "/{administration_id}/contacts/{contact_id}/additional_charges.json"
+      contact:
+        schema:
+          "$ref": "#/components/schemas/contact"
+        identity:
+          urlTemplate: "/{administration_id}/contacts/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          contacts:
+            urlTemplate: "/{administration_id}/contacts.json"
+      custom_field:
+        schema:
+          "$ref": "#/components/schemas/custom_field_response"
+        collections:
+          custom_fields:
+            urlTemplate: "/{administration_id}/custom_fields.json"
+      document_style:
+        schema:
+          "$ref": "#/components/schemas/document_style_response"
+        collections:
+          document_styles:
+            urlTemplate: "/{administration_id}/document_styles.json"
+      general_document:
+        schema:
+          "$ref": "#/components/schemas/general_document_response"
+        identity:
+          urlTemplate: "/{administration_id}/documents/general_documents/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          general_documents:
+            urlTemplate: "/{administration_id}/documents/general_documents.json"
+      general_journal_document:
+        schema:
+          "$ref": "#/components/schemas/general_journal_document_response"
+        identity:
+          urlTemplate: "/{administration_id}/documents/general_journal_documents/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          general_journal_documents:
+            urlTemplate: "/{administration_id}/documents/general_journal_documents.json"
+      purchase_invoice:
+        schema:
+          "$ref": "#/components/schemas/purchase_invoice_response"
+        identity:
+          urlTemplate: "/{administration_id}/documents/purchase_invoices/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          purchase_invoices:
+            urlTemplate: "/{administration_id}/documents/purchase_invoices.json"
+      receipt:
+        schema:
+          "$ref": "#/components/schemas/receipt_response"
+        identity:
+          urlTemplate: "/{administration_id}/documents/receipts/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          receipts:
+            urlTemplate: "/{administration_id}/documents/receipts.json"
+      typeless_document:
+        schema:
+          "$ref": "#/components/schemas/typeless_document_response"
+        identity:
+          urlTemplate: "/{administration_id}/documents/typeless_documents/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          typeless_documents:
+            urlTemplate: "/{administration_id}/documents/typeless_documents.json"
+      download:
+        schema:
+          "$ref": "#/components/schemas/download_response"
+        collections:
+          downloads:
+            urlTemplate: "/{administration_id}/downloads.json"
+      estimate:
+        schema:
+          "$ref": "#/components/schemas/estimate_response"
+        identity:
+          urlTemplate: "/{administration_id}/estimates/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          estimates:
+            urlTemplate: "/{administration_id}/estimates.json"
+      external_sales_invoice:
+        schema:
+          "$ref": "#/components/schemas/external_sales_invoice_response"
+        identity:
+          urlTemplate: "/{administration_id}/external_sales_invoices/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          external_sales_invoices:
+            urlTemplate: "/{administration_id}/external_sales_invoices.json"
+      financial_account:
+        schema:
+          "$ref": "#/components/schemas/financial_account_response"
+        collections:
+          financial_accounts:
+            urlTemplate: "/{administration_id}/financial_accounts.json"
+      financial_mutation:
+        schema:
+          "$ref": "#/components/schemas/financial_mutation_response"
+        identity:
+          urlTemplate: "/{administration_id}/financial_mutations/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          financial_mutations:
+            urlTemplate: "/{administration_id}/financial_mutations.json"
+      identity:
+        schema:
+          "$ref": "#/components/schemas/identity_response"
+        identity:
+          urlTemplate: "/{administration_id}/identities/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          identities:
+            urlTemplate: "/{administration_id}/identities.json"
+      ledger_account:
+        schema:
+          "$ref": "#/components/schemas/ledger_account_response"
+        identity:
+          urlTemplate: "/{administration_id}/ledger_accounts/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          ledger_accounts:
+            urlTemplate: "/{administration_id}/ledger_accounts.json"
+      product:
+        schema:
+          "$ref": "#/components/schemas/product_response"
+        identity:
+          urlTemplate: "/{administration_id}/products/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          products:
+            urlTemplate: "/{administration_id}/products.json"
+      project:
+        schema:
+          "$ref": "#/components/schemas/project_response"
+        identity:
+          urlTemplate: "/{administration_id}/projects/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          projects:
+            urlTemplate: "/{administration_id}/projects.json"
+      purchase_transaction:
+        schema:
+          "$ref": "#/components/schemas/purchase_transaction_response"
+        identity:
+          urlTemplate: "/{administration_id}/purchase_transactions/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          purchase_transactions:
+            urlTemplate: "/{administration_id}/purchase_transactions.json"
+      recurring_sales_invoice:
+        schema:
+          "$ref": "#/components/schemas/recurring_sales_invoice_response"
+        identity:
+          urlTemplate: "/{administration_id}/recurring_sales_invoices/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          recurring_sales_invoices:
+            urlTemplate: "/{administration_id}/recurring_sales_invoices.json"
+      sales_invoice:
+        schema:
+          "$ref": "#/components/schemas/sales_invoice_response"
+        identity:
+          urlTemplate: "/{administration_id}/sales_invoices/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          sales_invoices:
+            urlTemplate: "/{administration_id}/sales_invoices.json"
+      subscription_template:
+        schema:
+          "$ref": "#/components/schemas/subscription_template_response"
+        collections:
+          subscription_templates:
+            urlTemplate: "/{administration_id}/subscription_templates.json"
+      subscription_additional_charge:
+        schema:
+          "$ref": "#/components/schemas/subscription_additional_charge_response"
+        collections:
+          subscription_additional_charges:
+            urlTemplate: "/{administration_id}/subscriptions/{id}/additional_charges.json"
+      subscription:
+        schema:
+          "$ref": "#/components/schemas/subscription_response"
+        identity:
+          urlTemplate: "/{administration_id}/subscriptions/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          subscriptions:
+            urlTemplate: "/{administration_id}/subscriptions.json"
+      task_list_template:
+        schema:
+          "$ref": "#/components/schemas/task_list_template_response"
+        identity:
+          urlTemplate: "/{administration_id}/task_list_templates/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          task_list_templates:
+            urlTemplate: "/{administration_id}/task_list_templates.json"
+      task_list:
+        schema:
+          "$ref": "#/components/schemas/task_list_response"
+        identity:
+          urlTemplate: "/{administration_id}/task_lists/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          task_lists:
+            urlTemplate: "/{administration_id}/task_lists.json"
+      tax_rate:
+        schema:
+          "$ref": "#/components/schemas/tax_rate_response"
+        collections:
+          tax_rates:
+            urlTemplate: "/{administration_id}/tax_rates.json"
+      time_entrie:
+        schema:
+          "$ref": "#/components/schemas/time_entry_response"
+        identity:
+          urlTemplate: "/{administration_id}/time_entries/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          time_entries:
+            urlTemplate: "/{administration_id}/time_entries.json"
+      user:
+        schema:
+          "$ref": "#/components/schemas/extended_user_response"
+        collections:
+          users:
+            urlTemplate: "/{administration_id}/users.json"
+      verification:
+        schema:
+          "$ref": "#/components/schemas/verification_response"
+        identity:
+          urlTemplate: "/{administration_id}/verifications.json"
+      webhook:
+        schema:
+          "$ref": "#/components/schemas/webhook_response"
+        collections:
+          webhooks:
+            urlTemplate: "/{administration_id}/webhooks.json"
+      workflow:
+        schema:
+          "$ref": "#/components/schemas/workflow_response"
+        identity:
+          urlTemplate: "/{administration_id}/workflows/{id}.json"
+          bindings:
+            id:
+              field: id
+        collections:
+          workflows:
+            urlTemplate: "/{administration_id}/workflows.json"
+      moneybird_payments_mandate:
+        schema:
+          "$ref": "#/components/schemas/recurring_contract_response"
+        identity:
+          urlTemplate: "/{administration_id}/contacts/{contact_id}/moneybird_payments_mandate.json"
+- target: "$.paths['/{administration_id}/assets.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: asset
+      collection: assets
+- target: "$.paths['/{administration_id}/assets/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: asset
+- target: "$.paths['/{administration_id}/contacts/{contact_id}/additional_charges.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: contact_additional_charge
+      collection: contact_additional_charges
+- target: "$.paths['/{administration_id}/contacts.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: contact
+      collection: contacts
+- target: "$.paths['/{administration_id}/contacts/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: contact
+- target: "$.paths['/{administration_id}/custom_fields.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: custom_field
+      collection: custom_fields
+- target: "$.paths['/{administration_id}/document_styles.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: document_style
+      collection: document_styles
+- target: "$.paths['/{administration_id}/documents/general_documents.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: general_document
+      collection: general_documents
+- target: "$.paths['/{administration_id}/documents/general_documents/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: general_document
+- target: "$.paths['/{administration_id}/documents/general_journal_documents.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: general_journal_document
+      collection: general_journal_documents
+- target: "$.paths['/{administration_id}/documents/general_journal_documents/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: general_journal_document
+- target: "$.paths['/{administration_id}/documents/purchase_invoices.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: purchase_invoice
+      collection: purchase_invoices
+- target: "$.paths['/{administration_id}/documents/purchase_invoices/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: purchase_invoice
+- target: "$.paths['/{administration_id}/documents/receipts.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: receipt
+      collection: receipts
+- target: "$.paths['/{administration_id}/documents/receipts/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: receipt
+- target: "$.paths['/{administration_id}/documents/typeless_documents.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: typeless_document
+      collection: typeless_documents
+- target: "$.paths['/{administration_id}/documents/typeless_documents/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: typeless_document
+- target: "$.paths['/{administration_id}/downloads.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: download
+      collection: downloads
+- target: "$.paths['/{administration_id}/estimates.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: estimate
+      collection: estimates
+- target: "$.paths['/{administration_id}/estimates/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: estimate
+- target: "$.paths['/{administration_id}/external_sales_invoices.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: external_sales_invoice
+      collection: external_sales_invoices
+- target: "$.paths['/{administration_id}/external_sales_invoices/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: external_sales_invoice
+- target: "$.paths['/{administration_id}/financial_accounts.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: financial_account
+      collection: financial_accounts
+- target: "$.paths['/{administration_id}/financial_mutations.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: financial_mutation
+      collection: financial_mutations
+- target: "$.paths['/{administration_id}/financial_mutations/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: financial_mutation
+- target: "$.paths['/{administration_id}/identities.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: identity
+      collection: identities
+- target: "$.paths['/{administration_id}/identities/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: identity
+- target: "$.paths['/{administration_id}/ledger_accounts.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: ledger_account
+      collection: ledger_accounts
+- target: "$.paths['/{administration_id}/ledger_accounts/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: ledger_account
+- target: "$.paths['/{administration_id}/products.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: product
+      collection: products
+- target: "$.paths['/{administration_id}/products/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: product
+- target: "$.paths['/{administration_id}/projects.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: project
+      collection: projects
+- target: "$.paths['/{administration_id}/projects/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: project
+- target: "$.paths['/{administration_id}/purchase_transactions.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: purchase_transaction
+      collection: purchase_transactions
+- target: "$.paths['/{administration_id}/purchase_transactions/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: purchase_transaction
+- target: "$.paths['/{administration_id}/recurring_sales_invoices.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: recurring_sales_invoice
+      collection: recurring_sales_invoices
+- target: "$.paths['/{administration_id}/recurring_sales_invoices/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: recurring_sales_invoice
+- target: "$.paths['/{administration_id}/sales_invoices.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: sales_invoice
+      collection: sales_invoices
+- target: "$.paths['/{administration_id}/sales_invoices/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: sales_invoice
+- target: "$.paths['/{administration_id}/subscription_templates.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: subscription_template
+      collection: subscription_templates
+- target: "$.paths['/{administration_id}/subscriptions/{id}/additional_charges.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: subscription_additional_charge
+      collection: subscription_additional_charges
+- target: "$.paths['/{administration_id}/subscriptions.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: subscription
+      collection: subscriptions
+- target: "$.paths['/{administration_id}/subscriptions/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: subscription
+- target: "$.paths['/{administration_id}/task_list_templates.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: task_list_template
+      collection: task_list_templates
+- target: "$.paths['/{administration_id}/task_list_templates/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: task_list_template
+- target: "$.paths['/{administration_id}/task_lists.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: task_list
+      collection: task_lists
+- target: "$.paths['/{administration_id}/task_lists/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: task_list
+- target: "$.paths['/{administration_id}/tax_rates.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: tax_rate
+      collection: tax_rates
+- target: "$.paths['/{administration_id}/time_entries.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: time_entrie
+      collection: time_entries
+- target: "$.paths['/{administration_id}/time_entries/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: time_entrie
+- target: "$.paths['/{administration_id}/users.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: user
+      collection: users
+- target: "$.paths['/{administration_id}/verifications.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: verification
+- target: "$.paths['/{administration_id}/webhooks.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: webhook
+      collection: webhooks
+- target: "$.paths['/{administration_id}/workflows.json'].get"
+  update:
+    x-crud:
+      action: list
+      resource: workflow
+      collection: workflows
+- target: "$.paths['/{administration_id}/workflows/{id}.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: workflow
+- target: "$.paths['/{administration_id}/contacts/{contact_id}/moneybird_payments_mandate.json'].get"
+  update:
+    x-crud:
+      action: read
+      resource: moneybird_payments_mandate
+- target: "$.paths['/{administration_id}/contacts.json'].get.responses['200']"
+  update:
+    links:
+      subscriptions:
+        operationId: get_administration_id_subscriptions
+        parameters:
+          path.administration_id: "$request.path.administration_id"
+        x-for-each:
+          items: ''
+          parameters:
+            query.contact_id: "/id"
+      additionalCharges:
+        operationId: get_administration_id_contacts_id_additional_charges
+        parameters:
+          path.administration_id: "$request.path.administration_id"
+        x-for-each:
+          items: ''
+          parameters:
+            path.contact_id: "/id"
+      moneybirdPaymentsMandate:
+        operationId: get_administration_id_contacts_contact_id_moneybird_payments_mandate
+        parameters:
+          path.administration_id: "$request.path.administration_id"
+        x-for-each:
+          items: ''
+          parameters:
+            path.contact_id: "/id"
+- target: "$.paths['/{administration_id}/subscriptions.json'].get.responses['200']"
+  update:
+    links:
+      additionalCharges:
+        operationId: get_administration_id_subscriptions_id_additional_charges
+        parameters:
+          path.administration_id: "$request.path.administration_id"
+        x-for-each:
+          items: ''
+          parameters:
+            path.id: "/id"
+- target: "$.paths['/{administration_id}/subscriptions.json'].get"
+  update:
+    parameters:
+    - in: path
+      name: administration_id
+      required: true
+      schema:
+        "$ref": "#/components/schemas/administration_id"
+      description: The unique identifier of the administration
+    - name: contact_id
+      in: query
+      required: true
+      schema:
+        "$ref": "#/components/schemas/identifier"
+      examples:
+        ListsAllSubscriptionsForAContact:
+          summary: Lists all subscriptions for a contact
+          value: '497800890096288844'
+      x-filter:
+        field: "/contact_id"
+        operator: eq

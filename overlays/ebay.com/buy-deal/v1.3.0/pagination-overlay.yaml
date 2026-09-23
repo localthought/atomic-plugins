@@ -1,0 +1,40 @@
+overlay: 1.0.0
+info:
+  title: eBay Buy Deal API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          eBay's standard offset/limit pagination. The response echoes
+          limit/offset, reports the total match count, and includes a
+          next-page URI when further results are available.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+            next:
+              role: nextLink
+            limit:
+              role: pageSize
+- target: "$.paths['/deal_item'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/event'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/event_item'].get"
+  update:
+    x-pagination:
+    - scheme: offset

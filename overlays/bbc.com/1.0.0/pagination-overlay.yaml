@@ -1,0 +1,86 @@
+overlay: 1.0.0
+info:
+  title: BBC Nitro API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          The Nitro response envelope reports the current page, page size
+          and total match count under `results`, and a next-page URL under
+          `pagination.next.href`.
+        request:
+          queryParameters:
+            page:
+              role: page
+            page_size:
+              role: pageSize
+        response:
+          bodyFields:
+            results.page:
+              role: currentPage
+            results.page_size:
+              role: pageSize
+            results.total:
+              role: totalCount
+            pagination.next.href:
+              role: nextLink
+- target: "$.paths['/availabilities'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/broadcasts'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/groups'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/images'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/items'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/master_brands'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/people'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/pips'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/programme_details'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/programmes'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/promotions'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/schedules'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/services'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/versions'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

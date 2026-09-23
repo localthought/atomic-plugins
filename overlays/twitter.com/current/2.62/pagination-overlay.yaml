@@ -1,0 +1,37 @@
+overlay: 1.0.0
+info:
+  title: Twitter API v2 Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageToken:
+          type: pageToken
+          description: >
+            Twitter API v2 uses token-based pagination. List endpoints return
+            a `meta` object containing a `next_token` field. Pass this token
+            as the `pagination_token` (or `next_token` on search endpoints)
+            query parameter to fetch the next page. An absent `next_token`
+            in the response indicates no further pages.
+          request:
+            queryParameters:
+              pagination_token:
+                role: pageToken
+                description: >
+                  Used to request the next page of results. Pass the value of
+                  `next_token` from the previous response's `meta` object.
+              max_results:
+                role: pageSize
+                description: >
+                  Specifies the maximum number of results to return per
+                  request. The allowed range varies by endpoint (commonly
+                  1–100 or 10–500).
+          response:
+            bodyFields:
+              meta.next_token:
+                role: nextPageToken
+                description: >
+                  Token for the next page of results, found under
+                  `meta.next_token` in the response body. Absent when there
+                  are no more pages.

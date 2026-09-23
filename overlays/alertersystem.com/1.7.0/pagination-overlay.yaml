@@ -1,0 +1,393 @@
+overlay: 1.0.0
+info:
+  title: AlerterSystem API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          API Platform-generated collection endpoints, 1-based `page`
+          parameter. The default JSON representation is a bare array;
+          the API also offers an `application/ld+json` representation
+          with Hydra pagination metadata (hydra:totalItems,
+          hydra:view.hydra:next, etc.), which isn't described here since
+          it is a distinct response representation from the default one.
+        request:
+          queryParameters:
+            page:
+              role: page
+- target: "$.paths['/api/alert-log'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/alert-log-status-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/alert-service'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/alert-service-transport-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/credits-consumption'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/http-method-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/media-object'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/monitor'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/monitor-status-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/monitor-status-log'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/monitor-type-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/partition'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/ping'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/ping-method-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/team-invitation'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/team-member'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/team-member-role-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/timezone-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-alerta'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-all-my-sms'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-amazon-sns'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-bandwidth'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-chatwork'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-click-send'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-clickatell'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-contact-everyone'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-discord'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-email'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-engagespot'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-esendex'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-expo'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-firebase'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-forty-six-elks'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-free-mobile'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-freshdesk'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-gateway-api'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-gitter'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-google-chat'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-gotify'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-help-scout'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-infobip'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-iqsms'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-kaz-info-teh'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-light-sms'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-line-notify'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-linked-in'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-mailjet'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-mastodon'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-mattermost'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-mercure'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-message-bird'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-message-media'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-microsoft-teams'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-mobyt'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-octopush'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-one-signal'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-opsgenie'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-orange-sms'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-ovh-cloud'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-pager-duty'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-pager-tree'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-plivo'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-pushbullet'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-pushover'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-pushy'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-ring-central'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-rocket-chat'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sendberry'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sendinblue'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-simple-textin'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sinch'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-slack'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sms-biuras'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sms-factor'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-sms77'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-smsapi'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-smsc'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-smsmode'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-spot-hit'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-telegram'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-telnyx'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-termii'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-trello'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-turbo-sms'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-twilio'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-twitter'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-vonage'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-webhook'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-yunpian'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-zendesk'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/transport-zulip'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/user-account'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/user-account-level-code'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

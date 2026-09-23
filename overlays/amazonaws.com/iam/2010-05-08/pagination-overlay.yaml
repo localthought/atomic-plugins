@@ -1,0 +1,26 @@
+overlay: 1.0.0
+info:
+  title: AWS IAM API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        marker:
+          type: pageToken
+          description: >-
+            AWS IAM List operations use marker-based pagination. `Marker`
+            is the pagination token from a previous response, and `MaxItems`
+            limits the number of records returned per request. When the
+            response `IsTruncated` is true, a `Marker` value is included
+            for the next request.
+          request:
+            queryParameters:
+              Marker:
+                role: pageToken
+              MaxItems:
+                role: pageSize
+          response:
+            bodyFields:
+              Marker:
+                role: nextPageToken

@@ -1,0 +1,21 @@
+overlay: 1.0.0
+info:
+  title: BulkSMS API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            BulkSMS uses ID-based cursor pagination. Pass the minimum record
+            `id` using `min-id` to fetch records from that ID onwards. `limit`
+            controls the maximum number of records returned (default 1000,
+            max 10000).
+          request:
+            queryParameters:
+              min-id:
+                role: pageToken
+              limit:
+                role: pageSize

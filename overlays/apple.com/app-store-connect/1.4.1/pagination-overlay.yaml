@@ -1,0 +1,308 @@
+overlay: 1.0.0
+info:
+  title: App Store Connect API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      cursor:
+        type: pageToken
+        description: >-
+          App Store Connect paginates list endpoints with an opaque
+          limit-bounded cursor embedded in the links.next URL (there is
+          no separate cursor query parameter to set directly - clients
+          follow links.next as-is). The response meta.paging object
+          echoes the effective limit and reports the total match count.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+        response:
+          bodyFields:
+            links.next:
+              role: nextLink
+            meta.paging.total:
+              role: totalCount
+            meta.paging.limit:
+              role: pageSize
+- target: "$.paths['/v1/appCategories'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appCategories/{id}/subcategories'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appEncryptionDeclarations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appInfos/{id}/appInfoLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appPreviewSets/{id}/appPreviews'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appPreviewSets/{id}/relationships/appPreviews'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appPricePoints'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appPriceTiers'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appPriceTiers/{id}/pricePoints'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appScreenshotSets/{id}/appScreenshots'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appScreenshotSets/{id}/relationships/appScreenshots'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appStoreReviewDetails/{id}/appStoreReviewAttachments'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appStoreVersionLocalizations/{id}/appPreviewSets'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appStoreVersionLocalizations/{id}/appScreenshotSets'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/appStoreVersions/{id}/appStoreVersionLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/appInfos'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/appStoreVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/availableTerritories'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/betaAppLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/betaGroups'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/gameCenterEnabledVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/inAppPurchases'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/preReleaseVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/apps/{id}/prices'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaAppLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaAppReviewDetails'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaAppReviewSubmissions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaBuildLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaGroups'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaGroups/{id}/betaTesters'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaGroups/{id}/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaGroups/{id}/relationships/betaTesters'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaGroups/{id}/relationships/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaLicenseAgreements'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/apps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/betaGroups'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/relationships/apps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/relationships/betaGroups'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/betaTesters/{id}/relationships/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/buildBetaDetails'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds/{id}/betaBuildLocalizations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds/{id}/diagnosticSignatures'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds/{id}/icons'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds/{id}/individualTesters'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/builds/{id}/relationships/individualTesters'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/bundleIds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/bundleIds/{id}/bundleIdCapabilities'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/bundleIds/{id}/profiles'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/certificates'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/devices'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/diagnosticSignatures/{id}/logs'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/endUserLicenseAgreements/{id}/territories'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/gameCenterEnabledVersions/{id}/compatibleVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/gameCenterEnabledVersions/{id}/relationships/compatibleVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/preReleaseVersions'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/preReleaseVersions/{id}/builds'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/profiles'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/profiles/{id}/certificates'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/profiles/{id}/devices'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/territories'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/userInvitations'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/userInvitations/{id}/visibleApps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/users'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/users/{id}/relationships/visibleApps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor
+- target: "$.paths['/v1/users/{id}/visibleApps'].get"
+  update:
+    x-pagination:
+    - scheme: cursor

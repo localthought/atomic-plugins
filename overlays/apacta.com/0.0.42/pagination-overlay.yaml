@@ -1,0 +1,18 @@
+overlay: 1.0.0
+info:
+  title: Apacta API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Apacta uses page-number pagination. The `page` query parameter
+            selects which page to retrieve. Responses include a `pagination`
+            metadata object alongside the `data` array.
+          request:
+            queryParameters:
+              page:
+                role: page

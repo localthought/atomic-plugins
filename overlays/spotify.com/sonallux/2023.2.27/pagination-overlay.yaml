@@ -1,0 +1,102 @@
+overlay: 1.0.0
+info:
+  title: Spotify Web API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Spotify uses offset-based pagination for most list endpoints.
+            Pass `limit` to set the page size and `offset` to skip items.
+            The response wraps results in a Paging Object containing
+            `total`, `next`, and `previous` fields for navigation. When
+            `next` is null, you have reached the last page.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items to return. Default is 20,
+                  minimum is 1, maximum is 50 (or 100 for some endpoints).
+              offset:
+                role: offset
+                description: >
+                  The index of the first item to return. Default is 0.
+                  Use with `limit` to get the next set of items.
+          response:
+            bodyFields:
+              next:
+                role: nextLink
+                description: >
+                  URL to the next page of items, or null if this is the
+                  last page. The URL includes `offset` and `limit`
+                  parameters for the next page.
+              previous:
+                role: prevLink
+                description: >
+                  URL to the previous page of items, or null if this is
+                  the first page.
+              total:
+                role: totalCount
+                description: >
+                  The total number of items available to return across
+                  all pages.
+              offset:
+                role: currentOffset
+                description: >
+                  The offset of the items returned (the position in the
+                  list of the first item in the response).
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items in the response (as set in
+                  the query or by default).
+        cursor:
+          type: pageToken
+          description: >
+            Spotify uses cursor-based pagination for the Recently Played
+            and other streaming history endpoints. The response Cursor
+            Paging Object includes `cursors.after` and `cursors.before`
+            for forward and backward navigation respectively.
+          request:
+            queryParameters:
+              after:
+                role: pageToken
+                description: >
+                  A Unix timestamp in milliseconds. Returns all items
+                  after (but not including) this cursor position. Use
+                  the `cursors.after` value from the previous response.
+              before:
+                role: prevPageToken
+                description: >
+                  A Unix timestamp in milliseconds. Returns all items
+                  before (but not including) this cursor position.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items to return. Default is 20,
+                  minimum is 1, maximum is 50.
+          response:
+            bodyFields:
+              cursors.after:
+                role: nextPageToken
+                description: >
+                  The cursor to use as `after` parameter to get the next
+                  page of items.
+              cursors.before:
+                role: prevPageToken
+                description: >
+                  The cursor to use as `before` parameter to get the
+                  previous page of items.
+              next:
+                role: nextLink
+                description: >
+                  URL to the next page of items, or null if this is the
+                  last page.
+              total:
+                role: totalCount
+                description: >
+                  The total number of items available to return.

@@ -1,0 +1,37 @@
+overlay: 1.0.0
+info:
+  title: Slack API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            Slack uses cursor-based pagination. Pass the `next_cursor` value
+            from the previous response's `response_metadata` object as the
+            `cursor` parameter on the next request. An empty or absent
+            `next_cursor` indicates no further pages.
+          request:
+            queryParameters:
+              cursor:
+                role: cursor
+                description: >
+                  Paginate through collections of data by setting the `cursor`
+                  parameter to the value of `next_cursor` attribute returned by
+                  a previous request. Default value fetches the first "page"
+                  of the collection.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items to return. Must be between 1 and
+                  1000 inclusive.
+          response:
+            bodyFields:
+              response_metadata.next_cursor:
+                role: nextCursor
+                description: >
+                  Cursor token for the next page of results, found under
+                  `response_metadata.next_cursor` in the response body. An
+                  empty string indicates there are no more pages.

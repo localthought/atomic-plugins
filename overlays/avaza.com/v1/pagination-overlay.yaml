@@ -1,0 +1,29 @@
+overlay: 1.0.0
+info:
+  title: Avaza API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Avaza uses 1-based page-number pagination across all list endpoints.
+            `pageNumber` selects the page (starting from 1) and `pageSize`
+            controls items per page (max 1000). Responses include PageNumber,
+            PageSize, and TotalCount.
+          request:
+            queryParameters:
+              pageNumber:
+                role: page
+              pageSize:
+                role: pageSize
+          response:
+            bodyFields:
+              PageNumber:
+                role: currentPage
+              PageSize:
+                role: pageSize
+              TotalCount:
+                role: totalCount

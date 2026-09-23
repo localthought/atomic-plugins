@@ -1,0 +1,54 @@
+overlay: 1.0.0
+info:
+  title: Docker Hub API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Docker Hub uses page-number pagination with a `count`/`next`/`previous`
+          response envelope (Django REST Framework style). `next` and
+          `previous` are full URLs already carrying the `page`/`page_size`
+          query parameters.
+        request:
+          queryParameters:
+            page:
+              role: page
+            page_size:
+              role: pageSize
+        response:
+          bodyFields:
+            count:
+              role: totalCount
+            next:
+              role: nextLink
+      pageNumberNoEnvelope:
+        type: pageNumber
+        description: >-
+          Same request parameters as `pageNumber`, but the response is not
+          modeled with a count/next/previous envelope in this spec.
+        request:
+          queryParameters:
+            page:
+              role: page
+            page_size:
+              role: pageSize
+- target: "$.paths['/v2/access-tokens'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v2/auditlogs/{account}'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumberNoEnvelope
+- target: "$.paths['/v2/namespaces/{namespace}/repositories/{repository}/images'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v2/namespaces/{namespace}/repositories/{repository}/images/{digest}/tags'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

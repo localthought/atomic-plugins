@@ -1,0 +1,27 @@
+overlay: 1.0.0
+info:
+  title: Ably Platform API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            Ably uses RFC 5988 Link header pagination. The response `link`
+            header contains a URL with rel="next" for the next page of
+            results. `limit` controls the page size (default 100).
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchHeaders: true
+            requireAll: false
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+          response:
+            headers:
+              link:
+                role: nextLink

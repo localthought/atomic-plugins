@@ -1,0 +1,65 @@
+overlay: 1.0.0
+info:
+  title: LaunchDarkly API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >
+            LaunchDarkly list endpoints use offset-based pagination. Pass `limit`
+            to control how many items to return and `offset` to skip items.
+            Responses follow the HAL format: `_links.next.href` contains the URL
+            of the next page and `_links.prev.href` the previous page.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The number of objects to return per page. Defaults to -1,
+                  which returns everything.
+              offset:
+                role: offset
+                description: >
+                  Where to start in the list. For example, an offset of 10 skips
+                  the first 10 items and returns items starting from the 11th.
+          response:
+            bodyFields:
+              _links.next.href:
+                role: nextLink
+                description: >
+                  Full URL of the next page of results. Absent on the last page.
+              _links.prev.href:
+                role: prevLink
+                description: >
+                  Full URL of the previous page of results. Absent on the first
+                  page.
+        cursor:
+          type: pageToken
+          description: >
+            LaunchDarkly user-search and user-list endpoints support scroll-based
+            pagination via the `scrollId` parameter. Pass the scroll ID returned
+            from the previous response's `_links.next.href` URL (as the
+            `scrollId` query parameter) to retrieve the next page. An HMAC
+            signature (`h`) is also required for authenticated scrolling.
+          request:
+            queryParameters:
+              scrollId:
+                role: cursor
+                description: >
+                  The scroll ID for the next page, extracted from the `scrollId`
+                  query parameter in the previous response's `_links.next.href`.
+              limit:
+                role: pageSize
+                description: >
+                  The number of objects to return per page.
+          response:
+            bodyFields:
+              _links.next.href:
+                role: nextLink
+                description: >
+                  Full URL of the next page of results. The `scrollId` query
+                  parameter within this URL is the cursor for the next request.
+                  Absent when there are no more results.

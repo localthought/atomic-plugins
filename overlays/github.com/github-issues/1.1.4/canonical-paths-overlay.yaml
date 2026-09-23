@@ -1,0 +1,142 @@
+overlay: 1.0.0
+info:
+  title: GitHub repository ID path aliases
+  version: 1.0.0
+actions:
+- target: $.paths
+  update:
+    /repositories/{repository_id}/issues:
+      get:
+        operationId: issues-list-for-repo-by-repository-id
+        parameters:
+        - name: repository_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The stable numeric repository ID used by canonical pagination
+            links.
+        - in: query
+          name: per_page
+          required: false
+          schema:
+            default: 30
+            type: integer
+        - in: query
+          name: page
+          required: false
+          schema:
+            default: 1
+            type: integer
+        responses:
+          '200':
+            content:
+              application/json:
+                schema:
+                  items:
+                    $ref: '#/components/schemas/issue'
+                  type: array
+            description: A page of issues (a top-level array).
+        security:
+        - githubOAuth:
+          - repo
+        summary: List repository issues
+        x-pagination:
+        - scheme: nextLink
+    /repositories/{repository_id}/issues/comments/{comment_id}:
+      get:
+        operationId: issue-comment-get-by-repository-id
+        parameters:
+        - name: repository_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The stable numeric repository ID used by canonical pagination
+            links.
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            type: integer
+        responses:
+          '200':
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/issue-comment'
+            description: The comment.
+        security:
+        - githubOAuth:
+          - repo
+        summary: Get a single issue comment
+    /repositories/{repository_id}/issues/{issue_number}:
+      get:
+        operationId: issues-get-by-repository-id
+        parameters:
+        - name: repository_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The stable numeric repository ID used by canonical pagination
+            links.
+        - in: path
+          name: issue_number
+          required: true
+          schema:
+            type: integer
+        responses:
+          '200':
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/issue'
+            description: The issue.
+        security:
+        - githubOAuth:
+          - repo
+        summary: Get an issue
+    /repositories/{repository_id}/issues/{issue_number}/comments:
+      get:
+        operationId: issue-comments-list-by-repository-id
+        parameters:
+        - name: repository_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The stable numeric repository ID used by canonical pagination
+            links.
+        - in: path
+          name: issue_number
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: per_page
+          required: false
+          schema:
+            default: 30
+            type: integer
+        - in: query
+          name: page
+          required: false
+          schema:
+            default: 1
+            type: integer
+        responses:
+          '200':
+            content:
+              application/json:
+                schema:
+                  items:
+                    $ref: '#/components/schemas/issue-comment'
+                  type: array
+            description: A page of comments (a top-level array).
+        security:
+        - githubOAuth:
+          - repo
+        summary: List comments on an issue
+        x-pagination:
+        - scheme: nextLink

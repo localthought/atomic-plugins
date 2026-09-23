@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS ECR API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            ECR list operations (e.g. DescribeRepositories, DescribeImages,
+            ListImages) use NextToken-based pagination in the JSON request
+            body. `maxResults` limits results per request, and `nextToken`
+            from the previous response continues pagination.
+          request:
+            bodyFields:
+              nextToken:
+                role: pageToken
+              maxResults:
+                role: pageSize
+          response:
+            bodyFields:
+              nextToken:
+                role: nextPageToken

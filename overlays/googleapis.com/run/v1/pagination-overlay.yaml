@@ -1,0 +1,32 @@
+overlay: 1.0.0
+info:
+  title: Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageToken:
+          type: pageToken
+          request:
+            queryParameters:
+              pageToken:
+                role: pageToken
+              pageSize:
+                role: pageSize
+          response:
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken
+        continue:
+          type: pageToken
+          request:
+            queryParameters:
+              continue:
+                role: pageToken
+              limit:
+                role: pageSize
+          response:
+            bodyFields:
+              nextPageToken:
+                role: nextPageToken

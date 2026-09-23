@@ -1,0 +1,42 @@
+overlay: 1.0.0
+info:
+  title: Linode API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Linode uses page-number pagination. Pass `page` (1-based) and
+            `page_size` to control results. Responses wrap data in an envelope
+            containing the current `page`, total `pages`, total `results`
+            count, and a `data` array. Page size defaults to 100 and must be
+            between 25 and 500.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. Defaults to 1. Must be a
+                  positive integer not exceeding the total number of pages.
+              page_size:
+                role: pageSize
+                description: >
+                  The number of items to return per page. Defaults to 100.
+                  Must be between 25 and 500 inclusive.
+          response:
+            bodyFields:
+              page:
+                role: page
+                description: >
+                  The current page number returned in this response.
+              pages:
+                role: totalPages
+                description: >
+                  The total number of pages available for this resource.
+              results:
+                role: totalCount
+                description: >
+                  The total number of results across all pages.

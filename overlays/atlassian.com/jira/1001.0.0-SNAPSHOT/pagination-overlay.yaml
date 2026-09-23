@@ -1,0 +1,75 @@
+overlay: 1.0.0
+info:
+  title: Jira Cloud REST API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        startAt:
+          type: offset
+          description: >
+            Jira Cloud uses offset-based pagination for most list endpoints,
+            with `startAt` and `maxResults` parameters. The response includes
+            `startAt`, `maxResults`, `total`, and `isLast` fields. When
+            `isLast` is true, or when `startAt` + items returned >= `total`,
+            you have fetched all results.
+          request:
+            queryParameters:
+              startAt:
+                role: offset
+                description: >
+                  The index of the first item to return in a page of results
+                  (page offset). The base index is 0.
+              maxResults:
+                role: pageSize
+                description: >
+                  The maximum number of items to return per page. The actual
+                  number returned may be less, even if more records exist.
+                  Default and maximum values vary by endpoint.
+          response:
+            bodyFields:
+              startAt:
+                role: currentOffset
+                description: >
+                  The index of the first item returned in this page of
+                  results.
+              maxResults:
+                role: pageSize
+                description: >
+                  The maximum number of results that could be on the page.
+              total:
+                role: totalCount
+                description: >
+                  The total number of results across all pages. Not always
+                  returned; may be absent for very large collections.
+              isLast:
+                role: hasMore
+                description: >
+                  Whether the page is the last one. When true, there are no
+                  more results to fetch. Note: isLast=true means no more
+                  pages; isLast=false means more pages exist.
+        offsetLimit:
+          type: offset
+          description: >
+            Some Jira Cloud endpoints (particularly newer ones) use `offset`
+            and `limit` instead of `startAt` and `maxResults`, with `total`
+            in the response.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+                description: >
+                  The number of records to skip before returning the first
+                  result. Default is 0.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of results to return. Default and
+                  maximum values vary by endpoint.
+          response:
+            bodyFields:
+              total:
+                role: totalCount
+                description: >
+                  The total number of items available across all pages.

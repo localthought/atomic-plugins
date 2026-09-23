@@ -1,0 +1,45 @@
+overlay: 1.0.0
+info:
+  title: Flickr API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Flickr uses page-number pagination across collection endpoints such
+            as photo search, favorites, photosets, and group topics. Pass `page`
+            to select the desired page and `per_page` to control the page size.
+            The response body contains `page` (current page), `pages` (total
+            pages), `perpage` (page size), and `total` (total item count).
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >-
+                  The page of results to return. Defaults to 1.
+              per_page:
+                role: pageSize
+                description: >-
+                  Number of results to return per page. The maximum value
+                  varies by method (up to 500 for photo search).
+          response:
+            bodyFields:
+              page:
+                role: currentPage
+                description: >-
+                  The current page of results returned.
+              pages:
+                role: totalPages
+                description: >-
+                  The total number of pages of results available.
+              perpage:
+                role: pageSize
+                description: >-
+                  The number of results returned per page.
+              total:
+                role: totalCount
+                description: >-
+                  The total number of results matching the query.

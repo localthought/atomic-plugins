@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: BigOven API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            BigOven uses 1-based page-number pagination across recipe search,
+            reviews, notes, and collection endpoints. `pg` selects the page
+            (starting from 1) and `rpp` controls the results per page.
+          request:
+            queryParameters:
+              pg:
+                role: page
+              rpp:
+                role: pageSize

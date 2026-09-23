@@ -1,0 +1,53 @@
+overlay: 1.0.0
+info:
+  title: InfluxDB OSS API Pagination Schemes
+  version: 2.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offsetLimit:
+          type: offsetLimit
+          description: >
+            InfluxDB OSS 2.x uses offset/limit pagination on most collection
+            endpoints (buckets, dashboards, checks, notificationEndpoints,
+            notificationRules, orgs, users, etc.). Clients pass an integer
+            `offset` (number of results to skip, default 0) and an integer
+            `limit` (maximum results to return, default 20, max 100) as query
+            parameters. There is no pagination envelope in the response; the
+            returned array is the full page of results, so clients should
+            continue incrementing `offset` by `limit` until they receive fewer
+            results than requested.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+                description: >
+                  The number of results to skip before returning items. Starts
+                  at 0. Increment by the value of `limit` to retrieve
+                  successive pages.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of results to return. Defaults to 20.
+                  Maximum allowed value is 100.
+        cursor:
+          type: pageToken
+          description: >
+            Some InfluxDB OSS 2.x list endpoints (notably GET /buckets) also
+            support cursor-based pagination via the `after` query parameter.
+            Pass the `id` of the last item returned to retrieve the next page
+            of results. When the response contains fewer items than the
+            requested `limit`, no further pages exist.
+          request:
+            queryParameters:
+              after:
+                role: cursor
+                description: >
+                  The ID of the last resource returned on the previous page.
+                  Pass this value to retrieve the next page. Omit to start
+                  from the beginning.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of results to return per page.

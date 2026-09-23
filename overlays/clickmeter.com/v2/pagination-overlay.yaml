@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: ClickMeter API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >-
+            ClickMeter uses offset-based pagination with `offset` (starting
+            position) and `limit` (maximum results). The response includes a
+            `lastKey` field which can be passed as the `offset` in the next
+            request for efficient cursor-style navigation.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+              limit:
+                role: pageSize
+          response:
+            bodyFields:
+              lastKey:
+                role: nextPageToken

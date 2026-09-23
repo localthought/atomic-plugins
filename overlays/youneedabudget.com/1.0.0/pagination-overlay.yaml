@@ -1,0 +1,34 @@
+overlay: 1.0.0
+info:
+  title: YNAB API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        serverKnowledge:
+          type: pageToken
+          description: >
+            The YNAB API uses server-knowledge delta-sync pagination rather
+            than traditional page-number or cursor pagination. Each response
+            includes a `server_knowledge` integer. On subsequent requests,
+            pass this value as `last_knowledge_of_server` to receive only the
+            entities that changed since the previous request. Omit the
+            parameter to receive the full data set. This pattern efficiently
+            syncs budget data by transferring only changed records.
+          request:
+            queryParameters:
+              last_knowledge_of_server:
+                role: pageToken
+                description: >
+                  The server knowledge value returned by a previous request.
+                  When provided, only entities changed since that point are
+                  returned. Omit to retrieve all entities from the beginning.
+          response:
+            bodyFields:
+              data.server_knowledge:
+                role: nextPageToken
+                description: >
+                  The current server knowledge value. Store and pass as
+                  `last_knowledge_of_server` in the next request to receive
+                  only entities that have changed since this response.

@@ -1,0 +1,38 @@
+overlay: 1.0.0
+info:
+  title: Apache Airflow API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >
+            The Apache Airflow REST API uses offset-based pagination across all
+            collection endpoints. Pass `limit` to set the page size and `offset`
+            to skip a number of items from the beginning of the result set.
+            Every collection response wraps its data under a resource-specific
+            key and includes a `total_entries` integer with the count of all
+            matching objects before the `limit`/`offset` window is applied.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  Maximum number of objects to return per page. Defaults to 100.
+                  Must be a positive integer.
+              offset:
+                role: offset
+                description: >
+                  Zero-based index of the first item to return. Defaults to 0.
+                  Use in combination with `limit` to paginate through results.
+          response:
+            bodyFields:
+              total_entries:
+                role: totalCount
+                description: >
+                  Total number of objects matching the request filters, before
+                  the `limit` and `offset` window is applied. Use this value
+                  together with `limit` and `offset` to determine whether
+                  additional pages exist.

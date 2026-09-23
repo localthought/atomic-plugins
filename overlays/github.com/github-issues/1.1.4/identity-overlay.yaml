@@ -1,0 +1,38 @@
+overlay: 1.0.0
+info:
+  title: GitHub Issues authenticated principal
+  version: 1.0.0
+actions:
+  - target: $.paths
+    update:
+      /user:
+        get:
+          operationId: getGitHubAuthenticatedPrincipal
+          summary: Get the authenticated GitHub user
+          security:
+            - githubOAuth: []
+          x-authenticated-principal:
+            kind: user
+            namespace: https://github.com
+            subject: $response.body#/id
+            identifier:
+              scope: provider
+              stable: true
+              reassigned: false
+            claims:
+              name: $response.body#/name
+              email: $response.body#/email
+              picture: $response.body#/avatar_url
+          responses:
+            '200':
+              description: The authenticated GitHub user.
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: {type: integer, format: int64}
+                      name: {type: string, nullable: true}
+                      email: {type: string, nullable: true}
+                      avatar_url: {type: string, format: uri}

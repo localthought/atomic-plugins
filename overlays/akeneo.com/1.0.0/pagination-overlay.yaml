@@ -1,0 +1,85 @@
+overlay: 1.0.0
+info:
+  title: Akeneo PIM REST API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Akeneo PIM uses page-number pagination by default. Pass `page`
+            (1-based) and `limit` to control the result window. Set
+            `with_count=true` to include the total item count in the response.
+            Responses follow the HAL format: `_links.next.href` contains the
+            URL of the next page, `_links.previous.href` the previous page, and
+            `current_page` reports the current page number.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page number to retrieve. 1-based, defaults to 1.
+              limit:
+                role: pageSize
+                description: >
+                  The number of results per page. Defaults to 10, maximum 100.
+              with_count:
+                role: hasMore
+                description: >
+                  When set to true, includes `items_count` (total number of
+                  items) in the response body.
+          response:
+            bodyFields:
+              current_page:
+                role: currentPage
+                description: >
+                  The current page number in the paginated result set.
+              _links.next.href:
+                role: nextLink
+                description: >
+                  Full URL of the next page of results. Absent on the last page.
+              _links.previous.href:
+                role: prevLink
+                description: >
+                  Full URL of the previous page of results. Absent on the first
+                  page.
+              _links.first.href:
+                role: firstLink
+                description: >
+                  Full URL of the first page of results.
+              items_count:
+                role: totalCount
+                description: >
+                  Total number of items across all pages. Only present when
+                  `with_count=true` is set in the request.
+        cursor:
+          type: pageToken
+          description: >
+            Akeneo PIM also supports cursor-based pagination via the
+            `search_after` parameter. Set `pagination_type=search_after` and
+            pass the cursor value from the previous response's `_links.next.href`
+            URL (the `search_after` query parameter within that URL) to retrieve
+            the next page. This approach is recommended for large datasets as it
+            remains stable even when records are added or removed.
+          request:
+            queryParameters:
+              search_after:
+                role: cursor
+                description: >
+                  The cursor for the next page. Extract this value from the
+                  `search_after` query parameter in the `_links.next.href` URL
+                  of the previous response.
+              limit:
+                role: pageSize
+                description: >
+                  The number of results per page. Defaults to 10, maximum 100.
+          response:
+            bodyFields:
+              _links.next.href:
+                role: nextLink
+                description: >
+                  Full URL of the next page of results. The `search_after` query
+                  parameter within this URL is the cursor for the next request.
+                  Absent when there are no more results.

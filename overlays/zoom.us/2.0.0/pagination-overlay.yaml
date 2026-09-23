@@ -1,0 +1,42 @@
+overlay: 1.0.0
+info:
+  title: Zoom API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageToken:
+          type: pageToken
+          description: >
+            Zoom uses token-based pagination. List responses include a
+            `next_page_token` field when more results are available. Pass
+            this token as the `next_page_token` query parameter on the next
+            request. Tokens expire after 15 minutes. An empty or absent
+            `next_page_token` in the response means you have reached the
+            last page.
+          request:
+            queryParameters:
+              next_page_token:
+                role: pageToken
+                description: >
+                  The next page token is used to paginate through large result
+                  sets. A next page token will be returned whenever the set of
+                  available results exceeds the current page size. The
+                  expiration period for this token is 15 minutes.
+              page_size:
+                role: pageSize
+                description: >
+                  The number of records returned within a single API call.
+                  Default is 30, maximum is 300.
+          response:
+            bodyFields:
+              next_page_token:
+                role: nextPageToken
+                description: >
+                  Token for the next page of results. Empty string when there
+                  are no more pages.
+              total_records:
+                role: totalCount
+                description: >
+                  The total number of all records available across all pages.

@@ -1,0 +1,23 @@
+overlay: 1.0.0
+info:
+  title: Azure Resources API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            Azure Resource Manager list operations use nextLink-style
+            pagination (x-ms-pageable). When a response includes a `nextLink`
+            field, follow that URL to retrieve the next page of results.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          response:
+            bodyFields:
+              nextLink:
+                role: nextLink

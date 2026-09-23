@@ -1,0 +1,57 @@
+overlay: 1.0.0
+info:
+  title: ART19 API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      jsonApiPageNumber:
+        type: pageNumber
+        description: >-
+          JSON:API-style page-number pagination. Pages are 1-based; the
+          maximum page size is 100. The response's `links` object carries
+          `next`/`prev`/`first`/`last` navigation URLs; no total-count
+          field is reported.
+        request:
+          queryParameters:
+            "page[number]":
+              role: page
+            "page[size]":
+              role: pageSize
+        response:
+          bodyFields:
+            links.next:
+              role: nextLink
+- target: "$.paths['/classification_inclusions'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/classifications'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/credits'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/episodes'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/networks'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/people'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/seasons'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber
+- target: "$.paths['/series'].get"
+  update:
+    x-pagination:
+    - scheme: jsonApiPageNumber

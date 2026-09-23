@@ -1,0 +1,36 @@
+overlay: 1.0.0
+info:
+  title: Mailchimp Marketing API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Mailchimp uses offset-based pagination across all list endpoints.
+            Use `count` to set the page size (max 1000, default 10) and
+            `offset` to skip records. The response includes a `total_items`
+            field giving the total count of available records, which you can
+            use to determine when you have fetched all pages.
+          request:
+            queryParameters:
+              count:
+                role: pageSize
+                description: >
+                  The number of records to return. Default value is 10.
+                  Maximum value is 1000.
+              offset:
+                role: offset
+                description: >
+                  The number of records to skip. Used to page through results.
+                  Default value is 0.
+          response:
+            bodyFields:
+              total_items:
+                role: totalCount
+                description: >
+                  The total number of items matching the query, across all
+                  pages. Use this with `count` and `offset` to determine
+                  whether additional pages exist.

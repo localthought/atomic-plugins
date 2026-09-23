@@ -1,0 +1,60 @@
+overlay: 1.0.0
+info:
+  title: github-issues OAuth authorization requirements
+  version: 1.1.0
+actions:
+- target: $.components.securitySchemes
+  update:
+    githubOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://github.com/login/oauth/authorize
+          tokenUrl: https://github.com/login/oauth/access_token
+          scopes:
+            repo: Access public and private repositories, including issues and comments.
+- target: $.paths['/repos/{owner}/{repo}/issues'].get
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues'].post
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/comments/{comment_id}'].delete
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/comments/{comment_id}'].get
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/comments/{comment_id}'].patch
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/{issue_number}'].get
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/{issue_number}'].patch
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/{issue_number}/comments'].get
+  update:
+    security:
+    - githubOAuth:
+      - repo
+- target: $.paths['/repos/{owner}/{repo}/issues/{issue_number}/comments'].post
+  update:
+    security:
+    - githubOAuth:
+      - repo

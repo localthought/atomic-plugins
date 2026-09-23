@@ -1,0 +1,32 @@
+overlay: 1.0.0
+info:
+  title: eBay Sell Account API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      cursor:
+        type: pageToken
+        description: >-
+          Cursor-based pagination via continuation_token. The response
+          reports the total match count and includes a next-page URI
+          when further results are available.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            continuation_token:
+              role: pageToken
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+            next:
+              role: nextLink
+            limit:
+              role: pageSize
+- target: "$.paths['/subscription'].get"
+  update:
+    x-pagination:
+    - scheme: cursor

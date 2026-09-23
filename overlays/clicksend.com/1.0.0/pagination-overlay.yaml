@@ -1,0 +1,31 @@
+overlay: 1.0.0
+info:
+  title: ClickSend API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            ClickSend uses page-number pagination. `page` selects the page
+            (default 1) and `limit` controls items per page (default 15,
+            range 15-100). Responses include total, current_page, last_page,
+            and next_page_url for navigation.
+          request:
+            queryParameters:
+              page:
+                role: page
+              limit:
+                role: pageSize
+          response:
+            bodyFields:
+              total:
+                role: totalCount
+              current_page:
+                role: currentPage
+              last_page:
+                role: totalPages
+              next_page_url:
+                role: nextLink

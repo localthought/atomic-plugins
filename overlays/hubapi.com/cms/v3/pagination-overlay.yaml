@@ -1,0 +1,24 @@
+overlay: 1.0.0
+info:
+  title: HubSpot CMS API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            HubSpot CMS APIs use cursor-based pagination. Pass the value of
+            `paging.next.after` from the previous response as the `after`
+            query parameter. The response also includes a `total` count.
+          request:
+            queryParameters:
+              after:
+                role: pageToken
+              limit:
+                role: pageSize
+          response:
+            bodyFields:
+              total:
+                role: totalCount

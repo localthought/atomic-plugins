@@ -1,0 +1,38 @@
+overlay: 1.0.0
+info:
+  title: Adyen Management API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Adyen Management API uses page-number pagination. Pass `pageNumber`
+            (0-based) and `pageSize` (maximum 100, default 10) to control the
+            result window. Responses include `itemsTotal` (total number of
+            items across all pages) and `pagesTotal` (total number of pages),
+            along with a `data` array containing the items for the requested
+            page.
+          request:
+            queryParameters:
+              pageNumber:
+                role: page
+                description: >
+                  The number of the page to fetch. Page numbering starts at 0.
+              pageSize:
+                role: pageSize
+                description: >
+                  The number of items to have on a page. Maximum is 100.
+                  Defaults to 10 for most endpoints.
+          response:
+            bodyFields:
+              itemsTotal:
+                role: totalCount
+                description: >
+                  The total number of items across all pages.
+              pagesTotal:
+                role: totalPages
+                description: >
+                  The total number of pages available.

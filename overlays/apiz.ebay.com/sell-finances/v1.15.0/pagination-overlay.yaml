@@ -1,0 +1,36 @@
+overlay: 1.0.0
+info:
+  title: eBay Sell Finances API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Zero-based offset/limit pagination. The response echoes `limit`
+          and `offset`, reports the total match count, and includes
+          `next`/`prev` call URIs when further pages exist.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+            next:
+              role: nextLink
+            limit:
+              role: pageSize
+- target: "$.paths['/payout'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/transaction'].get"
+  update:
+    x-pagination:
+    - scheme: offset

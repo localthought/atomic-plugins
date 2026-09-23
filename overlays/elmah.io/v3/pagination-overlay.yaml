@@ -1,0 +1,33 @@
+overlay: 1.0.0
+info:
+  title: elmah.io API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            The elmah.io API uses page-number pagination. Pass `pageIndex`
+            (0-based, default 0) and `pageSize` (default 15, maximum 100) to
+            control the result window. Responses include a `total` field with
+            the total number of matching items across all pages.
+          request:
+            queryParameters:
+              pageIndex:
+                role: page
+                description: >
+                  The page of results to fetch. 0-based: the first page is 0,
+                  the second page is 1, and so on. Defaults to 0.
+              pageSize:
+                role: pageSize
+                description: >
+                  The number of items to return per page. Defaults to 15.
+                  Maximum is 100.
+          response:
+            bodyFields:
+              total:
+                role: totalCount
+                description: >
+                  The total number of items matching the query across all pages.
