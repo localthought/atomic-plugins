@@ -273,7 +273,17 @@ struct RefreshToken {
     expires_in: Option<u64>,
 }
 
+fn needs_refresh(credential: &StoredCredential) -> bool {
+    matches!(
+        credential,
+        StoredCredential::OAuth { expires_at: Some(expires), .. } if *expires <= now() + 30
+    )
+}
+
 async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) -> Result<(), ()> {
+    if !needs_refresh(credential) {
+        return Ok(());
+    }
     let StoredCredential::OAuth {
         provider,
         access_token,
@@ -285,9 +295,6 @@ async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) 
         // A static API key has nothing to refresh.
         return Ok(());
     };
-    if expires_at.is_none_or(|expires| expires > now() + 30) {
-        return Ok(());
-    }
     let refresh_token_value = refresh_token.as_deref().ok_or(())?;
     let configured =
         crate::providers::Provider::configured(&state.catalog, provider).map_err(|_| ())?;
@@ -321,6 +328,267 @@ async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) 
     Ok(())
 }
 
+/// Associated data for a connection code's envelope, whether it holds a
+/// sealed credential (legacy) or a [`CodePointer`].
+pub(crate) const CODE_AAD: &[u8] = b"connection-credential-v1";
+
+/// What a connection code seals once its credential lives in a persistent
+/// connection (issue #40): a pointer, so the row stays the credential's one
+/// server-side copy and a refreshed or rotated refresh token is never held in
+/// two places.
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "kind")]
+pub(crate) enum CodePointer {
+    #[serde(rename = "connection")]
+    Connection { connection_id: String },
+}
+
+/// Test helper: redeems `code` and returns the connection it points at and
+/// that connection's serialized credential.
+#[cfg(test)]
+pub(crate) async fn take_code_credential(
+    security: &crate::security::Security,
+    code: &str,
+) -> Option<(String, Vec<u8>)> {
+    let envelope = security.take_connection_code(code).await.ok()??;
+    let plaintext = security.open(&envelope, CODE_AAD)?;
+    let CodePointer::Connection { connection_id } = serde_json::from_slice(&plaintext).ok()?;
+    let record = security.load_connection(&connection_id).await.ok()??;
+    Some((connection_id, record.credential))
+}
+
+/// Seals a fresh single-use connection code pointing at `connection_id`.
+pub(crate) async fn mint_code_for_connection(
+    security: &crate::security::Security,
+    connection_id: &str,
+) -> Result<String, String> {
+    let envelope = security.seal(
+        &serde_json::to_vec(&CodePointer::Connection {
+            connection_id: connection_id.to_owned(),
+        })
+        .map_err(|e| e.to_string())?,
+        CODE_AAD,
+    )?;
+    let code = crate::connect::random();
+    security.store_connection_code(&code, &envelope).await?;
+    Ok(code)
+}
+
+/// How the caller authenticated. Decides what happens to the credential
+/// after the request.
+enum Presented {
+    /// `Authorization: Bearer <connection code>`: single use, a successor
+    /// code is returned in `x-connection-code`.
+    Code,
+    /// `Authorization: Capability <token>`, or a request signed with the
+    /// connection DID's key: nothing rotates.
+    Key,
+}
+
+fn unauthorized(message: &'static str) -> Response {
+    (StatusCode::UNAUTHORIZED, message).into_response()
+}
+
+fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|v| v.to_str().ok())
+}
+
+async fn load_connection(
+    security: &crate::security::Security,
+    connection_id: &str,
+) -> Option<crate::security::ConnectionRecord> {
+    if connection_id.len() != 43 {
+        return None;
+    }
+    security.load_connection(connection_id).await.ok().flatten()
+}
+
+/// Resolves the request's credentials to a persistent connection id (for
+/// every presentation except a legacy code) and the credential to use.
+///
+/// A legacy code, which seals the credential itself, is migrated on first
+/// use: its credential moves into a new connection row and its successor is
+/// a pointer, so every client ends up backed by a row without changing.
+// The error is the finished response; boxing it would buy nothing here.
+#[allow(clippy::result_large_err)]
+async fn authenticate(
+    security: &crate::security::Security,
+    platform: &str,
+    method: &axum::http::Method,
+    uri: &axum::http::Uri,
+    headers: &HeaderMap,
+    body: &Bytes,
+) -> Result<(String, Presented, StoredCredential), Response> {
+    let authorization = header_str(headers, header::AUTHORIZATION.as_str());
+    if let Some(code) = authorization.and_then(|v| v.strip_prefix("Bearer ")) {
+        let Ok(Some(envelope)) = security.take_connection_code(code).await else {
+            return Err(unauthorized("invalid or expired connection code"));
+        };
+        let Some(plaintext) = security.open(&envelope, CODE_AAD) else {
+            return Err(unauthorized("invalid connection code"));
+        };
+        if let Ok(CodePointer::Connection { connection_id }) =
+            serde_json::from_slice::<CodePointer>(&plaintext)
+        {
+            let record = load_connection(security, &connection_id)
+                .await
+                .ok_or_else(|| unauthorized("invalid or expired connection code"))?;
+            let credential = serde_json::from_slice::<StoredCredential>(&record.credential)
+                .map_err(|_| unauthorized("invalid connection code"))?;
+            return Ok((connection_id, Presented::Code, credential));
+        }
+        let credential = serde_json::from_slice::<StoredCredential>(&plaintext)
+            .map_err(|_| unauthorized("invalid connection code"))?;
+        // Checked here as well as by the caller: a revoked or misdirected
+        // credential must not be migrated into a row.
+        if credential.provider() != platform
+            || security.is_revoked(credential.tenant_id(), credential.user_id())
+        {
+            return Err((StatusCode::FORBIDDEN, "credential is not permitted").into_response());
+        }
+        let connection_id = security
+            .create_connection(
+                credential.provider(),
+                credential.tenant_id(),
+                credential.user_id(),
+                &plaintext,
+            )
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "credential rotation failed",
+                )
+                    .into_response()
+            })?;
+        return Ok((connection_id, Presented::Code, credential));
+    }
+
+    let now_secs = now();
+    if let Some(token) = authorization.and_then(|v| v.strip_prefix("Capability ")) {
+        use crate::did_auth::{parse_capability, verify_capability, CapabilityRejection};
+        let (claims, payload, signature) =
+            parse_capability(token).map_err(|_| unauthorized("invalid capability"))?;
+        let record = load_connection(security, &claims.connection_id)
+            .await
+            .ok_or_else(|| unauthorized("invalid capability"))?;
+        match verify_capability(&record.user_id, &claims, payload, signature, now_secs) {
+            Ok(()) => {}
+            Err(CapabilityRejection::Expired) => return Err(unauthorized("capability expired")),
+            Err(CapabilityRejection::TooLong) => {
+                return Err(unauthorized("capability lifetime exceeds 15 minutes"))
+            }
+            Err(_) => return Err(unauthorized("invalid capability")),
+        }
+        if claims.platform != platform || record.platform != platform {
+            return Err((StatusCode::FORBIDDEN, "credential is not permitted").into_response());
+        }
+        let credential = serde_json::from_slice::<StoredCredential>(&record.credential)
+            .map_err(|_| unauthorized("invalid capability"))?;
+        return Ok((claims.connection_id, Presented::Key, credential));
+    }
+    if authorization.is_some() {
+        return Err(unauthorized("unsupported authorization scheme"));
+    }
+
+    let (Some(connection_id), Some(timestamp), Some(signature)) = (
+        header_str(headers, "x-connection-id"),
+        header_str(headers, "x-connection-timestamp"),
+        header_str(headers, "x-connection-signature"),
+    ) else {
+        return Err(unauthorized("missing connection code"));
+    };
+    use crate::did_auth::{replay_key, request_message, verify_request, RequestRejection};
+    let Ok(timestamp) = timestamp.parse::<u64>() else {
+        return Err(unauthorized("stale connection signature"));
+    };
+    let record = load_connection(security, connection_id)
+        .await
+        .ok_or_else(|| unauthorized("invalid connection signature"))?;
+    let path_and_query = uri.path_and_query().map_or(uri.path(), |p| p.as_str());
+    let message = request_message(
+        connection_id,
+        method.as_str(),
+        path_and_query,
+        timestamp,
+        body,
+    );
+    match verify_request(
+        &record.user_id,
+        &message,
+        timestamp,
+        now_secs.saturating_mul(1000),
+        signature,
+    ) {
+        Ok(()) => {}
+        Err(RequestRejection::Stale) => return Err(unauthorized("stale connection signature")),
+        Err(RequestRejection::BadSignature) => {
+            return Err(unauthorized("invalid connection signature"))
+        }
+    }
+    if !matches!(
+        security.consume_nonce(&replay_key(&message)).await,
+        Ok(true)
+    ) {
+        return Err(unauthorized("connection signature already used"));
+    }
+    if record.platform != platform {
+        return Err((StatusCode::FORBIDDEN, "credential is not permitted").into_response());
+    }
+    let credential = serde_json::from_slice::<StoredCredential>(&record.credential)
+        .map_err(|_| unauthorized("invalid connection signature"))?;
+    Ok((connection_id.to_owned(), Presented::Key, credential))
+}
+
+/// Refreshes a connection's OAuth token if it is about to expire, with at
+/// most one refresh in flight per connection (see
+/// `Security::claim_refresh_lease`). A caller that loses the race waits for
+/// the winner's result instead of spending the refresh token again.
+async fn refresh_connection(
+    state: &AppState,
+    security: &crate::security::Security,
+    connection_id: &str,
+    credential: &mut StoredCredential,
+) -> Result<(), ()> {
+    const ATTEMPTS: usize = 50;
+    const WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+    for _ in 0..ATTEMPTS {
+        if !needs_refresh(credential) {
+            return Ok(());
+        }
+        if security
+            .claim_refresh_lease(connection_id)
+            .await
+            .map_err(|_| ())?
+        {
+            // Another caller may have finished a refresh between our read
+            // and our claim; start from the row as it is now.
+            if let Some(current) = load_connection(security, connection_id).await {
+                if let Ok(current) = serde_json::from_slice(&current.credential) {
+                    *credential = current;
+                }
+            }
+            if !needs_refresh(credential) {
+                let _ = security.release_refresh_lease(connection_id).await;
+                return Ok(());
+            }
+            if refresh_if_needed(state, credential).await.is_err() {
+                let _ = security.release_refresh_lease(connection_id).await;
+                return Err(());
+            }
+            let serialized = serde_json::to_vec(&*credential).map_err(|_| ())?;
+            return security
+                .store_refreshed_connection(connection_id, &serialized)
+                .await
+                .map_err(|_| ());
+        }
+        tokio::time::sleep(WAIT).await;
+        let current = load_connection(security, connection_id).await.ok_or(())?;
+        *credential = serde_json::from_slice(&current.credential).map_err(|_| ())?;
+    }
+    Err(())
+}
+
 /// How to attach a resolved credential to the outbound upstream request.
 /// `None` covers query-located API keys, already appended to the target URL
 /// before the request is built.
@@ -330,11 +598,23 @@ enum CredentialInjection {
     None,
 }
 
+/// `ANY /proxy/{platform}/{path}`. Accepts three presentations, all resolving
+/// to a persistent connection (issue #40):
+///
+/// - `Authorization: Bearer <connection code>`: single use; the response
+///   carries a successor in `x-connection-code`.
+/// - `Authorization: Capability <token>`: a short-lived token signed by the
+///   connection DID's key (see `did_auth`); reusable until it expires.
+/// - `x-connection-id`, `x-connection-timestamp`, `x-connection-signature`:
+///   this request, signed by the connection DID's key; single use.
+///
+/// Every response to an authenticated request carries `x-connection-id`.
 pub async fn forward(
     Path(path): Path<String>,
     RawQuery(query): RawQuery,
     State(state): State<AppState>,
     method: axum::http::Method,
+    uri: axum::http::Uri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -356,13 +636,6 @@ pub async fn forward(
     if body.len() > 1_048_576 {
         return (StatusCode::PAYLOAD_TOO_LARGE, "request body is too large").into_response();
     }
-    let Some(code) = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-    else {
-        return (StatusCode::UNAUTHORIZED, "missing connection code").into_response();
-    };
     let Some(security) = &state.security else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -370,47 +643,76 @@ pub async fn forward(
         )
             .into_response();
     };
-    let Ok(Some(envelope)) = security.take_connection_code(code).await else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            "invalid or expired connection code",
-        )
-            .into_response();
-    };
-    let Some(plaintext) = security.open(&envelope, b"connection-credential-v1") else {
-        return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
-    };
-    let Ok(mut credential) = serde_json::from_slice::<StoredCredential>(&plaintext) else {
-        return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
-    };
+    let (connection_id, presented, mut credential) =
+        match authenticate(security, platform, &method, &uri, &headers, &body).await {
+            Ok(resolved) => resolved,
+            Err(response) => return response,
+        };
     if credential.provider() != platform
         || security.is_revoked(credential.tenant_id(), credential.user_id())
     {
         return (StatusCode::FORBIDDEN, "credential is not permitted").into_response();
     }
-    if refresh_if_needed(&state, &mut credential).await.is_err() {
-        return (StatusCode::UNAUTHORIZED, "credential refresh failed").into_response();
+    // Only an authenticated use keeps a connection alive.
+    let _ = security.touch_connection(&connection_id).await;
+    // A code has been spent by now. Mint its successor before anything else
+    // can fail, so an error below (a refused path, a failed refresh, an
+    // upstream outage) no longer costs the caller its connection.
+    let successor = match presented {
+        Presented::Code => match mint_code_for_connection(security, &connection_id).await {
+            Ok(code) => Some(code),
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "credential rotation failed",
+                )
+                    .into_response()
+            }
+        },
+        Presented::Key => None,
+    };
+    let finish = |mut response: Response| {
+        let headers = response.headers_mut();
+        if let Ok(value) = axum::http::HeaderValue::from_str(&connection_id) {
+            headers.insert("x-connection-id", value);
+        }
+        if let Some(code) = &successor {
+            if let Ok(value) = axum::http::HeaderValue::from_str(code) {
+                headers.insert("x-connection-code", value);
+            }
+        }
+        response
+    };
+    if refresh_connection(&state, security, &connection_id, &mut credential)
+        .await
+        .is_err()
+    {
+        return finish((StatusCode::UNAUTHORIZED, "credential refresh failed").into_response());
     }
     let Some(required_headers) =
         state
             .catalog
             .required_headers(platform, method.as_str(), &request_path)
     else {
-        return (
-            StatusCode::NOT_FOUND,
-            "method or path is not in the catalog",
-        )
-            .into_response();
+        return finish(
+            (
+                StatusCode::NOT_FOUND,
+                "method or path is not in the catalog",
+            )
+                .into_response(),
+        );
     };
     let Some(mut target) = state
         .catalog
         .allows(platform, method.as_str(), &request_path)
     else {
-        return (
-            StatusCode::NOT_FOUND,
-            "method or path is not in the catalog",
-        )
-            .into_response();
+        return finish(
+            (
+                StatusCode::NOT_FOUND,
+                "method or path is not in the catalog",
+            )
+                .into_response(),
+        );
     };
     if let Err(message) = state.catalog.validate_request(
         platform,
@@ -422,7 +724,7 @@ pub async fn forward(
             .and_then(|v| v.to_str().ok()),
         !body.is_empty(),
     ) {
-        return (StatusCode::BAD_REQUEST, message).into_response();
+        return finish((StatusCode::BAD_REQUEST, message).into_response());
     }
     target.set_path(&request_path);
     target.set_query(query.as_deref());
@@ -434,7 +736,9 @@ pub async fn forward(
             let Ok(crate::providers::SecurityScheme::ApiKey(scheme)) =
                 state.catalog.security_scheme(platform)
             else {
-                return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
+                return finish(
+                    (StatusCode::UNAUTHORIZED, "invalid connection code").into_response(),
+                );
             };
             match scheme.location {
                 crate::providers::ApiKeyLocation::Header => CredentialInjection::Header {
@@ -446,11 +750,13 @@ pub async fn forward(
                     CredentialInjection::None
                 }
                 crate::providers::ApiKeyLocation::Cookie => {
-                    return (
-                        StatusCode::NOT_IMPLEMENTED,
-                        "cookie-located API keys are not supported",
-                    )
-                        .into_response();
+                    return finish(
+                        (
+                            StatusCode::NOT_IMPLEMENTED,
+                            "cookie-located API keys are not supported",
+                        )
+                            .into_response(),
+                    );
                 }
             }
         }
@@ -468,52 +774,28 @@ pub async fn forward(
     .await
     {
         Ok(response) => response,
-        Err(_) => return (StatusCode::BAD_GATEWAY, "upstream request failed").into_response(),
+        Err(_) => {
+            return finish((StatusCode::BAD_GATEWAY, "upstream request failed").into_response())
+        }
     };
     let status = upstream.status();
     let forwarded_headers = upstream_response_headers(upstream.headers());
     let bytes = match read_bounded_body(upstream, MAX_RESPONSE_BYTES).await {
         Ok(bytes) => bytes,
         Err(_) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                "upstream response failed or was too large",
+            return finish(
+                (
+                    StatusCode::BAD_GATEWAY,
+                    "upstream response failed or was too large",
+                )
+                    .into_response(),
             )
-                .into_response()
         }
     };
     let mut response = Response::new(bytes.into());
     *response.status_mut() = status;
     *response.headers_mut() = forwarded_headers;
-    let Ok(envelope) = security.seal(
-        &serde_json::to_vec(&credential).unwrap(),
-        b"connection-credential-v1",
-    ) else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "credential rotation failed",
-        )
-            .into_response();
-    };
-    let mut new_code = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut new_code);
-    let new_code = URL_SAFE_NO_PAD.encode(new_code);
-    if security
-        .store_connection_code(&new_code, &envelope)
-        .await
-        .is_err()
-    {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "credential rotation failed",
-        )
-            .into_response();
-    }
-    response.headers_mut().insert(
-        "x-connection-code",
-        axum::http::HeaderValue::from_str(&new_code).unwrap(),
-    );
-    response
+    finish(response)
 }
 
 // Forward only representation/pagination metadata, never provider cookies or credentials.
@@ -831,6 +1113,7 @@ mod tests {
             RawQuery(None),
             State(s),
             axum::http::Method::GET,
+            "/proxy/clockify/workspaces".parse().unwrap(),
             headers,
             Bytes::new(),
         )
@@ -1096,15 +1379,9 @@ mod tests {
             .await
             .unwrap()
             .is_none());
-        // The rotated code is valid and carries the refreshed credential.
-        let rotated_envelope = security
-            .take_connection_code(&new_code)
-            .await
-            .unwrap()
-            .unwrap();
-        let plaintext = security
-            .open(&rotated_envelope, b"connection-credential-v1")
-            .unwrap();
+        // The rotated code is valid and points at the connection, which now
+        // holds the refreshed credential.
+        let (_, plaintext) = take_code_credential(&security, &new_code).await.unwrap();
         let rotated: StoredCredential = serde_json::from_slice(&plaintext).unwrap();
         match rotated {
             StoredCredential::OAuth { access_token, .. } => {
@@ -1113,6 +1390,527 @@ mod tests {
             StoredCredential::ApiKey { .. } => panic!("expected an OAuth credential"),
         }
 
+        server.abort();
+    }
+
+    async fn test_security() -> crate::security::Security {
+        let db = std::env::var("TEST_DATABASE_URL")
+            .expect("set TEST_DATABASE_URL to an isolated test database");
+        crate::security::Security::connect(
+            &db,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            vec![],
+        )
+        .await
+        .unwrap()
+    }
+
+    /// An upstream that echoes the API key it received, and the catalog for it.
+    async fn api_key_upstream() -> (tokio::task::JoinHandle<()>, crate::catalog::Catalog) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/workspaces",
+            axum::routing::any(|headers: HeaderMap| async move {
+                Json(json!({
+                    "x_api_key": headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+                }))
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let catalog = crate::catalog::Catalog::from_test_document(
+            "clockify",
+            json!({
+                "servers": [{"url": format!("http://{address}")}],
+                "components": {"securitySchemes": {"clockifyApiKey": {
+                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
+                }}},
+                "security": [{"clockifyApiKey": []}],
+                "paths": {"/workspaces": {"get": {}, "post": {"requestBody": {"content": {"application/json": {}}}}}}
+            }),
+            json!({}),
+        );
+        (server, catalog)
+    }
+
+    fn api_key_credential(user_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&StoredCredential::ApiKey {
+            provider: "clockify".into(),
+            tenant_id: "tenant".into(),
+            user_id: user_id.into(),
+            key: "clockify-secret".into(),
+        })
+        .unwrap()
+    }
+
+    fn signed(
+        agent: &crate::did_auth::test_signer::Agent,
+        connection_id: &str,
+        method: &str,
+        uri: &str,
+        body: &'static [u8],
+    ) -> axum::http::Request<axum::body::Body> {
+        // Distinct per call, so two otherwise identical requests are not
+        // mistaken for a replay of each other.
+        static OFFSET: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let timestamp =
+            now() * 1000 + OFFSET.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 1000;
+        let message = crate::did_auth::request_message(connection_id, method, uri, timestamp, body);
+        axum::http::Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("x-connection-id", connection_id)
+            .header("x-connection-timestamp", timestamp.to_string())
+            .header("x-connection-signature", agent.sign(&message))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body))
+            .unwrap()
+    }
+
+    /// The same signed request again, headers and all (bodies here are fixed).
+    fn request_clone(
+        request: &axum::http::Request<axum::body::Body>,
+    ) -> axum::http::Request<axum::body::Body> {
+        let mut builder = axum::http::Request::builder()
+            .method(request.method().clone())
+            .uri(request.uri().clone());
+        for (name, value) in request.headers() {
+            builder = builder.header(name, value);
+        }
+        builder.body(axum::body::Body::from(&b"{}"[..])).unwrap()
+    }
+
+    fn with_capability(uri: &str, token: &str) -> axum::http::Request<axum::body::Body> {
+        axum::http::Request::builder()
+            .uri(uri)
+            .header(AUTHORIZATION, format!("Capability {token}"))
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    async fn body_text(response: Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 65_536)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_signed_requests_reach_a_connection_without_rotating_and_only_once() {
+        use crate::did_auth::test_signer::Agent;
+        let security = test_security().await;
+        let (server, catalog) = api_key_upstream().await;
+        let mut state = test_state("server-secret");
+        state.catalog = catalog;
+        state.security = Some(security.clone());
+        let router = crate::router(state);
+
+        let owner = Agent::new(11);
+        let id = security
+            .create_connection(
+                "clockify",
+                "tenant",
+                &owner.did(),
+                &api_key_credential(&owner.did()),
+            )
+            .await
+            .unwrap();
+
+        let request = signed(&owner, &id, "POST", "/proxy/clockify/workspaces", b"{}");
+        let replay = request_clone(&request);
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-connection-id"], id.as_str());
+        assert!(response.headers().get("x-connection-code").is_none());
+        assert!(body_text(response).await.contains("clockify-secret"));
+
+        // Same message again (same second, same body): a replay.
+        let response = router.clone().oneshot(replay).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Nothing rotated: the owner can keep signing, concurrently.
+        let (a, b) = tokio::join!(
+            router.clone().oneshot(signed(
+                &owner,
+                &id,
+                "GET",
+                "/proxy/clockify/workspaces",
+                b""
+            )),
+            router.clone().oneshot(signed(
+                &owner,
+                &id,
+                "GET",
+                "/proxy/clockify/workspaces",
+                b""
+            )),
+        );
+        assert_eq!(a.unwrap().status(), StatusCode::OK);
+        assert_eq!(b.unwrap().status(), StatusCode::OK);
+
+        // Another agent's key, or a signature over a different request, fails.
+        let intruder = Agent::new(12);
+        let response = router
+            .clone()
+            .oneshot(signed(
+                &intruder,
+                &id,
+                "GET",
+                "/proxy/clockify/workspaces?i",
+                b"",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let mut moved = signed(&owner, &id, "GET", "/proxy/clockify/workspaces?a", b"");
+        *moved.uri_mut() = "/proxy/clockify/workspaces?b".parse().unwrap();
+        assert_eq!(
+            router.clone().oneshot(moved).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let unknown = connect_random_id();
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(signed(
+                    &owner,
+                    &unknown,
+                    "GET",
+                    "/proxy/clockify/workspaces",
+                    b""
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        server.abort();
+    }
+
+    fn connect_random_id() -> String {
+        crate::connect::random()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_capabilities_are_reusable_until_expiry_and_scoped_to_one_platform() {
+        use crate::did_auth::test_signer::Agent;
+        let security = test_security().await;
+        let (server, catalog) = api_key_upstream().await;
+        let mut state = test_state("server-secret");
+        state.catalog = catalog;
+        state.security = Some(security.clone());
+        let router = crate::router(state);
+
+        let owner = Agent::new(21);
+        let id = security
+            .create_connection(
+                "clockify",
+                "tenant",
+                &owner.did(),
+                &api_key_credential(&owner.did()),
+            )
+            .await
+            .unwrap();
+
+        let token = owner.capability(&id, "clockify", now() + 300);
+        for _ in 0..2 {
+            let response = router
+                .clone()
+                .oneshot(with_capability("/proxy/clockify/workspaces", &token))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(response.headers().get("x-connection-code").is_none());
+        }
+
+        let expired = owner.capability(&id, "clockify", now() - 1);
+        let response = router
+            .clone()
+            .oneshot(with_capability("/proxy/clockify/workspaces", &expired))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(body_text(response).await, "capability expired");
+
+        let too_long = owner.capability(&id, "clockify", now() + 3600);
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(with_capability("/proxy/clockify/workspaces", &too_long))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        let forged = Agent::new(22).capability(&id, "clockify", now() + 300);
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(with_capability("/proxy/clockify/workspaces", &forged))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // A capability names its platform; it cannot be spent on another.
+        let elsewhere = owner.capability(&id, "clockify", now() + 300);
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(with_capability(
+                    "/proxy/github-issues/workspaces",
+                    &elsewhere
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_a_legacy_code_migrates_into_a_connection_its_owner_can_sign_for() {
+        use crate::did_auth::test_signer::Agent;
+        let security = test_security().await;
+        let (server, catalog) = api_key_upstream().await;
+        let mut state = test_state("server-secret");
+        state.catalog = catalog;
+        state.security = Some(security.clone());
+        let router = crate::router(state);
+
+        let owner = Agent::new(31);
+        let legacy = security
+            .seal(&api_key_credential(&owner.did()), CODE_AAD)
+            .unwrap();
+        let code = crate::connect::random();
+        security
+            .store_connection_code(&code, &legacy)
+            .await
+            .unwrap();
+
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/clockify/workspaces")
+                    .header(AUTHORIZATION, format!("Bearer {code}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let id = response.headers()["x-connection-id"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let successor = response.headers()["x-connection-code"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+
+        // The successor is a pointer; the credential lives only in the row.
+        let envelope = security
+            .take_connection_code(&successor)
+            .await
+            .unwrap()
+            .unwrap();
+        let pointer = security.open(&envelope, CODE_AAD).unwrap();
+        assert!(!String::from_utf8_lossy(&pointer).contains("clockify-secret"));
+        security
+            .store_connection_code(&successor, &envelope)
+            .await
+            .unwrap();
+
+        // The same grant is now reachable by signature, alongside the code.
+        let response = router
+            .clone()
+            .oneshot(signed(
+                &owner,
+                &id,
+                "GET",
+                "/proxy/clockify/workspaces",
+                b"",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/clockify/workspaces")
+                    .header(AUTHORIZATION, format!("Bearer {successor}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-connection-id"], id.as_str());
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_a_failed_request_no_longer_costs_the_code_holder_its_connection() {
+        let security = test_security().await;
+        let (server, catalog) = api_key_upstream().await;
+        let mut state = test_state("server-secret");
+        state.catalog = catalog;
+        state.security = Some(security.clone());
+        let router = crate::router(state);
+
+        let id = security
+            .create_connection("clockify", "tenant", "user", &api_key_credential("user"))
+            .await
+            .unwrap();
+        let code = mint_code_for_connection(&security, &id).await.unwrap();
+        // A path outside the catalog is refused after the code is spent, but
+        // the refusal carries a successor.
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/clockify/not-in-catalog")
+                    .header(AUTHORIZATION, format!("Bearer {code}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let successor = response.headers()["x-connection-code"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/proxy/clockify/workspaces")
+                    .header(AUTHORIZATION, format!("Bearer {successor}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
+    async fn postgres_concurrent_callers_refresh_a_connection_once() {
+        use crate::did_auth::test_signer::Agent;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let token_requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = token_requests.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(move |body: Bytes| {
+                    let counter = counter.clone();
+                    async move {
+                        // A provider that rotates refresh tokens: the old one
+                        // is only good once.
+                        let n = counter.fetch_add(1, Ordering::SeqCst);
+                        assert!(String::from_utf8(body.to_vec())
+                            .unwrap()
+                            .contains("refresh_token=first-refresh-token"));
+                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                        Json(json!({
+                            "access_token": format!("fresh-token-{n}"),
+                            "refresh_token": "second-refresh-token",
+                            "expires_in": 3600
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/items",
+                axum::routing::get(|headers: HeaderMap| async move {
+                    Json(json!({"auth": headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok())}))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+
+        let security = test_security().await;
+        let mut state = test_state("server-secret");
+        state.catalog = crate::catalog::Catalog::from_test_document(
+            "github-issues",
+            json!({
+                "servers": [{"url": upstream_url}],
+                "components": {"securitySchemes": {"oauth": {"type": "oauth2", "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://auth.example/authorize",
+                        "tokenUrl": "https://auth.example/token",
+                        "scopes": {"read": "Read items"}
+                    }
+                }}}},
+                "security": [{"oauth": ["read"]}],
+                "paths": {"/items": {"get": {}}}
+            }),
+            json!({}),
+        );
+        state.security = Some(security.clone());
+        state.test_upstream = Some(upstream_url);
+        let router = crate::router(state);
+
+        let owner = Agent::new(41);
+        let credential = serde_json::to_vec(&StoredCredential::OAuth {
+            provider: "github-issues".into(),
+            tenant_id: "tenant".into(),
+            user_id: owner.did(),
+            access_token: "stale-token".into(),
+            refresh_token: Some("first-refresh-token".into()),
+            expires_at: Some(0),
+        })
+        .unwrap();
+        let id = security
+            .create_connection("github-issues", "tenant", &owner.did(), &credential)
+            .await
+            .unwrap();
+        let token = owner.capability(&id, "github-issues", now() + 300);
+
+        let mut calls = tokio::task::JoinSet::new();
+        for _ in 0..5 {
+            let router = router.clone();
+            let token = token.clone();
+            calls.spawn(async move {
+                let response = router
+                    .oneshot(with_capability("/proxy/github-issues/items", &token))
+                    .await
+                    .unwrap();
+                (response.status(), body_text(response).await)
+            });
+        }
+        while let Some(result) = calls.join_next().await {
+            let (status, body) = result.unwrap();
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert!(body.contains("Bearer fresh-token-0"), "{body}");
+        }
+        assert_eq!(token_requests.load(Ordering::SeqCst), 1);
+
+        let stored = security.load_connection(&id).await.unwrap().unwrap();
+        match serde_json::from_slice::<StoredCredential>(&stored.credential).unwrap() {
+            StoredCredential::OAuth { refresh_token, .. } => {
+                assert_eq!(refresh_token.as_deref(), Some("second-refresh-token"));
+            }
+            StoredCredential::ApiKey { .. } => panic!("expected an OAuth credential"),
+        }
         server.abort();
     }
 

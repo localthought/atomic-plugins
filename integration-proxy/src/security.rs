@@ -62,6 +62,32 @@ fn spawn_reconnect_supervisor(
 /// grants are still swept.
 pub const CONNECTION_CODE_IDLE_DAYS: i32 = 30;
 
+/// Days a persistent connection (issue #40) survives without a proxied
+/// request. Longer than [`CONNECTION_CODE_IDLE_DAYS`]: a connection is the
+/// grant itself, and a caller that authenticates by signature holds no code
+/// that could expire first. Measured from `last_used_at`, which is bumped only
+/// after a request has authenticated, so knowing a connection id is not
+/// enough to keep one alive.
+pub const CONNECTION_IDLE_DAYS: i32 = 90;
+
+/// How long one caller may hold a connection's refresh lease before another
+/// may take it over. Longer than a provider token request should take, short
+/// enough that a crashed holder does not wedge the connection.
+const REFRESH_LEASE_SECONDS: f64 = 30.0;
+
+/// A persistent connection row, with its credential opened.
+pub struct ConnectionRecord {
+    pub platform: String,
+    pub user_id: String,
+    /// The serialized `StoredCredential`; interpreted by `proxy.rs`.
+    pub credential: Vec<u8>,
+}
+
+fn connection_aad(connection_id: &str) -> Vec<u8> {
+    // Bound to the row, so one row's envelope cannot be pasted into another.
+    format!("connection-record-v1:{connection_id}").into_bytes()
+}
+
 pub struct OAuthState {
     pub provider: String,
     pub redirect_uri: String,
@@ -104,7 +130,7 @@ impl Security {
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-            transaction.batch_execute("CREATE TABLE IF NOT EXISTS used_challenges (nonce TEXT PRIMARY KEY, expires_at TIMESTAMPTZ NOT NULL); CREATE TABLE IF NOT EXISTS oauth_states (state TEXT PRIMARY KEY, provider TEXT NOT NULL, redirect_uri TEXT NOT NULL, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, verifier TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); CREATE TABLE IF NOT EXISTS connection_codes (code TEXT PRIMARY KEY, envelope TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS context TEXT; CREATE TABLE IF NOT EXISTS connection_handoffs (code TEXT PRIMARY KEY, challenge TEXT NOT NULL, envelope TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); CREATE INDEX IF NOT EXISTS oauth_states_expires_at_idx ON oauth_states (expires_at); CREATE INDEX IF NOT EXISTS connection_codes_expires_at_idx ON connection_codes (expires_at); CREATE INDEX IF NOT EXISTS used_challenges_expires_at_idx ON used_challenges (expires_at); CREATE INDEX IF NOT EXISTS connection_handoffs_expires_at_idx ON connection_handoffs (expires_at)").await.map_err(|e| e.to_string())?;
+            transaction.batch_execute("CREATE TABLE IF NOT EXISTS used_challenges (nonce TEXT PRIMARY KEY, expires_at TIMESTAMPTZ NOT NULL); CREATE TABLE IF NOT EXISTS oauth_states (state TEXT PRIMARY KEY, provider TEXT NOT NULL, redirect_uri TEXT NOT NULL, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, verifier TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); CREATE TABLE IF NOT EXISTS connection_codes (code TEXT PRIMARY KEY, envelope TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS context TEXT; CREATE TABLE IF NOT EXISTS connection_handoffs (code TEXT PRIMARY KEY, challenge TEXT NOT NULL, envelope TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL); CREATE INDEX IF NOT EXISTS oauth_states_expires_at_idx ON oauth_states (expires_at); CREATE INDEX IF NOT EXISTS connection_codes_expires_at_idx ON connection_codes (expires_at); CREATE INDEX IF NOT EXISTS used_challenges_expires_at_idx ON used_challenges (expires_at); CREATE INDEX IF NOT EXISTS connection_handoffs_expires_at_idx ON connection_handoffs (expires_at); CREATE TABLE IF NOT EXISTS connections (connection_id TEXT PRIMARY KEY, platform TEXT NOT NULL, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, envelope TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), refresh_lease_until TIMESTAMPTZ); CREATE INDEX IF NOT EXISTS connections_last_used_at_idx ON connections (last_used_at)").await.map_err(|e| e.to_string())?;
             transaction.commit().await.map_err(|e| e.to_string())?;
             drop(setup);
             let _ = driver.await;
@@ -264,6 +290,123 @@ impl Security {
 
     pub async fn take_connection_code(&self, code: &str) -> Result<Option<String>, String> {
         self.client().await.query_opt("DELETE FROM connection_codes WHERE code = $1 AND expires_at > NOW() RETURNING envelope", &[&code]).await.map_err(|e| e.to_string()).map(|row| row.map(|r| r.get(0)))
+    }
+
+    /// Creates a persistent connection holding `credential` (a serialized
+    /// `StoredCredential`) and returns its new random id. The row, not any
+    /// code, is the credential's only server-side copy from here on.
+    pub async fn create_connection(
+        &self,
+        platform: &str,
+        tenant_id: &str,
+        user_id: &str,
+        credential: &[u8],
+    ) -> Result<String, String> {
+        let connection_id = crate::connect::random();
+        let envelope = self.seal(credential, &connection_aad(&connection_id))?;
+        let database = self.client().await;
+        database
+            .execute(
+                "DELETE FROM connections WHERE last_used_at <= NOW() - make_interval(days => $1)",
+                &[&CONNECTION_IDLE_DAYS],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        database
+            .execute(
+                "INSERT INTO connections (connection_id, platform, tenant_id, user_id, envelope) VALUES ($1,$2,$3,$4,$5)",
+                &[&connection_id, &platform, &tenant_id, &user_id, &envelope],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(connection_id)
+    }
+
+    /// Reads a live connection without marking it used; the caller has not
+    /// authenticated yet. `None` for an unknown, idle-expired or tampered row.
+    pub async fn load_connection(
+        &self,
+        connection_id: &str,
+    ) -> Result<Option<ConnectionRecord>, String> {
+        let row = self
+            .client()
+            .await
+            .query_opt(
+                "SELECT platform, user_id, envelope FROM connections WHERE connection_id = $1 AND last_used_at > NOW() - make_interval(days => $2)",
+                &[&connection_id, &CONNECTION_IDLE_DAYS],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(row.and_then(|row| {
+            let envelope: String = row.get(2);
+            Some(ConnectionRecord {
+                platform: row.get(0),
+                user_id: row.get(1),
+                credential: self.open(&envelope, &connection_aad(connection_id))?,
+            })
+        }))
+    }
+
+    /// Records an authenticated use, restarting the idle clock.
+    pub async fn touch_connection(&self, connection_id: &str) -> Result<(), String> {
+        self.client()
+            .await
+            .execute(
+                "UPDATE connections SET last_used_at = NOW() WHERE connection_id = $1",
+                &[&connection_id],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Claims the right to refresh this connection's OAuth token. At most one
+    /// caller holds it at a time, across processes: two concurrent refreshes
+    /// would both spend the same refresh token, and a provider that rotates
+    /// refresh tokens (or detects reuse) would then revoke the grant. A
+    /// caller that does not get the lease re-reads the row instead.
+    pub async fn claim_refresh_lease(&self, connection_id: &str) -> Result<bool, String> {
+        self.client()
+            .await
+            .execute(
+                "UPDATE connections SET refresh_lease_until = NOW() + make_interval(secs => $2) WHERE connection_id = $1 AND (refresh_lease_until IS NULL OR refresh_lease_until <= NOW())",
+                &[&connection_id, &REFRESH_LEASE_SECONDS],
+            )
+            .await
+            .map(|rows| rows == 1)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Stores a refreshed credential and releases the refresh lease.
+    pub async fn store_refreshed_connection(
+        &self,
+        connection_id: &str,
+        credential: &[u8],
+    ) -> Result<(), String> {
+        let envelope = self.seal(credential, &connection_aad(connection_id))?;
+        self.client()
+            .await
+            .execute(
+                "UPDATE connections SET envelope = $2, refresh_lease_until = NULL WHERE connection_id = $1",
+                &[&connection_id, &envelope],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Releases the refresh lease after a failed refresh, leaving the stored
+    /// credential as it was.
+    pub async fn release_refresh_lease(&self, connection_id: &str) -> Result<(), String> {
+        self.client()
+            .await
+            .execute(
+                "UPDATE connections SET refresh_lease_until = NULL WHERE connection_id = $1",
+                &[&connection_id],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 }
 

@@ -16,6 +16,25 @@
 | Consent disclosure, escaping, provider choices and profiles without email | `src/templates.rs` |
 | Legacy namespace configuration rejects unsafe URLs | `src/config.rs` |
 
+## Persistent DID-bound connections (#40)
+
+| Behavior | Cheapest meaningful coverage |
+| --- | --- |
+| DID key extraction in both base64 alphabets; non-DID and malformed identifiers rejected | `src/did_auth.rs` |
+| Request signature binds connection, method, path and query, timestamp, body; skew window; domain separation from capabilities | `src/did_auth.rs` |
+| Capability expiry, 15-minute lifetime cap, wrong signer, malformed or unknown-field tokens | `src/did_auth.rs` |
+| Signed requests: no rotation, concurrent use, replay rejected, other key and altered target rejected | PostgreSQL router test in `src/proxy.rs` |
+| Capabilities: reusable, expired/over-long/forged rejected, platform-scoped | PostgreSQL router test in `src/proxy.rs` |
+| Redemption creates a row and returns `connection_id`; codes carry only a pointer | PostgreSQL tests in `src/connect.rs` |
+| Legacy sealed code migrates into a row on first use and becomes signable | PostgreSQL router test in `src/proxy.rs` |
+| A refused request still returns a successor code | PostgreSQL router test in `src/proxy.rs` |
+| Five concurrent callers with an expired token cause one refresh; rotated refresh token stored | PostgreSQL mock-provider test in `src/proxy.rs` |
+
+Not covered: the lease takeover after a crashed refresher (30 s), idle-row
+deletion after 90 days, and any real Atomic client signing. The test signer in
+`src/did_auth.rs` follows the documented format; no `@tomic/lib` or
+atomic-server code has been run against it.
+
 Run `cargo test` for local tests. Database tests are marked ignored so ordinary
 runs do not require PostgreSQL; CI sets `TEST_DATABASE_URL` and fixture OAuth
 credentials and runs `cargo test -- --include-ignored`. See README for the

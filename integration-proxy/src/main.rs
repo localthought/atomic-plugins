@@ -5,6 +5,7 @@ mod auth;
 mod catalog;
 mod config;
 mod connect;
+mod did_auth;
 mod identity;
 #[cfg(test)]
 mod identity_catalog_tests;
@@ -178,9 +179,13 @@ fn browser_cors() -> tower_http::cors::CorsLayer {
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::IF_MATCH,
+            HeaderName::from_static("x-connection-id"),
+            HeaderName::from_static("x-connection-timestamp"),
+            HeaderName::from_static("x-connection-signature"),
         ])
         .expose_headers([
             HeaderName::from_static("x-connection-code"),
+            HeaderName::from_static("x-connection-id"),
             header::LINK,
             header::RETRY_AFTER,
             header::ETAG,

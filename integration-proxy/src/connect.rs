@@ -539,15 +539,31 @@ pub async fn redeem(State(state): State<AppState>, Json(request): Json<Redemptio
     if security.is_revoked(&handoff.tenant_id, &handoff.user_id) {
         return error("Connection is revoked");
     }
-    let code = random();
-    if security
-        .store_connection_code(&code, &handoff.credential)
+    // The grant moves into a persistent connection (issue #40); the code
+    // handed out is only a pointer to it. The row is created here, once PKCE
+    // is proven, so an abandoned handoff leaves nothing behind.
+    let Some(credential) = security.open(&handoff.credential, crate::proxy::CODE_AAD) else {
+        return error("Invalid connection code");
+    };
+    let Ok(connection_id) = security
+        .create_connection(
+            &handoff.platform,
+            &handoff.tenant_id,
+            &handoff.user_id,
+            &credential,
+        )
         .await
-        .is_err()
-    {
+    else {
         return error("Could not finish connecting; reconnect from your hub");
-    }
-    let mut body = serde_json::json!({"connection_code": code, "platform": handoff.platform});
+    };
+    let Ok(code) = crate::proxy::mint_code_for_connection(security, &connection_id).await else {
+        return error("Could not finish connecting; reconnect from your hub");
+    };
+    let mut body = serde_json::json!({
+        "connection_code": code,
+        "connection_id": connection_id,
+        "platform": handoff.platform,
+    });
     if handoff.include_tenant_secret {
         body["tenant_secret"] =
             crate::tenant_secret::derive(&state.server_secret, &handoff.tenant_id).into();
@@ -787,14 +803,11 @@ mod tests {
             .unwrap();
         let redeemed: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let connection_code = redeemed["connection_code"].as_str().unwrap().to_owned();
-        let credential_envelope = security
-            .take_connection_code(&connection_code)
-            .await
-            .unwrap()
-            .unwrap();
-        let plain = security
-            .open(&credential_envelope, b"connection-credential-v1")
-            .unwrap();
+        let (connection_id, plain) =
+            crate::proxy::take_code_credential(&security, &connection_code)
+                .await
+                .unwrap();
+        assert_eq!(redeemed["connection_id"], connection_id);
         let credential: serde_json::Value = serde_json::from_slice(&plain).unwrap();
         let mut session_headers = HeaderMap::new();
         let session_cookie = callback
@@ -1346,14 +1359,11 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["platform"], "clockify");
         let connection_code = body["connection_code"].as_str().unwrap();
-        let envelope = security
-            .take_connection_code(connection_code)
-            .await
-            .unwrap()
-            .unwrap();
-        let plaintext = security
-            .open(&envelope, b"connection-credential-v1")
-            .unwrap();
+        let (connection_id, plaintext) =
+            crate::proxy::take_code_credential(&security, connection_code)
+                .await
+                .unwrap();
+        assert_eq!(body["connection_id"], connection_id);
         let credential: crate::proxy::StoredCredential =
             serde_json::from_slice(&plaintext).unwrap();
         match credential {
@@ -1423,9 +1433,15 @@ mod tests {
         assert!(body.get("tenant_secret").is_none());
         assert!(!body.to_string().contains("fixture-token"));
         let rotating = body["connection_code"].as_str().unwrap();
+        // The code points at a new persistent connection that holds exactly
+        // the credential the handoff sealed.
+        let (connection_id, stored) = crate::proxy::take_code_credential(&security, rotating)
+            .await
+            .unwrap();
+        assert_eq!(body["connection_id"], connection_id);
         assert_eq!(
-            security.take_connection_code(rotating).await.unwrap(),
-            Some(credential.clone())
+            Some(stored),
+            security.open(&credential, crate::proxy::CODE_AAD)
         );
         assert!(security
             .take_connection_code(rotating)

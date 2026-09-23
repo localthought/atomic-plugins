@@ -35,7 +35,7 @@ Authorization Code flow with PKCE.
   platform with its configured overlays applied.
 - `GET /connect?platform=github-issues&redirect_uri=<url>&user_id=<actor>&code_challenge=<S256>&code_challenge_method=S256&credentials=connection` — starts a browser connection without a tenant secret. For a catalog platform that explicitly selects `tenantIdentity`, one provider OAuth authorization establishes the tenant identity and connection credential. Other platforms retain the configured application-login flow.
 - `POST /connect/authorize` — approves the selected platform with a short-lived, cookie-bound CSRF token and starts provider OAuth. The authenticated application account determines the tenant; the caller supplies its local user/agent identifier. The consent page shows the destination hub origin and uses `Referrer-Policy: same-origin`, so its form submission retains a concrete origin without sending a referrer to the external OAuth provider.
-- `POST /connect/redeem` — exchanges `{ "code": "<callback connection_code>", "code_verifier": "<original verifier>" }` for `{ "connection_code": "<rotating proxy credential>", "platform": "github-issues" }`. The handoff expires after five minutes, requires S256 PKCE, and is consumed atomically. Wrong verifiers do not consume a legitimate handoff. Responses have `Cache-Control: no-store`; browser requests omit cookies.
+- `POST /connect/redeem` — exchanges `{ "code": "<callback connection_code>", "code_verifier": "<original verifier>" }` for `{ "connection_code": "<rotating proxy credential>", "connection_id": "<persistent connection id>", "platform": "github-issues" }`. `connection_id` names the persistent connection the grant now lives in (see [Persistent connections](#persistent-connections)); it is not a credential. The handoff expires after five minutes, requires S256 PKCE, and is consumed atomically. Wrong verifiers do not consume a legitimate handoff. Responses have `Cache-Control: no-store`; browser requests omit cookies.
 - Clients that also need the tenant credential explicitly request `credentials=connection+tenant_secret` (URL-encode the `+` as `%2B`). The consent page discloses this extra grant; redemption additionally returns `tenant_secret`. The browser-only Atomic Data Hub requests just `connection` and never needs to paste, receive, or store a tenant secret.
 - The legacy signed `/connect` and `/oauth/{platform}/start` protocol remains available for existing clients. New clients should use the bootstrap flow above; it does not require the circular prerequisite of an already provisioned tenant secret.
 - `/proxy` — called by the third party with `Authorization: Bearer
@@ -127,6 +127,69 @@ request. The proxy refreshes an expired provider access token when a refresh
 token is available, and rotates the connection code after every request.
 Pagination `Link` headers from the upstream are forwarded to the caller
 unchanged.
+
+## Persistent connections
+
+Issue #40. Every grant lives in a row of the `connections` table: a random
+43-character `connection_id`, the platform, tenant, the owning `user_id`, and
+the provider credential sealed with XChaCha20-Poly1305 under associated data
+bound to that row. A row is created at `POST /connect/redeem`. A connection
+code minted before this change is migrated into a row the first time it is
+used. From then on, a connection code seals only a pointer to its row, so a
+refreshed or rotated OAuth token is held in exactly one place. A row is
+deleted after `CONNECTION_IDLE_DAYS` (90) days without an authenticated
+request. Every authenticated proxy response carries `X-Connection-Id`.
+
+When the `user_id` passed to `/connect` is an Atomic Data agent DID,
+`did:ad:agent:{pubkey}`, a connection can also be used by whoever holds that
+agent's Ed25519 key, with no stored or rotating credential. The DID contains
+its own public key, so the proxy resolves nothing and pins nothing. A
+different key is a different DID, and needs a different connection. Two
+presentations are accepted on `/proxy/{platform}/{path}`:
+
+- **Signed request.** The request carries `X-Connection-Id`,
+  `X-Connection-Timestamp` (Unix milliseconds) and `X-Connection-Signature`,
+  an Ed25519 signature over this exact text, fields joined by `\n`:
+
+  ```text
+  integration-proxy-request-v1
+  <connection_id>
+  <METHOD>
+  <path and query as sent, e.g. /proxy/github-issues/repos/o/r/issues?state=all>
+  <timestamp>
+  <lowercase hex SHA-256 of the request body>
+  ```
+
+  The timestamp must be within 5 minutes of the proxy's clock. Each signed
+  message is accepted once: a digest of it is recorded in `used_challenges`
+  for 10 minutes. Two otherwise identical requests therefore need different
+  timestamps.
+- **Capability.** `Authorization: Capability <payload>.<signature>`, where
+  `payload` is unpadded base64url JSON
+  `{"v":1,"connection_id":"…","platform":"…","exp":<Unix seconds>}` and
+  `signature` is an Ed25519 signature over
+  `integration-proxy-capability-v1\n<payload>`. A capability is reusable,
+  including concurrently, until `exp`. The proxy refuses one whose `exp` is
+  more than 15 minutes away, and answers an expired one with
+  `401 capability expired` so the holder knows to mint another. It is meant
+  for a caller that cannot hold the key, such as a sandboxed plugin frame.
+  The key holder mints it; the proxy has no minting endpoint.
+
+Signatures use base64 in either alphabet, padded or not, the same as Atomic
+Data. Verification is strict: small-order keys and non-canonical signatures
+are rejected. Neither presentation rotates anything or returns
+`X-Connection-Code`. Idleness, several tabs, several devices and concurrent
+requests do not affect them. A connection whose `user_id` is not such a DID
+can be used only with connection codes.
+
+Concurrent requests may all find the OAuth access token expired. Only one
+refreshes it, holding a 30-second lease column on the row. The others wait for
+its result, so a provider that rotates refresh tokens, or treats their reuse as
+theft, never sees the same refresh token twice.
+
+Not yet available: an endpoint to revoke a single connection (revoke a tenant
+or DID with `REVOKED_SUBJECTS`), and proof of DID possession when a
+connection is created. See [SECURITY.md](SECURITY.md#persistent-connections).
 
 ## Trusted API identities
 
@@ -223,8 +286,8 @@ CI runs the same checks on every push and pull request (see
 
 ## Security
 
-The service stores encrypted provider credentials only inside short-lived,
-encrypted connection envelopes and forwards requests only through catalog
+The service stores provider credentials encrypted at rest, one row per
+persistent connection, and forwards requests only through catalog
 allowlists. [SECURITY.md](SECURITY.md) describes the remaining deployment and
 operational controls.
 
@@ -249,10 +312,13 @@ operational controls.
 ## Browser clients
 
 CORS permits explicit bearer-token requests from browser frontends and answers
-OPTIONS preflights. Responses expose `X-Connection-Code`, `Link`, `Retry-After`,
-`ETag`, `X-Total-Count` and `X-Next-Page`. Clients must persist a rotated code
-before continuing pagination and must never replay a consumed code after an
-uncertain response. Cookie credentials are not enabled for CORS; provider
+OPTIONS preflights. Requests may carry `X-Connection-Id`,
+`X-Connection-Timestamp` and `X-Connection-Signature`. Responses expose
+`X-Connection-Code`, `X-Connection-Id`, `Link`, `Retry-After`, `ETag`,
+`X-Total-Count` and `X-Next-Page`. A client that uses connection codes must
+persist a rotated code before continuing pagination, and must never replay a
+consumed code after an uncertain response. A client that signs requests or
+presents a capability has nothing to persist. Cookie credentials are not enabled for CORS; provider
 login and consent remain top-level browser navigations.
 
 ## Todoist
