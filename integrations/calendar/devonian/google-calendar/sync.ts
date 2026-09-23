@@ -1,8 +1,10 @@
-import { canonical, planCalendarValues } from './lens/edit.js';
-export { canonical } from './lens/edit.js';
 // @wc-ignore-file
+import { canonical, planCalendarValues } from './lens/edit.js';
+
+export { canonical } from './lens/edit.js';
 const IMPORT_BASELINE = 'https://atomicdata.dev/properties/importBaseline';
 const IMPORT_LOCAL_ID = 'https://atomicdata.dev/properties/localId';
+
 export interface Config {
   platform: string;
   destinations: Record<string, { table: string; rowClass: string }>;
@@ -13,6 +15,7 @@ const NAME = 'https://atomicdata.dev/properties/name';
 const PARENT = 'https://atomicdata.dev/properties/parent';
 const IS_A = 'https://atomicdata.dev/properties/isA';
 type Values = Record<string, unknown>;
+
 export type CalendarRequest = (
   path: string,
   init?: {
@@ -31,11 +34,14 @@ export interface CalendarEdit {
   acknowledged: Values;
 }
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
+
 function object(value: unknown): Values {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Calendar sync needs a valid imported baseline');
+
   return value as Values;
 }
+
 export function eventPath(row: Values, config: Config): string | undefined {
   if (config.platform !== 'google-calendar') return;
   const target = config.destinations.event;
@@ -49,11 +55,13 @@ export function eventPath(row: Values, config: Config): string | undefined {
   const raw = row[IMPORT_LOCAL_ID];
   if (typeof raw !== 'string') return;
   let id: unknown;
+
   try {
     id = JSON.parse(raw);
   } catch {
     return;
   }
+
   if (
     !Array.isArray(id) ||
     id.length !== 4 ||
@@ -67,6 +75,7 @@ export function eventPath(row: Values, config: Config): string | undefined {
     ['.', '..'].includes(id[3])
   )
     return;
+
   return `/calendar/v3/calendars/${encodeURIComponent(id[2])}/events/${encodeURIComponent(id[3])}`;
 }
 /** Three-way merge only the supported provider fields; no full event replacement. */
@@ -90,6 +99,7 @@ export function planCalendarEdit(
   observed[IMPORT_BASELINE] = row[IMPORT_BASELINE];
   observed[PARENT] = row[PARENT];
   observed[IS_A] = row[IS_A];
+
   return {
     subject,
     name: String(row[NAME] ?? 'Event'),
@@ -107,6 +117,7 @@ export async function previewCalendarEdits(
 ) {
   const edits: CalendarEdit[] = [];
   const identities = new Set<string>();
+
   for (const row of rows.values()) {
     const path = eventPath(row, config);
     if (path && identities.has(path))
@@ -115,6 +126,7 @@ export async function previewCalendarEdits(
       );
     if (path) identities.add(path);
   }
+
   for (const [subject, row] of rows) {
     const path = eventPath(row, config);
     if (!path) continue;
@@ -139,6 +151,7 @@ export async function previewCalendarEdits(
     const edit = planCalendarEdit(subject, row, config, remote);
     if (edit) edits.push(edit);
   }
+
   return edits;
 }
 /** Revalidate local review, condition the write on Google's ETag, then checkpoint.
@@ -158,9 +171,12 @@ export async function applyCalendarEdit(
       )
     )
       throw new Error('Calendar event changed after preview; preview again');
+
     return current;
   };
+
   await check();
+
   if (Object.keys(edit.patch).length) {
     const response = await request(`${edit.path}?sendUpdates=all`, {
       method: 'PATCH',
@@ -183,6 +199,7 @@ export async function applyCalendarEdit(
         'Google returned different event values; fetch and review before retrying',
       );
   }
+
   const current = await check();
   const baseline = object(object(current[IMPORT_BASELINE]).values);
   await checkpoint({

@@ -1,12 +1,14 @@
 # Google Calendar ↔ Atomic calendar
 
 A two-way sync for one Google Calendar and one ordinary Atomic calendar table.
-Provider code (`adapter.ts`) stays here, independent of `devonian`: the
-`devonian/platform-lenses/google-calendar/` package is a separate, generic
-Devonian lens (used by the LocalThought/Devonian browser-connector flow
-described in [`../README.md`](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector));
-this package is the atomic-server sandbox-plugin equivalent, modeled on
-[`../issue-tracker/adapter.ts`](../issue-tracker/adapter.ts).
+Provider code (`adapter.ts`) is the atomic-server sandbox-plugin side,
+modeled on [`../issue-tracker/adapter.ts`](../issue-tracker/adapter.ts), and
+does not import the lens. [`devonian/google-calendar/`](devonian/google-calendar/)
+is the separate, generic Devonian lens used by the LocalThought/Devonian
+browser-connector flow described in
+[`../README.md`](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector).
+It was `devonian/platform-lenses/google-calendar/` in the `devonian` package
+up to 0.6.1.
 
 ## Mapping
 
@@ -34,6 +36,11 @@ or inaccessible event is a conflict, not permission to delete the local card.
 ```
 
 These check `adapter.ts`'s pagination, recurring/cancelled exclusion, all-day
-and timed interval validation, and edit-patch minimality.
+and timed interval validation, and edit-patch minimality. The same two
+commands also cover the Devonian lens in `devonian/google-calendar/`: vitest
+runs its `import.test.ts` and `lens/lens.test.ts`, and tsc typechecks its
+sources (not its tests). Both alias `@tomic/lib` to the linked checkout's
+`browser/lib/src`. `node integrations/tooling/run-lane.mjs calendar` runs both
+tiers the way CI does.
 
 API reference: https://developers.google.com/calendar/api/v3/reference/events

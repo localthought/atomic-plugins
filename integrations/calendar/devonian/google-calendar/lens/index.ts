@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Passive Calendar projections and reverse field mapping. */
 export * from './types.js';
 export * from './projection.js';

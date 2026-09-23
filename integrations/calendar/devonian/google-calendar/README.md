@@ -1,7 +1,18 @@
 # Google Calendar platform modules
 
 `lens/` contains passive display/recurrence projections and reverse field mapping.
-Import it through `devonian/platform-lenses/google-calendar/lens`.
+
+This folder lives in the calendar plugin folder (it was
+`devonian/platform-lenses/google-calendar/` in the `devonian` package up to
+0.6.1, exported as `devonian/platform-lenses/google-calendar{,/sync,/recurrence,/lens}`).
+It does not import Devonian. It imports `@tomic/lib` from the host; in this
+repo `../../vitest.config.ts` and `../../tsconfig.json` point that at the
+linked atomic-server checkout's `browser/lib/src`. Its tests (`import.test.ts`,
+`lens/lens.test.ts`) run in the calendar lane:
+
+```sh
+node integrations/tooling/run-lane.mjs calendar
+```
 
 - `calendarProjection` adds Atomic calendar display properties.
 - `calendarRecurrenceProjection` preserves a recurrence payload for Atomic views.

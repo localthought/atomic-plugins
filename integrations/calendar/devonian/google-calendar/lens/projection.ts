@@ -5,6 +5,7 @@ import {
   isCalendarDate as validDay,
 } from '@tomic/lib';
 import type { JSONValue, FetchedPlatform, Term } from './types.js';
+
 export { calendarFields } from '@tomic/lib';
 
 /** An additional projection, never a replacement for the provider's fields.
@@ -15,7 +16,7 @@ export { calendarFields } from '@tomic/lib';
 export function calendarProjection(fetched: FetchedPlatform): FetchedPlatform {
   if (fetched.platform !== 'google-calendar') return fetched;
   const event = fetched.ontology.terms.find(
-    (t) => t.kind === 'class' && t.shortname === 'event',
+    t => t.kind === 'class' && t.shortname === 'event',
   );
   if (!event) return fetched;
   const definitions: [string, Datatype, string][] = [
@@ -52,25 +53,26 @@ export function calendarProjection(fetched: FetchedPlatform): FetchedPlatform {
     }),
   );
   if (
-    fetched.ontology.terms.some((t) =>
-      terms.some((extra) => extra.shortname === t.shortname),
+    fetched.ontology.terms.some(t =>
+      terms.some(extra => extra.shortname === t.shortname),
     )
   )
     throw new Error(
       'Calendar projection property collides with provider ontology',
     );
+
   return {
     ...fetched,
     ontology: {
       ...fetched.ontology,
       terms: [
-        ...fetched.ontology.terms.map((t) =>
+        ...fetched.ontology.terms.map(t =>
           t === event
             ? {
                 ...t,
                 recommends: [
                   ...t.recommends,
-                  ...terms.map((extra) => extra.path),
+                  ...terms.map(extra => extra.path),
                 ],
               }
             : t,
@@ -78,7 +80,7 @@ export function calendarProjection(fetched: FetchedPlatform): FetchedPlatform {
         ...terms,
       ],
     },
-    records: fetched.records.map((row) => {
+    records: fetched.records.map(row => {
       if (row.resource !== 'event') return row;
       const start = object(row.values.start);
       const end = object(row.values.end);
@@ -142,16 +144,19 @@ export function calendarProjection(fetched: FetchedPlatform): FetchedPlatform {
         ...row.values,
         [calendarFields.notes]: notes.join('. '),
       };
+
       if (typeof date === 'string' && validDay(date.slice(0, 10))) {
         values[calendarFields.day] = date.slice(0, 10);
         values[calendarFields.allDay] = allDay;
         if (allDay && validDay(end.date))
           values[calendarFields.endDay] = end.date;
       }
+
       return { ...row, values };
     }),
   };
 }
+
 function object(value: JSONValue | undefined): Record<string, JSONValue> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value

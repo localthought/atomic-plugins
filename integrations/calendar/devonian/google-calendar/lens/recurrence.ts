@@ -15,7 +15,7 @@ export function calendarRecurrenceProjection(
 ): FetchedPlatform {
   if (fetched.platform !== 'google-calendar') return fetched;
   const eventClass = fetched.ontology.terms.find(
-    (t) => t.kind === 'class' && t.shortname === 'event',
+    t => t.kind === 'class' && t.shortname === 'event',
   );
   if (!eventClass) return fetched;
   const term: Term = {
@@ -28,7 +28,7 @@ export function calendarRecurrenceProjection(
     requires: [],
     recommends: [],
   };
-  if (fetched.ontology.terms.some((t) => t.shortname === term.shortname))
+  if (fetched.ontology.terms.some(t => t.shortname === term.shortname))
     throw new Error(
       'Calendar recurrence property collides with provider ontology',
     );
@@ -38,7 +38,7 @@ export function calendarRecurrenceProjection(
     ontology: {
       ...fetched.ontology,
       terms: [
-        ...fetched.ontology.terms.map((t) =>
+        ...fetched.ontology.terms.map(t =>
           t === eventClass
             ? { ...t, recommends: [...t.recommends, term.path] }
             : t,
@@ -46,12 +46,12 @@ export function calendarRecurrenceProjection(
         term,
       ],
     },
-    records: fetched.records.map((row) => {
+    records: fetched.records.map(row => {
       if (row.resource !== 'event') return row;
       const read = (key: string) =>
         row.values[key] ??
         row.values[
-          key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+          key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
         ] ??
         row.values[key.toLowerCase()];
       const event: CalendarEvent = { id: row.id };
