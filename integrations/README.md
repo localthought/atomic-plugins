@@ -302,6 +302,24 @@ section explains where the terms **reflector**, **syncables** and
   here entirely. A caller that needs full OpenAPI-driven sync composes its
   own such engine on top of `BrowserIntegrations`'s `request()` — that's
   `atomic-server`'s responsibility now, not this repo's.
+  **The rotating connection code never leaves `browser.ts`.** It is a
+  live bearer credential: `browser.ts` keeps it in browser `Storage` and
+  hands callers only an opaque connection id. Never write it into an Atomic
+  resource — not an App resource, not config, not an import record. A
+  resource syncs and its drive can later be shared, and the proxy has no
+  per-code revocation
+  ([#21](https://github.com/ontola/atomic-plugins/issues/21)). A drive plugin or App may store only a
+  non-secret connection reference: `platform`, plus a `connectionId` once
+  the persistent connections planned in
+  [#40](https://github.com/ontola/atomic-plugins/issues/40) exist. Until
+  #40 and [ontola/atomic-server#1624](https://github.com/ontola/atomic-server/issues/1624)
+  land, proxy requests for a sandboxed drive-plugin frame are made by the
+  parent page, never by the frame itself. `localthought/no-credentials-in-graph.test.mjs`
+  (`node --test`, run by CI's "Tooling unit tests" step)
+  fails the build if any shipped source under `integrations/` contains a
+  `…/properties/…connection-code` URL, or mentions `x-connection-code`
+  outside `browser.ts`. It is a text scan, not data-flow analysis, so it
+  won't catch a code stored under an unrelated property name.
 - **Syncables** — the OpenAPI-mock/sync-client engine that reads a
   platform's document plus its
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)

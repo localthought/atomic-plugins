@@ -23,7 +23,11 @@ from the address bar immediately. A ten-minute, non-secret session marker resume
 setup if removing those parameters remounts the page; completing installation or
 closing its setup dialog clears the marker.
 Connection codes are stored in this browser's localStorage, outside the synced
-graph, and may be read by code running on this frontend origin. Clearing site
+graph, and may be read by code running on this frontend origin. They must never
+be written into an Atomic resource, including a drive plugin's own App resource
+(ontola/atomic-plugins#21). `node --test
+integrations/localthought/no-credentials-in-graph.test.mjs` enforces this for
+shipped source under `integrations/`. Clearing site
 data requires reconnecting. Existing server-held connections require reconnecting.
 Web Locks serialize rotating codes across tabs; a request consumes its code
 before dispatch and saves the replacement before processing data. Uncertain
