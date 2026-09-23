@@ -111,10 +111,35 @@ function issuePatch(desired, previous) {
   return patch;
 }
 
+// browser/lib/src/subject.ts
+var ATOMIC_PREFIX = "atomic:";
+var DID_AD_PREFIX = "did:ad:";
+function isLegacyAtomicLink(raw) {
+  return raw.startsWith("atomic://");
+}
+function startsWithAtomicScheme(raw) {
+  return raw.startsWith(ATOMIC_PREFIX) && !isLegacyAtomicLink(raw);
+}
+function isAtomicIdentifier(raw) {
+  return startsWithAtomicScheme(raw) || raw.startsWith(DID_AD_PREFIX);
+}
+function canonicalizeScheme(raw) {
+  if (raw.startsWith(DID_AD_PREFIX)) {
+    return ATOMIC_PREFIX + raw.slice(DID_AD_PREFIX.length);
+  }
+  return raw;
+}
+function canonicalIdentifier(raw) {
+  if (!isAtomicIdentifier(raw)) {
+    return raw;
+  }
+  return canonicalizeScheme(raw.split(/[?#]/)[0]);
+}
+
 // browser/lib/src/import-records.ts
 var IMPORT_LOCAL_ID = "https://atomicdata.dev/properties/localId";
 var PARENT = "https://atomicdata.dev/properties/parent";
-var pure = (subject) => typeof subject === "string" && subject.startsWith("did:") ? subject.split("?")[0] : subject;
+var pure = (subject) => typeof subject === "string" ? canonicalIdentifier(subject) : subject;
 function claimImportIdentity(host, parent2, sourceId, subject) {
   const matches = host.query(IMPORT_LOCAL_ID, sourceId).filter((id) => pure(host.read(id)[PARENT]) === pure(parent2));
   if (matches.length > 1 || matches.some((id) => pure(id) !== pure(subject)))
