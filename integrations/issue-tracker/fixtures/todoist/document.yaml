@@ -1,0 +1,298 @@
+components:
+  crudResources:
+    project:
+      collections:
+        projects:
+          urlTemplate: /projects
+      description: A project in the authenticated Todoist account.
+      identity:
+        bindings:
+          project_id:
+            field: id
+        urlTemplate: /projects/{project_id}
+      schema:
+        $ref: '#/components/schemas/Project'
+    task:
+      collections:
+        tasks:
+          urlTemplate: /tasks
+      description: An active task in the authenticated Todoist account.
+      identity:
+        bindings:
+          task_id:
+            field: id
+        urlTemplate: /tasks/{task_id}
+      schema:
+        $ref: '#/components/schemas/Task'
+  paginationSchemes:
+    cursor:
+      request:
+        queryParameters:
+          cursor:
+            description: Opaque cursor returned by the preceding page.
+            role: cursor
+          limit:
+            description: Maximum number of results per page.
+            role: pageSize
+      response:
+        bodyFields:
+          next_cursor:
+            description: Opaque cursor for the next page, when present.
+            role: nextCursor
+      type: pageToken
+  parameters:
+    Cursor:
+      in: query
+      name: cursor
+      required: false
+      schema:
+        type: string
+    Limit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        default: 50
+        maximum: 200
+        minimum: 1
+        type: integer
+    ProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        type: string
+    TaskId:
+      in: path
+      name: task_id
+      required: true
+      schema:
+        type: string
+  schemas:
+    Project:
+      properties:
+        color:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        is_archived:
+          type: boolean
+        is_deleted:
+          type: boolean
+        is_favorite:
+          type: boolean
+        is_shared:
+          type: boolean
+        name:
+          type: string
+        parent_id:
+          nullable: true
+          type: string
+        url:
+          format: uri
+          type: string
+        view_style:
+          type: string
+      required:
+        - id
+        - name
+      type: object
+    ProjectPage:
+      properties:
+        next_cursor:
+          nullable: true
+          type: string
+        results:
+          items:
+            $ref: '#/components/schemas/Project'
+          type: array
+      required:
+        - results
+        - next_cursor
+      type: object
+    Task:
+      properties:
+        added_at:
+          format: date-time
+          type: string
+        checked:
+          type: boolean
+        content:
+          type: string
+        description:
+          type: string
+        due:
+          nullable: true
+          properties:
+            date:
+              type: string
+            datetime:
+              type: string
+            is_recurring:
+              type: boolean
+            string:
+              type: string
+          type: object
+        id:
+          type: string
+        is_deleted:
+          type: boolean
+        labels:
+          items:
+            type: string
+          type: array
+        parent_id:
+          nullable: true
+          type: string
+        priority:
+          type: integer
+        project_id:
+          type: string
+        section_id:
+          nullable: true
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        url:
+          format: uri
+          type: string
+      required:
+        - id
+        - project_id
+        - content
+      type: object
+    TaskPage:
+      properties:
+        next_cursor:
+          nullable: true
+          type: string
+        results:
+          items:
+            $ref: '#/components/schemas/Task'
+          type: array
+      required:
+        - results
+        - next_cursor
+      type: object
+  securitySchemes:
+    bearerAuth:
+      scheme: bearer
+      type: http
+    todoistOAuth:
+      flows:
+        authorizationCode:
+          authorizationUrl: https://app.todoist.com/oauth/authorize
+          scopes:
+            data:read: Read the authenticated user’s data.
+          tokenUrl: https://api.todoist.com/oauth/access_token
+      type: oauth2
+info:
+  description: Read-only Todoist projects and active tasks API.
+  license:
+    name: Todoist API Terms of Service
+    url: https://todoist.com/legal/terms-of-service
+  title: Todoist API
+  version: '1'
+openapi: 3.0.3
+paths:
+  /projects:
+    get:
+      operationId: getProjects
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPage'
+          description: A page of projects.
+      security:
+        - todoistOAuth:
+            - data:read
+        - bearerAuth: []
+      summary: Get active projects
+      x-crud:
+        action: list
+        collection: projects
+        resource: project
+      x-pagination:
+        - scheme: cursor
+  /projects/{project_id}:
+    get:
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+          description: A project.
+      security:
+        - todoistOAuth:
+            - data:read
+        - bearerAuth: []
+      summary: Get a project
+      x-crud:
+        action: read
+        resource: project
+  /tasks:
+    get:
+      operationId: getTasks
+      parameters:
+        - description: Filter tasks to a project.
+          in: query
+          name: project_id
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPage'
+          description: A page of tasks.
+      security:
+        - todoistOAuth:
+            - data:read
+        - bearerAuth: []
+      summary: Get active tasks
+      x-crud:
+        action: list
+        collection: tasks
+        resource: task
+      x-pagination:
+        - scheme: cursor
+  /tasks/{task_id}:
+    get:
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: A task.
+      security:
+        - todoistOAuth:
+            - data:read
+        - bearerAuth: []
+      summary: Get a task
+      x-crud:
+        action: read
+        resource: task
+security:
+  - bearerAuth: []
+servers:
+  - url: https://api.todoist.com/api/v1
