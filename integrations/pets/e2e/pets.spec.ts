@@ -17,7 +17,7 @@ import { before } from '../../../browser/e2e/tests/test-utils';
 test.describe('pets integration', () => {
   test.beforeEach(before);
   test.beforeEach(async ({ page }) => {
-    await enableIntegrationDiscovery(page, true);
+    await enableIntegrationDiscovery(page);
   });
 
   test('Pets imports in the background after account connection', async ({
