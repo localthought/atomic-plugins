@@ -1,6 +1,6 @@
 // @wc-ignore-file
 import { describe, expect, it } from 'vitest';
-import { USER, WORKSPACE } from '../../localthought/mock-clockify.mjs';
+import { USER, WORKSPACE } from '../fixtures/clockify/scenario.mjs';
 import { readConnectionReference } from './config.js';
 import { createController, describe as describeState } from './controller.js';
 import { fakeStore } from './fakeStore.js';

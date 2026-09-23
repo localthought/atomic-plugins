@@ -5,7 +5,7 @@ import { ProxyError, requestJson, type ProxyTransport } from './transport.js';
 /**
  * Clockify list endpoints as reached through the integration proxy
  * (`/proxy/clockify` + these paths, the same paths
- * `integrations/localthought/mock-clockify.mjs` serves). Paging follows the
+ * `integrations/timesheets/fixtures/clockify/scenario.mjs` serves). Paging follows the
  * pageNumber scheme that mock documents: 1-indexed `page`/`page-size`, a
  * plain JSON array, and a page shorter than `page-size` is the last one.
  */

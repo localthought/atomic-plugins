@@ -5,7 +5,7 @@ import {
   clockifyFixture,
   USER,
   WORKSPACE,
-} from '../../localthought/mock-clockify.mjs';
+} from '../fixtures/clockify/scenario.mjs';
 import type { ConnectionReference } from './config.js';
 import { fakeStore, PARENT, IS_A } from './fakeStore.js';
 import { NAME, row, TIME_ENTRY_CLASS } from './ontology.js';
