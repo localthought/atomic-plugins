@@ -452,7 +452,7 @@ Changed mapping/checkpoint formats still need explicit migration tests.
 - An app's signing key is node-local (upstream `atomic-server`, checked at
   `.atomic-server-ref`). Its public agent resource syncs; the secret half in
   `Tree::AppAgent` does not, and nothing carries it to another node
-  (activating a JS Installation there mints a *different* agent instead). A
+  (activating a JS Installation there mints a _different_ agent instead). A
   node that received the drive by sync reads the missing key as legacy. There,
   `POST /app-write` refuses with "no key of its own", and a scheduled or
   plugin run signs as that node's own agent rather than the app. Treat
