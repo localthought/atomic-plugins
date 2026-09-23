@@ -13,5 +13,5 @@ export default {
         .pathname,
     },
   },
-  test: { include: ['*.test.ts', 'devonian/**/*.test.ts'] },
+  test: { include: ['*.test.ts', 'host/*.test.ts', 'devonian/**/*.test.ts'] },
 };

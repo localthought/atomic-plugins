@@ -3,8 +3,8 @@ import { discoverDatabases, proxyOperation } from './proxy';
 import { run } from './plugin';
 import { id, fixture } from './fixture';
 import { request } from './model';
-import { runWithAsyncReads } from '../localthought/async-plugin';
-import { continueBrowserSync, type Step } from '../localthought/browser-sync';
+import { runWithAsyncReads } from './host/async-plugin';
+import { continueBrowserSync, type Step } from './host/browser-sync';
 import { P } from './model';
 interface Intent {
   subject?: string;

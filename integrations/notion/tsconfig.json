@@ -6,5 +6,12 @@
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },
-  "include": ["model.ts", "plugin.ts", "atomic.ts", "localthought.ts"]
+  "include": [
+    "model.ts",
+    "plugin.ts",
+    "atomic.ts",
+    "localthought.ts",
+    "host/async-plugin.ts",
+    "host/browser-sync.ts"
+  ]
 }
