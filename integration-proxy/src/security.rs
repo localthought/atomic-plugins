@@ -55,6 +55,13 @@ fn spawn_reconnect_supervisor(
     });
 }
 
+/// Days an unused connection code, and so the credential sealed in it, stays
+/// redeemable. This was ten minutes, which destroyed a user's refresh token
+/// whenever their client stopped syncing for that long (issue #42). Long
+/// enough to survive a weekend or holiday; short enough that abandoned
+/// grants are still swept.
+pub const CONNECTION_CODE_IDLE_DAYS: i32 = 30;
+
 pub struct OAuthState {
     pub provider: String,
     pub redirect_uri: String,
@@ -235,9 +242,13 @@ impl Security {
         self.client().await.query_opt("DELETE FROM connection_handoffs WHERE code = $1 AND challenge = $2 AND expires_at > NOW() RETURNING envelope", &[&code, &challenge]).await.map_err(|e| e.to_string()).map(|row| row.map(|r| r.get(0)))
     }
 
-    // Allow a provider-mandated five-minute Retry-After without expiring the
-    // next single-use credential while the client is waiting. OAuth handoffs
-    // retain their separate five-minute lifetime.
+    /// Stores a single-use connection code. Its row is the only server-side
+    /// copy of the sealed credential, including any OAuth refresh token, so
+    /// its lifetime is the grant's lifetime: it must outlast ordinary client
+    /// idleness, not just a provider's five-minute Retry-After. `forward`
+    /// stores a fresh successor on every proxied request, so this is an idle
+    /// timeout measured from last use. OAuth handoffs keep their separate
+    /// five-minute lifetime.
     pub async fn store_connection_code(&self, code: &str, envelope: &str) -> Result<(), String> {
         let database = self.client().await;
         database
@@ -247,7 +258,7 @@ impl Security {
             )
             .await
             .map_err(|e| e.to_string())?;
-        database.execute("INSERT INTO connection_codes (code, envelope, expires_at) VALUES ($1,$2,NOW() + INTERVAL '10 minutes')", &[&code, &envelope]).await.map_err(|e| e.to_string())?;
+        database.execute("INSERT INTO connection_codes (code, envelope, expires_at) VALUES ($1,$2,NOW() + make_interval(days => $3))", &[&code, &envelope, &CONNECTION_CODE_IDLE_DAYS]).await.map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -366,5 +377,137 @@ mod tests {
             .consume_nonce(&format!("post-reconnect-{tag}"))
             .await
             .expect("query after reconnect"));
+    }
+
+    /// Simulates `idle` passing for one stored code by moving its expiry
+    /// back, then stores another code so the expired-row sweep runs.
+    async fn age_connection_code(
+        security: &Security,
+        admin: &tokio_postgres::Client,
+        code: &str,
+        idle: &str,
+    ) {
+        let aged = admin
+            .execute(
+                &format!(
+                    "UPDATE connection_codes SET expires_at = expires_at - INTERVAL '{idle}' WHERE code = $1"
+                ),
+                &[&code],
+            )
+            .await
+            .expect("age connection code");
+        assert_eq!(aged, 1, "expected to age exactly one connection code");
+        security
+            .store_connection_code(&format!("{code}-sweep"), "unused-envelope")
+            .await
+            .expect("store a code, which sweeps expired rows");
+    }
+
+    // Issue #42: the connection_codes row is the only copy of the sealed
+    // refresh token, so a client idle for longer than a lunch break must
+    // still be able to redeem its code.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn connection_code_survives_an_idle_client() {
+        let database_url = std::env::var("TEST_DATABASE_URL")
+            .expect("set TEST_DATABASE_URL to an isolated test database");
+        let security = Security::connect(&database_url, TEST_KEY, vec![])
+            .await
+            .expect("connect");
+        let (admin, connection) = tokio_postgres::connect(&database_url, tokio_postgres::NoTls)
+            .await
+            .expect("admin connection");
+        tokio::spawn(async move {
+            connection.await.expect("admin connection driver");
+        });
+        let code = format!("idle-{:016x}", rand::random::<u64>());
+        security
+            .store_connection_code(&code, "sealed-envelope")
+            .await
+            .unwrap();
+
+        let remaining_days: f64 = admin
+            .query_one(
+                "SELECT EXTRACT(EPOCH FROM expires_at - NOW())::float8 / 86400 FROM connection_codes WHERE code = $1",
+                &[&code],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        assert!(
+            (f64::from(CONNECTION_CODE_IDLE_DAYS) - 1.0..=f64::from(CONNECTION_CODE_IDLE_DAYS))
+                .contains(&remaining_days),
+            "expected a {CONNECTION_CODE_IDLE_DAYS}-day idle lifetime, got {remaining_days} days"
+        );
+
+        // Idle for a day: well past the previous ten-minute expiry.
+        age_connection_code(&security, &admin, &code, "1 day").await;
+        assert_eq!(
+            security
+                .take_connection_code(&code)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("sealed-envelope")
+        );
+        // Still single-use.
+        assert!(security
+            .take_connection_code(&code)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(security
+            .take_connection_code(&format!("{code}-sweep"))
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    // Abandoned grants are still cleaned up once the idle lifetime passes.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn connection_code_is_swept_after_the_idle_lifetime() {
+        let database_url = std::env::var("TEST_DATABASE_URL")
+            .expect("set TEST_DATABASE_URL to an isolated test database");
+        let security = Security::connect(&database_url, TEST_KEY, vec![])
+            .await
+            .expect("connect");
+        let (admin, connection) = tokio_postgres::connect(&database_url, tokio_postgres::NoTls)
+            .await
+            .expect("admin connection");
+        tokio::spawn(async move {
+            connection.await.expect("admin connection driver");
+        });
+        let code = format!("abandoned-{:016x}", rand::random::<u64>());
+        security
+            .store_connection_code(&code, "sealed-envelope")
+            .await
+            .unwrap();
+
+        age_connection_code(
+            &security,
+            &admin,
+            &code,
+            &format!("{CONNECTION_CODE_IDLE_DAYS} days 1 second"),
+        )
+        .await;
+        let remaining: i64 = admin
+            .query_one(
+                "SELECT COUNT(*) FROM connection_codes WHERE code = $1",
+                &[&code],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(remaining, 0, "expired code row was not swept");
+        assert!(security
+            .take_connection_code(&code)
+            .await
+            .unwrap()
+            .is_none());
+        security
+            .take_connection_code(&format!("{code}-sweep"))
+            .await
+            .unwrap();
     }
 }
