@@ -182,7 +182,7 @@ the integration catalog. GitHub Pages publishes `overlays/` from `main` at
 `https://ontola.github.io/atomic-plugins/overlays/`, and the proxy defaults to
 the `catalog.json` there; set `CATALOG_PATH` to another HTTPS URL or to a
 local fixture for development. Each platform names one pinned OpenAPI document
-(in `localthought/openapi-directory`, at a commit) and zero or more Overlay
+(in `localthought/` or `ontola/openapi-directory`, at a commit) and zero or more Overlay
 Specification documents, each served from that same Pages folder. At startup
 the proxy downloads those HTTPS sources, applies each overlay's `update`
 actions in the listed order, and keeps the resulting YAML in memory.

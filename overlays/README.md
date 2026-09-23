@@ -22,8 +22,8 @@ integration proxy's default `CATALOG_PATH` is
 migration every overlay URL was pinned to a `localthought/overlays` commit
 on `raw.githubusercontent.com`; the Pages URLs are not pinned, so a merge
 to `main` changes what the proxy composes at its next start. The OAD
-(`openapi`) URLs are unchanged and still pinned to a
-`localthought/openapi-directory` commit.
+(`openapi`) URLs are still pinned to an `openapi-directory` commit
+(`localthought/`, or `ontola/` for Google Calendar).
 
 Overlays are applied in the order `catalog.json` lists them, and an action
 whose target does not exist yet fails the whole catalog load. Clockify's

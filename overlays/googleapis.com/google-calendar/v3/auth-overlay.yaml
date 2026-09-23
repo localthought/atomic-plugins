@@ -1,7 +1,7 @@
 overlay: 1.0.0
 info:
   title: google-calendar OAuth authorization requirements
-  version: 1.1.0
+  version: 1.3.0
 actions:
 - target: $.components.securitySchemes
   update:
@@ -109,60 +109,270 @@ actions:
     - googleOffline:
       - https://www.googleapis.com/auth/calendar.calendarlist.readonly
 
-# Introduces the one write operation this platform exposes: a partial update
-# to an event, matching what Devonian's google-calendar lens can send
-# (`planCalendarEdit`/`applyCalendarEdit` in localthought/devonian only ever
-# patch summary, description, location, start and end). Runs first among the
-# google-calendar overlays so crud-causality-overlay.yaml can add `x-crud` to
-# it afterwards. Reuses the `calendar.events` scope already requested for the
-# events GET operations below, so no new consent/reconnect is required.
-- target: $.paths['/calendars/{calendarId}/events/{eventId}']
+# The base document (now the full, generated googleapis.com/calendar/v3
+# document — see catalog.json) already declares this `patch` operation in
+# full: operationId, parameters, and a requestBody/200 response both typed
+# as `#/components/schemas/Event`. It only needs narrowing to the one scope
+# this platform actually requests (its own `security` lists every scope
+# alternative Google's Discovery doc allows) and a `412` response, which
+# Discovery's format has no room to express, documenting the optimistic-
+# concurrency conflict Devonian's lens (`applyCalendarEdit` in
+# localthought/devonian) handles via `If-Match`/ETag. Reuses the
+# `calendar.events` scope already requested for the events GET operations
+# above, so no new consent/reconnect is required.
+- target: $.paths['/calendars/{calendarId}/events/{eventId}'].patch
   update:
-    patch:
-      operationId: events-patch
-      summary: Update fields on an existing event
-      description: >
-        A partial update to an event. `If-Match` carries the event's
-        last-known ETag for optimistic-concurrency conflict detection;
-        Google returns 412 if the event changed remotely since it was read.
-      parameters:
-      - name: calendarId
-        in: path
-        required: true
-        schema: { type: string }
-      - name: eventId
-        in: path
-        required: true
-        schema: { type: string }
-      - name: sendUpdates
-        in: query
-        required: false
-        description: Whether to notify attendees of the change.
-        schema:
-          type: string
-          enum: [all, externalOnly, none]
-      - name: If-Match
-        in: header
-        required: false
-        description: The event's last-known ETag.
-        schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/event'
-      responses:
-        '200':
-          description: The updated event.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/event'
-        '412':
-          description: The If-Match precondition failed.
-      security:
-      - googleOnline:
-        - https://www.googleapis.com/auth/calendar.events
-      - googleOffline:
-        - https://www.googleapis.com/auth/calendar.events
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+    responses:
+      '412':
+        description: >
+          The If-Match precondition failed: the event changed remotely
+          since it was last read.
+
+# The rest of the base document's operations (calendar/ACL/color/
+# freebusy/settings/channel management this platform never calls) still
+# only declare the base document's native Oauth2/Oauth2c security, which
+# this catalog's oauth_provider() resolution (integration-proxy's
+# Provider::from_document) requires every operation to narrow to a single
+# declared scheme. Narrowed to whichever of this platform's two granted
+# scopes best fits: calendarList operations to calendar.calendarlist.readonly,
+# everything else to calendar.events. Catalog::allows() checks path/method
+# existence only, not x-crud, so this does widen what the proxy will forward
+# — Google's own per-scope enforcement on the actual granted token remains
+# the real authorization boundary for all of these; devonian's lens never
+# calls them.
+- target: $.paths['/calendars'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}'].delete
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}'].patch
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}'].put
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl/watch'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].delete
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].patch
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].put
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/clear'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/import'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/quickAdd'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/watch'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/{eventId}'].delete
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/{eventId}'].put
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/{eventId}/instances'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/{eventId}/move'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/transferOwnership'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/channels/stop'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/colors'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/freeBusy'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/users/me/calendarList'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/calendarList/watch'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/calendarList/{calendarId}'].delete
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/calendarList/{calendarId}'].patch
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/calendarList/{calendarId}'].put
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/settings'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/users/me/settings/watch'].post
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/users/me/settings/{setting}'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
