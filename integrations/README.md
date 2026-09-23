@@ -503,6 +503,16 @@ Changed mapping/checkpoint formats still need explicit migration tests.
 - Mapping/checkpoint migration tests and staged release rollout.
 - Health monitoring, provider-change alerts and ownership escalation.
 - Reusable provider fixture builders and UI installation coverage for both pilots.
+- An app's signing key is node-local (upstream `atomic-server`, checked at
+  `.atomic-server-ref`). Its public agent resource syncs; the secret half in
+  `Tree::AppAgent` does not, and nothing carries it to another node
+  (activating a JS Installation there mints a _different_ agent instead). A
+  node that received the drive by sync reads the missing key as legacy. There,
+  `POST /app-write` refuses with "no key of its own", and a scheduled or
+  plugin run signs as that node's own agent rather than the app. Treat
+  app writes and unattended runs as single-node until upstream decides the
+  "second node" question in its `planning/plugins.md`
+  ([#41](https://github.com/ontola/atomic-plugins/issues/41)).
 
 No recurring live jobs or automatic releases are enabled by this command.
 
