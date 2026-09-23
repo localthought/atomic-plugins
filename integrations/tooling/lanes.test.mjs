@@ -86,13 +86,21 @@ test('a lane filter covers only its own directory', () => {
     assert.deepEqual(laneFilter(lane), [`integrations/${lane.id}/**`]);
 });
 
+const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
+
 test('activeLanes drops tier-less lanes', () => {
   const ids = activeLanes(config.lanes).map(l => l.id);
   assert.ok(!ids.includes('money'), 'money has no tiers and needs no job');
-  assert.ok(ids.includes('pets'));
+  // Synthetic, not a real lane: which real lanes have tiers changes when one
+  // is quarantined (see "quarantined" in lanes.json).
+  assert.deepEqual(
+    activeLanes([
+      lane({ id: 'idle' }),
+      lane({ id: 'busy', tiers: ['unit'] }),
+    ]).map(l => l.id),
+    ['busy'],
+  );
 });
-
-const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
 const cfg = (...lanes) => ({ portBase: 19100, sharedIndex: 9, lanes });
 
 test('duplicate indexes are rejected, and the message names both lanes', () => {
