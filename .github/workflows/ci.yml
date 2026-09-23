@@ -20,8 +20,10 @@ name: CI
 #     (see certify.test.mjs's "CI browser and integration symlinks" case).
 #   - `integrations/tooling/dev-server.mjs` stands in for the `/integrations`
 #     route atomic-server would otherwise embed at build time: it serves
-#     this repo's catalog.json and plugin.js bundles itself, and proxies
-#     every other request through to the real atomic-server.
+#     this repo's catalog.json and plugin.js bundles itself, with permissive
+#     CORS, and 404s everything else. Clients talk to atomic-server directly
+#     and fetch the catalog from here cross-origin (see the header of
+#     dev-server.mjs for why it no longer proxies).
 #   - `integrations/localthought/mock-proxy.mjs` (the same fixture
 #     atomic-server's own dagger e2e pipeline runs) stands in for the real
 #     LocalThought integration proxy, so the Integrations-page flow can run
@@ -422,9 +424,9 @@ jobs:
   # Proves the dev-server wiring actually works: every certified plugin.js and
   # the root catalog.json are byte-identical when fetched through it (this is
   # the "plugin hosting" a real browser's fetch() relies on at install time —
-  # see server/build.rs::embed_integrations upstream), and an ordinary
-  # atomic-data request still reaches the real atomic-server transparently
-  # through the same URL. Not a plugin lane: it verifies shared infrastructure,
+  # see server/build.rs::embed_integrations upstream), nothing outside
+  # /integrations is served, and atomic-server answers on its own port.
+  # Not a plugin lane: it verifies shared infrastructure,
   # so it runs whenever anything under integrations/ changed.
   hosting-surface:
     name: Plugin catalog and hosting surface
@@ -488,7 +490,7 @@ jobs:
             expected=$(sha256sum "$path" | cut -d' ' -f1)
             actual=$(curl -sf "http://localhost:$dev/integrations/${path#integrations/}" | sha256sum | cut -d' ' -f1)
             if [ "$expected" != "$actual" ]; then
-              echo "mismatch serving $path through the dev-server proxy" >&2
+              echo "mismatch serving $path from the dev-server" >&2
               exit 1
             fi
           }

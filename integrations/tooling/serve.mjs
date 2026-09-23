@@ -130,20 +130,21 @@ export async function bringUp({ ports, platforms = [], label = 'shared' }) {
       // nothing in server/src reads these today, so they are a no-op kept only
       // so this matches upstream if a future commit does.
       ATOMIC_INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
-      ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.devServer}`,
+      ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
       TENANT_SECRET: 'bW9jay10ZW5hbnQ.mock-signature',
     },
   );
   // MOCK_FRONTEND_ORIGIN must match wherever the browser actually loads the
-  // SPA from (the dev-server, not atomic-server directly) — the mock proxy
-  // validates OAuth-style redirect_uri origins against it.
+  // SPA from — atomic-server directly (FRONTEND_URL in run-lane.mjs and
+  // ci.yml), not the dev-server, which only hosts the catalog. The mock proxy
+  // rejects any /connect whose redirect_uri has another origin.
   start(
     'mock-proxy',
     process.execPath,
     ['integrations/localthought/mock-proxy.mjs'],
     {
       MOCK_PROXY_PORT: String(ports.mockProxy),
-      MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.devServer}`,
+      MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
       MOCK_PROXY_PLATFORMS: platforms.join(','),
     },
   );
@@ -153,7 +154,6 @@ export async function bringUp({ ports, platforms = [], label = 'shared' }) {
     ['integrations/tooling/dev-server.mjs'],
     {
       DEV_SERVER_PORT: String(ports.devServer),
-      DEV_SERVER_UPSTREAM: `http://localhost:${ports.atomicServer}`,
     },
   );
 
