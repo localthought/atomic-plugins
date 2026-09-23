@@ -1,71 +1,58 @@
 // @wc-ignore-file
 /**
- * Split out of atomic-server's `browser/e2e/tests/plugins.spec.ts` (deleted there by
- * atomic-server#1621) so this repo's `pets` CI lane can be gated on
- * `integrations/pets/**` alone — see `integrations/PARALLEL_LANES.md`.
- * The tests left behind there drive the generic plugin editor and sandbox
- * rather than any one integration, and stay upstream — the `e2e-plugin-system`
- * CI job runs them.
+ * The Pets drive app (`integrations/pets/app/`), end to end: the app runs in
+ * its own null-origin iframe, connects Pets through the host's consent bar
+ * and the (mock) integration proxy, and imports the five pets through the
+ * host's proxy relay into its own table. No credential ever reaches the
+ * frame or the drive.
  *
- * Run it the way CI does:
+ * The app is installed test-side: `New app` from the catalog, then its entry
+ * point's source is replaced with `app/build.mjs`'s bundle, the way
+ * atomic-server's own apps.spec.ts does. There is no catalog install flow for
+ * drive apps yet.
+ *
+ * Needs an atomic-server with the host proxy relay (atomic-server
+ * `claude/plugin-proxy-relay`, #1624). Run it the way CI does:
  *   node integrations/tooling/run-lane.mjs pets --tier e2e
  */
-import { enableIntegrationDiscovery } from '../../../browser/e2e/tests/integration-settings-utils';
-import { test, expect } from '@playwright/test';
-import { before } from '../../../browser/e2e/tests/test-utils';
+import { test, expect, type Page } from '@playwright/test';
+import {
+  before,
+  createFromCatalog,
+} from '../../../browser/e2e/tests/test-utils';
+// @ts-expect-error build.mjs is plain JS with no declaration file.
+import { build } from '../app/build.mjs';
 
 test.describe('pets integration', () => {
   test.beforeEach(before);
-  test.beforeEach(async ({ page }) => {
-    await enableIntegrationDiscovery(page);
-  });
 
-  test('Pets imports in the background after account connection', async ({
+  test('Pets connects through the host and imports into its own table', async ({
     page,
   }) => {
     test.skip(
       !process.env.ATOMIC_MOCK_INTEGRATION_PROXY,
       'Run with the documented mock integration-proxy server configuration',
     );
-    // Failed all three attempts on develop run 4326, reported as the 60s test
-    // timeout and naming the `Last synced` wait below. That name is an
-    // artefact: the wall prints whichever assertion was in flight, and the
-    // longest ceiling in a test is the most likely one to be holding it. The
-    // step is not slow. Timed under four-worker load, three copies:
-    //
-    //   step                            budget   run A    run B    run C
-    //   integrations link through connect    -    5.7s     5.9s     4.9s
-    //   complete install, open folder        -    4.5s     5.1s     5.6s
-    //   `Last synced`                      60s    8.2s     7.1s     7.2s
-    //   open the Pets table            default    0.9s     0.6s     0.5s
-    //   rows and datatypes             default    2.5s     1.7s     0.5s
-    //   ------------------------------------- sum 21.9s   20.5s    18.8s
-    //   whole test                         60s   43.6s    38.6s    36.6s
-    //
-    // `Last synced` never passes 8.2s, and 18 to 22 seconds of each run are
-    // spent in `beforeEach` before the first step here begins. So the test is
-    // marginal as a whole, at 73% of its wall on the worst sample, and the
-    // wall lands wherever it happens to land.
-    //
-    // 120s for the test, matching the rest of this file. And `Last synced`
-    // comes DOWN to 30s: a ceiling equal to the wall can never fire, so it
-    // could only ever be reported as a wall casualty. At 30s against an 8.2s
-    // worst sample it can finally fail on its own terms and name itself.
-    test.setTimeout(120_000);
-    await page.getByRole('link', { name: 'Integrations', exact: true }).click();
-    const pets = page.locator('[data-integration="proxy:pets"]');
-    await expect(
-      pets.getByRole('heading', { name: 'Pets', exact: true }),
-    ).toBeVisible();
-    await pets.getByRole('button', { name: 'Set up connection' }).click();
+    test.setTimeout(180_000);
+    const { text } = (await build()) as { text: string };
 
-    const setup = page.locator('dialog[open]');
-    await expect(
-      setup.getByRole('button', { name: 'Install and connect', exact: true }),
-    ).toBeVisible();
-    await setup
-      .getByRole('button', { name: 'Install and connect', exact: true })
-      .click();
+    await createFromCatalog(page, 'App');
+    const main = page.getByRole('main');
+    await expect(main.locator('iframe[title="App"]')).toBeVisible({
+      timeout: 45_000,
+    });
+    await setAppSource(page, text);
+    await page.reload();
+
+    const app = page.frameLocator('iframe[title="App"]');
+    await expect(app.getByRole('heading', { name: 'Pets' })).toBeVisible();
+    await expect(app.getByRole('status')).toContainText('Not connected');
+    await app.getByRole('button', { name: 'Connect Pets' }).click();
+
+    // Drawn by the host page, outside the frame: only a click here navigates.
+    const consent = page.getByRole('group', { name: 'Connect an account' });
+    await expect(consent).toContainText('Pets');
+    await consent.getByRole('button', { name: 'Connect', exact: true }).click();
 
     await expect(
       page.getByRole('heading', { name: 'Mock integration proxy' }),
@@ -76,23 +63,33 @@ test.describe('pets integration', () => {
         exact: true,
       })
       .click();
-    await expect(page).not.toHaveURL(/connection_code=/);
-    await page.getByRole('button', { name: 'Complete installation' }).click();
-    await page.getByRole('link', { name: 'Open folder', exact: true }).click();
+
+    // Back on the app page, with the handoff redeemed and out of the URL.
+    await expect(page).not.toHaveURL(/connection_code=|integration_state=/);
     await expect(
-      page.getByRole('status').filter({ hasText: 'Last synced' }),
-    ).toBeVisible({ timeout: 30000 });
-    await page
-      .locator('[data-test="folder-list"]')
-      .getByRole('link', { name: 'Pets', exact: true })
-      .click();
-    const main = page.getByRole('main');
+      app.getByRole('status').filter({ hasText: 'Last synced' }),
+    ).toContainText('5 pets (5 added', { timeout: 30_000 });
+
+    // The frame never saw the rotating code; the page keeps it, and nothing
+    // in the drive does.
+    const stored = await page.evaluate(() =>
+      Object.keys(localStorage).filter(k =>
+        k.startsWith('atomic-proxy-connection-v1:'),
+      ),
+    );
+    expect(stored).toHaveLength(1);
+
+    // Rows are an ordinary table: open it outside the app.
+    await page.goto(
+      `${new URL(page.url()).origin}/app/show?subject=${encodeURIComponent(await tableOf(page))}`,
+    );
     await expect(
       main.getByRole('heading', { name: 'Pets', exact: true }),
     ).toBeVisible();
     for (const name of ['Rex', 'Whiskers', 'Tweety', 'Nibbles', 'Bubbles'])
       await expect(main.getByText(name, { exact: true }).first()).toBeVisible();
-    // Numeric and boolean properties must retain their Atomic datatype, not become JSON blobs.
+
+    // Numeric and boolean properties keep their Atomic datatype.
     const datatypes = await page.evaluate(async () => {
       const store = window.store!;
       const table = await store.getResource(
@@ -116,10 +113,67 @@ test.describe('pets integration', () => {
       );
     });
     expect(datatypes).toMatchObject({
-      age: 'https://atomicdata.dev/datatypes/integer',
-      vaccinated: 'https://atomicdata.dev/datatypes/boolean',
-      weight: 'https://atomicdata.dev/datatypes/float',
-      'updated at': 'https://atomicdata.dev/datatypes/timestamp',
+      Age: 'https://atomicdata.dev/datatypes/integer',
+      Vaccinated: 'https://atomicdata.dev/datatypes/boolean',
+      Weight: 'https://atomicdata.dev/datatypes/float',
+      'Updated at': 'https://atomicdata.dev/datatypes/timestamp',
     });
   });
 });
+
+/** The app's table: the value on the app that is a Table (`app-data`). */
+async function tableOf(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const store = window.store!;
+    const subject = new URL(location.href).searchParams.get('subject')!;
+    const app = await store.getResource(subject);
+    const candidates = Object.values(app.getPropVals()).filter(
+      (v): v is string => typeof v === 'string' && v.includes(':'),
+    );
+
+    for (const candidate of candidates) {
+      const child = await store.getResource(candidate).catch(() => undefined);
+      if (!child) continue;
+      const classes = child.get('https://atomicdata.dev/properties/isA');
+
+      if (
+        Array.isArray(classes) &&
+        classes.some(c => String(c).endsWith('/classes/Table'))
+      )
+        return candidate;
+    }
+
+    throw new Error('could not find the app’s table');
+  });
+}
+
+/**
+ * Replaces the source of the app on screen, through `window.store`. Copied
+ * from atomic-server's `browser/e2e/tests/apps.spec.ts` (not exported there).
+ */
+async function setAppSource(page: Page, source: string) {
+  await page.evaluate(async (next: string) => {
+    const store = window.store!;
+    const subject = decodeURIComponent(
+      new URL(location.href).searchParams.get('subject')!,
+    );
+    const app = await store.getResource(subject);
+
+    for (const value of Object.values(app.getPropVals())) {
+      if (typeof value !== 'string' || !value.includes(':')) continue;
+      const child = await store.getResource(value).catch(() => undefined);
+      if (!child) continue;
+      const sourceProp = Object.entries(child.getPropVals()).find(
+        ([, v]) =>
+          typeof v === 'string' && v.includes('export async function view'),
+      )?.[0];
+      if (!sourceProp) continue;
+      await child.set(sourceProp, next);
+      await child.save();
+
+      return;
+    }
+
+    throw new Error('could not find the app’s entry point');
+  }, source);
+}

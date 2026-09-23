@@ -42,10 +42,9 @@
     {
       "id": "notion",
       "index": 4,
-      "platforms": [],
-      "tiers": ["live"],
-      "quarantined": "e2e: the spec now drives the Notion drive plugin (integrations/notion/app/) through the host's integration-proxy relay (store.proxy, its consent bar and connect return), which #52 adds to atomic-server and the pinned commit does not have. Once .atomic-server-ref contains it: set platforms to [\"notion\"] (the spec uses the shared mock proxy's notion fixture) and add \"e2e\" to tiers. See #68 and integrations/notion/README.md.",
-      "note": "platforms is empty while e2e is quarantined: the live tier stubs fetch in-process and never talks to the lane's mock proxy. The e2e spec needs the mock with the authored integrations/notion/fixtures/notion/ fixture.",
+      "platforms": ["notion"],
+      "tiers": ["live", "e2e"],
+      "note": "The e2e drives the Notion drive plugin (integrations/notion/app/) through the host's integration-proxy relay (store.proxy, consent bar and connect return) from ontola/atomic-server#1657, against the shared mock proxy's notion fixture. The live tier stubs fetch in-process.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
@@ -53,8 +52,8 @@
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
-      "tiers": [],
-      "quarantined": "e2e: the setup dialog needs BrowserIntegrations.describe(), which neither side has since the WASM bridge was removed; blocked on #52 (move LocalThought setup/sync to reflector). Re-add \"e2e\" to tiers then. With no tiers this lane produces no job, like money.",
+      "tiers": ["e2e"],
+      "note": "e2e drives the Pets drive app (integrations/pets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server claude/plugin-proxy-relay, #1624); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {

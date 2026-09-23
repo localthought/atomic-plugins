@@ -4,9 +4,15 @@
     "rootDir": "../..",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
     "typeRoots": ["../../browser/node_modules/@types"],
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "syncables/browser": ["../../syncables/src/browser.ts"]
+    }
   },
-  "include": ["data.ts", "schema.ts", "plugin.ts"]
+  "include": ["data.ts", "schema.ts", "plugin.ts", "app/*.ts"],
+  "exclude": ["app/*.test.ts", "app/fakeStore.ts"]
 }

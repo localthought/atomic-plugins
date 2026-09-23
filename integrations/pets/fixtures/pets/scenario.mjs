@@ -31,6 +31,6 @@ export function petsFixture() {
 export default {
   title: 'Pets',
   // Served as-is with a YAML content type, like the real proxy's overlay doc.
-  documentFile: new URL('./document.json', import.meta.url),
+  documentFile: new URL('../../app/openapi.json', import.meta.url),
   create: petsFixture,
 };

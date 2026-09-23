@@ -58,22 +58,22 @@ What it does not do, and what is not verified:
 - It is not verified that the host lets an app add Properties under its
   ontology and edit its class's `recommends`. The fake store assumes so.
 - It depends on `store.proxy` (`request`, `connections`, `connect`), which
-  atomic-server does not have yet (#52's relay). Without it, the app says so
-  and fetches nothing.
-- There is no e2e yet (see below). Nothing here has run against live Notion
+  atomic-server gets from #52's relay (ontola/atomic-server#1657, pinned).
+  Without it, the app says so and fetches nothing.
+- The e2e runs against the mock proxy (see below). Nothing here has run against live Notion
   or a real proxy.
 
-## E2E (quarantined, #68)
+## E2E
 
-`e2e/notion.spec.ts` still drives the removed `[data-integration=notion]`
-card (`ConnectNotion.tsx`, removed in atomic-server `4bab16ee6`), so the e2e
-tier stays out of `lanes.json`. The spec gets replaced by the drive-plugin
-flow once atomic-server has #52's relay and connect entry point. That flow
-works like the pets spec: a test-side install (`setAppSource` with
-`build().text`), then Connect, then the mock proxy's consent page, then
-"Last synced" with 3 rows. The lane then gets `platforms: ["notion"]` and
-`tiers: ["live", "e2e"]`. The old spec's two-way, PATCH and revoked-access
-checks have no read-only counterpart, so they go with it.
+`e2e/notion.spec.ts` drives the drive plugin the same way the pets spec does:
+a test-side install (`setAppSource` with `build().text`), then Connect, the
+host's consent bar and the mock proxy's consent page, then "Last synced" with
+3 rows and their column types. It runs against the shared mock proxy's
+`notion` fixture (`fixtures/notion/`), so the lane has
+`platforms: ["notion"]` and `tiers: ["live", "e2e"]`. It needs an
+`.atomic-server-ref` with the host relay (ontola/atomic-server#1657). The old
+spec's two-way, PATCH and revoked-access checks have no read-only
+counterpart and were dropped (#68).
 
 ## Lens (`devonian/notion/`)
 
