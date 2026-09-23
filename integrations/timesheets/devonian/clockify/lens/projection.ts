@@ -1,6 +1,11 @@
 // @wc-ignore-file
 import { Datatype } from '@tomic/lib';
-import type { FetchedPlatform, FetchedRecord, JSONValue, Term } from './types.js';
+import type {
+  FetchedPlatform,
+  FetchedRecord,
+  JSONValue,
+  Term,
+} from './types.js';
 
 export const CLOCKIFY_PLATFORM = 'clockify';
 export const TIME_ENTRY_RESOURCE = 'timeentry';
@@ -20,6 +25,7 @@ const object = (value: unknown): Record<string, unknown> =>
 const instant = (value: unknown): number | undefined => {
   if (typeof value !== 'string') return undefined;
   const ms = Date.parse(value);
+
   return Number.isFinite(ms) ? ms : undefined;
 };
 
@@ -34,12 +40,18 @@ const instant = (value: unknown): number | undefined => {
 export function clockifyProjection(fetched: FetchedPlatform): FetchedPlatform {
   if (fetched.platform !== CLOCKIFY_PLATFORM) return fetched;
   const entry = fetched.ontology.terms.find(
-    (t) => t.kind === 'class' && t.shortname === TIME_ENTRY_RESOURCE,
+    t => t.kind === 'class' && t.shortname === TIME_ENTRY_RESOURCE,
   );
   if (!entry) return fetched;
   const definitions: [string, string][] = [
-    [clockifyFields.start, "Start instant of the entry, from Clockify's UTC interval."],
-    [clockifyFields.end, "End instant of the completed entry, from Clockify's UTC interval."],
+    [
+      clockifyFields.start,
+      "Start instant of the entry, from Clockify's UTC interval.",
+    ],
+    [
+      clockifyFields.end,
+      "End instant of the completed entry, from Clockify's UTC interval.",
+    ],
   ];
   const terms: Term[] = definitions.map(([shortname, description]) => ({
     path: `urn:atomic:clockify:${shortname}`,
@@ -51,11 +63,13 @@ export function clockifyProjection(fetched: FetchedPlatform): FetchedPlatform {
     recommends: [],
   }));
   if (
-    fetched.ontology.terms.some((t) =>
-      terms.some((extra) => extra.shortname === t.shortname),
+    fetched.ontology.terms.some(t =>
+      terms.some(extra => extra.shortname === t.shortname),
     )
   )
-    throw new Error('Clockify projection property collides with provider ontology');
+    throw new Error(
+      'Clockify projection property collides with provider ontology',
+    );
   const records: FetchedRecord[] = [];
 
   for (const row of fetched.records) {
@@ -94,11 +108,14 @@ export function clockifyProjection(fetched: FetchedPlatform): FetchedPlatform {
     ontology: {
       ...fetched.ontology,
       terms: [
-        ...fetched.ontology.terms.map((t) =>
+        ...fetched.ontology.terms.map(t =>
           t === entry
             ? {
                 ...t,
-                recommends: [...t.recommends, ...terms.map((extra) => extra.path)],
+                recommends: [
+                  ...t.recommends,
+                  ...terms.map(extra => extra.path),
+                ],
               }
             : t,
         ),
@@ -139,19 +156,22 @@ export function resolveClockifyReferences(
   if (fetched.platform !== CLOCKIFY_PLATFORM) return [];
   const projectsById = new Map(
     fetched.records
-      .filter((r) => r.resource === PROJECT_RESOURCE)
-      .map((r) => [r.id, r] as const),
+      .filter(r => r.resource === PROJECT_RESOURCE)
+      .map(r => [r.id, r] as const),
   );
   const membersById = new Map(
     fetched.records
-      .filter((r) => r.resource === MEMBER_RESOURCE)
-      .map((r) => [r.id, r] as const),
+      .filter(r => r.resource === MEMBER_RESOURCE)
+      .map(r => [r.id, r] as const),
   );
   const resolutions: ClockifyReferenceResolution[] = [];
+
   for (const row of fetched.records) {
     if (row.resource !== TIME_ENTRY_RESOURCE) continue;
     const projectId =
-      typeof row.values.projectid === 'string' ? row.values.projectid : undefined;
+      typeof row.values.projectid === 'string'
+        ? row.values.projectid
+        : undefined;
     const userId =
       typeof row.values.userid === 'string' ? row.values.userid : undefined;
     if (projectId === undefined && userId === undefined) continue;
@@ -167,5 +187,6 @@ export function resolveClockifyReferences(
         : {}),
     });
   }
+
   return resolutions;
 }

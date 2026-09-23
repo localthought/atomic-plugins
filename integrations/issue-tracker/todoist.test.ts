@@ -1,6 +1,7 @@
+// @wc-ignore-file
 import { expect, it } from 'vitest';
 import { Datatype } from '../../browser/lib/src/index';
-import { platformSchema, type FetchedPlatform } from './schema';
+import { platformSchema, type FetchedPlatform } from '../localthought/schema';
 import { todoistFields as fields, todoistProjection } from './todoist';
 
 const term = (

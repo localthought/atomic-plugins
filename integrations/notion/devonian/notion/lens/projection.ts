@@ -27,7 +27,8 @@ export type NotionFieldType = (typeof notionFieldTypes)[number];
 
 /**
  * Spelled out because `Datatype.JSON` is missing from the published
- * `@tomic/lib` 0.40 that devonian's own tests install. It is only present in
+ * `@tomic/lib` 0.40 that devonian declares as its peer (and that devonian's
+ * own tests installed while this lens lived there). It is only present in
  * the atomic-server source that integrations/ resolves `@tomic/lib` to.
  */
 export const JSON_DATATYPE =
@@ -63,9 +64,10 @@ const object = (value: unknown): Record<string, unknown> =>
  */
 export function notionFieldShortname(propertyId: string): string {
   if (!propertyId) throw new Error('Notion property id is empty');
-  const hex = Array.from(new TextEncoder().encode(propertyId), (b) =>
+  const hex = Array.from(new TextEncoder().encode(propertyId), b =>
     b.toString(16).padStart(2, '0'),
   ).join('');
+
   return `notion-${hex}`;
 }
 
@@ -77,6 +79,7 @@ export function notionFieldShortname(propertyId: string): string {
 export function notionPlainText(parts: unknown): string | undefined {
   if (!Array.isArray(parts)) return undefined;
   let text = '';
+
   for (const part of parts) {
     const p = object(part);
     const content = object(p.text).content;
@@ -91,11 +94,13 @@ export function notionPlainText(parts: unknown): string | undefined {
       return undefined;
     text += content;
   }
+
   return text;
 }
 
 const optionId = (value: unknown): string | undefined => {
   const id = object(value).id;
+
   return typeof id === 'string' && id ? id : undefined;
 };
 
@@ -127,10 +132,13 @@ export function notionFieldValue(
     case 'select':
     case 'status':
       if (raw === null) return null;
+
       return optionId(raw);
+
     case 'multi_select': {
       if (!Array.isArray(raw)) return undefined;
       const ids = raw.map(optionId);
+
       return ids.every((id): id is string => id !== undefined)
         ? [...ids].sort()
         : undefined;
@@ -183,7 +191,7 @@ export function notionProjection(
 ): FetchedPlatform {
   if (fetched.platform !== NOTION_PLATFORM) return fetched;
   const page = fetched.ontology.terms.find(
-    (t) => t.kind === 'class' && t.shortname === PAGE_RESOURCE,
+    t => t.kind === 'class' && t.shortname === PAGE_RESOURCE,
   );
   if (!page) return fetched;
 
@@ -196,12 +204,14 @@ export function notionProjection(
       records.push(row);
       continue;
     }
+
     if (row.values.archived === true || row.values.in_trash === true) {
       errors.push(
         `Notion page ${row.id} is archived or in trash; left out, not deleted`,
       );
       continue;
     }
+
     if (options.dataSource !== undefined) {
       const parent = object(row.values.parent).data_source_id;
       if (normalizeUuid(parent) !== normalizeUuid(options.dataSource))
@@ -212,6 +222,7 @@ export function notionProjection(
 
     const values: Record<string, JSONValue> = { ...row.values };
     let title = '';
+
     for (const [name, property] of Object.entries(
       object(row.values.properties),
     )) {
@@ -225,20 +236,23 @@ export function notionProjection(
         );
       if (!known) fields.set(id, { id, name, type: p.type });
       const value = notionFieldValue(p.type, p[p.type]);
+
       if (value === undefined) {
         errors.push(
           `Notion page ${row.id} property "${name}" (${p.type}) has no lossless plain value; left unprojected`,
         );
         continue;
       }
+
       if (value === null) continue;
       values[notionFieldShortname(id)] = value;
       if (p.type === 'title') title = (value as string).trim();
     }
+
     records.push({ ...row, name: title || 'Untitled', values });
   }
 
-  const terms: Term[] = [...fields.values()].map((field) => ({
+  const terms: Term[] = [...fields.values()].map(field => ({
     path: `urn:atomic:notion:property:${encodeURIComponent(field.id)}`,
     kind: 'property',
     shortname: notionFieldShortname(field.id),
@@ -248,8 +262,8 @@ export function notionProjection(
     recommends: [],
   }));
   if (
-    fetched.ontology.terms.some((t) =>
-      terms.some((extra) => extra.shortname === t.shortname),
+    fetched.ontology.terms.some(t =>
+      terms.some(extra => extra.shortname === t.shortname),
     )
   )
     throw new Error(
@@ -261,13 +275,13 @@ export function notionProjection(
     ontology: {
       ...fetched.ontology,
       terms: [
-        ...fetched.ontology.terms.map((t) =>
+        ...fetched.ontology.terms.map(t =>
           t === page
             ? {
                 ...t,
                 recommends: [
                   ...t.recommends,
-                  ...terms.map((extra) => extra.path),
+                  ...terms.map(extra => extra.path),
                 ],
               }
             : t,

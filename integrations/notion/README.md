@@ -139,7 +139,7 @@ Issue #8 moves Notion onto the standard reflector/syncables/Devonian stack.
 This is the read-only first slice. It is not wired into any UI, and nothing
 in it has been verified against live Notion.
 
-- `devonian/platform-lenses/notion` (`notionProjection`) maps data-source
+- `devonian/notion/` in this folder (`notionProjection`) maps data-source
   pages that syncables fetched (`resource: 'page'`) to typed values. They are
   keyed by `notionFieldShortname(propertyId)`, a hex encoding of the
   case-sensitive Notion property id. Covered: plain title/rich text, number,
@@ -166,6 +166,5 @@ Not done yet:
 Until those land, `plugin.ts` stays the only path with two-way sync.
 
 ```sh
-./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts localthought
-(cd devonian && pnpm exec vitest run --config __tests__/vitest.config.ts platform-lenses/notion)
+./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts localthought devonian/notion
 ```

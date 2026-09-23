@@ -1,3 +1,4 @@
+// @wc-ignore-file
 import { Datatype } from '@tomic/lib';
 import { describe, expect, it } from 'vitest';
 import type { FetchedPlatform, JSONValue } from './types.js';
@@ -127,8 +128,8 @@ describe('notionProjection', () => {
     expect(row.values.properties).toEqual(properties);
     expect(projected.errors).toBeUndefined();
 
-    const added = projected.ontology.terms.filter((t) => t.kind === 'property');
-    expect(added.map((t) => [t.shortname, t.datatype])).toEqual([
+    const added = projected.ontology.terms.filter(t => t.kind === 'property');
+    expect(added.map(t => [t.shortname, t.datatype])).toEqual([
       [key('title'), Datatype.STRING],
       [key('n%3Ab'), Datatype.STRING],
       [key('EST'), Datatype.FLOAT],
@@ -141,10 +142,10 @@ describe('notionProjection', () => {
       [key('t'), JSON_DATATYPE],
     ]);
     expect(added[2].description).toContain('"Estimate"');
-    const cls = projected.ontology.terms.find((t) => t.kind === 'class')!;
+    const cls = projected.ontology.terms.find(t => t.kind === 'class')!;
     expect(cls.recommends).toEqual([
       'notion/property/properties',
-      ...added.map((t) => t.path),
+      ...added.map(t => t.path),
     ]);
   });
 
@@ -166,7 +167,7 @@ describe('notionProjection', () => {
         }),
       ]),
     );
-    expect(projected.records.map((r) => r.name)).toEqual(['Untitled', 'Quiet']);
+    expect(projected.records.map(r => r.name)).toEqual(['Untitled', 'Quiet']);
     expect(projected.records[0].values[key('title')]).toBeUndefined();
     expect(projected.errors).toEqual([
       expect.stringMatching(/p1 property "Name" \(title\).*unprojected/),
@@ -181,7 +182,7 @@ describe('notionProjection', () => {
         page('kept', {}),
       ]),
     );
-    expect(projected.records.map((r) => r.id)).toEqual(['kept']);
+    expect(projected.records.map(r => r.id)).toEqual(['kept']);
     expect(projected.errors).toHaveLength(2);
     expect(projected.errors![0]).toMatch(/gone.*not deleted/);
   });

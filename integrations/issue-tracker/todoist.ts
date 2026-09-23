@@ -1,7 +1,11 @@
 // @wc-ignore-file
 import { Datatype } from '../../browser/lib/src/index.js';
 import type { JSONValue } from '../../browser/lib/src/value.js';
-import type { FetchedPlatform, FetchedRecord, Term } from './schema.js';
+import type {
+  FetchedPlatform,
+  FetchedRecord,
+  Term,
+} from '../localthought/schema.js';
 
 /**
  * Todoist's task shape, as the integration proxy's read-only catalog exposes

@@ -1,4 +1,6 @@
+// @wc-ignore-file
 import type { Datatype, JSONValue } from '@tomic/lib';
+
 export type { JSONValue } from '@tomic/lib';
 
 export interface Term {

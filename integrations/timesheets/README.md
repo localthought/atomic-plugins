@@ -6,7 +6,8 @@ key (Preferences → **Manage API keys** → **Generate new** at
 https://app.clockify.me/manage-api-keys) is entered on LocalThought's consent
 page and sealed into a per-connection credential by the integration proxy. The
 generic Syncables engine pages through `timeEntries` from the proxy's Clockify
-catalog document; `localthought.ts` here is the only Clockify-specific code.
+catalog document; `localthought.ts` and the lens it re-exports from
+`devonian/clockify/` are the only Clockify-specific code.
 
 ## What the lens does
 
