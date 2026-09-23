@@ -380,16 +380,11 @@ Rules that keep parallel worktrees from fighting:
 
 ## Still open
 
-- **Quarantined e2e.** Two e2e suites are held back for blockers outside
-  this repo. Each lane keeps its `e2e` spec list, and the reason is in
-  `lanes.json`'s `quarantined` field. (`pets` e2e is back since #52. It now
-  drives the Pets drive app in its plugin iframe, and it needs an
-  `.atomic-server-ref` that has the host proxy relay, atomic-server#1624.)
-  - `notion` e2e is live-only until #68 gives it a new entry point. The
-    `[data-integration=notion]` card its spec starts from was removed
-    upstream (atomic-server `4bab16ee6`).
-  - The `e2e-plugin-system` job is `continue-on-error` until upstream's
-    `plugin.spec.ts`/`plugins.spec.ts` pass at the pin.
+- **Quarantined e2e.** None of the lane e2e tiers are held back any more.
+  `pets` (#52) and `notion` (#68) are back: both drive their drive app in its
+  plugin iframe through the host proxy relay (store.proxy), so they need an
+  `.atomic-server-ref` that contains ontola/atomic-server#1657 (#1624's host
+  relay). The `e2e-plugin-system` job is required again since #71.
 - **`timesheets` has no e2e tier, and nothing is left to move.** The
   upstream Clockify tests were deleted in atomic-server `4bab16ee6` (in the
   pin), together with the UI they drove (#44). A new timesheets e2e needs a
