@@ -21,6 +21,13 @@ import { existsSync, symlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
 import { bringUp } from './serve.mjs';
+import { layoutProblems } from './link-atomic-server.mjs';
+
+// A warning, not a failure: testing against another atomic-server commit on
+// purpose (e.g. before bumping .atomic-server-ref) is legitimate, but doing
+// it by accident — a stale shared checkout — should never be silent.
+for (const problem of layoutProblems()) console.warn(`warning: ${problem}`);
+
 const config = loadLanes();
 const args = process.argv.slice(2);
 const laneId = args.find(a => !a.startsWith('--'));

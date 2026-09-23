@@ -9,17 +9,36 @@ This is `ontola/atomic-server`'s `integrations/` folder, extracted for fast
 iteration. It is **not buildable or testable on its own**: every package
 imports from `../../browser/lib/src/...`, which only exists inside a full
 `atomic-server` checkout. `.atomic-server-ref` pins the upstream commit this
-folder is meant to sit on top of; `.github/workflows/ci.yml` checks that
-commit out, replaces its `integrations/` with this repo's, and builds/tests
-from there. Reproduce that locally before running any command below:
+folder is meant to sit on top of. CI checks that commit out next to this repo
+and symlinks its `browser/` in as `./browser` (gitignored), which is all the
+relative imports need. One script does the same locally, and CI runs that same
+script, so the two setups cannot drift. Run it from the repo root (in any
+worktree) before running any command below:
 
 ```sh
-ATOMIC_SERVER_REF=$(cat .atomic-server-ref)
-git clone https://github.com/ontola/atomic-server.git /tmp/atomic-server
-cd /tmp/atomic-server && git checkout "$ATOMIC_SERVER_REF"
-rm -rf integrations
-cp -r /path/to/this-repo/integrations .
+node integrations/tooling/link-atomic-server.mjs
 ```
+
+This shallow-fetches atomic-server at `.atomic-server-ref` into
+`$ATOMIC_SERVER_CHECKOUT` (default `/tmp/atomic-server`, the default
+`run-lane.mjs`/`serve.mjs` also use; one checkout serves every worktree). It
+then symlinks `browser` and `integrations/node_modules`, and runs `pnpm
+install --frozen-lockfile` in its `browser/` (pnpm 10, per its
+`packageManager`). It refuses to move a checkout that has uncommitted changes.
+Re-run it after `.atomic-server-ref` changes. `--check` verifies the layout
+without changing anything, and `run-lane.mjs` warns when `browser/` points at
+a checkout on some other commit. After that:
+
+```sh
+node integrations/tooling/run-lane.mjs calendar --tier typecheck   # or --tier unit; one package
+node integrations/tooling/certify.mjs --layer js                   # every package: typecheck, bundle, tests
+```
+
+The live/e2e tiers additionally need the atomic-server binary built once in
+that checkout (`serve.mjs` prints the exact `cargo build` line).
+`integrations/localthought`'s `wasm-smoke.mjs` needs a `wasm-pack` build
+of atomic-server's `wasm/` crate, which neither the script nor CI provides.
+Details: [Local setup](integrations/README.md#local-setup).
 
 Everything else — the contributor checklist, certification command, config
 declaration convention, permissions/recovery model, live-testing contract —

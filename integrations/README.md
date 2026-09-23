@@ -7,6 +7,60 @@ experimental until their advertised capabilities have current live evidence.
 Named actions, automation permissions, recovery and MCP setup are documented in
 [ACTIONS.md](ACTIONS.md). The MCP stdio protocol test runs in the JS CI gate.
 
+## Local setup
+
+Every package imports atomic-server's `browser/` tree by relative path
+(`../../browser/lib/src/...`, `../../browser/tsconfig.build.json`,
+`../../browser/node_modules/...`), which does not exist in this repo. From the
+repository root, once per clone or worktree and again after
+`.atomic-server-ref` changes:
+
+```sh
+node integrations/tooling/link-atomic-server.mjs
+```
+
+What it does, each step idempotent:
+
+1. Makes `$ATOMIC_SERVER_CHECKOUT` (default `/tmp/atomic-server`) an
+   atomic-server checkout at the commit in `.atomic-server-ref`. If the
+   directory is missing it fetches just that commit (`--depth=1`). If the
+   checkout is on another commit it fetches and detaches to the pinned one.
+   It refuses if the checkout has uncommitted changes to tracked files.
+2. Symlinks `browser` -> `$ATOMIC_SERVER_CHECKOUT/browser` and
+   `integrations/node_modules` -> `../browser/e2e/node_modules`. Both are
+   gitignored. It replaces a stale symlink but never a real directory.
+3. Runs `pnpm install --frozen-lockfile` in `$ATOMIC_SERVER_CHECKOUT/browser`.
+   atomic-server pins `pnpm@10.15.1` in `packageManager`.
+4. Verifies the result: `browser/` must resolve into a git checkout at the
+   pinned commit, and `browser/node_modules/.bin/tsc` must exist.
+
+Flags: `--check` only runs step 4 and exits 1 on any problem. `--no-fetch`
+skips step 1 and still verifies the commit. `--no-install` skips step 3.
+CI's `shared-checks`, `lane` and `e2e-plugin-system` jobs run it with
+`--no-fetch --no-install` after their own `actions/checkout` and
+`pnpm install`, so the local layout is CI's layout. `run-lane.mjs` prints the
+step-4 problems as warnings before it runs any tier.
+
+With that in place, no server is needed for:
+
+```sh
+node integrations/tooling/run-lane.mjs <lane> --tier typecheck   # tsc -p integrations/<lane>/tsconfig.json
+node integrations/tooling/run-lane.mjs <lane> --tier unit        # vitest run --config integrations/<lane>/vitest.config.ts
+node integrations/tooling/certify.mjs --layer js                 # every package (see below)
+```
+
+Not covered by the script:
+
+- the atomic-server binary. The `live` and `e2e` tiers need it; build it
+  once in the checkout with the `cargo build` line `serve.mjs` prints.
+- `localthought/wasm-smoke.mjs`'s `../../wasm/pkg/atomic_wasm.js`. That
+  needs a `wasm-pack` build of atomic-server's Rust `wasm` crate, and CI
+  does not run it either.
+- certify's `--layer sandbox` and `--layer all`. Both run
+  `cargo test -p atomic-server` from this repo's root. That has not been
+  verified to work in this symlinked layout. CI leaves it to atomic-server's
+  own CI.
+
 ## One certification command
 
 From the repository root:
