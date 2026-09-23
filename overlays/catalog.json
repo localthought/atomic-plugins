@@ -20,12 +20,11 @@
     },
     {
       "name": "google-calendar",
-      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/9c5cfb87b3f8b64e11069373a73e3fc85de0de5e/APIs/googleapis.com/google-calendar/v3/openapi.yaml",
+      "openapi": "https://raw.githubusercontent.com/ontola/openapi-directory/32237fa5d14aa887dc9f3923395dac971e00a36c/APIs/googleapis.com/calendar/v3/openapi.yaml",
       "overlays": [
         "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/auth-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/pagination-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/crud-causality-overlay.yaml",
-        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/schema-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/identity-overlay.yaml"
       ],
       "selection": {

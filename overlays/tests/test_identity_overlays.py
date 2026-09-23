@@ -22,7 +22,7 @@ class IdentityOverlayTests(unittest.TestCase):
     def test_google_calendar_event_patch_overlay(self):
         document = self.composed("google-calendar")
         operation = document["paths"]["/calendars/{calendarId}/events/{eventId}"]["patch"]
-        self.assertEqual(operation["operationId"], "events-patch")
+        self.assertEqual(operation["operationId"], "calendar.events.patch")
         self.assertEqual(operation["x-crud"], {"action": "update", "resource": "event"})
         for scheme in ("googleOnline", "googleOffline"):
             self.assertIn(
@@ -30,7 +30,12 @@ class IdentityOverlayTests(unittest.TestCase):
                 operation["security"],
             )
         self.assertIn("application/json", operation["requestBody"]["content"])
-        self.assertIn("etag", document["components"]["schemas"]["event"]["properties"])
+        self.assertEqual(
+            operation["requestBody"]["content"]["application/json"]["schema"],
+            {"$ref": "#/components/schemas/Event"},
+        )
+        self.assertIn("412", operation["responses"])
+        self.assertIn("etag", document["components"]["schemas"]["Event"]["properties"])
 
     def test_github_auth_and_identity_overlay(self):
         document = self.composed("github-issues")

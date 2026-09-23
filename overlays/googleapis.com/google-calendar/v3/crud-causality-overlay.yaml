@@ -1,22 +1,25 @@
 overlay: 1.0.0
 info:
   title: Google Calendar API CRUD Causality
-  version: 1.1.0
+  version: 1.2.0
 # Declares the CRUD-causality resources this platform needs: which
-# collections exist, how each item is addressed, and (since the base
-# document is otherwise read-only — see its description) the one write path
-# auth-overlay.yaml adds: a partial update to an event. Mirrors the shape of
-# the GitHub crud-causality overlay in this repo, with one Google-specific
-# point: there is no "list all calendars" operation, so `event`'s
-# `calendarId` context comes from enumerating `calendarListEntry` (via its
-# own identity binding) rather than from a dedicated calendars collection.
+# collections exist, how each item is addressed, and (of the many write
+# paths the full base document has, now that it is the generated
+# googleapis.com/calendar/v3 document rather than the old hand-written
+# read-only subset — see catalog.json) the one this platform's OAuth scope
+# and Devonian's lens actually use: a partial update to an event. Mirrors
+# the shape of the GitHub crud-causality overlay in this repo, with one
+# Google-specific point: there is no "list all calendars" operation, so
+# `event`'s `calendarId` context comes from enumerating `calendarListEntry`
+# (via its own identity binding) rather than from a dedicated calendars
+# collection.
 actions:
   - target: $.components
     update:
       crudResources:
         calendarListEntry:
           schema:
-            $ref: '#/components/schemas/calendar-list-entry'
+            $ref: '#/components/schemas/CalendarListEntry'
           description: >
             An entry on the authenticated user's calendar list. Its `id` is
             also what the `event` resource's collections address a calendar
@@ -31,7 +34,7 @@ actions:
               urlTemplate: /users/me/calendarList
         event:
           schema:
-            $ref: '#/components/schemas/event'
+            $ref: '#/components/schemas/Event'
           description: >
             An event on a calendar. `calendarId` is supplied by enumerating
             `calendarList` (see above), not by this resource's own identity.
