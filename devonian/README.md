@@ -28,6 +28,16 @@ It was extracted from [`localthought/reflector`](https://github.com/localthought
 
 Unlike this package's other exports, `devonian/reflect` resolves to **compiled JS** (`build/src/reflect/*.js`, with matching `.d.ts`), not raw `.ts` — its target consumer is a plain `tsc`-built Node app like reflector, not a bundler/`vite`-transformed one, so `npm run build` must have run (as it does before every publish) for this subpath to resolve.
 
+## Background sync scheduler
+
+`BackgroundSync` (exported from the package root, no Node or DOM imports, so it also loads in a service worker) runs a sync pass on a persisted schedule shared by every context that can trigger it: a tab's timer (`start(pollMs)`), a service worker's `periodicsync`/`sync` events (`registerBackgroundSync` and `handleBackgroundSyncEvent`), or a Node process.
+
+- State (`nextDueAt`, `failures`, `lastError`, `paused`, with ISO 8601 times) lives in a host-supplied async key-value store under the schedule's `name`, so it survives restarts. The reflect `KvStore`s fit, and in a browser you would use IndexedDB.
+- `tick()` runs a pass only if one is due, the schedule is not paused and nobody holds the lease, and it re-reads the state inside the lease. `syncNow()` waits for the lease and ignores the due time. `withLock(fn)` puts other work that must not overlap a pass under the same lease. Leases default to Web Locks (`navigator.locks`), falling back to `processLocks()`, which is in-process only.
+- Transient failures back off exponentially, capped by `maxBackoffMs`. Failures that `isPermanent` classifies as needing a person pause the schedule until `resume()`.
+
+The GitHub issues lens wraps it as `createBackgroundSync`. Its README describes the browser support limits: Periodic Background Sync is Chromium-only and the browser sets the cadence. Coverage so far is unit tests with fakes, with no real-browser or service-worker run.
+
 ## Local Identifiers and IdMaps
 What I think none of the other lens projects are currently offering is a built-in way to deal with the mapping of local identifiers.
 
