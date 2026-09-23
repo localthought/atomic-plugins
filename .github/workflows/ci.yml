@@ -439,8 +439,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.lane }}
-          path: atomic-plugins/browser/e2e/playwright-report
-          if-no-files-found: ignore
+          # integrations/tooling/playwright.config.ts writes both next to
+          # itself, not under browser/e2e/. test-results/ holds the traces
+          # and error-context.md that explain a failure.
+          path: |
+            atomic-plugins/integrations/tooling/playwright-report
+            atomic-plugins/integrations/tooling/test-results
+          if-no-files-found: warn
 
   # Proves the dev-server wiring actually works: every certified plugin.js and
   # the root catalog.json are byte-identical when fetched through it (this is
@@ -650,8 +655,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-plugin-system
-          path: atomic-plugins/browser/e2e/playwright-report
-          if-no-files-found: ignore
+          path: |
+            atomic-plugins/browser/e2e/playwright-report
+            atomic-plugins/browser/e2e/test-results
+          if-no-files-found: warn
 
       - name: Stop the stack
         if: always()

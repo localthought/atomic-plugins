@@ -83,7 +83,8 @@ async function waitFor(url, what) {
 }
 
 /**
- * Start the stack on `ports`. Returns a `stop()` that kills all three.
+ * Start the stack on `ports`. Returns a `stop()` that kills all of it and
+ * resolves once every process has exited.
  * `platforms` is the mock proxy's fixture set, passed as
  * MOCK_PROXY_PLATFORMS: the mock serves only those of them that have a
  * fixture registered in integrations/localthought/fixtures/index.mjs. Omitted (the shared,
@@ -169,8 +170,26 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
     'dev-server',
   );
 
+  // Resolves once every child has exited, not merely been signalled: the
+  // next bringUp on the same label reuses the same store, and atomic-server
+  // holds an exclusive lock on it (`Database already open. Cannot acquire
+  // lock`) until its process is gone. SIGKILL after 10s so a hung child
+  // cannot stall the lane. Callers that cannot wait (a process 'exit'
+  // handler) may ignore the promise; the signals are sent synchronously.
   return () => {
-    for (const child of children) child.kill();
+    const running = children.filter(
+      child => child.exitCode === null && child.signalCode === null,
+    );
+    const exited = running.map(
+      child => new Promise(done => child.once('exit', done)),
+    );
+    for (const child of running) child.kill();
+    const force = setTimeout(() => {
+      for (const child of running) child.kill('SIGKILL');
+    }, 10_000);
+    force.unref();
+
+    return Promise.all(exited).then(() => clearTimeout(force));
   };
 }
 
