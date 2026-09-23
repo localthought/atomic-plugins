@@ -108,3 +108,61 @@ actions:
       - https://www.googleapis.com/auth/calendar.calendarlist.readonly
     - googleOffline:
       - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+
+# Introduces the one write operation this platform exposes: a partial update
+# to an event, matching what Devonian's google-calendar lens can send
+# (`planCalendarEdit`/`applyCalendarEdit` in localthought/devonian only ever
+# patch summary, description, location, start and end). Runs first among the
+# google-calendar overlays so crud-causality-overlay.yaml can add `x-crud` to
+# it afterwards. Reuses the `calendar.events` scope already requested for the
+# events GET operations below, so no new consent/reconnect is required.
+- target: $.paths['/calendars/{calendarId}/events/{eventId}']
+  update:
+    patch:
+      operationId: events-patch
+      summary: Update fields on an existing event
+      description: >
+        A partial update to an event. `If-Match` carries the event's
+        last-known ETag for optimistic-concurrency conflict detection;
+        Google returns 412 if the event changed remotely since it was read.
+      parameters:
+      - name: calendarId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: eventId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: sendUpdates
+        in: query
+        required: false
+        description: Whether to notify attendees of the change.
+        schema:
+          type: string
+          enum: [all, externalOnly, none]
+      - name: If-Match
+        in: header
+        required: false
+        description: The event's last-known ETag.
+        schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/event'
+      responses:
+        '200':
+          description: The updated event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/event'
+        '412':
+          description: The If-Match precondition failed.
+      security:
+      - googleOnline:
+        - https://www.googleapis.com/auth/calendar.events
+      - googleOffline:
+        - https://www.googleapis.com/auth/calendar.events

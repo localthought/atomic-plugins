@@ -1,15 +1,15 @@
 overlay: 1.0.0
 info:
   title: Google Calendar API CRUD Causality
-  version: 1.0.0
-# Declares the CRUD-causality resources a read-only sync needs: which
-# collections exist, how each item is addressed, and (since this platform
-# only lists and reads — see the base document's description) nothing about
-# writes. Mirrors the shape of the GitHub crud-causality overlay in this
-# repo, with one Google-specific point: there is no "list all calendars"
-# operation, so `event`'s `calendarId` context comes from enumerating
-# `calendarListEntry` (via its own identity binding) rather than from a
-# dedicated calendars collection.
+  version: 1.1.0
+# Declares the CRUD-causality resources this platform needs: which
+# collections exist, how each item is addressed, and (since the base
+# document is otherwise read-only — see its description) the one write path
+# auth-overlay.yaml adds: a partial update to an event. Mirrors the shape of
+# the GitHub crud-causality overlay in this repo, with one Google-specific
+# point: there is no "list all calendars" operation, so `event`'s
+# `calendarId` context comes from enumerating `calendarListEntry` (via its
+# own identity binding) rather than from a dedicated calendars collection.
 actions:
   - target: $.components
     update:
@@ -66,4 +66,9 @@ actions:
     update:
       x-crud:
         action: read
+        resource: event
+  - target: $.paths['/calendars/{calendarId}/events/{eventId}'].patch
+    update:
+      x-crud:
+        action: update
         resource: event

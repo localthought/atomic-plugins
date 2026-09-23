@@ -22,3 +22,9 @@ actions:
             format: date-time
           timeZone:
             type: string
+      etag:
+        type: string
+        description: >
+          Opaque version identifier, present on every read. Send back as
+          `If-Match` on a PATCH for optimistic-concurrency conflict
+          detection.
