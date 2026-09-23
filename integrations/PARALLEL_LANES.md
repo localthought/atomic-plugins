@@ -376,8 +376,25 @@ Rules that keep parallel worktrees from fighting:
   `integrations/timesheets/e2e/` is the remaining half of the split — see
   [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has a lane entry with no tiers, so it produces no job.
-  Its typecheck, bundle and fixture tests run inside the unsharded
-  certification step. That is correct today but means a `money`-only change
+  That is deliberate (#45): `certify.mjs --layer js` in `shared-checks` runs on
+  every `integrations/**` change and already runs exactly the
+  `tsc -p integrations/money/tsconfig.json` and
+  `vitest run --config integrations/money/vitest.config.ts` a `typecheck` or
+  `unit` tier would, plus bundle reproducibility. The lane names `moneybird`,
+  but nothing in this repo consumes Moneybird: `integrations/money/` is an
+  MT940/camt.053 uploader, and the `moneybird` entry in `catalog.json`
+  (`requires-api-plugins`) has no package here; atomic-server's generic
+  API-plugin path reads it. So a recorded `moneybird` fixture has no in-repo
+  adapter for a `fixture.test` to run it through (§4's "enforced, not
+  asserted" rule), and no tier that would start a mock proxy to serve it;
+  recording one also needs a Moneybird account. When one is recorded, it and
+  its recorder go in `integrations/money/fixtures/moneybird/`, not
+  `integrations/localthought/fixtures/`: anything specific to one plugin stays
+  in that plugin's folder, so plugins can be worked on in parallel. The shared
+  registry, `integrations/localthought/fixtures/index.mjs`, then registers it
+  as `moneybird` by importing `../../money/fixtures/moneybird/scenario.mjs`,
+  once `api/` is recorded. Give the lane a tier once
+  `money` has a server-dependent test. Until then a `money`-only change
   gets no lane feedback beyond certification.
 - `todoist`, `moneybird` and `notion` have no mock fixture, so a lane that
   names them gets a mock proxy serving only its other platforms (possibly
