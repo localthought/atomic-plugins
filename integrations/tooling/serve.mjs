@@ -83,14 +83,16 @@ async function waitFor(url, what) {
 }
 
 /**
- * Start the stack on `ports`. Returns a `stop()` that kills all three.
- * `platforms` is the mock proxy's fixture set; it is passed as
- * MOCK_PROXY_PLATFORMS, which mock-proxy.mjs does not read yet — it serves
- * its full built-in set regardless. Wiring that up is §4 of
- * integrations/PARALLEL_LANES.md; passing it now costs nothing and means the
- * callers do not change when it lands.
+ * Start the stack on `ports`. Returns a `stop()` that kills all of it and
+ * resolves once every process has exited.
+ * `platforms` is the mock proxy's fixture set, passed as
+ * MOCK_PROXY_PLATFORMS: the mock serves only those of them that have a
+ * fixture registered in integrations/localthought/fixtures/index.mjs. Omitted (the shared,
+ * non-lane stack) serves every fixture; an empty list — a lane whose tests
+ * never touch the shared mock — does not start the mock at all. See §4 of
+ * integrations/PARALLEL_LANES.md.
  */
-export async function bringUp({ ports, platforms = [], label = 'shared' }) {
+export async function bringUp({ ports, platforms, label = 'shared' }) {
   const config = loadLanes();
   const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
   // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
@@ -131,42 +133,63 @@ export async function bringUp({ ports, platforms = [], label = 'shared' }) {
       // nothing in server/src reads these today, so they are a no-op kept only
       // so this matches upstream if a future commit does.
       ATOMIC_INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
-      ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.devServer}`,
+      ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
       TENANT_SECRET: 'bW9jay10ZW5hbnQ.mock-signature',
     },
   );
   // MOCK_FRONTEND_ORIGIN must match wherever the browser actually loads the
-  // SPA from (the dev-server, not atomic-server directly) — the mock proxy
-  // validates OAuth-style redirect_uri origins against it.
-  start(
-    'mock-proxy',
-    process.execPath,
-    ['integrations/localthought/mock-proxy.mjs'],
-    {
-      MOCK_PROXY_PORT: String(ports.mockProxy),
-      MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.devServer}`,
-      MOCK_PROXY_PLATFORMS: platforms.join(','),
-    },
-  );
+  // SPA from — atomic-server directly (FRONTEND_URL in run-lane.mjs and
+  // ci.yml), not the dev-server, which only hosts the catalog. The mock proxy
+  // rejects any /connect whose redirect_uri has another origin.
+  const mock = platforms === undefined || platforms.length > 0;
+  if (mock)
+    start(
+      'mock-proxy',
+      process.execPath,
+      ['integrations/localthought/mock-proxy.mjs'],
+      {
+        MOCK_PROXY_PORT: String(ports.mockProxy),
+        MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
+        MOCK_PROXY_PLATFORMS: (platforms ?? []).join(','),
+      },
+    );
   start(
     'dev-server',
     process.execPath,
     ['integrations/tooling/dev-server.mjs'],
     {
       DEV_SERVER_PORT: String(ports.devServer),
-      DEV_SERVER_UPSTREAM: `http://localhost:${ports.atomicServer}`,
     },
   );
 
   await waitFor(`http://localhost:${ports.atomicServer}`, 'atomic-server');
-  await waitFor(`http://127.0.0.1:${ports.mockProxy}/catalog`, 'mock proxy');
+  if (mock)
+    await waitFor(`http://127.0.0.1:${ports.mockProxy}/catalog`, 'mock proxy');
   await waitFor(
     `http://localhost:${ports.devServer}/integrations/catalog.json`,
     'dev-server',
   );
 
+  // Resolves once every child has exited, not merely been signalled: the
+  // next bringUp on the same label reuses the same store, and atomic-server
+  // holds an exclusive lock on it (`Database already open. Cannot acquire
+  // lock`) until its process is gone. SIGKILL after 10s so a hung child
+  // cannot stall the lane. Callers that cannot wait (a process 'exit'
+  // handler) may ignore the promise; the signals are sent synchronously.
   return () => {
-    for (const child of children) child.kill();
+    const running = children.filter(
+      child => child.exitCode === null && child.signalCode === null,
+    );
+    const exited = running.map(
+      child => new Promise(done => child.once('exit', done)),
+    );
+    for (const child of running) child.kill();
+    const force = setTimeout(() => {
+      for (const child of running) child.kill('SIGKILL');
+    }, 10_000);
+    force.unref();
+
+    return Promise.all(exited).then(() => clearTimeout(force));
   };
 }
 
@@ -188,7 +211,7 @@ if (
   const ports = lane ? lanePorts(lane, config) : sharedPorts(config);
   const stop = await bringUp({
     ports,
-    platforms: lane?.platforms ?? [],
+    platforms: lane?.platforms,
     label: lane?.id ?? 'shared',
   });
   console.log(`serving ${JSON.stringify(ports)} — ctrl-c to stop`);

@@ -114,6 +114,15 @@ const cleanup = () => {
   }
 };
 
+// Between tiers: stop this tier's stack and wait for it to be gone before
+// the next tier starts one on the same store, but keep the lane lock —
+// cleanup() releases that, and only process exit should.
+const stopStack = async () => {
+  const pending = stop;
+  stop = () => {};
+  await pending();
+};
+
 process.on('exit', cleanup);
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
@@ -153,7 +162,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
       // agree only when the client talks to it directly.
       { [lane.liveEnv]: `http://localhost:${ports.atomicServer}` },
     );
-    cleanup();
+    await stopStack();
   } else if (tier === 'e2e') {
     linkE2eModules();
     stop = await bringUp({
@@ -182,7 +191,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
         ATOMIC_MOCK_INTEGRATION_PROXY: '1',
       },
     );
-    cleanup();
+    await stopStack();
   }
 
   if (status !== 0) {

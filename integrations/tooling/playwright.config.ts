@@ -26,9 +26,14 @@ import base from '../../browser/e2e/playwright.config';
 // `requireOrImport`, and with no `"type": "module"` in any package.json above
 // this directory — this repo has no root package.json at all — that lands in
 // the CJS branch.
+//
+// `outputDir` (traces, screenshots, error-context.md) is spelled out because
+// it, like the html reporter's folder, defaults to this file's directory —
+// integrations/tooling/ — not browser/e2e/, and ci.yml uploads it from there.
 export default {
   ...base,
   testDir: '..',
   testMatch: '*/e2e/*.spec.ts',
   tsconfig: '../tsconfig.e2e.json',
+  outputDir: 'test-results',
 };

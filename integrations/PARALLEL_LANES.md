@@ -1,11 +1,12 @@
 # Parallel plugin lanes
 
-**Status: §§1–3 and §5 are implemented; §4 (fixtures) is not.**
+**Status: §§1–3 and §5 are implemented; §4 (fixtures) is half done.**
 `integrations/lanes.json`, `integrations/tooling/lanes.mjs`,
 `serve.mjs`, `run-lane.mjs` and the rewritten `.github/workflows/ci.yml`
-are live. `integrations/localthought/mock-proxy.mjs` is untouched: it still
-dispatches on `platform` through an `if` chain and ignores the
-`MOCK_PROXY_PLATFORMS` the runner already passes it. §4 describes that work.
+are live. `integrations/localthought/mock-proxy.mjs` now loads a per-platform
+fixture registry and honours `MOCK_PROXY_PLATFORMS`; recorded fixtures,
+`record.mjs`, `fixture.test.mjs`, the three missing platforms and the drift
+guard are not started. See §4.
 
 The goal: every package under `integrations/` gets its own CI lane and its own
 locally reproducible server, so N plugins can be worked on at once without
@@ -234,6 +235,40 @@ Two failure modes are reported by cause rather than by symptom:
 
 ## 4. Mock fixtures per platform
 
+**Done:** the registry, the migration of the four existing platforms, and
+`MOCK_PROXY_PLATFORMS`. Deviations from the design below:
+
+- Fixtures live in their plugin's folder, not `integrations/tooling/fixtures/`:
+  `integrations/<plugin>/fixtures/<platform>/` (`pets/fixtures/pets/`,
+  `timesheets/fixtures/clockify/`, `issue-tracker/fixtures/github-issues/`,
+  `calendar/fixtures/google-calendar/`). Everything specific to one plugin
+  stays inside that plugin's folder, so plugins can be developed in parallel
+  and a fixture change triggers only its own lane. Only the registry,
+  `integrations/localthought/fixtures/index.mjs`, is shared; it imports each
+  fixture by relative path. Caveat: atomic-server's dagger e2e pipeline
+  copies only `integrations/localthought/` into its container, so it has to
+  copy all of `integrations/` once it takes this layout.
+- Each platform is one `scenario.mjs` whose default export declares `title`,
+  `document` or `documentFile`, `jsonBody` and `create()`; see the registry.
+  `pets` keeps its hand-written records in `pets/fixtures/pets/scenario.mjs`
+  and its document next to it in `document.json`; no `api/` recordings exist
+  for any platform yet.
+- An unset or empty `MOCK_PROXY_PLATFORMS` serves every fixture, so callers
+  that never set it (atomic-server's `e2e-server.sh` and dagger) are
+  unchanged. A requested platform without a fixture is logged and skipped,
+  not fatal: `issue-tracker`, `money` and `notion` lanes name `todoist`,
+  `moneybird` and `notion`. `serve.mjs` does not start the mock at all for a
+  lane whose `platforms` is `[]`; only the shared, non-lane stack (which
+  passes no list) gets every fixture.
+- `server.github`, `server.calendar` and `server.clockify` remain as aliases
+  of `server.fixtures[<platform>]`, for atomic-server specs that use them.
+
+**Not started:** `api/` recordings, `record.mjs`, `fixture.test.mjs`,
+fixtures for `todoist`, `moneybird` and `notion` (all need live credentials
+to record, per the "enforced, not asserted" rule below), and the drift guard.
+
+The original design:
+
 Replace the `if (platform === …)` chain in `mock-proxy.mjs` with a fixture
 registry. `mock-proxy.mjs` becomes a generic host; each platform becomes data
 plus an optional behaviour module.
@@ -327,6 +362,6 @@ Rules that keep parallel worktrees from fighting:
   Its typecheck, bundle and fixture tests run inside the unsharded
   certification step. That is correct today but means a `money`-only change
   gets no lane feedback beyond certification.
-- The `MOCK_PROXY_PLATFORMS` the runner passes is ignored until §4 lands, so
-  every lane's mock proxy currently serves the full built-in platform set
-  rather than just its own.
+- `todoist`, `moneybird` and `notion` have no mock fixture, so a lane that
+  names them gets a mock proxy serving only its other platforms (possibly
+  none). Recording them needs live credentials; see §4.

@@ -116,3 +116,10 @@ export function githubTracker() {
 
   return api;
 }
+
+// No `document`: the mock has never served /catalog/github-issues.yaml.
+export default {
+  title: 'GitHub Issues',
+  jsonBody: true,
+  create: githubTracker,
+};

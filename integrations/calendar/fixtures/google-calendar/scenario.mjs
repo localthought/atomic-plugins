@@ -166,3 +166,9 @@ export function calendarFixture(day = new Date().toISOString().slice(0, 10)) {
     },
   };
 }
+
+export default {
+  title: 'Google Calendar',
+  document: calendarDocument,
+  create: () => calendarFixture(),
+};
