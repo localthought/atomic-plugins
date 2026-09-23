@@ -102,6 +102,12 @@ CI and the local runner read:
 
 The path filter for lane `<id>` is `integrations/<id>/**` by convention, so
 `changes` can generate its `filters:` from this file rather than restating it.
+A lane whose code imports a shared package from source adds an optional
+`paths` array of globs inside `devonian/`, `syncables/` or `reflector/`
+(`lanes.mjs` rejects anything else, in particular another plugin's folder),
+so a change there still runs it: issue-tracker lists `devonian/src/**`
+because `devonian/github-issues/` imports the `devonian` package. Those
+globs also join the `any` filter, since `build-server` is gated on it.
 Add a `lanes.test.mjs` case asserting every directory under `integrations/`
 that is not `tooling/` has a lane entry — that is the check that would have
 caught `calendar/`.
