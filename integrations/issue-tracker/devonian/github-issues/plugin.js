@@ -28,9 +28,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../localthought/devonian/node_modules/.pnpm/fast-json-stable-stringify@2.1.0/node_modules/fast-json-stable-stringify/index.js
+// browser/lib/node_modules/fast-json-stable-stringify/index.js
 var require_fast_json_stable_stringify = __commonJS({
-  "../../localthought/devonian/node_modules/.pnpm/fast-json-stable-stringify@2.1.0/node_modules/fast-json-stable-stringify/index.js"(exports, module) {
+  "browser/lib/node_modules/fast-json-stable-stringify/index.js"(exports, module) {
     "use strict";
     module.exports = function(data, opts) {
       if (!opts) opts = {};
@@ -84,7 +84,7 @@ var require_fast_json_stable_stringify = __commonJS({
   }
 });
 
-// ../../localthought/devonian/platform-lenses/github-issues/lens/index.ts
+// integrations/issue-tracker/devonian/github-issues/lens/index.ts
 function project(issue) {
   if (!Number.isSafeInteger(issue.number) || issue.number <= 0 || typeof issue.title !== "string" || !(issue.body === null || typeof issue.body === "string") || !["open", "closed"].includes(issue.state) || !Array.isArray(issue.labels))
     throw new Error("GitHub returned an invalid issue");
@@ -127,7 +127,7 @@ function claimImportIdentity(host, parent2, sourceId, subject) {
   return { [IMPORT_LOCAL_ID]: sourceId };
 }
 
-// ../../localthought/devonian/src/reconcileRecord.ts
+// browser/lib/src/plugin-reconcile.ts
 var import_fast_json_stable_stringify = __toESM(require_fast_json_stable_stringify(), 1);
 var equal = (a, b) => (0, import_fast_json_stable_stringify.default)(a) === (0, import_fast_json_stable_stringify.default)(b);
 function reconcileRecord(base, local, remote) {
@@ -184,7 +184,7 @@ function reconcileRecord(base, local, remote) {
   return result;
 }
 
-// ../../localthought/devonian/platform-lenses/github-issues/adapter.ts
+// integrations/issue-tracker/devonian/github-issues/adapter.ts
 var headers = {
   Accept: "application/vnd.github+json",
   "User-Agent": "Atomic-GitHub-Issues-Pilot",
@@ -311,7 +311,7 @@ async function preview(host, repository) {
   return result;
 }
 
-// ../../localthought/devonian/platform-lenses/github-issues/plugin.ts
+// integrations/issue-tracker/devonian/github-issues/plugin.ts
 var parent = "https://atomicdata.dev/properties/parent";
 var isA = "https://atomicdata.dev/properties/isA";
 var name = "https://atomicdata.dev/properties/name";

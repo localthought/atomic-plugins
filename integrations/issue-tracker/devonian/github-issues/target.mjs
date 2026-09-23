@@ -34,6 +34,7 @@ export function atomicTarget(store, drive) {
   const ready =
     typeof store.hasCompletedDriveSyncFor === 'function' &&
     store.hasCompletedDriveSyncFor(drive) === true;
+
   return { drive, kind: 'synced', ready };
 }
 
@@ -42,6 +43,7 @@ export function assertEnumerable(store, drive) {
   const target = atomicTarget(store, drive);
   if (!target.ready)
     throw new Error(`Atomic drive has not finished syncing: ${drive}`);
+
   return target;
 }
 
@@ -75,6 +77,7 @@ export function trackerStateKey({ agent, drive, repository, mode }) {
   }))
     if (typeof value !== 'string' || !value)
       throw new Error(`Tracker state key needs ${name}`);
+
   return `devonian-tracker:${JSON.stringify([agent, drive, repository, mode])}`;
 }
 
@@ -142,6 +145,7 @@ export async function provisionTracker(
   assertSaved(store, drive, provenance, await provenance.save());
 
   let commentsFolder = driveResource.get(commentsFolderProperty);
+
   if (typeof commentsFolder !== 'string' || !commentsFolder) {
     const folder = await store.newResource({
       parent: drive,

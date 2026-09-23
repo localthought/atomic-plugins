@@ -5,14 +5,17 @@ export const propertiesByField = {
   status: 'https://atomicdata.dev/task/v1/status',
 };
 const tag = 'https://atomicdata.dev/task/v1/';
-export function properties(value) {
+
+export function properties(projection) {
   return {
-    [propertiesByField.body]: value.body,
-    ...(value.title === undefined
+    [propertiesByField.body]: projection.body,
+    ...(projection.title === undefined
       ? {}
       : {
-          [propertiesByField.title]: value.title,
-          [propertiesByField.status]: [`${tag}${value.status.toLowerCase()}`],
+          [propertiesByField.title]: projection.title,
+          [propertiesByField.status]: [
+            `${tag}${projection.status.toLowerCase()}`,
+          ],
         }),
   };
 }
@@ -25,6 +28,7 @@ export function value(resource, entity) {
   }[resource[propertiesByField.status]?.[0]];
   if (!status || resource[propertiesByField.status].length !== 1)
     throw new Error('Unsupported task status');
+
   return {
     title: resource[propertiesByField.title],
     body: resource[propertiesByField.body],

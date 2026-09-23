@@ -29,17 +29,20 @@ export class GitHubPort {
     );
     if (receipt.status < 200 || receipt.status >= 300)
       throw new Error(`GitHub ${action} returned ${receipt.status}`);
+
     return receipt.body ? JSON.parse(receipt.body) : undefined;
   }
   row(entity, raw, context = {}) {
     if (entity === 'issue') {
       if (raw.pull_request) throw new Error('Pull requests are excluded');
+
       return {
         id: raw.number,
         value: project(raw),
         metadata: this.metadata(raw, { number: raw.number }),
       };
     }
+
     if (
       !Number.isSafeInteger(raw.id) ||
       raw.id <= 0 ||
@@ -49,6 +52,7 @@ export class GitHubPort {
     const expected = `https://api.github.com/repos/${this.connection.repository}/issues/${context.issueId}`;
     if (raw.issue_url !== expected)
       throw new Error('Comment belongs to another issue');
+
     return {
       id: raw.id,
       value: { body: raw.body },
@@ -66,6 +70,7 @@ export class GitHubPort {
   }
   async list(entity, context = {}) {
     const result = [];
+
     for (let page = 1; page <= 100; page++) {
       const raw = await this.request(
         entity === 'issue' ? 'list_issues' : 'list_comments',
@@ -75,12 +80,15 @@ export class GitHubPort {
         },
       );
       if (!Array.isArray(raw)) throw new Error('Invalid GitHub page');
+
       for (const r of raw) {
         if (entity === 'issue' && 'pull_request' in r) continue;
         result.push(this.row(entity, r, context));
       }
+
       if (raw.length < 100) return result;
     }
+
     throw new Error('More than 10,000 records in one scan');
   }
   async get(entity, id, context) {
@@ -90,6 +98,7 @@ export class GitHubPort {
     );
     const row = this.row(entity, raw, context);
     if (row.id !== id) throw new Error('Provider returned another identity');
+
     return row;
   }
   async create(entity, value, key, metadata, context) {
@@ -110,6 +119,7 @@ export class GitHubPort {
         metadata,
         context,
       );
+
     return { ...row, value };
   }
   async update(entity, id, value, key, _metadata, context) {
@@ -120,8 +130,10 @@ export class GitHubPort {
         { id, body: value.body },
         `${key}:body`,
       );
+
       return;
     }
+
     if (!['Todo', 'Doing', 'Done'].includes(value.status))
       throw new Error('Unsupported task status');
     const current = await this.get(entity, id, context);
@@ -133,12 +145,14 @@ export class GitHubPort {
       },
       `${key}:fields`,
     );
+
     // Only this workflow label is managed. Closing preserves the label like the pilot.
     if (value.status === 'Doing' && current.value.status !== 'Doing') {
       await this.request('add_doing_label', { number: id }, `${key}:doing`);
     } else if (value.status === 'Todo') {
       // Closed issues may still carry the doing label, so inspect raw labels.
       const raw = await this.request('get_issue', { number: id });
+
       if (
         raw.labels.some(
           l =>
@@ -178,6 +192,7 @@ export class AtomicPort {
       result.subjects.length !== result.count
     )
       throw new Error('Incomplete local database query');
+
     return result.subjects;
   }
   async findByLocalId(parent, localId) {
@@ -189,12 +204,14 @@ export class AtomicPort {
     const matches = rows.filter(r => r.get(core.properties.parent) === parent);
     if (matches.length > 1)
       throw new Error('Duplicate Atomic creation identity');
+
     return matches[0];
   }
   async resource(subject) {
     const r = await this.store.getResource(subject);
     if (r.error) throw r.error;
     r.getLoroDoc();
+
     return r;
   }
   row(entity, r, context = {}) {
@@ -235,6 +252,7 @@ export class AtomicPort {
       (!Number.isSafeInteger(remoteId) || remoteId <= 0)
     )
       throw new Error('Invalid GitHub issue number');
+
     return {
       id: r.subject,
       remoteId,
@@ -250,6 +268,7 @@ export class AtomicPort {
       entity === 'issue' ? this.connection.table : context.issueId,
     );
     const rows = [];
+
     for (const id of ids) {
       const resource = await this.resource(id);
       if (
@@ -262,6 +281,7 @@ export class AtomicPort {
         continue;
       rows.push(this.row(entity, resource, context));
     }
+
     return rows;
   }
   async get(entity, id, context) {
@@ -269,6 +289,7 @@ export class AtomicPort {
   }
   values(entity, value, metadata, context) {
     const c = this.connection;
+
     return {
       ...(entity === 'issue'
         ? {
@@ -289,6 +310,7 @@ export class AtomicPort {
       entity === 'issue' ? this.connection.table : this.config.commentsFolder;
     const localId = `devonian:${await digest(key)}`;
     const existing = await this.findByLocalId(parent, localId);
+
     if (existing) {
       assertSaved(this.store, this.connection.drive, existing);
       const row = await this.get(entity, existing.subject, context);
@@ -296,8 +318,10 @@ export class AtomicPort {
         throw new Error(
           'Recovered Atomic create was edited; reconcile before retry',
         );
+
       return row;
     }
+
     const r = await this.store.newResource({
       parent,
       isA: [
@@ -311,6 +335,7 @@ export class AtomicPort {
       },
     });
     assertSaved(this.store, this.connection.drive, r, await r.save());
+
     return this.get(entity, r.subject, context);
   }
   async update(entity, id, value, _key, metadata, context) {

@@ -1,11 +1,7 @@
+// @wc-ignore-file
 import { it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import {
-  Agent,
-  Store,
-  core,
-  dataBrowser,
-} from '@tomic/lib';
+import { Agent, Store, core, dataBrowser } from '@tomic/lib';
 import { enableLoro } from '@integration-host/loro-loader';
 import { readExternalOperation } from '@integration-host/plugin-connection';
 import { install } from './atomic.js';
@@ -94,6 +90,7 @@ it.skipIf(!process.env.ATOMIC_GITHUB_TEST_SERVER)(
     });
     await parent.save();
     const expected: string[] = [];
+
     for (let i = 0; i < 5; i++) {
       const child = await store.newResource({
         parent: parent.subject,

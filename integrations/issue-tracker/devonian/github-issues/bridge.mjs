@@ -1,6 +1,10 @@
-import { reconcileRecord } from '../../src/reconcileRecord.js';
+import { reconcileRecord } from 'devonian';
 
-import { properties, value as resourceValue, propertiesByField as p } from './lens/resources.mjs';
+import {
+  properties,
+  value as resourceValue,
+  propertiesByField as p,
+} from './lens/resources.mjs';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const copy = value => structuredClone(value);
 
@@ -38,6 +42,7 @@ export class Bridge {
     const issueId = this.id(side, 'issue', parent);
     if (issueId === undefined)
       throw new Error('Issue must be mapped before comments');
+
     return { issueId };
   }
   async checkpoint() {
@@ -57,6 +62,7 @@ export class Bridge {
   lens(side, entity, operation, metadata) {
     const port = this[side],
       context = this.context(side, entity);
+
     return new this.api.AtomicLens({
       store: this.store,
       identities: this.identities,
@@ -92,7 +98,9 @@ export class Bridge {
     for (const [subject, record] of Object.entries(this.records)) {
       if (record.pending) await this.finish(subject, record);
     }
+
     await this.syncEntity('issue');
+
     for (const [subject, record] of Object.entries(this.records)) {
       if (record.entity === 'issue')
         await this.syncEntity(`comment:${subject}`);
@@ -101,15 +109,18 @@ export class Bridge {
 
   async syncEntity(entity) {
     const lists = {};
+
     for (const side of ['remote', 'local']) {
       const rows = await this[side].list(entity, this.context(side, entity));
       lists[side] = new Map();
+
       for (const row of rows) {
         if (lists[side].has(row.id))
           throw new Error('Duplicate external identity');
         lists[side].set(row.id, row);
       }
     }
+
     // An existing pilot's explicit issue-number column is an identity, never a title match.
     for (const row of lists.local.values()) {
       if (row.remoteId === undefined) continue;
@@ -119,6 +130,7 @@ export class Bridge {
       this.identities.bind(this.scope('local', entity), row.id, subject);
       this.records[subject] ??= { entity };
     }
+
     for (const side of ['remote', 'local']) {
       for (const row of lists[side].values()) {
         let subject = this.identities.lookup(this.scope(side, entity), row.id);
@@ -126,16 +138,20 @@ export class Bridge {
         this.records[subject] ??= { entity };
       }
     }
+
     await this.checkpoint();
+
     for (const [subject, record] of Object.entries(this.records)) {
       if (record.entity !== entity) continue;
       const rows = {};
+
       for (const side of ['local', 'remote']) {
         const id = this.id(side, entity, subject);
         rows[side] = id === undefined ? undefined : lists[side].get(id);
         if (id !== undefined && !rows[side])
           throw new Error(`Missing ${side} record: ${subject}`);
       }
+
       const decision = reconcileRecord(
         record.baseline,
         rows.local?.value,
@@ -150,6 +166,7 @@ export class Bridge {
         ...decision.remote,
       };
       const metadata = rows.remote?.metadata;
+
       if (
         rows.local &&
         rows.remote &&
@@ -160,6 +177,7 @@ export class Bridge {
         await this.checkpoint();
         continue;
       }
+
       record.pending = {
         operation: crypto.randomUUID(),
         local: rows.local?.value,
@@ -175,6 +193,7 @@ export class Bridge {
 
   async finish(subject, record) {
     const { pending, entity } = record;
+
     // A retry accepts only the original observation or this operation's exact result.
     for (const side of ['local', 'remote']) {
       const id = this.id(side, entity, subject);
@@ -186,12 +205,14 @@ export class Bridge {
       )
         throw new Error(`Conflict during saved operation on ${subject}`);
     }
+
     for (const side of ['remote', 'local']) {
       const id = this.id(side, entity, subject);
       const row =
         id === undefined
           ? undefined
           : await this[side].get(entity, id, this.context(side, entity));
+
       if (
         !row ||
         !equal(row.value, pending.desired) ||
@@ -206,6 +227,7 @@ export class Bridge {
         await this.checkpoint();
       }
     }
+
     for (const side of ['local', 'remote']) {
       const row = await this[side].get(
         entity,
@@ -215,6 +237,7 @@ export class Bridge {
       if (!equal(row.value, pending.desired))
         throw new Error(`Concurrent edit after write on ${subject}`);
     }
+
     record.baseline = copy(pending.desired);
     delete record.pending;
     await this.checkpoint();

@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Explicit opt-in: mutates only the dedicated private Ontola sandbox repo. */
 import { it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
@@ -36,6 +37,7 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
     const serverUrl = process.env.ATOMIC_GITHUB_TEST_SERVER;
     if (!serverUrl || !/^http:\/\/(localhost|127\.0\.0\.1):/.test(serverUrl))
       throw new Error('Use an isolated loopback Atomic test server');
+
     const github = async (path: string, method = 'GET', body?: unknown) => {
       const response = await fetch(
         `https://api.github.com/repos/${repository}${path}`,
@@ -52,8 +54,10 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
       );
       if (!response.ok)
         throw new Error(`GitHub ${method} ${path}: ${response.status}`);
+
       return response.status === 204 ? undefined : response.json();
     };
+
     expect((await github('')).private).toBe(true);
     await enableLoro();
     const keys = await Agent.generateKeyPair();
@@ -80,6 +84,7 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
     const issueNumbers = new Set<number>();
     let scheduled = false;
     let lastRun = '';
+
     const post = async (path: string, body: unknown) => {
       const url = serverUrl + path;
       const res = await fetch(url, {
@@ -92,8 +97,10 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
       });
       if (!res.ok)
         throw new Error(`${path}: ${res.status} ${await res.text()}`);
+
       return res.json();
     };
+
     const sync = async () => {
       let run = await previewPluginSync(store, {
         ...target,
@@ -107,17 +114,22 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
         run = await applyPluginSync(store, { ...target, run: run.run });
         if (run.status !== 'running') break;
       }
+
       expect(run.error).toBeNull();
       expect(run.status).toBe('complete');
+
       return run;
     };
+
     const fresh = async (subject: string) => {
       const r = await store.fetchResourceFromServer(subject, {
         noWebSocket: true,
       });
       r.getLoroDoc();
+
       return r;
     };
+
     const rows = async () =>
       Promise.all(
         (
@@ -129,13 +141,16 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
           )
         ).map(fresh),
       );
+
     const card = async (number: number) => {
       const all = await rows();
 
       const found = all.find(r => r.get(c.number) === number);
       expect(found, `Atomic card for issue ${number}`).toBeDefined();
+
       return found!;
     };
+
     try {
       const remote = await github('/issues', 'POST', {
         title: marker,
@@ -143,17 +158,20 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
         labels: ['bug'],
       });
       issueNumbers.add(remote.number);
+
       // GitHub create is acknowledged before its list endpoint always includes it.
       // Wait for the backfill fixture to become list-visible before first sync.
       for (let i = 0; i < 30; i++) {
         const visible = await github(
           '/issues?state=all&per_page=100&sort=created&direction=asc',
         );
-        if (visible.some((r: any) => r.number === remote.number)) break;
+        if (visible.some((r: { number: number }) => r.number === remote.number))
+          break;
         await new Promise(r => setTimeout(r, 1000));
         if (i === 29)
           throw new Error('Created issue did not become list-visible');
       }
+
       await sync();
       let row = await card(remote.number);
       expect(row.get(c.body)).toBe('Created on GitHub');
@@ -165,7 +183,7 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
       await sync();
       const external = await github(`/issues/${remote.number}`);
       expect(external.title).toBe(marker + ' edited in Atomic');
-      expect(external.labels.map((l: any) => l.name)).toEqual(
+      expect(external.labels.map((l: { name: string }) => l.name)).toEqual(
         expect.arrayContaining(['bug', 'atomic:doing']),
       );
       row = await card(remote.number);
@@ -280,8 +298,10 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
       scheduled = true;
       const deadline = Date.now() + 100000;
       let notifications: string[] = [];
+
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 2000));
+
         try {
           notifications = await readConnectionSubjects(
             store,
@@ -301,8 +321,10 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
             continue;
           throw error;
         }
+
         if (notifications.length === 2) break;
       }
+
       expect(notifications).toHaveLength(2);
       const notificationRows = await Promise.all(notifications.map(fresh));
       expect(notificationRows.map(r => r.get(core.properties.name))).toContain(

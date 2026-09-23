@@ -17,6 +17,7 @@ it('declares and prepares scoped issue/comment actions with validated arguments'
       ...trackerOperations('https://api.github.com/repos/owner/repo/issues'),
     ],
   };
+
   for (const [action, args] of [
     ['list_issues', { page: 1 }],
     ['list_comments', { number: 5, page: 2 }],
@@ -40,6 +41,7 @@ it('declares and prepares scoped issue/comment actions with validated arguments'
       ),
     ).toBe(true);
   }
+
   expect(() =>
     trackerAction('owner/repo', 'get_comment', { id: '../escape' }),
   ).toThrow();
@@ -69,6 +71,7 @@ function github() {
       if (isWrite && receipts.has(id)) return receipts.get(id);
       let value;
       if (isWrite) writes.push(action);
+
       switch (action) {
         case 'get_issue':
           value = issues.get(args.number);
@@ -118,11 +121,14 @@ function github() {
         default:
           throw new Error(action);
       }
+
       const receipt = { status: 200, body: JSON.stringify(value) };
       if (isWrite) receipts.set(id, receipt);
+
       return receipt;
     },
   );
+
   return { port, issues, comments, writes };
 }
 
@@ -210,12 +216,14 @@ it('Atomic creates reuse native localId after a lost acknowledgement', async () 
         key: propVals['https://atomicdata.dev/properties/localId'],
         async save() {
           stored.set(r.subject, r);
+
           if (lose) {
             lose = false;
             throw new Error('Lost acknowledgement');
           }
         },
       };
+
       return r;
     },
   };
@@ -252,6 +260,7 @@ function atomicStore({
       const subjects = [...resources.values()]
         .filter(r => r.props[opts.property] === opts.value)
         .map(r => r.subject);
+
       return { subjects, count: subjects.length };
     },
     getResource: async subject => resources.get(subject),
@@ -273,9 +282,11 @@ function atomicStore({
           resources.set(subject, r);
         },
       };
+
       return r;
     },
   };
+
   return { store, resources, queries };
 }
 

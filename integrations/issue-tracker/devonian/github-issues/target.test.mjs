@@ -11,6 +11,7 @@ const drive = 'https://atomic.example/drive';
 
 function fakeStore({ localOnly = false, existingComments } = {}) {
   const resources = new Map();
+
   const make = (subject, props) => {
     const r = {
       subject,
@@ -25,8 +26,10 @@ function fakeStore({ localOnly = false, existingComments } = {}) {
         resources.set(subject, r);
       },
     };
+
     return r;
   };
+
   resources.set(
     drive,
     make(drive, existingComments ? { [commentsFolder]: existingComments } : {}),
@@ -43,11 +46,13 @@ function fakeStore({ localOnly = false, existingComments } = {}) {
         ...propVals,
       }),
   };
+
   return { store, resources };
 }
 
 const buildTable = async spec => {
   expect(spec).toBe(trackerTableSpec);
+
   return {
     tableSubject: `${drive}/table`,
     classSubject: `${drive}/Issue`,

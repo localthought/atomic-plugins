@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Additional repository-scoped actions used by the Devonian tracker bridge. */
 import { endpoint, request } from './adapter.js';
 
@@ -114,9 +115,11 @@ export function trackerAction(
   const definition = definitions.find(d => d[0] === action);
   if (!definition) return undefined;
   const [, , operation, properties, required] = definition;
+
   for (const key of required) {
     if (!(key in args)) throw new Error(`Missing ${key}`);
   }
+
   for (const [key, value] of Object.entries(args)) {
     if (!(key in properties)) throw new Error(`Unexpected ${key}`);
     if (['number', 'id', 'page'].includes(key)) {
@@ -128,7 +131,9 @@ export function trackerAction(
         throw new Error(`Invalid ${key}`);
     } else if (typeof value !== 'string') throw new Error(`Invalid ${key}`);
   }
+
   const root = endpoint(repository);
+
   switch (action) {
     case 'list_issues':
       return request(
@@ -150,6 +155,7 @@ export function trackerAction(
     case 'update_comment':
       if (!(args.body as string).trim())
         throw new Error('Comment body cannot be empty');
+
       return request(
         operation,
         action === 'create_comment' ? 'POST' : 'PATCH',
@@ -181,6 +187,7 @@ export function trackerAction(
         throw new Error('Invalid issue state');
       if (!(args.title as string).trim() || (args.title as string).length > 256)
         throw new Error('Invalid issue title');
+
       return request(operation, 'PATCH', `${root}/${args.number}`, 'action', {
         title: args.title,
         body: args.body,

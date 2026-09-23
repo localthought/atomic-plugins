@@ -1,3 +1,4 @@
+// @wc-ignore-file
 import { issuePatch } from './lens/index.js';
 import {
   claimImportIdentity,
@@ -53,6 +54,8 @@ interface Input {
   connection: ConnectionState;
   proposal?: Preview;
   cursor?: Cursor;
+  // The host's receipt for the previous effect; its shape depends on the stage.
+  // oxlint-disable-next-line typescript/no-explicit-any
   result?: any;
   http(request: unknown): ExternalReceipt;
   read(subject: string): Record<string, unknown>;
@@ -65,16 +68,21 @@ const equal = (a: Projection | undefined, b: Projection | undefined) =>
     a.title === b.title &&
     a.body === b.body &&
     a.status === b.status);
+
 export async function run(input: Input): Promise<unknown> {
   const config = input.config;
+
   if (input.phase === 'action') {
     const root = endpoint(config.repository);
     const args = input.arguments ?? {};
+
     if (input.action === 'get_issue') {
       if (!Number.isSafeInteger(args.number) || Number(args.number) <= 0)
         throw new Error('Choose a positive issue number');
+
       return request('get', 'GET', `${root}/${args.number}`, 'action');
     }
+
     if (input.action === 'create_issue') {
       if (
         typeof args.title !== 'string' ||
@@ -82,13 +90,16 @@ export async function run(input: Input): Promise<unknown> {
         args.title.length > 256
       )
         throw new Error('Issue title must contain 1 to 256 characters');
+
       return request('create', 'POST', root, 'action', {
         title: args.title,
         body: args.body ?? '',
       });
     }
+
     throw new Error('Unknown integration action');
   }
+
   if (
     !config ||
     !config.table ||
@@ -98,6 +109,7 @@ export async function run(input: Input): Promise<unknown> {
   )
     throw new Error('Configure the connection before running it');
   const root = endpoint(config.repository);
+
   const card = (subject: string): Card | undefined => {
     const row = input.read(subject);
     if (
@@ -118,6 +130,7 @@ export async function run(input: Input): Promise<unknown> {
       (!Number.isSafeInteger(number) || Number(number) <= 0)
     )
       throw new Error('Invalid GitHub issue number');
+
     return {
       subject,
       ...(number === undefined ? {} : { number: number as number }),
@@ -128,14 +141,17 @@ export async function run(input: Input): Promise<unknown> {
       },
     };
   };
+
   const find = (number: number) => {
     const matches = input
       .query(config.number, String(number))
       .map(card)
       .filter((r): r is Card => r !== undefined);
     if (matches.length > 1) throw new Error('Duplicate issue identity');
+
     return matches[0];
   };
+
   const issue = (number: number): Issue => {
     const response = input.http(
       request('get', 'GET', `${root}/${number}`, 'read'),
@@ -148,8 +164,10 @@ export async function run(input: Input): Promise<unknown> {
     if ('pull_request' in value || value.number !== number)
       throw new Error('Expected the selected issue');
     project(value);
+
     return value;
   };
+
   if (input.phase === 'preview') {
     const proposal = await preview(
       {
@@ -163,6 +181,7 @@ export async function run(input: Input): Promise<unknown> {
       },
       config.repository,
     );
+
     return {
       kind: 'preview',
       proposal,
@@ -172,6 +191,7 @@ export async function run(input: Input): Promise<unknown> {
       })),
     };
   }
+
   if (
     !input.proposal ||
     input.proposal.repository !== config.repository ||
@@ -188,6 +208,7 @@ export async function run(input: Input): Promise<unknown> {
     effect: value,
     cursor: next,
   });
+
   const external = (
     operation: string,
     method: string,
@@ -197,6 +218,7 @@ export async function run(input: Input): Promise<unknown> {
     body?: unknown,
   ) => {
     const id = `${cursor.index}:${suffix}`;
+
     return effect(
       {
         kind: 'external',
@@ -206,6 +228,7 @@ export async function run(input: Input): Promise<unknown> {
       next,
     );
   };
+
   // Pure transitions may be folded into the same invocation. Every write yields.
   for (let transitions = 0; transitions < 12; transitions++) {
     if (cursor.stage === 'done') return { kind: 'complete' };
@@ -380,9 +403,11 @@ export async function run(input: Input): Promise<unknown> {
           },
         ],
       };
+
       // Return a read-only continuation instead of doing unbounded work per invocation.
       return { kind: 'continue', cursor };
     } else throw new Error('Unknown connection continuation');
   }
+
   throw new Error('Too many pure transitions');
 }

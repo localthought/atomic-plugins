@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Host-facing protocol types used by the GitHub lens. */
 export interface ExternalIntent {
   id: string;
@@ -15,6 +16,9 @@ export interface ExternalReceipt {
 
 export interface ConnectionState {
   revision: number;
-  records: Record<string, { local: string; baseline: Record<string, unknown> | null }>;
+  records: Record<
+    string,
+    { local: string; baseline: Record<string, unknown> | null }
+  >;
   cursor: unknown;
 }

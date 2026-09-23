@@ -19,6 +19,7 @@ it('serializes rotating codes, preserves query strings and checkpoints successfu
     },
     fetcher: async (url, opts) => {
       seen.push({ url, ...opts });
+
       return new Response('{"id":1}', {
         headers: { 'X-Connection-Code': `next-${seen.length}` },
       });
@@ -109,6 +110,7 @@ it('accepts async code storage, e.g. IndexedDB shared with a service worker', as
     journal: {},
     getCode: async () => {
       await tick();
+
       return idb.get('code');
     },
     setCode: async c => {
@@ -118,6 +120,7 @@ it('accepts async code storage, e.g. IndexedDB shared with a service worker', as
     save: async () => {},
     fetcher: async (_url, opts) => {
       sent.push(opts.headers.Authorization);
+
       return new Response('[]', {
         headers: { 'X-Connection-Code': `next-${sent.length}` },
       });

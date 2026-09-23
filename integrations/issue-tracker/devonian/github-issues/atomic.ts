@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Installs schema, kanban, sandbox source and a private connection. */
 import {
   Store,
@@ -55,6 +56,7 @@ export async function install(
     },
   });
   await plugin.save();
+
   const create = async (
     parent: string,
     isA: string[],
@@ -71,8 +73,10 @@ export async function install(
     if ((await r.save()) === 'offline')
       throw new Error('AtomicServer disconnected during installation');
     await store.fetchResourceFromServer(r.subject, { noWebSocket: true });
+
     return r;
   };
+
   const status = await store.getResource(taskSchema.properties.status);
   const tags: Record<Status, string> = {
     Todo: taskSchema.tags.Todo,
@@ -109,6 +113,7 @@ export async function install(
         [core.properties.name]: `${repository} issues`,
         [core.properties.classtype]: rowClass.subject,
       });
+
   if (!target) {
     const view = await create(table.subject, [dataBrowser.classes.view], {
       [core.properties.name]: 'Kanban',
@@ -125,6 +130,7 @@ export async function install(
     await table.set(dataBrowser.properties.tableDefaultView, view.subject);
     await table.save();
   }
+
   if (token) {
     const url = `${store.getServerUrl()}/plugin-secret`;
     const response = await fetch(url, {
@@ -144,6 +150,7 @@ export async function install(
     if (!response.ok)
       throw new Error('Could not store GitHub credential on AtomicServer');
   }
+
   await plugin.set(schema.properties['plugin-schemas'], {
     row: rowClass.subject,
     status: status.subject,
@@ -188,6 +195,7 @@ export async function install(
     ],
   });
   await plugin.save();
+
   return connection;
 }
 
@@ -204,6 +212,7 @@ export async function compatibleTables(store: Store, drive: string) {
   const pluginClass = pluginTerms.classes?.['plugin-script'];
   const connectionProperty = pluginTerms.properties?.['plugin-connection'];
   const occupied = new Set<string>();
+
   if (pluginClass && connectionProperty) {
     for (const subject of await readConnectionSubjects(
       store,
@@ -214,6 +223,7 @@ export async function compatibleTables(store: Store, drive: string) {
       const resource = await store.getResource(subject);
       const raw = resource.get(connectionProperty);
       const connection = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
       if (
         connection &&
         typeof connection === 'object' &&
@@ -230,6 +240,7 @@ export async function compatibleTables(store: Store, drive: string) {
       }
     }
   }
+
   for (const subject of subjects) {
     if (occupied.has(subject)) continue;
     const table = await store.getResource(subject);
@@ -240,6 +251,7 @@ export async function compatibleTables(store: Store, drive: string) {
       ...((row.get(core.properties.requires) as string[]) ?? []),
       ...((row.get(core.properties.recommends) as string[]) ?? []),
     ];
+
     if (
       [taskSchema.properties.status, taskSchema.properties.body].every(p =>
         properties.includes(p),
@@ -252,5 +264,6 @@ export async function compatibleTables(store: Store, drive: string) {
       });
     }
   }
+
   return result;
 }

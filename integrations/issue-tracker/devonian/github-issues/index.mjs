@@ -10,8 +10,11 @@ export const descriptor = {
 
 /** Create a GitHub lens with host supplied runtime, ports and persistence. */
 export function createBridge(host, options) {
-  if (!host || typeof host !== 'object') throw new Error('Lens host is required');
-  if (!options || typeof options !== 'object') throw new Error('Lens options are required');
+  if (!host || typeof host !== 'object')
+    throw new Error('Lens host is required');
+  if (!options || typeof options !== 'object')
+    throw new Error('Lens options are required');
+
   return new Bridge({ ...options, devonian: host });
 }
 

@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 import * as devonian from 'devonian';
+import { processLocks } from 'devonian';
 import { Bridge } from './bridge.mjs';
 import { createBackgroundSync, isPermanentSyncError } from './background.mjs';
-import { processLocks } from '../../src/background/index.js';
 
 const MINUTE = 60_000;
 
@@ -19,6 +19,7 @@ const makePort = scope => ({
   async get(entity, id) {
     const row = this.rows.get(id);
     if (!row || row.entity !== entity) throw new Error('Missing record');
+
     return structuredClone(row);
   },
   async create(entity, value, key, metadata) {
@@ -28,10 +29,12 @@ const makePort = scope => ({
     this.rows.set(id, row);
     this.receipts.set(key, row);
     this.writes++;
+
     if (this.lose) {
       this.lose = false;
       throw new Error('Lost response');
     }
+
     return row;
   },
   async update(entity, id, value) {
@@ -52,9 +55,11 @@ function host() {
   const local = makePort('https://atomic.example/tracker');
   const remote = makePort('https://github.com/acme/repo');
   let opened = 0;
+
   const openBridge = async () => {
     opened++;
     const saved = idb.get('bridge');
+
     return new Bridge({
       devonian,
       local,
@@ -66,18 +71,21 @@ function host() {
       },
     });
   };
+
   const store = {
     get: async k => idb.get(`schedule:${k}`),
     set: async (k, v) => {
       idb.set(`schedule:${k}`, v);
     },
   };
+
   return { idb, local, remote, openBridge, store, opened: () => opened };
 }
 
 function clock() {
   const c = { t: Date.parse('2026-09-23T09:00:00.000Z') };
   c.now = () => c.t;
+
   return c;
 }
 

@@ -54,7 +54,7 @@ What it does today, covered by unit tests only:
 
 - `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`, the
   same window as above), plus projects and users for naming, runs the one
-  Clockify lens (`devonian/platform-lenses/clockify`) over them, and
+  Clockify lens (`devonian/clockify/`) over them, and
   reconciles rows into the host's data table (`store.getData()`), or under the
   App when there is none. Identity is a stored `entry-id` found via
   `store.query()`, restricted to children of that table; `create` in

@@ -9,12 +9,23 @@ The stable entry point is `createBridge(host, options)` from `index.mjs`.
 Hosts select the package by the versioned `descriptor.json`; provider code is
 kept beside the lens and is never imported by Devonian's generic runtime.
 
-The copied browser tests retain deterministic fixture and recovery coverage.
-They require the host browser dependencies and are run by the consuming
-application until this package has a standalone browser test harness.
+It lives in the issue-tracker plugin folder (it was
+`devonian/platform-lenses/github-issues/` in the `devonian` package up to
+0.6.1). It imports Devonian as the `devonian` package, and the host modules
+(`@integration-host/*`) and `@tomic/lib` from the host; in this repo
+`../../vitest.config.ts` aliases all of them, `devonian` to its source in
+`devonian/src/` and the rest to the linked atomic-server checkout. All its
+tests run in the issue-tracker lane:
 
-Pure forward/reverse mappings now live in `lens/`, with a public entry point at
-`devonian/platform-lenses/github-issues/lens`. `project` reads GitHub issues;
+```sh
+./browser/node_modules/.bin/vitest run --config integrations/issue-tracker/vitest.config.ts devonian/github-issues
+```
+
+`devonian` must have its own dependencies installed first
+(`cd devonian && pnpm install --frozen-lockfile`). The two `*.live.test.ts`
+suites skip unless their environment variables are set.
+
+Pure forward/reverse mappings live in `lens/` (entry point `lens/index.ts`). `project` reads GitHub issues;
 `unproject` writes the projection back onto a supplied issue without dropping
 unmanaged fields. `issueFields` and `issuePatch` are used by the existing runtime.
 `lens/resources.mjs` holds the bridge's bidirectional Atomic property mapping.
@@ -24,8 +35,7 @@ ports, proxy, and plugin continue to own effects and synchronization state.
 ## Background sync
 
 `createBackgroundSync({ openBridge, store, intervalMs, locks?, name? })` from
-`background.mjs` (also exported from `index.mjs` and
-`devonian/platform-lenses/github-issues/background`) keeps a connection
+`background.mjs` (also exported from `index.mjs`) keeps a connection
 syncing on a persisted schedule, so a pass that fell due while the tab was
 closed runs at the next opportunity instead of waiting for someone to click
 "Sync". It wraps Devonian's generic `BackgroundSync` (see the package
@@ -62,10 +72,18 @@ A browser host wires three triggers into the same `BackgroundSync`:
 // Page: check while any tab is open (only due passes run).
 sync.start(60_000);
 // Page, once: ask the browser to wake the service worker.
-await registerBackgroundSync(await navigator.serviceWorker.ready, 'github-issues', 60 * 60_000);
+await registerBackgroundSync(
+  await navigator.serviceWorker.ready,
+  'github-issues',
+  60 * 60_000,
+);
 // Service worker: build the same sync from IndexedDB, then
-self.addEventListener('periodicsync', e => handleBackgroundSyncEvent(e, sync, 'github-issues'));
-self.addEventListener('sync', e => handleBackgroundSyncEvent(e, sync, 'github-issues'));
+self.addEventListener('periodicsync', e =>
+  handleBackgroundSyncEvent(e, sync, 'github-issues'),
+);
+self.addEventListener('sync', e =>
+  handleBackgroundSyncEvent(e, sync, 'github-issues'),
+);
 ```
 
 **What this does not do (yet).** It does not bring back the removed Rust
@@ -176,16 +194,16 @@ are the native Atomic vocabulary actually used by the implementation.
 
 The field correspondence is:
 
-| GitHub | Atomic tracker representation |
-| --- | --- |
-| Issue `title` | `https://atomicdata.dev/properties/name` |
-| Issue `body` | `https://atomicdata.dev/task/v1/body` |
-| Open issue with `atomic:doing` label | Status `[https://atomicdata.dev/task/v1/doing]` |
-| Open issue without that label | Status `[https://atomicdata.dev/task/v1/todo]` |
-| Closed issue, regardless of labels | Status `[https://atomicdata.dev/task/v1/done]` |
-| Issue `number` | Installation's GitHub-number property, kept as a number |
-| Comment `body` | Message `https://atomicdata.dev/properties/description` |
-| Comment's issue association | Message `https://atomicdata.dev/properties/about`, pointing to the Atomic issue subject |
+| GitHub                               | Atomic tracker representation                                                           |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| Issue `title`                        | `https://atomicdata.dev/properties/name`                                                |
+| Issue `body`                         | `https://atomicdata.dev/task/v1/body`                                                   |
+| Open issue with `atomic:doing` label | Status `[https://atomicdata.dev/task/v1/doing]`                                         |
+| Open issue without that label        | Status `[https://atomicdata.dev/task/v1/todo]`                                          |
+| Closed issue, regardless of labels   | Status `[https://atomicdata.dev/task/v1/done]`                                          |
+| Issue `number`                       | Installation's GitHub-number property, kept as a number                                 |
+| Comment `body`                       | Message `https://atomicdata.dev/properties/description`                                 |
+| Comment's issue association          | Message `https://atomicdata.dev/properties/about`, pointing to the Atomic issue subject |
 
 The pure issue lens first produces
 `{ title, body, status: 'Doing' }`; the resource mapping expresses those fields
@@ -210,10 +228,10 @@ drive can be a browser-only drive or the user's real drive on AtomicServer.
 It asks the store again on every call, because `store.promoteLocalDrive` can
 turn a local-only tracker into a synced one after it was set up.
 
-| Drive kind | How it is detected | Enumeration (`queryLocalDb`) | A write counts as done when |
-| --- | --- | --- | --- |
-| `local-only` | `store.isLocalOnlyDrive(drive)` | Always authoritative | `save()` resolves without returning `'offline'` |
-| `synced` | Any other drive | Only after `store.hasCompletedDriveSyncFor(drive)` | `store.getSaveState(resource).kind === 'idle'` (AtomicServer acknowledged it) |
+| Drive kind   | How it is detected              | Enumeration (`queryLocalDb`)                       | A write counts as done when                                                   |
+| ------------ | ------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `local-only` | `store.isLocalOnlyDrive(drive)` | Always authoritative                               | `save()` resolves without returning `'offline'`                               |
+| `synced`     | Any other drive                 | Only after `store.hasCompletedDriveSyncFor(drive)` | `store.getSaveState(resource).kind === 'idle'` (AtomicServer acknowledged it) |
 
 On a synced drive, `AtomicPort` throws instead of guessing in three cases:
 

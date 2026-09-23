@@ -1,16 +1,31 @@
+// @wc-ignore-file
 /** GitHub-specific mapping; the host owns credentials, effects and persistence. */
+// The host's reconcileRecord (byte-identical to devonian's), not the `devonian`
+// package: plugin.ts bundles this file into a sandbox plugin, and devonian's
+// main entry pulls in Node-only dependencies.
 import {
   reconcileRecord,
   type SyncRecord,
-} from '../../src/reconcileRecord.js';
+} from '@integration-host/plugin-reconcile';
 import type {
   ConnectionState,
   ExternalIntent,
   ExternalReceipt,
 } from './types.js';
 
-import { project, validate, type Projection, type Issue } from './lens/index.js';
-export { project, type Status, type Projection, type Issue } from './lens/index.js';
+import {
+  project,
+  validate,
+  type Projection,
+  type Issue,
+} from './lens/index.js';
+
+export {
+  project,
+  type Status,
+  type Projection,
+  type Issue,
+} from './lens/index.js';
 export interface Card {
   subject: string;
   number?: number;
@@ -43,16 +58,19 @@ const headers = {
   Authorization: 'secret:github',
   'Content-Type': 'application/json',
 };
+
 export function endpoint(repository: string): string {
   if (
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ||
     repository.split('/').some(p => p === '.' || p === '..')
   )
     throw new Error('Repository must be owner/name');
+
   return `https://api.github.com/repos/${repository}/issues`;
 }
 export function manifest(repository: string) {
   const url = endpoint(repository);
+
   return {
     schemaVersion: 1,
     actions: [
@@ -120,13 +138,16 @@ export function manifest(repository: string) {
     ],
   };
 }
+
 function parse<T>(response: ExternalReceipt): T {
   if (response.status < 200 || response.status >= 300)
     throw new Error(
       `GitHub returned ${response.status}; no checkpoint was advanced. Resolve access/rate limits before retrying.`,
     );
+
   return JSON.parse(response.body) as T;
 }
+
 export function request(
   operation: string,
   method: string,
@@ -154,6 +175,7 @@ export async function get(
   if ('pull_request' in issue || issue.number !== number)
     throw new Error('Expected an issue, not a pull request or another record');
   project(issue);
+
   return issue;
 }
 
@@ -169,6 +191,7 @@ export async function preview(
       'A saved sync is pending; resume it before previewing another run',
     );
   const issues = new Map<number, Issue>();
+
   for (let page = 1; ; page++) {
     if (page > 100)
       throw new Error('Pilot supports at most 10,000 issues/PRs per scan');
@@ -184,33 +207,41 @@ export async function preview(
     );
     if (!Array.isArray(rows))
       throw new Error('GitHub issue page must be an array');
+
     for (const issue of rows)
       if (!('pull_request' in issue)) {
         project(issue);
         issues.set(issue.number, issue);
       }
+
     if (rows.length < 100) break;
   }
+
   const cards = await host.cards();
   const byNumber = new Map<number, Card>();
+
   for (const card of cards) {
     validate(card.value);
+
     if (card.number !== undefined) {
       if (byNumber.has(card.number))
         throw new Error(`Duplicate cards for issue #${card.number}`);
       byNumber.set(card.number, card);
     }
   }
+
   const result: Preview = {
     repository,
     revision: state.revision,
     changes: [],
     conflicts: [],
   };
+
   for (const [number, issue] of issues) {
     const remote = project(issue);
     const binding = state.records[String(number)];
     const card = byNumber.get(number);
+
     if (binding && (!card || binding.local !== card.subject)) {
       result.conflicts.push({
         number,
@@ -218,11 +249,13 @@ export async function preview(
       });
       continue;
     }
+
     const decision = reconcileRecord(
       binding?.baseline as SyncRecord,
       card?.value,
       remote,
     );
+
     if (decision.conflicts.length) {
       result.conflicts.push({
         subject: card?.subject,
@@ -231,6 +264,7 @@ export async function preview(
       });
       continue;
     }
+
     const desired = { ...remote, ...decision.remote } as Projection;
     validate(desired);
     // Include unchanged records so their identity/baseline is established on first import.
@@ -242,6 +276,7 @@ export async function preview(
       desired,
     });
   }
+
   for (const card of cards) {
     if (card.number === undefined)
       result.changes.push({
@@ -256,5 +291,6 @@ export async function preview(
         fields: ['Issue missing or inaccessible; no deletion inferred'],
       });
   }
+
   return result;
 }

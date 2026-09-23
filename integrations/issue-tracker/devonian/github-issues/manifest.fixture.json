@@ -14,9 +14,7 @@
             "description": "Positive issue number"
           }
         },
-        "required": [
-          "number"
-        ],
+        "required": ["number"],
         "additionalProperties": false
       }
     },
@@ -37,9 +35,7 @@
             "description": "Markdown description"
           }
         },
-        "required": [
-          "title"
-        ],
+        "required": ["title"],
         "additionalProperties": false
       }
     }

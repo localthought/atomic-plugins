@@ -1,3 +1,4 @@
+// @wc-ignore-file
 import { describe, it, expect } from 'vitest';
 import { preview, project, manifest, type Issue } from './adapter.js';
 import { validateManifest } from '@integration-host/plugin-manifest';
@@ -31,13 +32,23 @@ describe('GitHub package', () => {
         '--target=es2022',
         `--alias:@integration-host/import-records=${join(process.cwd(), 'browser/lib/src/import-records.ts')}`,
         `--alias:@integration-host/plugin-connection=${join(process.cwd(), 'browser/lib/src/plugin-connection.ts')}`,
+        `--alias:@integration-host/plugin-reconcile=${join(process.cwd(), 'browser/lib/src/plugin-reconcile.ts')}`,
       ],
       { encoding: 'utf8' },
     );
+    // Source paths depend on where the checkout and its atomic-server live:
+    // the `// path` comments above each module and esbuild's __commonJS keys.
     const withoutSourcePaths = (value: string) =>
-      value.replace(/^\/\/ .*\.(?:ts|js)$/gm, '// generated source');
+      value
+        .replace(/^\/\/ .*\.(?:ts|js)$/gm, '// generated source')
+        .replace(
+          /^(\s*)"[^"\n]*\.js"(\(exports, module\))/gm,
+          '$1"generated source"$2',
+        );
     expect(
-      withoutSourcePaths(await readFile(join(import.meta.dirname, 'plugin.js'), 'utf8')),
+      withoutSourcePaths(
+        await readFile(join(import.meta.dirname, 'plugin.js'), 'utf8'),
+      ),
     ).toBe(withoutSourcePaths(built));
   });
   it('reads every page and excludes pull requests', async () => {
@@ -47,6 +58,7 @@ describe('GitHub package', () => {
       {
         read: async intent => {
           const page = Number(new URL(intent.url).searchParams.get('page'));
+
           return {
             status: 200,
             body: JSON.stringify(issues.slice((page - 1) * 100, page * 100)),

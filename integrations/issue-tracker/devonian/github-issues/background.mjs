@@ -1,4 +1,4 @@
-import { BackgroundSync } from '../../src/background/index.js';
+import { BackgroundSync } from 'devonian';
 
 /**
  * Failures that retrying cannot fix: the Bridge, the proxy transport or the
@@ -43,6 +43,7 @@ export function createBackgroundSync({
 }) {
   if (typeof openBridge !== 'function')
     throw new Error('openBridge is required');
+
   return new BackgroundSync({
     isPermanent: isPermanentSyncError,
     ...options,

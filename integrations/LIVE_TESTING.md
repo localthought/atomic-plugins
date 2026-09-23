@@ -39,5 +39,5 @@ Dedicated accounts, host-enforced expiry and live adapters remain to implement.
 Notion's `atomic.live.test.ts` uses authored HTTP replies and is not
 vendor-live evidence. GitHub issues sync now runs entirely in-browser via
 Devonian, outside this Rust-sandbox live-test tier; see
-`devonian/platform-lenses/github-issues/` (its README and
+`integrations/issue-tracker/devonian/github-issues/` (its README and
 `github.live.test.ts`).

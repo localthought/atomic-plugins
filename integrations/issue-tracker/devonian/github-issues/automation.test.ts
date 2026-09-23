@@ -1,3 +1,4 @@
+// @wc-ignore-file
 import { it, expect } from 'vitest';
 import { eventAutomationSource } from '@integration-host/integration-automation';
 it('wires arbitrary events to a sandbox script without prescribing an action', async () => {

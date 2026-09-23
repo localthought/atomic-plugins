@@ -28,6 +28,7 @@ export function proxyTransport({
     throw new Error('Use an HTTPS proxy or loopback HTTP');
   const root = endpoint(repository);
   let pending = Promise.resolve();
+
   return (action, args, id) => {
     const operation = async () => {
       if (
@@ -54,6 +55,7 @@ export function proxyTransport({
       const writes = intent.method !== 'GET';
       const signature = JSON.stringify({ action, args });
       const old = journal[id];
+
       if (writes && old) {
         if (old.signature !== signature)
           throw new Error('Operation identity reused with different arguments');
@@ -62,13 +64,16 @@ export function proxyTransport({
           `Uncertain GitHub write (${action}). Inspect its outcome before retrying; it will not be resent.`,
         );
       }
+
       if (writes) {
         journal[id] = { signature };
         await save();
       }
+
       const target = new URL(intent.url);
       let receipt;
       let next = true;
+
       if (dispatch) {
         receipt = await dispatch(`${target.pathname}${target.search}`, {
           method: intent.method,
@@ -108,18 +113,23 @@ export function proxyTransport({
         if (next) await setCode(next);
         receipt = { status: response.status, body: await response.text() };
       }
+
       if (writes && receipt.status >= 200 && receipt.status < 300) {
         journal[id].receipt = receipt;
         await save();
       }
+
       if (!next)
         throw new Error(
           'Proxy did not expose X-Connection-Code. Enable CORS exposure and reconnect.',
         );
+
       return receipt;
     };
+
     const next = pending.then(operation);
     pending = next.catch(() => {});
+
     return next;
   };
 }
@@ -137,11 +147,13 @@ export function fixtureTransport(state, save) {
   ];
   state.comments ??= [];
   state.receipts ??= {};
+
   return async (action, args, id) => {
     if (state.receipts[id]) return state.receipts[id];
     let value;
     const issue = state.issues.find(r => r.number === args.number);
     const comment = state.comments.find(r => r.id === args.id);
+
     switch (action) {
       case 'list_issues':
         value = state.issues.slice((args.page - 1) * 100, args.page * 100);
@@ -192,6 +204,7 @@ export function fixtureTransport(state, save) {
       default:
         throw new Error(`Unsupported fixture action: ${action}`);
     }
+
     const receipt = {
       status: value ? 200 : 404,
       body: JSON.stringify(value ?? {}),
@@ -199,6 +212,7 @@ export function fixtureTransport(state, save) {
     if (!action.startsWith('get_') && !action.startsWith('list_'))
       state.receipts[id] = receipt;
     await save();
+
     return receipt;
   };
 }

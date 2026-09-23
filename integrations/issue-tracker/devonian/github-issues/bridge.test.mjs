@@ -16,6 +16,7 @@ function fixture(snapshot) {
     async get(entity, id) {
       const row = this.rows.get(id);
       if (!row || row.entity !== entity) throw new Error('Missing record');
+
       return structuredClone(row);
     },
     async create(entity, value, key, metadata) {
@@ -25,10 +26,12 @@ function fixture(snapshot) {
       this.rows.set(id, row);
       this.receipts.set(key, row);
       this.writes++;
+
       if (this.lose) {
         this.lose = false;
         throw new Error('Lost response');
       }
+
       return row;
     },
     async update(entity, id, value) {
@@ -50,8 +53,10 @@ function fixture(snapshot) {
         saved = structuredClone(s);
       },
     });
+
   return { local, remote, open, saved: () => saved };
 }
+
 const issue = (id, title = 'Same title') => ({
   id,
   entity: 'issue',

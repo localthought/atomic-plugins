@@ -1,3 +1,4 @@
+// @wc-ignore-file
 /** Passive GitHub issue mapping. No store, transport or synchronization state. */
 export type Status = 'Todo' | 'Doing' | 'Done';
 export type Projection = {
@@ -23,6 +24,7 @@ export function project(issue: Issue): Projection {
     !Array.isArray(issue.labels)
   )
     throw new Error('GitHub returned an invalid issue');
+
   return {
     title: issue.title,
     body: issue.body ?? '',
@@ -30,7 +32,7 @@ export function project(issue: Issue): Projection {
       issue.state === 'closed'
         ? 'Done'
         : issue.labels.some(
-              (l) =>
+              l =>
                 (typeof l === 'string' ? l : l.name).toLowerCase() ===
                 'atomic:doing',
             )
@@ -67,11 +69,12 @@ export function issueFields(value: Projection): {
 export function unproject<T extends Issue>(value: Projection, previous: T): T {
   validate(value);
   const labels = previous.labels.filter(
-    (label) =>
+    label =>
       (typeof label === 'string' ? label : label.name).toLowerCase() !==
       'atomic:doing',
   );
   if (value.status === 'Doing') labels.push('atomic:doing');
+
   return { ...previous, ...issueFields(value), labels };
 }
 
@@ -88,5 +91,6 @@ export function issuePatch(
     (previous && (previous.status === 'Done') !== (desired.status === 'Done'))
   )
     patch.state = desired.status === 'Done' ? 'closed' : 'open';
+
   return patch;
 }
