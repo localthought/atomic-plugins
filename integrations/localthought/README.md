@@ -109,7 +109,6 @@ server plugin execution, actions and schedules are outside this migration.
 ```sh
 cargo check -p atomic-wasm --target wasm32-unknown-unknown
 browser/node_modules/.bin/vitest run --config integrations/localthought/vitest.config.ts
-node integrations/localthought/wasm-smoke.mjs # after building wasm/pkg
 ```
 
 For the browser-only mock journey (no AtomicServer on port 19999):

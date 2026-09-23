@@ -57,9 +57,8 @@ name: CI
 #
 # No Rust/WASM tests run here: not the sandboxTests declared in each
 # package's atomicCertification (those are atomic-server's own `cargo test`
-# suite, run by its CI), and not localthought's wasm-smoke.mjs /
-# browser-smoke.mjs (they need a built wasm/pkg and a full Vite app
-# respectively). Building the atomic-server binary itself is unavoidable
+# suite, run by its CI), and not localthought's browser-smoke.mjs (it
+# needs a full Vite app). Building the atomic-server binary itself is unavoidable
 # infrastructure, not a test.
 
 on:
