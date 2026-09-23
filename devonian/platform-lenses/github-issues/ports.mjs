@@ -1,5 +1,6 @@
 import { project, issueFields } from './lens/index.js';
 import { core, dataBrowser } from '@tomic/lib';
+import { assertEnumerable, assertSaved } from './target.mjs';
 
 export const digest = async value =>
   Array.from(
@@ -151,7 +152,11 @@ export class GitHubPort {
   }
 }
 
-/** Signed SDK writes build on the fetched Loro state, preserving unmanaged fields. */
+/**
+ * Signed SDK writes build on the fetched Loro state, preserving unmanaged fields.
+ * Works against a local-only drive or a server-synced one (the user's real
+ * drive); see target.mjs for how enumeration and write durability differ.
+ */
 export class AtomicPort {
   constructor(store, config) {
     this.store = store;
@@ -160,6 +165,7 @@ export class AtomicPort {
     this.scope = `https://atomicdata.dev/devonian-local/${encodeURIComponent(this.connection.table)}`;
   }
   async subjects(property, value) {
+    assertEnumerable(this.store, this.connection.drive);
     const result = await this.store.queryLocalDb({
       drive: this.connection.drive,
       property,
@@ -284,6 +290,7 @@ export class AtomicPort {
     const localId = `devonian:${await digest(key)}`;
     const existing = await this.findByLocalId(parent, localId);
     if (existing) {
+      assertSaved(this.store, this.connection.drive, existing);
       const row = await this.get(entity, existing.subject, context);
       if (!equal(row.value, value))
         throw new Error(
@@ -303,8 +310,7 @@ export class AtomicPort {
         [core.properties.localId]: localId,
       },
     });
-    if ((await r.save()) === 'offline')
-      throw new Error('AtomicServer disconnected');
+    assertSaved(this.store, this.connection.drive, r, await r.save());
     return this.get(entity, r.subject, context);
   }
   async update(entity, id, value, _key, metadata, context) {
@@ -314,7 +320,6 @@ export class AtomicPort {
       this.values(entity, value, metadata, context),
     ))
       await r.set(p, v);
-    if ((await r.save()) === 'offline')
-      throw new Error('AtomicServer disconnected');
+    assertSaved(this.store, this.connection.drive, r, await r.save());
   }
 }
