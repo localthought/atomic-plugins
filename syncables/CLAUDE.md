@@ -204,6 +204,26 @@ operation matched by a scheme, not just discovered resources; `sync()`
 additionally upgrades a resource's collection GET to use it when it
 qualifies, but falls back to today's single-request behavior otherwise.
 
+### Browser read path (`src/read/`, `src/browser.ts`)
+
+`package.json` exports a second entry, `syncables/browser` (`src/browser.ts`).
+It holds the read path only, for browser and iframe plugins. `read/model.ts`
+discovers collections from `components.crudResources`, a read-only port of
+reflector's `discoverResourceModel`. `read/pages.ts` walks the pages of one
+operation with the `pagination/` modules above, including request-body
+cursors for POST lists. `read/ontology.ts` derives terms typed with Atomic
+Data datatypes. `read/read.ts` combines these into `readPlatform` and
+`paginate`. All requests go through an injected `Transport`
+(`read/transport.ts`).
+
+Nothing reachable from `src/browser.ts` may import a Node built-in or
+`js-yaml`. This is why `applyOverlay` lives in `openapi/apply-overlay.ts`,
+and `openapi/overlay.ts` only adds the file-reading `loadOverlay` on top of
+it. `__tests__/unit/browser/bundle.test.ts` enforces the rule by bundling the
+entry with esbuild `platform: 'browser'`. Keep `fs`/`http`/`node:crypto` in
+`openapi/load.ts`, `openapi/overlay.ts` and `mock-server/`. `index.ts`
+re-exports the read path too, with `paginate` renamed `paginateOperation`.
+
 Tests under `__tests__/unit/` mirror this `src/` layout one-to-one (e.g.
 `unit/client/client.test.ts`, `unit/mock-server/server.test.ts`,
 `unit/pagination/*.test.ts`), plus:
