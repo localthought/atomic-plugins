@@ -31,7 +31,7 @@
       "index": 3,
       "platforms": ["moneybird"],
       "tiers": [],
-      "note": "No lane job: money has no package.json-less suite and no server-dependent tier. certify.mjs discovers it (it has an atomicCertification block) and the unsharded certification step covers its typecheck, bundle and fixture tests. The entry exists so the lanes-cover-every-directory check passes and so the index stays reserved."
+      "note": "No lane job, on purpose. money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility; typecheck/unit tiers here would only repeat that. Add a tier once money has a server-dependent test. moneybird is listed but not consumed: integrations/money/ is an MT940/camt.053 uploader with no Moneybird code, and the moneybird catalog entry has no package in this repo. With no tier, no mock proxy is started for this lane. A future Moneybird fixture and its recorder go in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/localthought/fixtures/index.mjs registers it by importing ../../money/fixtures/moneybird/scenario.mjs. See PARALLEL_LANES.md, Still open."
     },
     {
       "id": "notion",
