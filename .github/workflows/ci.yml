@@ -290,8 +290,15 @@ jobs:
           ref: ${{ steps.pin.outputs.sha }}
           path: atomic-server
 
+      # The same script contributors run locally (AGENTS.md), so the two
+      # layouts cannot drift. --no-fetch: actions/checkout above already put
+      # atomic-server at the pinned commit, which the script verifies;
+      # --no-install: the install step below does that. It needs only node
+      # builtins and git, so the runner's preinstalled node is enough.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
@@ -318,6 +325,7 @@ jobs:
             integrations/tooling/certify.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
+            integrations/tooling/link-atomic-server.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs
 
@@ -370,15 +378,16 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
-      # The second symlink is what makes a lane spec's bare `@playwright/test`
-      # and `@tomic/lib` imports resolve: node walks up from
+      # Besides browser/, the script links integrations/node_modules ->
+      # ../browser/e2e/node_modules, which is what makes a lane spec's bare
+      # `@playwright/test` and `@tomic/lib` imports resolve: node walks up from
       # integrations/<lane>/e2e/ and finds nothing otherwise. Both packages are
       # dependencies of the `@tomic/e2e` workspace package, so they live in
-      # browser/e2e/node_modules. run-lane.mjs creates the same link locally.
+      # browser/e2e/node_modules. Same script, same flags as shared-checks.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: |
-          ln -s ../atomic-server/browser atomic-plugins/browser
-          ln -s ../browser/e2e/node_modules atomic-plugins/integrations/node_modules
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
@@ -578,8 +587,15 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
+      # The same script contributors run locally (AGENTS.md), so the two
+      # layouts cannot drift. --no-fetch: actions/checkout above already put
+      # atomic-server at the pinned commit, which the script verifies;
+      # --no-install: the install step below does that. It needs only node
+      # builtins and git, so the runner's preinstalled node is enough.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
