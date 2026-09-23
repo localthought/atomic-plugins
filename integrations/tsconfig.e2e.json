@@ -1,10 +1,14 @@
 {
-  "//": "Compiler settings for the per-plugin Playwright specs under integrations/<lane>/e2e/. Referenced by integrations/tooling/playwright.config.ts via its `tsconfig` option; not a build config, and deliberately not extended by any package tsconfig.json here. It carries no `paths`: bare `@playwright/test` and `@tomic/lib` imports resolve through the `integrations/node_modules` symlink that points at `browser/e2e/node_modules`, where both packages live as dependencies of the `@tomic/e2e` workspace package. Mapping them with `paths` instead broke CJS/ESM interop \u2014 `@playwright/test` is CommonJS, and a paths-resolved import of it fails with \"Named export 'expect' not found\".",
+  "//": "Compiler settings for the per-plugin Playwright specs under integrations/<lane>/e2e/. Referenced by integrations/tooling/playwright.config.ts via its `tsconfig` option; not a build config, and deliberately not extended by any package tsconfig.json here. It carries no `paths`: bare `@playwright/test` and `@tomic/lib` imports resolve through the `integrations/node_modules` symlink that points at `browser/e2e/node_modules`, where both packages live as dependencies of the `@tomic/e2e` workspace package. Mapping them with `paths` instead broke CJS/ESM interop — `@playwright/test` is CommonJS, and a paths-resolved import of it fails with \"Named export 'expect' not found\". `moduleResolution: bundler` replaces `node` (node10), which TypeScript 6 rejects as deprecated (TS5107), and still allows the extensionless relative imports the specs and `browser/e2e/tests/` use. `typeRoots` adds `browser/node_modules/@types`, because `@types/node` is hoisted to the `browser/` workspace root rather than installed under `browser/e2e/node_modules`. `skipLibCheck` matches `browser/tsconfig.build.json`: without it, loro-crdt's shipped `.d.ts` (pulled in through `@tomic/lib`) fails to typecheck. `@tomic/lib` resolves to its built `dist/`, so run `pnpm run build` in `browser/lib` first. Typecheck with: browser/node_modules/.bin/tsc -p integrations/tsconfig.e2e.json --noEmit",
   "compilerOptions": {
-    "moduleResolution": "node",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "ES2023",
     "lib": ["ES6", "ES7", "ESNext", "DOM"],
+    "typeRoots": ["./node_modules/@types", "../browser/node_modules/@types"],
     "types": ["node"],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "skipLibCheck": true
   },
   "include": ["*/e2e/*.spec.ts", "../browser/e2e/global.d.ts"]
 }
