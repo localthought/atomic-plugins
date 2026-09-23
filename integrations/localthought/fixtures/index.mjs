@@ -17,6 +17,7 @@
  */
 import googleCalendar from '../../calendar/fixtures/google-calendar/scenario.mjs';
 import githubIssues from '../../issue-tracker/fixtures/github-issues/scenario.mjs';
+import notion from '../../notion/fixtures/notion/scenario.mjs';
 import pets from '../../pets/fixtures/pets/scenario.mjs';
 import clockify from '../../timesheets/fixtures/clockify/scenario.mjs';
 
@@ -24,6 +25,7 @@ export const fixtures = {
   clockify,
   'github-issues': githubIssues,
   'google-calendar': googleCalendar,
+  notion,
   pets,
 };
 
@@ -32,7 +34,7 @@ export const fixtures = {
  * callers that predate the variable (atomic-server's e2e-server.sh, dagger)
  * keep the full set. Requested platforms without a fixture are returned in
  * `missing` rather than thrown: a lane may name a platform (todoist,
- * moneybird, notion) whose fixture has not been recorded yet.
+ * moneybird) whose fixture has not been recorded yet.
  */
 export function selectPlatforms(value) {
   const requested = [

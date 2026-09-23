@@ -1,0 +1,63 @@
+overlay: 1.0.0
+info:
+  title: Notion API pagination schemes (request-body and query cursors)
+  version: '2026-03-11'
+# Notion's two list operations that a read-only import walks are POST
+# operations: POST /search and POST /data_sources/{data_source_id}/query take
+# start_cursor and page_size in the JSON request body, not the query string.
+# The older ../1.0.0/pagination-overlay.yaml (migrated from
+# localthought/overlays, not listed in catalog.json) declares them as query
+# parameters, which is right only for GET /views. Both schemes here are
+# applied explicitly with x-pagination and never auto-detected, so that older
+# overlay's `cursor` scheme cannot be picked up by accident either.
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        bodyCursor:
+          type: pageToken
+          description: >
+            POST list operations take start_cursor and page_size in the JSON
+            request body. The response's next_cursor is the next page's
+            start_cursor; it is null, and has_more false, on the last page.
+          autoDetect: false
+          request:
+            bodyFields:
+              start_cursor:
+                role: pageToken
+                description: Omitted on the first page; next_cursor of the previous response after that.
+              page_size:
+                role: pageSize
+                description: 1 to 100; Notion's default is 100.
+          response:
+            bodyFields:
+              next_cursor:
+                role: nextPageToken
+        queryCursor:
+          type: pageToken
+          description: >
+            GET list operations (views) take start_cursor and page_size as
+            query parameters, with the same next_cursor response field.
+          autoDetect: false
+          request:
+            queryParameters:
+              start_cursor:
+                role: pageToken
+              page_size:
+                role: pageSize
+          response:
+            bodyFields:
+              next_cursor:
+                role: nextPageToken
+  - target: $.paths['/search'].post
+    update:
+      x-pagination:
+        - scheme: bodyCursor
+  - target: $.paths['/data_sources/{data_source_id}/query'].post
+    update:
+      x-pagination:
+        - scheme: bodyCursor
+  - target: $.paths['/views'].get
+    update:
+      x-pagination:
+        - scheme: queryCursor

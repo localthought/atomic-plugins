@@ -205,7 +205,13 @@ export function notionProjection(
       continue;
     }
 
-    if (row.values.archived === true || row.values.in_trash === true) {
+    // `in-trash` is the same field after a reader's ontology shortnaming
+    // (`in_trash` -> `in-trash`), which readers derived from reflector apply.
+    if (
+      row.values.archived === true ||
+      row.values.in_trash === true ||
+      row.values['in-trash'] === true
+    ) {
       errors.push(
         `Notion page ${row.id} is archived or in trash; left out, not deleted`,
       );

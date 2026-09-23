@@ -116,7 +116,9 @@
       "name": "notion",
       "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/0c8e229623efdcc1d4ab50111d17bcca3214a899/APIs/notion.com/2026-03-11/openapi.yaml",
       "overlays": [
-        "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/auth-overlay.yaml"
+        "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/crud-causality-overlay.yaml"
       ],
       "selection": {
         "oauthSecurityScheme": "notionOAuth"

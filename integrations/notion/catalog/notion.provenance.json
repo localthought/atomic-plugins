@@ -1,0 +1,21 @@
+{
+  "platform": "notion",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/localthought/openapi-directory/0c8e229623efdcc1d4ab50111d17bcca3214a899/APIs/notion.com/2026-03-11/openapi.yaml",
+      "sha256": "ba91e777a0f0a491771a66d49d45c0af97cec00faa1cc095e6412ac9184ad212"
+    },
+    {
+      "url": "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/auth-overlay.yaml",
+      "sha256": "d3092e5a449b6a6602d57d967c56c0007ffdf05bfead7cffa158662348cb9b47"
+    },
+    {
+      "url": "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/pagination-overlay.yaml",
+      "sha256": "1d59e89cbf86457ae23861aa0f3c3a0d52c743083aa20ab3c38173b63e1cc5ba"
+    },
+    {
+      "url": "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/crud-causality-overlay.yaml",
+      "sha256": "24c01bc20afb2e1005fb08393231155679496fa44f816fb14bd450197125e6f3"
+    }
+  ]
+}

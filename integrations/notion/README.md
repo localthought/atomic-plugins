@@ -24,7 +24,8 @@ shortcut.
 
 The proxy deployment must include the Notion catalog and generic JSON OAuth
 operation/header support before real connections work. See
-[the migration plan](../../planning/notion-integration-proxy.md).
+[the migration plan](planning/notion-integration-proxy.md) (moved here from
+atomic-server, with the rest of its Notion planning, under `planning/`).
 
 ## Supported subset
 
@@ -128,10 +129,14 @@ certify live Notion authorization or production deployment.
   and `/plugin-sync-apply`, which need a `/plugin-secret`). `page.route`
   cannot stub server-side requests, and the spec asserts that neither
   endpoint is called. The browser-side runner, `browserPluginSync.ts`, has
-  no importers at the pin.
+  no importers at the pin (atomic-server `claude/remove-notion-code` deletes
+  it).
 
-The planned entry point is a `proxy:notion` card, which is blocked on #52.
-Until then the lane runs the live tier only (`integrations/lanes.json`).
+The decided direction (#8, #68) is a `proxy:notion` platform read through
+syncables. Which UI starts it depends on where LocalThought setup and sync end
+up: a `proxy:notion` card in the data-browser (#52 as drafted), or a host
+outside it. That is still open. Until then the lane runs the live tier only
+(`integrations/lanes.json`).
 
 ## LocalThought/Devonian lens (read-only, first slice)
 
@@ -154,10 +159,30 @@ in it has been verified against live Notion.
   proxy-relative `POST /v1/data_sources/{id}/query` (`page_size` 100, with
   `start_cursor` in the body) for `BrowserIntegrations.request()`.
 
+- `catalog/` holds the catalog document a proxy serves for `notion`: the base
+  OpenAPI subset and OAuth overlay (both moved from atomic-server), plus a
+  request-body pagination overlay and a read-only CRUD-causality overlay
+  (`data_source` via `POST /search`, `page` via
+  `POST /data_sources/{id}/query`). See [`catalog/README.md`](catalog/README.md).
+  None of it is published yet.
+- `fixtures/notion/` is an authored, read-only mock-proxy fixture that serves
+  that composition. It pages the query two rows at a time, so a reader only
+  reaches the last row by sending `next_cursor` back in the body.
+- `host/` holds the browser host for the sandbox plugin (`async-plugin.ts`,
+  `browser-sync.ts`). They moved from `localthought/`, since Notion was their
+  only user; atomic-server's data-browser no longer imports them.
+
 Not done yet:
 
-- A CRUD Causality and pagination overlay for Notion's body-cursor
-  queries. The proxy's composed document has neither.
+- A reader that walks `catalog/`. syncables can now build body cursors
+  (`buildBody`), but its client lists with `GET` only and pairs only
+  REST-shaped collection/item paths. reflector's `resources.ts` reads
+  `x-list-query` but not `x-list-method`/`x-list-body`. Which of the two gets
+  the POST list support depends on where syncables runs for LocalThought
+  platforms (in the browser or in a server/reflector). That is not decided
+  (#52).
+- An entry point, and with it the e2e tier. It is still quarantined; see
+  above and #68.
 - A two-way Devonian bridge: journalled writes, identity by page id, and a
   missing page treated as a conflict.
 - View and property-rename reconciliation, and a `devonian-notion` catalog
@@ -166,5 +191,6 @@ Not done yet:
 Until those land, `plugin.ts` stays the only path with two-way sync.
 
 ```sh
-./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts localthought devonian/notion
+./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts localthought devonian/notion catalog host
+node --test integrations/localthought/mock-proxy.test.mjs
 ```

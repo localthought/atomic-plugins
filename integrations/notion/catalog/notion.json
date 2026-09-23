@@ -1,0 +1,879 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Notion API (integration-proxy slice)",
+    "version": "2026-03-11",
+    "description": "Read and write data sources, pages, and views using the Notion public API. This document is a compatible subset for the generic integration proxy; provider-specific mapping belongs in overlays and the connector lens.",
+    "license": {
+      "name": "Notion API Terms",
+      "url": "https://developers.notion.com/reference/intro"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.notion.com/v1",
+      "description": "Notion public API"
+    }
+  ],
+  "security": [
+    {
+      "notionOAuth": []
+    }
+  ],
+  "paths": {
+    "/oauth/token": {
+      "post": {
+        "operationId": "notionOAuthToken",
+        "security": [
+          {
+            "notionOAuthClient": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotionVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["grant_type"],
+                "properties": {
+                  "grant_type": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "redirect_uri": {
+                    "type": "string"
+                  },
+                  "refresh_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth token response"
+          }
+        }
+      }
+    },
+    "/data_sources/{data_source_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/DataSourceId"
+        },
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "get": {
+        "operationId": "retrieveDataSource",
+        "summary": "Retrieve a data source schema",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DataSource"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateDataSource",
+        "summary": "Update data source schema or title",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObject"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DataSource"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/data_sources/{data_source_id}/query": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/DataSourceId"
+        },
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "post": {
+        "operationId": "queryDataSource",
+        "summary": "Query pages in a data source",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObjectOptional"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PageList"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-pagination": [
+          {
+            "scheme": "bodyCursor"
+          }
+        ]
+      }
+    },
+    "/pages/{page_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PageId"
+        },
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "get": {
+        "operationId": "retrievePage",
+        "summary": "Retrieve a page",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Page"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updatePage",
+        "summary": "Update page properties",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObject"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Page"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/pages": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "post": {
+        "operationId": "createPage",
+        "summary": "Create a page",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObject"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Page"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/views": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "get": {
+        "operationId": "listViews",
+        "summary": "List views",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "database_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "data_source_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/StartCursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ViewList"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-pagination": [
+          {
+            "scheme": "queryCursor"
+          }
+        ]
+      }
+    },
+    "/views/{view_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ViewId"
+        },
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "get": {
+        "operationId": "retrieveView",
+        "summary": "Retrieve a view",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/View"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateView",
+        "summary": "Update a view",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObject"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/View"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/search": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NotionVersion"
+        }
+      ],
+      "post": {
+        "operationId": "search",
+        "summary": "Search pages and databases",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/JsonObjectOptional"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SearchList"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-pagination": [
+          {
+            "scheme": "bodyCursor"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "notionOAuthClient": {
+        "type": "http",
+        "scheme": "basic"
+      },
+      "notionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Notion installation access token"
+      },
+      "notionOAuth": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://api.notion.com/v1/oauth/authorize",
+            "tokenUrl": "https://api.notion.com/v1/oauth/token",
+            "scopes": {}
+          }
+        },
+        "x-oauth-authentication-details": {
+          "authorizationServerMetadata": {
+            "token_endpoint_auth_methods_supported": ["client_secret_basic"]
+          },
+          "authorizationCode": {
+            "pkce": {
+              "requirement": "unsupported"
+            },
+            "profile": {
+              "parameters": [
+                {
+                  "parameter": {
+                    "name": "owner",
+                    "in": "query",
+                    "schema": {
+                      "type": "string",
+                      "enum": ["user"]
+                    }
+                  },
+                  "value": "user"
+                }
+              ]
+            }
+          },
+          "tokenEndpointOperation": "#/paths/~1oauth~1token/post",
+          "refreshEndpointOperation": "#/paths/~1oauth~1token/post"
+        }
+      }
+    },
+    "parameters": {
+      "NotionVersion": {
+        "in": "header",
+        "name": "Notion-Version",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": ["2026-03-11"]
+        }
+      },
+      "DataSourceId": {
+        "in": "path",
+        "name": "data_source_id",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "PageId": {
+        "in": "path",
+        "name": "page_id",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ViewId": {
+        "in": "path",
+        "name": "view_id",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "PageSize": {
+        "in": "query",
+        "name": "page_size",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 100
+        }
+      },
+      "StartCursor": {
+        "in": "query",
+        "name": "start_cursor",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "requestBodies": {
+      "JsonObject": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      },
+      "JsonObjectOptional": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "DataSource": {
+        "description": "Data source schema.",
+        "headers": {
+          "Notion-Version": {
+            "$ref": "#/components/headers/NotionVersion"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      },
+      "Page": {
+        "description": "Page object with properties.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      },
+      "View": {
+        "description": "View configuration.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      },
+      "PageList": {
+        "description": "Paginated page results.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PageList"
+            }
+          }
+        }
+      },
+      "ViewList": {
+        "description": "Paginated view references.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ViewList"
+            }
+          }
+        }
+      },
+      "SearchList": {
+        "description": "Paginated search results.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SearchList"
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "Notion API error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "NotionVersion": {
+        "schema": {
+          "type": "string"
+        },
+        "description": "API version used to render the response."
+      }
+    },
+    "schemas": {
+      "JsonObject": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "PageList": {
+        "type": "object",
+        "required": ["object", "results", "has_more"],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ViewList": {
+        "$ref": "#/components/schemas/PageList"
+      },
+      "SearchList": {
+        "$ref": "#/components/schemas/PageList"
+      },
+      "NotionDataSource": {
+        "type": "object",
+        "required": ["object", "id"],
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_edited_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "array",
+            "description": "Rich text title of the data source.",
+            "items": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          },
+          "properties": {
+            "type": "object",
+            "description": "The data source's property schema, keyed by property name.",
+            "additionalProperties": true
+          },
+          "parent": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "url": {
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "in_trash": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotionPage": {
+        "type": "object",
+        "required": ["object", "id"],
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_edited_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Property values keyed by property name; each value carries its stable property id.",
+            "additionalProperties": true
+          },
+          "parent": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "url": {
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "in_trash": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "paginationSchemes": {
+      "bodyCursor": {
+        "type": "pageToken",
+        "description": "POST list operations take start_cursor and page_size in the JSON request body. The response's next_cursor is the next page's start_cursor; it is null, and has_more false, on the last page.\n",
+        "autoDetect": false,
+        "request": {
+          "bodyFields": {
+            "start_cursor": {
+              "role": "pageToken",
+              "description": "Omitted on the first page; next_cursor of the previous response after that."
+            },
+            "page_size": {
+              "role": "pageSize",
+              "description": "1 to 100; Notion's default is 100."
+            }
+          }
+        },
+        "response": {
+          "bodyFields": {
+            "next_cursor": {
+              "role": "nextPageToken"
+            }
+          }
+        }
+      },
+      "queryCursor": {
+        "type": "pageToken",
+        "description": "GET list operations (views) take start_cursor and page_size as query parameters, with the same next_cursor response field.\n",
+        "autoDetect": false,
+        "request": {
+          "queryParameters": {
+            "start_cursor": {
+              "role": "pageToken"
+            },
+            "page_size": {
+              "role": "pageSize"
+            }
+          }
+        },
+        "response": {
+          "bodyFields": {
+            "next_cursor": {
+              "role": "nextPageToken"
+            }
+          }
+        }
+      }
+    },
+    "crudResources": {
+      "data_source": {
+        "description": "A Notion data source (the table behind a database) shared with the connection.",
+        "schema": {
+          "$ref": "#/components/schemas/NotionDataSource"
+        },
+        "identity": {
+          "urlTemplate": "/data_sources/{data_source_id}",
+          "bindings": {
+            "data_source_id": {
+              "field": "id"
+            }
+          }
+        },
+        "collections": {
+          "data_sources": {
+            "urlTemplate": "/search",
+            "x-list-method": "POST",
+            "x-list-body": {
+              "filter": {
+                "property": "object",
+                "value": "data_source"
+              },
+              "page_size": 100
+            }
+          }
+        }
+      },
+      "page": {
+        "description": "A row of a Notion data source.",
+        "schema": {
+          "$ref": "#/components/schemas/NotionPage"
+        },
+        "identity": {
+          "urlTemplate": "/pages/{page_id}",
+          "bindings": {
+            "page_id": {
+              "field": "id"
+            }
+          }
+        },
+        "collections": {
+          "pages": {
+            "urlTemplate": "/data_sources/{data_source_id}/query",
+            "x-list-method": "POST",
+            "x-list-body": {
+              "page_size": 100
+            }
+          }
+        }
+      }
+    }
+  }
+}
