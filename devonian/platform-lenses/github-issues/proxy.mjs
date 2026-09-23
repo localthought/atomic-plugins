@@ -1,7 +1,12 @@
 import { endpoint, request } from './adapter.js';
 import { trackerAction } from './tracker-actions.js';
 
-/** Direct browser transport. Codes stay in tab storage, never in Atomic resources. */
+/**
+ * Direct browser transport. Codes stay in browser storage, never in Atomic
+ * resources. `getCode`/`setCode` may be async, so a host can keep the code in
+ * IndexedDB shared with a service worker; every spend must then run under one
+ * cross-context lease (see background.mjs), because each code is single-use.
+ */
 export function proxyTransport({
   url,
   repository,
@@ -74,12 +79,12 @@ export function proxyTransport({
           );
         });
       } else {
-        const code = getCode();
+        const code = await getCode();
         if (!code)
           throw new Error(
             'Connect to the proxy or supply a fresh connection code',
           );
-        setCode('');
+        await setCode('');
         const destination = new URL(
           `/proxy/github-issues${target.pathname}${target.search}`,
           origin,
@@ -100,7 +105,7 @@ export function proxyTransport({
           );
         });
         next = response.headers.get('X-Connection-Code');
-        if (next) setCode(next);
+        if (next) await setCode(next);
         receipt = { status: response.status, body: await response.text() };
       }
       if (writes && receipt.status >= 200 && receipt.status < 300) {

@@ -98,3 +98,35 @@ it('retains rotated codes on provider errors and identifies missing exposed head
     proxyTransport(options)('get_issue', { number: 1 }, 'read'),
   ).rejects.toThrow('expose X-Connection-Code');
 });
+
+it('accepts async code storage, e.g. IndexedDB shared with a service worker', async () => {
+  const idb = new Map([['code', 'first']]);
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  const sent = [];
+  const call = proxyTransport({
+    url: 'https://proxy.example',
+    repository: 'owner/repo',
+    journal: {},
+    getCode: async () => {
+      await tick();
+      return idb.get('code');
+    },
+    setCode: async c => {
+      await tick();
+      idb.set('code', c);
+    },
+    save: async () => {},
+    fetcher: async (_url, opts) => {
+      sent.push(opts.headers.Authorization);
+      return new Response('[]', {
+        headers: { 'X-Connection-Code': `next-${sent.length}` },
+      });
+    },
+  });
+  await Promise.all([
+    call('list_issues', { page: 1 }, 'a'),
+    call('list_issues', { page: 2 }, 'b'),
+  ]);
+  expect(sent).toEqual(['Bearer first', 'Bearer next-1']);
+  expect(idb.get('code')).toBe('next-2');
+});

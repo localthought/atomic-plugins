@@ -21,6 +21,76 @@ unmanaged fields. `issueFields` and `issuePatch` are used by the existing runtim
 The adapter re-exports its previous mapping API for compatibility. The bridge,
 ports, proxy, and plugin continue to own effects and synchronization state.
 
+## Background sync
+
+`createBackgroundSync({ openBridge, store, intervalMs, locks?, name? })` from
+`background.mjs` (also exported from `index.mjs` and
+`devonian/platform-lenses/github-issues/background`) keeps a connection
+syncing on a persisted schedule, so a pass that fell due while the tab was
+closed runs at the next opportunity instead of waiting for someone to click
+"Sync". It wraps Devonian's generic `BackgroundSync` (see the package
+README) with this lens's error classification.
+
+- `openBridge()` must build a new `Bridge` from the persisted snapshot on
+  every call. A cached Bridge would reconcile from a stale checkpoint once
+  another context (tab, service worker) has synced.
+- `store` holds the schedule (`nextDueAt`, `failures`, `lastError`,
+  `paused`) as JSON, keyed by `name` (default `github-issues`; use one name
+  per connection). Pass the IndexedDB database that already holds the bridge
+  snapshot and transport journal, so every context sees the same schedule.
+- Every pass holds a lease (`navigator.locks` by default, so it is shared by
+  tabs and the service worker and released when a context dies). The
+  rotating proxy code is single-use, so everything else that spends it —
+  a manual "Sync now", an interactive write — must go through
+  `sync.withLock(fn)` or `sync.syncNow()`. `proxyTransport`'s
+  `getCode`/`setCode` may be async so the code can live in that same
+  IndexedDB database. `sessionStorage` is invisible to a service worker.
+- Transient failures back off exponentially: `intervalMs`, then 2×, 4×, …,
+  up to `maxBackoffMs` (default: one hour, or `intervalMs` if that is
+  longer). Failures that need a person pause the schedule until `resume()`:
+  the Bridge's `Conflict…`, `Concurrent edit after write`,
+  `Missing … record`, `State belongs to another connection`, `Duplicate …`;
+  the Atomic port's `Recovered Atomic create was edited` and
+  `Atomic write rejected`; and the transport's `Uncertain GitHub write`,
+  `Operation identity reused`, a missing or unexposed connection code, and
+  GitHub `401`. The list is `permanentSyncErrors`. Nothing is retried in a
+  loop, and neither side is modified while paused.
+
+A browser host wires three triggers into the same `BackgroundSync`:
+
+```js
+// Page: check while any tab is open (only due passes run).
+sync.start(60_000);
+// Page, once: ask the browser to wake the service worker.
+await registerBackgroundSync(await navigator.serviceWorker.ready, 'github-issues', 60 * 60_000);
+// Service worker: build the same sync from IndexedDB, then
+self.addEventListener('periodicsync', e => handleBackgroundSyncEvent(e, sync, 'github-issues'));
+self.addEventListener('sync', e => handleBackgroundSyncEvent(e, sync, 'github-issues'));
+```
+
+**What this does not do (yet).** It does not bring back the removed Rust
+pilot's "every minute with the browser closed":
+
+- Periodic Background Sync is Chromium-only. It needs an installed PWA with
+  the `periodic-background-sync` permission, and the browser chooses the
+  cadence (`minInterval` is only a lower bound; expect hours). One-shot
+  Background Sync is also Chromium-only and fires only when connectivity
+  returns.
+- Firefox and Safari have neither, so the schedule only advances while a tab
+  is open. It still catches up at once when a tab reopens.
+- Minute-level polling with no browser running needs a non-browser host
+  running this same `BackgroundSync` (with `FileKvStore` or similar, and
+  `processLocks()` or a cross-process lock). That host also needs an Atomic
+  port that enumerates and writes the user's drive over the network instead
+  of `queryLocalDb`. That port does not exist yet, so no such host is
+  provided.
+- No service worker ships here. The consuming application (atomic-server's
+  data-browser) owns its worker, IndexedDB schema and UI for `status()` /
+  `resume()`, and none of that is wired up yet. Coverage is unit tests with
+  deterministic fakes (`background.test.mjs`,
+  `__tests__/unit/background/`). It has not been run in a real browser or
+  service worker.
+
 ## Example: a GitHub issue and its comments
 
 Here is a representative GitHub issue response, together with two entries from
