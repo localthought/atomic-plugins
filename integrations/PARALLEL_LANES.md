@@ -380,12 +380,11 @@ Rules that keep parallel worktrees from fighting:
 
 ## Still open
 
-- **Quarantined e2e.** Three e2e suites are held back for blockers outside
+- **Quarantined e2e.** Two e2e suites are held back for blockers outside
   this repo. Each lane keeps its `e2e` spec list, and the reason is in
-  `lanes.json`'s `quarantined` field:
-  - `pets` e2e has no tiers until #52, which moves LocalThought setup/sync to
-    reflector. Its setup dialog needs `BrowserIntegrations.describe()`, which
-    neither side has.
+  `lanes.json`'s `quarantined` field. (`pets` e2e is back since #52. It now
+  drives the Pets drive app in its plugin iframe, and it needs an
+  `.atomic-server-ref` that has the host proxy relay, atomic-server#1624.)
   - `notion` e2e is live-only until #68 gives it a new entry point. The
     `[data-integration=notion]` card its spec starts from was removed
     upstream (atomic-server `4bab16ee6`).
