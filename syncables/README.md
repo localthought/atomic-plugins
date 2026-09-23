@@ -73,6 +73,75 @@ const pet = await client.create('/pets', { name: 'Milo', tag: 'cat' });
 client.pendingWrites('/pets'); // writes not yet confirmed by the server
 ```
 
+## Reading in a browser: `syncables/browser`
+
+`syncables/browser` is the read path on its own, for code that runs in a
+browser or a sandboxed iframe. It imports no Node built-ins and no
+`js-yaml`, and it never calls `fetch` itself: every request goes through a
+`Transport` function you pass in, e.g. a plugin host's `request()` into an
+integration proxy. A test bundles it with esbuild `platform: 'browser'`
+and fails on any Node built-in import. It does not include the mock
+server, `createApiClient`, or the file-path loaders, so pass documents and
+overlays as parsed objects.
+
+```ts
+import {
+  prepareDocument,
+  describePlatform,
+  readPlatform,
+  type Transport,
+} from 'syncables/browser';
+
+const document = prepareDocument(openapiJson, [paginationOverlay, crudOverlay]);
+describePlatform(document); // { parameters, collections, upstream }
+
+const transport: Transport = async ({ url, method, headers, body }) =>
+  host.request({ path: url.pathname + url.search, method, headers, body });
+// -> { status, headers, body } with the body as text
+
+const { records, ontology, errors } = await readPlatform(document, {
+  platform: 'notion',
+  constants: {}, // values for describePlatform(document).parameters
+  transport,
+});
+```
+
+- **Collections** come from `components.crudResources` (the
+  [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality),
+  usually added by an overlay). A nested collection runs once per parent
+  record, with its path variables filled in through `identity.bindings`. On a
+  collection, `x-list-query` adds fixed query parameters, `x-list-method: POST`
+  lists with a POST instead of a GET, and `x-list-body` adds fixed JSON body
+  fields.
+- **Pagination** follows the operation's pagination scheme: page numbers or
+  offsets, page tokens or cursors, and next links in the body or a `Link`
+  header. A cursor declared in `request.bodyFields` travels in the JSON body
+  of a POST. Notion's `/v1/search` and `/v1/databases/{id}/query` work this
+  way (`start_cursor` in the request, `next_cursor` in the response). A next
+  link to another origin, or a page that repeats, stops that collection with
+  an error.
+- **Records and ontology**: `deriveOntology` makes one class per resource and
+  one property per field, typed with Atomic Data datatype URLs. Each record's
+  `values` are keyed by property shortname, and `date-time` strings are
+  converted to epoch milliseconds.
+- **Limits** (`DEFAULT_READ_LIMITS`): 10,000 requests, 5,000 records and 30
+  minutes per read, plus at most 3 retries of a 429 per request, each after
+  its `Retry-After`. When a limit is reached, the read stops. It keeps the
+  records read so far and reports the stop in `errors`.
+
+`paginate(document, { transport, path, method, pathParams, query, body,
+pageSize })` walks every page of one operation, without `crudResources`.
+The main `syncables` entry exports the same functions, with `paginate`
+renamed `paginateOperation` so it doesn't clash with `ApiClient.paginate`.
+
+## Changelog
+
+- **0.18.0**: Adds the `syncables/browser` entry point: a browser-safe read
+  path with an injected transport. Adds request-body pagination, with
+  `buildBody` and body-field `offset`/`page` roles in `nextCursor`.
+  `applyOverlay` moves to a module without file-system access. The Node API
+  is unchanged, and `syncables` also exports the read-path functions.
+
 ## NLnet milestone 1
 
 This package is the reference implementation for

@@ -36,6 +36,9 @@ importers:
       '@vitest/eslint-plugin':
         specifier: ~1.1
         version: 1.1.44(@typescript-eslint/utils@8.19.1(eslint@9.17.0)(typescript@5.7.3))(eslint@9.17.0)(typescript@5.7.3)(vitest@2.1.9(@types/node@20.19.1))
+      esbuild:
+        specifier: ~0.21.5
+        version: 0.21.5
       eslint:
         specifier: ~9.17
         version: 9.17.0

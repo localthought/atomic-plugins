@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQuery, nextCursor } from '../../../src/pagination/request-builder.js';
+import { buildBody, buildQuery, nextCursor } from '../../../src/pagination/request-builder.js';
 import type { PaginationSchemeObject, PaginationResponseState } from '../../../src/pagination/types.js';
 
 function state(overrides: Partial<PaginationResponseState> = {}): PaginationResponseState {
@@ -39,6 +39,45 @@ describe('buildQuery', () => {
     };
     expect(buildQuery(scheme, {})).toEqual({});
     expect(buildQuery(scheme, { pageToken: 'abc' })).toEqual({ cursor: 'abc' });
+  });
+});
+
+describe('buildBody', () => {
+  const notion: PaginationSchemeObject = {
+    type: 'pageToken',
+    request: {
+      bodyFields: { start_cursor: { role: 'cursor' }, page_size: { role: 'pageSize' } },
+    },
+  };
+
+  it('puts a body-field cursor in the body, not the query', () => {
+    expect(buildQuery(notion, { pageToken: 'abc' }, 50)).toEqual({});
+    expect(buildBody(notion, {}, 50)).toEqual({ page_size: 50 });
+    expect(buildBody(notion, { pageToken: 'abc' }, 50)).toEqual({ page_size: 50, start_cursor: 'abc' });
+  });
+
+  it('writes dotted body fields as nested objects, numbers as numbers', () => {
+    const scheme: PaginationSchemeObject = {
+      type: 'pageNumber',
+      request: { bodyFields: { 'paging.offset': { role: 'offset' } } },
+    };
+    expect(buildBody(scheme, { offset: 20 })).toEqual({ paging: { offset: 20 } });
+  });
+
+  it('advances a body-field offset like a query-parameter one', () => {
+    const scheme: PaginationSchemeObject = {
+      type: 'pageNumber',
+      request: { bodyFields: { offset: { role: 'offset' } } },
+    };
+    expect(nextCursor(scheme, { offset: 3 }, state(), 3)).toEqual({ offset: 6 });
+  });
+
+  it('returns an empty body for a query-only scheme', () => {
+    const scheme: PaginationSchemeObject = {
+      type: 'pageNumber',
+      request: { queryParameters: { page: { role: 'page' } } },
+    };
+    expect(buildBody(scheme, { page: 2 })).toEqual({});
   });
 });
 
