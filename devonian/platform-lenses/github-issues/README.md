@@ -201,3 +201,70 @@ are bound to Atomic subjects within their repository/entity scopes, rather than
 being inferred from text or array positions. Author names and source URLs are
 retained as metadata through the configured provenance property; they are not
 turned into Atomic authorship claims. Atomic's Blocked status is not mapped.
+
+## Target drive
+
+`AtomicPort` writes into whatever drive `config.connection.drive` names. That
+drive can be a browser-only drive or the user's real drive on AtomicServer.
+`target.mjs` decides how far the browser's copy of that drive can be trusted.
+It asks the store again on every call, because `store.promoteLocalDrive` can
+turn a local-only tracker into a synced one after it was set up.
+
+| Drive kind | How it is detected | Enumeration (`queryLocalDb`) | A write counts as done when |
+| --- | --- | --- | --- |
+| `local-only` | `store.isLocalOnlyDrive(drive)` | Always authoritative | `save()` resolves without returning `'offline'` |
+| `synced` | Any other drive | Only after `store.hasCompletedDriveSyncFor(drive)` | `store.getSaveState(resource).kind === 'idle'` (AtomicServer acknowledged it) |
+
+On a synced drive, `AtomicPort` throws instead of guessing in three cases:
+
+- `Atomic drive has not finished syncing: <drive>`: the drive's local index
+  may still be incomplete. This is transient; retry after the drive sync.
+  Enumerating early could miss a row that `findByLocalId` would otherwise
+  recover, and that would create a duplicate.
+- `Atomic write not acknowledged: <subject>`: the write is queued or still in
+  flight. This is transient. The Bridge's saved operation resumes on the next
+  sync. A retried create finds the queued resource by `localId` and reuses it.
+- `Atomic write rejected: <subject>: <message>`: AtomicServer refused the
+  commit, for example because the agent lacks write rights. This is permanent;
+  a person must fix the rights or the data first.
+
+A store that lacks these predicates is treated as `synced`, not ready, and not
+acknowledged, so it fails closed. `AtomicPort.scope` is still keyed by the table
+subject (`devonian-local/<table>`). Bridge snapshots saved before this change
+therefore still bind.
+
+`provisionTracker(store, { drive, repository, buildTable })` sets up a tracker
+in an existing drive of either kind. It creates the table through the
+host-supplied `buildTable(trackerTableSpec)`, which in atomic-server is
+`buildTableFromSpec`. It also creates the `GitHub source` provenance property,
+and a Comments folder only when the drive has no `commentsFolder` yet. If the
+drive already has one, it is reused, never replaced. On a real drive that folder
+holds the user's other comments.
+
+`trackerStateKey({ agent, drive, repository, mode })` builds the IndexedDB key
+for a tracker. Because it includes the drive, trackers in different drives never
+share a bridge snapshot or write journal.
+
+### Host integration
+
+This lens has no host at the moment. atomic-server's browser demo
+(`DevonianDemo/demo.mjs` and `DevonianDemoRoute.tsx`) was removed in
+ontola/atomic-server#1612, and nothing in atomic-server imports devonian now.
+A future host that targets the user's real drive would:
+
+- Call `provisionTracker` on an existing drive, such as `store.getDrive()`,
+  instead of creating a new drive and calling `registerLocalOnlyDrive`.
+- Pass its own table builder as `buildTable`.
+- Key its saved state with `trackerStateKey`.
+
+The earlier demo's design notes are in atomic-server's
+`planning/devonian-reconnect.md`.
+
+### Not yet verified or supported
+
+- The drive-kind handling is covered only by unit tests with fake stores. It has
+  not been run in a browser against a real AtomicServer.
+- Sync still runs only in a browser tab, because enumeration relies on that
+  tab's local index. A host with no browser open, such as a Node process, would
+  need an `AtomicPort` that enumerates through AtomicServer's `/query` instead.
+  No such port exists yet. Issue #10 covers background scheduling.

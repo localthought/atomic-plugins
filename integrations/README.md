@@ -396,12 +396,14 @@ discovered `Term`s into a `SchemaSpec` generically — prefixed
 **(b) Two-way, local-first sync — a Devonian lens.** Needed when the
 connector must let local edits flow back to the provider (closing an issue,
 editing a title) without a server round-trip. Model this on
-`integrations/issue-tracker/devonian/`:
+`devonian/platform-lenses/github-issues/`:
 
 - `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
 - `ports.mjs` — native-Atomic and provider-side projections/transports.
-- `build.mjs` — regenerates the vendored Devonian bundle:
-  `DEVONIAN_PATH=/path/to/devonian node integrations/issue-tracker/devonian/build.mjs`.
+- `proxy.mjs` — the rotating-code integration-proxy transport and a
+  labelled sample fixture.
+- `target.mjs` — which Atomic drive the sync writes into (local-only or
+  server-synced) and when that drive can be enumerated or written.
 
 Give every native resource a stable identity independent of matching text
 (explicit provider IDs bind existing rows; nothing infers identity from

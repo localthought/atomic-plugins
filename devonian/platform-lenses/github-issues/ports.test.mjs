@@ -200,6 +200,7 @@ it('Atomic creates reuse native localId after a lost acknowledgement', async () 
   let lose = true;
   const store = {
     getServerUrl: () => 'https://atomic.example',
+    isLocalOnlyDrive: drive => drive === 'did:ad:drive',
     findByLocalId: async (_drive, parent, key) =>
       [...stored.values()].find(r => r.parent === parent && r.key === key),
     newResource: async ({ parent, propVals }) => {
@@ -233,4 +234,163 @@ it('Atomic creates reuse native localId after a lost acknowledgement', async () 
   );
   expect((await port.create('issue', value, 'key')).id).toBe('did:ad:1');
   expect(stored.size).toBe(1);
+});
+
+function atomicStore({
+  localOnly = false,
+  synced = true,
+  saveState = 'idle',
+} = {}) {
+  const resources = new Map();
+  const queries = [];
+  const store = {
+    isLocalOnlyDrive: () => localOnly,
+    hasCompletedDriveSyncFor: () => synced,
+    getSaveState: () => ({ kind: saveState, error: 'forbidden' }),
+    queryLocalDb: async opts => {
+      queries.push(opts);
+      const subjects = [...resources.values()]
+        .filter(r => r.props[opts.property] === opts.value)
+        .map(r => r.subject);
+      return { subjects, count: subjects.length };
+    },
+    getResource: async subject => resources.get(subject),
+    newResource: async ({ parent, isA, propVals }) => {
+      const subject = `https://atomic.example/r${resources.size + 1}`;
+      const r = {
+        subject,
+        props: {
+          'https://atomicdata.dev/properties/parent': parent,
+          'https://atomicdata.dev/properties/isA': isA,
+          ...propVals,
+        },
+        get: p => r.props[p],
+        set: async (p, v) => {
+          r.props[p] = v;
+        },
+        getLoroDoc: () => {},
+        save: async () => {
+          resources.set(subject, r);
+        },
+      };
+      return r;
+    },
+  };
+  return { store, resources, queries };
+}
+
+const realDriveConfig = {
+  connection: {
+    repository: 'owner/repo',
+    drive: 'https://atomic.example/drive',
+    table: 'https://atomic.example/table',
+    rowClass: 'https://atomic.example/Issue',
+    body: 'https://atomicdata.dev/task/v1/body',
+    status: 'https://atomicdata.dev/task/v1/status',
+    number: 'https://atomic.example/number',
+    tags: {
+      Todo: 'https://atomicdata.dev/task/v1/todo',
+      Doing: 'https://atomicdata.dev/task/v1/doing',
+      Done: 'https://atomicdata.dev/task/v1/done',
+    },
+  },
+  commentsFolder: 'https://atomic.example/comments',
+  provenance: 'https://atomic.example/github-source',
+};
+const newIssue = title => ({ title, body: '', status: 'Todo' });
+
+it('enumerates and writes rows in a synced (real) drive once it has synced', async () => {
+  const { store, queries } = atomicStore();
+  const port = new AtomicPort(store, realDriveConfig);
+  const row = await port.create(
+    'issue',
+    { title: 'Real', body: 'x', status: 'Doing' },
+    'k1',
+  );
+  expect(row.value).toEqual({ title: 'Real', body: 'x', status: 'Doing' });
+  const comment = await port.create(
+    'comment:x',
+    { body: 'Hi' },
+    'k2',
+    undefined,
+    { issueId: row.id },
+  );
+  expect((await port.list('issue')).map(r => r.id)).toEqual([row.id]);
+  expect(
+    (await port.list('comment:x', { issueId: row.id })).map(r => r.id),
+  ).toEqual([comment.id]);
+  expect(queries.length).toBeGreaterThan(0);
+  expect(queries.every(q => q.drive === 'https://atomic.example/drive')).toBe(
+    true,
+  );
+});
+
+it('refuses to enumerate a synced drive before its drive sync finished', async () => {
+  const { store, resources } = atomicStore({ synced: false });
+  const port = new AtomicPort(store, realDriveConfig);
+  await expect(port.list('issue')).rejects.toThrow(
+    'Atomic drive has not finished syncing: https://atomic.example/drive',
+  );
+  // Create-recovery enumerates too, so nothing is created blindly.
+  await expect(port.create('issue', newIssue('A'), 'k')).rejects.toThrow(
+    'Atomic drive has not finished syncing',
+  );
+  expect(resources.size).toBe(0);
+});
+
+it('treats a store without drive-sync predicates as not ready', async () => {
+  const { store } = atomicStore();
+  delete store.isLocalOnlyDrive;
+  delete store.hasCompletedDriveSyncFor;
+  await expect(
+    new AtomicPort(store, realDriveConfig).list('issue'),
+  ).rejects.toThrow('Atomic drive has not finished syncing');
+});
+
+it('keeps local-only drives authoritative without a server drive sync', async () => {
+  const { store } = atomicStore({
+    localOnly: true,
+    synced: false,
+    saveState: 'queued',
+  });
+  const port = new AtomicPort(store, realDriveConfig);
+  await port.create('issue', newIssue('Local'), 'k');
+  expect(await port.list('issue')).toHaveLength(1);
+});
+
+it('reports unacknowledged and rejected writes to a synced drive', async () => {
+  const queued = atomicStore({ saveState: 'queued' });
+  const port = new AtomicPort(queued.store, realDriveConfig);
+  await expect(port.create('issue', newIssue('Q'), 'k')).rejects.toThrow(
+    'Atomic write not acknowledged: https://atomic.example/r1',
+  );
+  // The retry recovers the same resource by localId instead of duplicating
+  // it, and still refuses while AtomicServer has not acknowledged it.
+  await expect(port.create('issue', newIssue('Q'), 'k')).rejects.toThrow(
+    'Atomic write not acknowledged',
+  );
+  expect(queued.resources.size).toBe(1);
+  queued.store.getSaveState = () => ({ kind: 'idle' });
+  expect((await port.create('issue', newIssue('Q'), 'k')).id).toBe(
+    'https://atomic.example/r1',
+  );
+  expect(queued.resources.size).toBe(1);
+
+  const rejected = atomicStore({ saveState: 'error' });
+  await expect(
+    new AtomicPort(rejected.store, realDriveConfig).create(
+      'issue',
+      newIssue('R'),
+      'k',
+    ),
+  ).rejects.toThrow(
+    'Atomic write rejected: https://atomic.example/r1: forbidden',
+  );
+  await expect(
+    new AtomicPort(rejected.store, realDriveConfig).update(
+      'issue',
+      'https://atomic.example/r1',
+      newIssue('R2'),
+    ),
+  ).rejects.toThrow('Atomic write rejected');
 });
