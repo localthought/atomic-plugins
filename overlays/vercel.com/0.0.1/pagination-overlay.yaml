@@ -1,0 +1,48 @@
+overlay: 1.0.0
+info:
+  title: Vercel API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            Vercel uses timestamp-based cursor pagination. The `limit` parameter
+            controls page size. Each paginated response includes a `pagination`
+            object containing `next` and `prev` timestamps and a `count` of
+            items in the current page. Pass the `pagination.next` timestamp as
+            the `since` query parameter on the next request to advance to the
+            following page. A `null` value for `pagination.next` means there
+            are no further pages.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  Maximum number of items to return in the current page.
+                  Defaults and maximums vary by endpoint.
+              since:
+                role: pageToken
+                description: >
+                  Timestamp (in milliseconds since the UNIX epoch) used as the
+                  forward cursor. Set this to the `pagination.next` value from
+                  the previous response to fetch the next page.
+              until:
+                role: cursor
+                description: >
+                  Timestamp (in milliseconds since the UNIX epoch) used as the
+                  end boundary of the result window. Results with a creation
+                  timestamp later than this value are excluded.
+          response:
+            bodyFields:
+              pagination.next:
+                role: nextPageToken
+                description: >
+                  Timestamp to pass as `since` to fetch the next page of
+                  results. `null` when there are no further pages.
+              pagination.count:
+                role: pageSize
+                description: >
+                  Number of items returned in the current response page.

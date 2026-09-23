@@ -1,0 +1,23 @@
+overlay: 1.0.0
+info:
+  title: AWS CloudFormation API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            CloudFormation list operations (e.g. ListStacks, DescribeStacks,
+            ListStackResources) use NextToken-based pagination. Pass the
+            `NextToken` from the previous response to retrieve the next page
+            of results.
+          request:
+            queryParameters:
+              NextToken:
+                role: pageToken
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

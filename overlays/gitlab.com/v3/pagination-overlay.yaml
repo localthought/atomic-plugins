@@ -1,0 +1,52 @@
+overlay: 1.0.0
+info:
+  title: GitLab API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            GitLab uses page-number pagination. Pass `page` and `per_page` as
+            query parameters. The response includes a `Link` header with
+            `rel="next"`, `rel="prev"`, `rel="first"`, and `rel="last"` URLs,
+            as well as `X-Total` and `X-Total-Pages` response headers.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  Current page number. Default is 1.
+              per_page:
+                role: pageSize
+                description: >
+                  Number of items to list per page. Default is 20, maximum is
+                  100.
+        nextLink:
+          type: nextLink
+          description: >
+            GitLab list responses include a `Link` response header with
+            RFC 5988 link relations (`next`, `prev`, `first`, `last`).
+            Follow the `next` relation URL to retrieve the next page.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchHeaders: true
+            requireAll: false
+          request:
+            queryParameters:
+              per_page:
+                role: pageSize
+                description: >
+                  Number of items to list per page. Default is 20, maximum is
+                  100.
+          response:
+            headers:
+              Link:
+                role: nextLink
+                description: >
+                  RFC 5988 link header containing `rel="next"`, `rel="prev"`,
+                  `rel="first"`, and `rel="last"` relations for navigating
+                  between pages.

@@ -25,7 +25,9 @@ It is built on:
   resources, walks pagination on a full read, keeps a local copy in a pluggable
   storage adapter, and applies local-first `create`/`update`/`delete` writes
   that retry against the server in the background.
-- **[localthought/overlays](https://github.com/localthought/overlays)** — the
+- **[localthought/overlays](https://github.com/localthought/overlays)** (now
+  [`overlays/`](../overlays/) in this monorepo, published at
+  `https://ontola.github.io/atomic-plugins/overlays/`) — the
   Google Calendar [OpenAPI Overlays](https://spec.openapis.org/overlay/v1.0.0.html)
   from [issue #140](https://github.com/localthought/overlays/issues/140)
   (`pagination-overlay.yaml` + `crud-causality-overlay.yaml`), which define how
@@ -148,8 +150,8 @@ overlays, and give each a token for its repo:
 
 ```sh
 # The GitHub Issues document + overlays (vendored; see #23). The overlays
-# themselves live in localthought/overlays under
-# github.com/api.github.com/1.1.4 and are applied to the vendored document.
+# themselves live in this monorepo's overlays/ (formerly localthought/overlays)
+# under github.com/github-issues/1.1.4 and are applied to the vendored document.
 OPENAPI_PATH=spec/github-issues.openapi.yaml
 OVERLAY_DIR=spec/overlays/github
 

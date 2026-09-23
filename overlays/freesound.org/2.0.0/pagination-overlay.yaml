@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: Freesound API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        request:
+          queryParameters:
+            page:
+              role: page
+            page_size:
+              role: pageSize
+- target: "$.paths['/search/text'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

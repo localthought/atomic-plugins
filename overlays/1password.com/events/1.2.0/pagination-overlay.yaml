@@ -1,0 +1,50 @@
+overlay: 1.0.0
+info:
+  title: 1Password Events API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            The 1Password Events API uses cursor-based pagination for all
+            event retrieval endpoints (/api/v1/auditevents,
+            /api/v1/itemusages, /api/v1/signinattempts). Requests are made
+            via POST with a JSON body. The initial request specifies a
+            `limit` and an optional time range (`start_time`, `end_time`).
+            Each response returns a `cursor` token and a `has_more` boolean.
+            Pass the returned `cursor` back in the next request body to
+            fetch the subsequent batch. When `has_more` is false, all
+            currently available events have been returned.
+          request:
+            bodyFields:
+              cursor:
+                role: cursor
+                description: >-
+                  Opaque cursor token returned in a previous response. Include
+                  this in the POST body to continue fetching the next batch of
+                  events. Omit this field on the initial request and use
+                  `limit` (and optionally `start_time`/`end_time`) instead.
+              limit:
+                role: pageSize
+                description: >-
+                  Maximum number of events to return per response. Must be
+                  between 1 and 1000. Only used when starting a new query
+                  (i.e. when not sending a `cursor`).
+          response:
+            bodyFields:
+              cursor:
+                role: nextCursor
+                description: >-
+                  Opaque token representing the current position in the event
+                  stream. Send this value as the `cursor` field in the next
+                  POST request body to retrieve the following batch of events.
+              has_more:
+                role: hasMore
+                description: >-
+                  Indicates whether additional events may be available beyond
+                  this response. When true, send another request with the
+                  returned `cursor`. When false, all currently available
+                  events have been returned.

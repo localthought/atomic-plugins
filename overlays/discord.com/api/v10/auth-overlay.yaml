@@ -1,0 +1,26 @@
+overlay: 1.0.0
+info:
+  title: discord OAuth authorization requirements
+  version: 1.1.0
+actions:
+- target: $.components.securitySchemes
+  update:
+    discordOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://discord.com/oauth2/authorize
+          tokenUrl: https://discord.com/api/v10/oauth2/token
+          scopes:
+            identify: Read the authenticated user’s profile.
+            guilds: Read the guilds in which the user is a member.
+- target: $.paths['/users/@me'].get
+  update:
+    security:
+    - discordOAuth:
+      - identify
+- target: $.paths['/users/@me/guilds'].get
+  update:
+    security:
+    - discordOAuth:
+      - guilds

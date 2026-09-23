@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS Glue API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            AWS Glue list/get operations use NextToken-based pagination in
+            the JSON request body. `MaxResults` limits the number of items
+            returned, and `NextToken` (from the previous response) continues
+            pagination through result sets.
+          request:
+            bodyFields:
+              NextToken:
+                role: pageToken
+              MaxResults:
+                role: pageSize
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

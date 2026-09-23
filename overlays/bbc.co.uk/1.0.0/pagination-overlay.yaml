@@ -1,0 +1,130 @@
+overlay: 1.0.0
+info:
+  title: BBC My Account & Metadata API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          Zero-based offset/limit pagination. The response echoes `limit`
+          and `offset` and reports the total match count as `total`.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+            total:
+              role: totalCount
+      offsetRequestOnly:
+        type: pageNumber
+        description: >-
+          Same request parameters as `offset`, but these endpoints return
+          a job-status object rather than a paginated results envelope.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+- target: "$.paths['/broadcasts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/broadcasts/latest'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/collections/{pid}/members'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/music/popular/artists'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/music/popular/playlists'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/music/popular/tracks'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/categories/follows'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/music/export'].get"
+  update:
+    x-pagination:
+    - scheme: offsetRequestOnly
+- target: "$.paths['/my/music/exports/tracks'].get"
+  update:
+    x-pagination:
+    - scheme: offsetRequestOnly
+- target: "$.paths['/my/music/favourites'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/music/favourites/{type}'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/music/follows'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/music/follows/{type}'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/networks/follows'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/programmes/recommendations'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/radio/favourites'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/radio/favourites/{type}'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/radio/follows'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/radio/follows/{type}'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/my/radio/plays'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/podcasts'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/podcasts/{pid}'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/podcasts/{pid}/episodes'].get"
+  update:
+    x-pagination:
+    - scheme: offset

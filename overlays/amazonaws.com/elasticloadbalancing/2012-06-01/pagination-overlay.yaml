@@ -1,0 +1,23 @@
+overlay: 1.0.0
+info:
+  title: AWS Elastic Load Balancing API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        marker:
+          type: pageToken
+          description: >-
+            ELB list operations (e.g. DescribeLoadBalancers,
+            DescribeInstanceHealth) use Marker-based pagination. Pass the
+            `Marker` value from the previous response to retrieve the next
+            page of results.
+          request:
+            queryParameters:
+              Marker:
+                role: pageToken
+          response:
+            bodyFields:
+              NextMarker:
+                role: nextPageToken

@@ -1,0 +1,58 @@
+overlay: 1.0.0
+info:
+  title: Anchore Engine API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Anchore's query endpoints use 1-based page-number pagination.
+          The response confirms the current page number; whether more
+          pages exist is reported as a `next_page` true/false flag rather
+          than a role this extension defines, so it isn't mapped here.
+        request:
+          queryParameters:
+            page:
+              role: page
+            limit:
+              role: pageSize
+        response:
+          bodyFields:
+            page:
+              role: currentPage
+      pageNumberWithCount:
+        type: pageNumber
+        description: >-
+          Same as `pageNumber`, plus the events endpoint also reports how
+          many events are in the current page.
+        request:
+          queryParameters:
+            page:
+              role: page
+            limit:
+              role: pageSize
+        response:
+          bodyFields:
+            page:
+              role: currentPage
+            item_count:
+              role: pageSize
+- target: "$.paths['/events'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumberWithCount
+- target: "$.paths['/query/images/by_package'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/query/images/by_vulnerability'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/query/vulnerabilities'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

@@ -1,0 +1,21 @@
+overlay: 1.0.0
+info:
+  title: Apideck Accounting API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            Apideck uses cursor-based pagination. The `cursor` parameter is
+            taken from `meta.cursors.next` in the previous response. A null
+            `meta.cursors.next` indicates the end of results. `limit` controls
+            the page size (default 20, max 200).
+          request:
+            queryParameters:
+              cursor:
+                role: pageToken
+              limit:
+                role: pageSize

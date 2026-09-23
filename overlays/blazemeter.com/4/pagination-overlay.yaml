@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: BlazeMeter API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >-
+            BlazeMeter uses skip/limit pagination on list endpoints such as
+            collections, tests, and masters. `skip` sets the starting offset
+            and `limit` controls the maximum number of results (default 1000).
+          request:
+            queryParameters:
+              skip:
+                role: offset
+              limit:
+                role: pageSize

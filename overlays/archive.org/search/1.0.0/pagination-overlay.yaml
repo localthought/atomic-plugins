@@ -1,0 +1,28 @@
+overlay: 1.0.0
+info:
+  title: Archive.org Search API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >-
+            The Archive.org Search API uses cursor-based (scroll) pagination.
+            Pass the `cursor` value from the previous response to retrieve the
+            next batch of results. `size` controls the number of results per
+            request (default 1000, max 10000). The response includes `total`
+            for the approximate total result count.
+          request:
+            queryParameters:
+              cursor:
+                role: pageToken
+              size:
+                role: pageSize
+          response:
+            bodyFields:
+              cursor:
+                role: nextPageToken
+              total:
+                role: totalCount

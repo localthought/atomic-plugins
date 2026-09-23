@@ -1,0 +1,59 @@
+overlay: 1.0.0
+info:
+  title: SoundCloud API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: nextLink
+          description: >-
+            SoundCloud's recommended pagination mode. Pass
+            linked_partitioning=true on the first request to enable
+            cursor-based pagination. The response wraps results in a
+            collection array and includes a next_href field containing the
+            full URL for the next page. Follow next_href directly to retrieve
+            subsequent pages. When next_href is null or absent there are no
+            further results.
+          request:
+            queryParameters:
+              linked_partitioning:
+                description: >-
+                  Set to true to activate cursor-based pagination. When
+                  enabled the response includes a next_href URL instead of
+                  returning all results in one go. Omitting this parameter or
+                  setting it to false triggers the deprecated offset mode.
+              limit:
+                role: pageSize
+                description: >-
+                  Maximum number of items to return per page. Defaults to 50.
+                  Maximum allowed value is 200.
+          response:
+            bodyFields:
+              next_href:
+                role: nextLink
+                description: >-
+                  Full URL of the next page of results. Null or absent when
+                  the current page is the last one.
+        offset:
+          type: pageNumber
+          autoDetect: false
+          description: >-
+            SoundCloud's legacy offset-based pagination. Deprecated in favour
+            of cursor-based pagination (linked_partitioning). Pass offset to
+            skip a number of results and limit to set the page size. Because
+            this scheme is deprecated, auto-detection is disabled — use the
+            cursor scheme for new integrations.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+                description: >-
+                  Zero-based index of the first result to return. Defaults to
+                  0. Deprecated; use linked_partitioning instead.
+              limit:
+                role: pageSize
+                description: >-
+                  Maximum number of items to return. Defaults to 50. Maximum
+                  allowed value is 200.

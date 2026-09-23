@@ -1,0 +1,277 @@
+overlay: 1.0.0
+info:
+  title: Google Calendar API CRUD Causality
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      crudResources:
+        calendar:
+          schema:
+            $ref: '#/components/schemas/Calendar'
+          description: >
+            A secondary calendar. There is no `calendars.list` operation —
+            calendars are discovered through the `calendarListEntry`
+            resource instead (see `calendarList.list`).
+          identity:
+            urlTemplate: /calendars/{calendarId}
+            bindings:
+              calendarId:
+                field: id
+        aclRule:
+          schema:
+            $ref: '#/components/schemas/AclRule'
+          description: An access control rule on a single calendar.
+          identity:
+            urlTemplate: /calendars/{calendarId}/acl/{ruleId}
+            bindings:
+              ruleId:
+                field: id
+          collections:
+            acl:
+              urlTemplate: /calendars/{calendarId}/acl
+              envelope:
+                itemsField: items
+        calendarListEntry:
+          schema:
+            $ref: '#/components/schemas/CalendarListEntry'
+          description: An entry on the authenticated user's calendar list.
+          identity:
+            urlTemplate: /users/me/calendarList/{calendarId}
+            bindings:
+              calendarId:
+                field: id
+          collections:
+            calendarList:
+              urlTemplate: /users/me/calendarList
+              envelope:
+                itemsField: items
+        event:
+          schema:
+            $ref: '#/components/schemas/Event'
+          description: An event on a calendar.
+          identity:
+            urlTemplate: /calendars/{calendarId}/events/{eventId}
+            bindings:
+              eventId:
+                field: id
+          collections:
+            events:
+              urlTemplate: /calendars/{calendarId}/events
+              envelope:
+                itemsField: items
+        setting:
+          schema:
+            $ref: '#/components/schemas/Setting'
+          description: >
+            A single user setting. Read-only through this API — there is
+            no create, update, or delete operation.
+          identity:
+            urlTemplate: /users/me/settings/{setting}
+            bindings:
+              setting:
+                field: id
+          collections:
+            settings:
+              urlTemplate: /users/me/settings
+              envelope:
+                itemsField: items
+
+  - target: $.paths['/calendars'].post
+    update:
+      x-crud:
+        action: create
+        resource: calendar
+        url:
+          source: template
+        addedFields:
+          id:
+            schema: { type: string }
+            source: generated
+            description: >
+              Server-generated identifier for the new secondary calendar.
+
+  - target: $.paths['/calendars/{calendarId}'].get
+    update:
+      x-crud:
+        action: read
+        resource: calendar
+  - target: $.paths['/calendars/{calendarId}'].put
+    update:
+      x-crud:
+        action: update
+        mode: replace
+        resource: calendar
+  - target: $.paths['/calendars/{calendarId}'].patch
+    update:
+      x-crud:
+        action: update
+        mode: patch
+        patchFormat: custom
+        resource: calendar
+        description: >
+          Partial update: only the fields present in the request body are
+          modified.
+  - target: $.paths['/calendars/{calendarId}'].delete
+    update:
+      x-crud:
+        action: delete
+        resource: calendar
+
+  - target: $.paths['/calendars/{calendarId}/acl'].post
+    update:
+      x-crud:
+        action: create
+        resource: aclRule
+        url:
+          source: template
+        addedFields:
+          id:
+            schema: { type: string }
+            source: computed
+            description: >
+              Derived by the server from the rule's scope, e.g.
+              "user:alice@example.com" or "domain:example.com".
+        memberOf: [ acl ]
+  - target: $.paths['/calendars/{calendarId}/acl'].get
+    update:
+      x-crud:
+        action: list
+        resource: aclRule
+        collection: acl
+
+  - target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].get
+    update:
+      x-crud:
+        action: read
+        resource: aclRule
+  - target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].put
+    update:
+      x-crud:
+        action: update
+        mode: replace
+        resource: aclRule
+  - target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].patch
+    update:
+      x-crud:
+        action: update
+        mode: patch
+        patchFormat: custom
+        resource: aclRule
+        description: >
+          Partial update: only the fields present in the request body are
+          modified.
+  - target: $.paths['/calendars/{calendarId}/acl/{ruleId}'].delete
+    update:
+      x-crud:
+        action: delete
+        resource: aclRule
+        removesFrom: "*"
+
+  - target: $.paths['/users/me/calendarList'].post
+    update:
+      x-crud:
+        action: create
+        resource: calendarListEntry
+        url:
+          source: template
+        description: >
+          The request body's `id` field names the existing calendar to add
+          to the list — the server does not generate it.
+        memberOf: [ calendarList ]
+  - target: $.paths['/users/me/calendarList'].get
+    update:
+      x-crud:
+        action: list
+        resource: calendarListEntry
+        collection: calendarList
+
+  - target: $.paths['/users/me/calendarList/{calendarId}'].get
+    update:
+      x-crud:
+        action: read
+        resource: calendarListEntry
+  - target: $.paths['/users/me/calendarList/{calendarId}'].put
+    update:
+      x-crud:
+        action: update
+        mode: replace
+        resource: calendarListEntry
+  - target: $.paths['/users/me/calendarList/{calendarId}'].patch
+    update:
+      x-crud:
+        action: update
+        mode: patch
+        patchFormat: custom
+        resource: calendarListEntry
+        description: >
+          Partial update: only the fields present in the request body are
+          modified.
+  - target: $.paths['/users/me/calendarList/{calendarId}'].delete
+    update:
+      x-crud:
+        action: delete
+        resource: calendarListEntry
+        removesFrom: "*"
+
+  - target: $.paths['/calendars/{calendarId}/events'].post
+    update:
+      x-crud:
+        action: create
+        resource: event
+        url:
+          source: template
+        addedFields:
+          id:
+            schema: { type: string }
+            source: generated
+            description: >
+              Server-generated when the client does not supply its own
+              `id` in the request body.
+        memberOf: [ events ]
+  - target: $.paths['/calendars/{calendarId}/events'].get
+    update:
+      x-crud:
+        action: list
+        resource: event
+        collection: events
+
+  - target: $.paths['/calendars/{calendarId}/events/{eventId}'].get
+    update:
+      x-crud:
+        action: read
+        resource: event
+  - target: $.paths['/calendars/{calendarId}/events/{eventId}'].put
+    update:
+      x-crud:
+        action: update
+        mode: replace
+        resource: event
+  - target: $.paths['/calendars/{calendarId}/events/{eventId}'].patch
+    update:
+      x-crud:
+        action: update
+        mode: patch
+        patchFormat: custom
+        resource: event
+        description: >
+          Partial update: only the fields present in the request body are
+          modified.
+  - target: $.paths['/calendars/{calendarId}/events/{eventId}'].delete
+    update:
+      x-crud:
+        action: delete
+        resource: event
+        removesFrom: "*"
+
+  - target: $.paths['/users/me/settings'].get
+    update:
+      x-crud:
+        action: list
+        resource: setting
+        collection: settings
+  - target: $.paths['/users/me/settings/{setting}'].get
+    update:
+      x-crud:
+        action: read
+        resource: setting

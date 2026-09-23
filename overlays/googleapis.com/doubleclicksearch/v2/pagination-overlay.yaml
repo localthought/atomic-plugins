@@ -1,0 +1,16 @@
+overlay: 1.0.0
+info:
+  title: Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          request:
+            queryParameters:
+              startRow:
+                role: offset
+              rowCount:
+                role: pageSize

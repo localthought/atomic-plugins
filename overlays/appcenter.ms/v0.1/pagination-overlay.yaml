@@ -1,0 +1,28 @@
+overlay: 1.0.0
+info:
+  title: App Center API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            App Center uses hypermedia-style pagination. The response includes
+            a `nextLink` field containing the full URL for the next page of
+            results. `$top` limits the maximum number of results returned
+            (default 30, max 2000).
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          request:
+            queryParameters:
+              $top:
+                role: pageSize
+          response:
+            bodyFields:
+              nextLink:
+                role: nextLink

@@ -1,0 +1,43 @@
+overlay: 1.0.0
+info:
+  title: Rebilly API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Rebilly uses offset-based pagination with `limit` and `offset`
+            query parameters. Pagination metadata is returned in response
+            headers rather than the body: `Pagination-Total` gives the total
+            number of records, `Pagination-Limit` echoes the limit used, and
+            `Pagination-Offset` echoes the offset used.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items to return per page. Example:
+                  `?limit=20`.
+              offset:
+                role: offset
+                description: >
+                  The zero-based index of the first item to return. Example:
+                  `?offset=100` skips the first 100 records.
+          response:
+            headers:
+              Pagination-Total:
+                role: totalCount
+                description: >
+                  The total number of records matching the query across all
+                  pages.
+              Pagination-Limit:
+                role: pageSize
+                description: >
+                  The limit value applied to this response.
+              Pagination-Offset:
+                role: offset
+                description: >
+                  The offset value applied to this response.

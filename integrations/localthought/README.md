@@ -202,7 +202,8 @@ and the `calendar.events`/`calendar.calendarlist.readonly` OAuth scopes are
 already generic, already-shipped behavior there — not gated behind any patch
 in this repo. What was still missing was narrower: the composed
 `google-calendar` catalog `integration-proxy` loads (from
-`localthought/overlays`) only ever declared `GET` operations, so a `PATCH`
+`localthought/overlays`, now this repo's [`overlays/`](../../overlays/))
+only ever declared `GET` operations, so a `PATCH`
 never reached Google no matter what the proxy or scope allowed. That catalog
 gap is closed by
 [overlays#168](https://github.com/localthought/overlays/pull/168) (adds the

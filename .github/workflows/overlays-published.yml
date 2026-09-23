@@ -1,0 +1,52 @@
+name: Overlays published
+
+# GitHub Pages (legacy build, main branch, repository root, with a root
+# .nojekyll so files are served byte-for-byte) publishes overlays/ at
+# https://ontola.github.io/atomic-plugins/overlays/, where
+# overlays/catalog.json and integration-proxy's DEFAULT_CATALOG_PATH expect
+# it. After each Pages build this checks that catalog.json and every overlay
+# it lists are served there and match the built commit. Pages' CDN caches
+# for up to 10 minutes, so a mismatch is retried for up to 15 minutes before
+# failing.
+
+on:
+  page_build:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify GitHub Pages serves overlays/
+    if: github.event_name == 'workflow_dispatch' || github.event.build.status == 'built'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.build.commit || github.sha }}
+      - name: Compare published files with the built commit
+        working-directory: overlays
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, time, urllib.request
+          base = "https://ontola.github.io/atomic-plugins/overlays/"
+          paths = ["catalog.json"]
+          for platform in json.loads(pathlib.Path("catalog.json").read_text())["platforms"]:
+              paths += [url[len(base):] for url in platform.get("overlays", []) if url.startswith(base)]
+          deadline = time.time() + 15 * 60
+          while True:
+              stale = []
+              for path in paths:
+                  try:
+                      served = urllib.request.urlopen(f"{base}{path}?v={time.time()}", timeout=30).read()
+                  except Exception as error:
+                      stale.append(f"{path}: {error}")
+                      continue
+                  if served != pathlib.Path(path).read_bytes():
+                      stale.append(f"{path}: served bytes differ from the built commit")
+              if not stale:
+                  print(f"{len(paths)} files served from {base} match the built commit")
+                  break
+              if time.time() > deadline:
+                  raise SystemExit("\n".join(stale))
+              print(f"{len(stale)} of {len(paths)} not yet published; retrying in 60s")
+              time.sleep(60)
+          PY

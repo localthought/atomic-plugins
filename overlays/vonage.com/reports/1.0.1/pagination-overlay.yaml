@@ -1,0 +1,27 @@
+overlay: 1.0.0
+info:
+  title: Vonage Reports API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Vonage Reports API uses 0-based page-number pagination. `page`
+            selects the page (default 0) and `page_size` controls items per
+            page (default 10). Responses include total_items, total_page,
+            and a `_links` object with first/next/prev/self navigation links.
+          request:
+            queryParameters:
+              page:
+                role: page
+              page_size:
+                role: pageSize
+          response:
+            bodyFields:
+              total_items:
+                role: totalCount
+              total_page:
+                role: totalPages

@@ -1,0 +1,36 @@
+overlay: 1.0.0
+info:
+  title: New York Times Article Search API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            The NYT Article Search API uses page-number pagination with a
+            fixed page size of 10 results. Pass the `page` parameter
+            (0-based, maximum 100) to retrieve successive pages. Page 0
+            returns items 1-10, page 1 returns items 11-20, etc. The
+            response `meta.hits` field gives the total number of matching
+            articles across all pages. Maximum accessible page is 100.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The 0-based page of results to retrieve. Each page
+                  contains exactly 10 results. Maximum is 100 (results
+                  1001-1010). Defaults to 0.
+          response:
+            bodyFields:
+              response.meta.hits:
+                role: totalCount
+                description: >
+                  Total number of articles matching the query across all
+                  pages.
+              response.meta.offset:
+                role: offset
+                description: >
+                  The record offset (page * 10) used for this response.

@@ -1,0 +1,34 @@
+overlay: 1.0.0
+info:
+  title: Spotify Web API Playlist CRUD Causality
+  version: 1.0.0
+# The initial Spotify integration is deliberately read-only. A playlist is
+# listed from the authenticated user's collection and read by its Spotify ID.
+actions:
+  - target: $.components
+    update:
+      crudResources:
+        playlist:
+          schema:
+            $ref: '#/components/schemas/SimplifiedPlaylist'
+          description: A playlist visible to the authenticated Spotify user.
+          identity:
+            urlTemplate: /playlists/{playlist_id}
+            bindings:
+              playlist_id:
+                field: id
+          collections:
+            playlists:
+              urlTemplate: /me/playlists
+
+  - target: $.paths['/me/playlists'].get
+    update:
+      x-crud:
+        action: list
+        resource: playlist
+        collection: playlists
+  - target: $.paths['/playlists/{playlist_id}'].get
+    update:
+      x-crud:
+        action: read
+        resource: playlist

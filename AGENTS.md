@@ -142,6 +142,27 @@ for the fuller architecture note, and the `describeIntegration`/
 `fetchIntegration` machinery that depended on it, likewise removed from
 [`integrations/localthought/browser.ts`](integrations/localthought/browser.ts).
 
+## overlays/
+
+Unlike `integrations/`, `overlays/` is not a package: it is a folder of
+OpenAPI Overlay documents plus `catalog.json`, migrated in from the
+standalone `localthought/overlays` repo, full commit history included via
+`git subtree`. GitHub Pages publishes this repository's `main` from its root
+(the root `.nojekyll` keeps files byte-for-byte), so `overlays/<path>` is
+served at `https://ontola.github.io/atomic-plugins/overlays/<path>` —
+`catalog.json` references its overlays by those URLs, and
+`integration-proxy`'s default `CATALOG_PATH` is that folder's
+`catalog.json`. Those URLs are not pinned to a commit: a merge to `main`
+changes what the proxy composes at its next start. See
+[`overlays/README.md`](overlays/README.md) for the publication model and its
+checks. Its CI is
+[`.github/workflows/overlays-ci.yml`](.github/workflows/overlays-ci.yml);
+[`.github/workflows/overlays-published.yml`](.github/workflows/overlays-published.yml)
+checks Pages after each build. Keep the root `.nojekyll`: without it Pages
+runs the whole repository through Jekyll, which skips `_`-prefixed paths,
+renders files with front matter instead of serving them as-is, and fails the
+whole publish if any file in the repository breaks the Jekyll build.
+
 ## Style notes for docs and code in `integrations/`
 
 - Prose here is precise and hedged, not marketing copy: state exact limits

@@ -1,0 +1,75 @@
+overlay: 1.0.0
+info:
+  title: Asana API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Asana uses offset-based pagination for most list endpoints. Pass
+            `limit` to control the page size and `offset` to skip records.
+            The response `next_page` object contains the `offset` for the
+            next page. When `next_page` is null, you have reached the last
+            page.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  Results per page. The number of objects to return per
+                  request, up to 100. The value must be between 1 and 100.
+              offset:
+                role: offset
+                description: >
+                  Offset token. An offset to the next page returned by the
+                  API. A pagination request will return an offset token,
+                  which can be used as an input parameter to the next
+                  request. If an offset is not passed in, the API will
+                  return the first page of results.
+          response:
+            bodyFields:
+              next_page.offset:
+                role: nextOffset
+                description: >
+                  The offset token to pass as `offset` on the next request
+                  to get the next page of results. Present only when there
+                  are more results available.
+              next_page.path:
+                role: nextLink
+                description: >
+                  The relative path for the next page of results, including
+                  the offset parameter.
+        syncToken:
+          type: pageToken
+          description: >
+            Asana uses sync-token-based pagination for the Events endpoint.
+            Pass a `sync` token to get only events that occurred after the
+            previous sync. When `has_more` is true in the response, make
+            another request with the returned `sync` token to get more
+            events. Sync tokens expire after 24 hours.
+          request:
+            queryParameters:
+              sync:
+                role: pageToken
+                description: >
+                  A sync token received from the previous call, or none on
+                  the first request to get all events. If the sync token is
+                  too old (older than 24 hours), the server will return a
+                  412 Precondition Failed response and a fresh sync token.
+          response:
+            bodyFields:
+              sync:
+                role: nextPageToken
+                description: >
+                  A sync token to be used with the next call to the Events
+                  endpoint to get the next batch of events. This token
+                  expires after 24 hours.
+              has_more:
+                role: hasMore
+                description: >
+                  Indicates there are more events to retrieve. When true,
+                  make another request immediately with the returned sync
+                  token to get the remaining events.

@@ -1,0 +1,46 @@
+overlay: 1.0.0
+info:
+  title: Shutterstock API Pagination Schemes
+  version: 1.1.32
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Shutterstock uses page-number-based pagination across all list and
+            search endpoints (images, videos, audio, collections, licenses,
+            editorial content, etc.). Clients pass a `page` query parameter
+            (1-based integer) to select the result page and `per_page` to
+            control the number of items returned per page. Paginated responses
+            include `page`, `per_page`, and `total_count` fields alongside the
+            `data` array so clients can calculate the total number of pages and
+            detect the last page when `data` contains fewer items than
+            `per_page`.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. 1-based integer; defaults to 1.
+              per_page:
+                role: pageSize
+                description: >
+                  The number of results to return per page. Defaults and
+                  maximums vary by endpoint (commonly 20 default, 100–200
+                  maximum).
+          response:
+            properties:
+              page:
+                role: page
+                description: The current page number returned in the response.
+              per_page:
+                role: pageSize
+                description: The number of results per page returned in the response.
+              total_count:
+                role: totalItems
+                description: The total number of results available across all pages.
+              data:
+                role: items
+                description: The array of result items for the current page.

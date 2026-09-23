@@ -1,0 +1,43 @@
+overlay: 1.0.0
+info:
+  title: Notion API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            Notion uses cursor-based pagination. List responses include a
+            `next_cursor` field and a `has_more` boolean. Pass the
+            `next_cursor` value as the `start_cursor` parameter on the next
+            request to fetch the next page. When `has_more` is false or
+            `next_cursor` is null, you have reached the last page.
+          request:
+            queryParameters:
+              page_size:
+                role: pageSize
+                description: >
+                  The number of items to return per page. Must be between 1
+                  and 100 inclusive. Defaults to 100 when not specified.
+              start_cursor:
+                role: pageToken
+                description: >
+                  When provided, returns results starting from the given
+                  cursor. Obtain this value from the `next_cursor` field of
+                  a previous response.
+          response:
+            bodyFields:
+              next_cursor:
+                role: nextPageToken
+                description: >
+                  A cursor token that can be passed as `start_cursor` in the
+                  next request to fetch the next page of results. Null when
+                  there are no more pages.
+              has_more:
+                role: hasMore
+                description: >
+                  Whether there are more results beyond this page. When
+                  false, `next_cursor` will be null and all results have
+                  been returned.

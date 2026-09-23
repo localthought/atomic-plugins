@@ -1,0 +1,32 @@
+overlay: 1.0.0
+info:
+  title: Keycloak Admin REST API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Keycloak uses offset-based pagination on all collection endpoints
+            such as listing users, clients, groups, roles, events, and
+            sessions. Pass `first` to set the zero-based starting offset
+            and `max` to control the maximum number of results returned per
+            request (defaults to 100). Responses are plain arrays with no
+            pagination envelope or total-count field; to detect the last
+            page, check whether the returned array length is less than `max`.
+          request:
+            queryParameters:
+              first:
+                role: offset
+                description: >
+                  Zero-based paging offset — the index of the first result to
+                  return. Defaults to 0. Increment by `max` on each subsequent
+                  request to page through all results.
+              max:
+                role: pageSize
+                description: >
+                  Maximum number of results to return per request. Defaults to
+                  100. Reduce this value for lighter responses or increase it
+                  to fetch more items per call.

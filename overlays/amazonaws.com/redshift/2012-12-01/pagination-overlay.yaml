@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS Redshift API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        marker:
+          type: pageToken
+          description: >-
+            Redshift Describe operations use Marker-based pagination via query
+            parameters. `Marker` (from the previous response) sets the
+            starting position for the next page. `MaxRecords` limits records
+            per request (default varies by operation).
+          request:
+            queryParameters:
+              Marker:
+                role: pageToken
+              MaxRecords:
+                role: pageSize
+          response:
+            bodyFields:
+              Marker:
+                role: nextPageToken

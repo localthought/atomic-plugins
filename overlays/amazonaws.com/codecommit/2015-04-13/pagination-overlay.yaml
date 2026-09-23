@@ -1,0 +1,23 @@
+overlay: 1.0.0
+info:
+  title: AWS CodeCommit API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            CodeCommit list operations (e.g. ListRepositories, ListBranches,
+            GetCommitHistory) use NextToken-based pagination in the JSON
+            request body. Pass the `nextToken` from the previous response
+            to retrieve the next page of results.
+          request:
+            bodyFields:
+              nextToken:
+                role: pageToken
+          response:
+            bodyFields:
+              nextToken:
+                role: nextPageToken

@@ -1,0 +1,34 @@
+overlay: 1.0.0
+info:
+  title: GlobalWineScore API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          GlobalWineScore uses offset/limit pagination. The response
+          envelope reports the total item count and `next`/`previous`
+          links for navigation.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            count:
+              role: totalCount
+            next:
+              role: nextLink
+- target: "$.paths['/globalwinescores/'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/globalwinescores/latest/'].get"
+  update:
+    x-pagination:
+    - scheme: offset

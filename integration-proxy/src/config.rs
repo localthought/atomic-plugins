@@ -55,10 +55,18 @@ pub struct Config {
     pub revoked_subjects: Vec<String>,
 }
 
-/// Immutable pinned revision of `localthought/overlays`' `catalog.json` used
-/// when `CATALOG_PATH` is not set. Shared with tests that need to validate
-/// the exact catalog the application would load by default.
-pub const DEFAULT_CATALOG_PATH: &str = "https://raw.githubusercontent.com/localthought/overlays/5d344a62e36f918a065bab1fbb7736571877673e/catalog.json";
+/// Where GitHub Pages serves this repository's `overlays/` folder. Every
+/// overlay URL in `overlays/catalog.json` starts with this prefix.
+pub const OVERLAYS_PAGES_BASE: &str = "https://ontola.github.io/atomic-plugins/overlays/";
+
+/// `overlays/catalog.json` as GitHub Pages publishes it from this
+/// repository's `main`, used when `CATALOG_PATH` is not set. Unlike the
+/// commit-pinned `raw.githubusercontent.com` URLs this replaced, it changes
+/// whenever `main` changes; the proxy reads it once, at startup. Shared with
+/// tests that need to validate the exact catalog the application would load
+/// by default (they read the checked-in copy; see `Catalog::load_checked_in`).
+pub const DEFAULT_CATALOG_PATH: &str =
+    "https://ontola.github.io/atomic-plugins/overlays/catalog.json";
 
 /// Reads a required environment variable and rejects it if unset or blank,
 /// so a blank `.env` value fails configuration explicitly instead of being

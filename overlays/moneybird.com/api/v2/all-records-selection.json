@@ -1,0 +1,40 @@
+{
+  "query_overrides": [
+    {
+      "path": "/{administration_id}/assets.json",
+      "values": {
+        "active": false
+      }
+    },
+    {
+      "path": "/{administration_id}/contacts/{contact_id}/additional_charges.json",
+      "values": {
+        "include_billed": true
+      }
+    },
+    {
+      "path": "/{administration_id}/contacts.json",
+      "values": {
+        "include_archived": true
+      }
+    },
+    {
+      "path": "/{administration_id}/products.json",
+      "values": {
+        "active": false
+      }
+    },
+    {
+      "path": "/{administration_id}/projects.json",
+      "values": {
+        "filter": "state:all"
+      }
+    },
+    {
+      "path": "/{administration_id}/subscriptions/{id}/additional_charges.json",
+      "values": {
+        "include_billed": true
+      }
+    }
+  ]
+}

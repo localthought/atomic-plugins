@@ -1,0 +1,49 @@
+overlay: 1.0.0
+info:
+  title: Todoist API v1 CRUD Causality
+  version: 1.0.0
+# The initial Todoist integration deliberately exposes read-only projects and
+# active tasks. IDs are stable server identities; task listing may be filtered
+# by project_id, but projects are enumerated first and no write operation is
+# advertised by this overlay.
+actions:
+  - target: $.components
+    update:
+      crudResources:
+        project:
+          schema:
+            $ref: '#/components/schemas/Project'
+          description: A project in the authenticated Todoist account.
+          identity:
+            urlTemplate: /projects/{project_id}
+            bindings:
+              project_id:
+                field: id
+          collections:
+            projects:
+              urlTemplate: /projects
+        task:
+          schema:
+            $ref: '#/components/schemas/Task'
+          description: An active task in the authenticated Todoist account.
+          identity:
+            urlTemplate: /tasks/{task_id}
+            bindings:
+              task_id:
+                field: id
+          collections:
+            tasks:
+              urlTemplate: /tasks
+
+  - target: $.paths['/projects'].get
+    update:
+      x-crud: { action: list, resource: project, collection: projects }
+  - target: $.paths['/projects/{project_id}'].get
+    update:
+      x-crud: { action: read, resource: project }
+  - target: $.paths['/tasks'].get
+    update:
+      x-crud: { action: list, resource: task, collection: tasks }
+  - target: $.paths['/tasks/{task_id}'].get
+    update:
+      x-crud: { action: read, resource: task }

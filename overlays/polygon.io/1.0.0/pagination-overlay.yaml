@@ -1,0 +1,46 @@
+overlay: 1.0.0
+info:
+  title: Polygon.io API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Polygon.io uses page-number pagination on listing endpoints such as
+            GET /v1/companies. Pass `page` (1-based) to select the result page
+            and `perpage` to control the number of items returned. The response
+            is a direct array with no embedded pagination metadata.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. 1-based integer; defaults to 1.
+              perpage:
+                role: pageSize
+                description: >
+                  The number of results to return per page.
+        offsetLimit:
+          type: offset
+          description: >
+            Historic data endpoints (e.g. GET /v1/historic/agg, /v1/historic/forex,
+            /v1/historic/quotes, /v1/historic/trades) use offset-based pagination.
+            Pass `offset` as a timestamp (Unix milliseconds) marking the start of
+            the next result window and `limit` to control the maximum number of
+            ticks returned (up to 10,000). To page forward, use the timestamp of
+            the last tick in the current response as the next `offset` value.
+          request:
+            queryParameters:
+              offset:
+                role: offset
+                description: >
+                  Timestamp offset in Unix milliseconds. Results with a timestamp
+                  greater than or equal to this value are returned.
+              limit:
+                role: pageSize
+                description: >
+                  Maximum number of results to return. Defaults to 100;
+                  maximum is 10,000.

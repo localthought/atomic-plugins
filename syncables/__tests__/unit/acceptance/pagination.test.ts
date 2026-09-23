@@ -11,8 +11,9 @@ import type { OpenApiDocument } from '../../../src/openapi/types.js';
  * These test the OpenAPI Pagination Schemes Extension support
  * (https://github.com/pondersource/openapi-pagination-schemes-extension)
  * against the real, unmodified overlays published for Giphy and Spotify at
- * https://github.com/localthought/overlays, applied on top of the same
- * vendored real-world documents used in real-world.test.ts.
+ * https://github.com/localthought/overlays (now this monorepo's overlays/,
+ * served at https://ontola.github.io/atomic-plugins/overlays/), applied on
+ * top of the same vendored real-world documents used in real-world.test.ts.
  *
  * Both overlays target genuine LIST endpoints (/gifs/trending,
  * /artists/{id}/albums) rather than the collection/item "resources"

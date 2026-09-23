@@ -1,0 +1,41 @@
+overlay: 1.0.0
+info:
+  title: AWS S3 API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        marker:
+          type: pageToken
+          description: >-
+            S3 ListObjects uses `marker` (the key to start listing after)
+            and `max-keys` (max items to return). The response includes
+            `IsTruncated` to signal more results and `NextMarker` for the
+            next page cursor.
+          request:
+            queryParameters:
+              marker:
+                role: pageToken
+              max-keys:
+                role: pageSize
+          response:
+            bodyFields:
+              NextMarker:
+                role: nextPageToken
+        continuationToken:
+          type: pageToken
+          description: >-
+            S3 ListObjectsV2 uses `continuation-token` to resume pagination
+            and `max-keys` for page size. The response includes
+            `NextContinuationToken` when more results are available.
+          request:
+            queryParameters:
+              continuation-token:
+                role: pageToken
+              max-keys:
+                role: pageSize
+          response:
+            bodyFields:
+              NextContinuationToken:
+                role: nextPageToken

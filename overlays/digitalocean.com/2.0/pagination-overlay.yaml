@@ -1,0 +1,52 @@
+overlay: 1.0.0
+info:
+  title: DigitalOcean API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            DigitalOcean uses page-number pagination. Pass `page` (1-based)
+            and `per_page` to control the result window. Responses include a
+            `links.pages` object with `first`, `prev`, `next`, and `last` URI
+            fields when more pages are available, plus a `meta.total` count of
+            all resources.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page of results to return. Defaults to 1. Must be a
+                  positive integer.
+              per_page:
+                role: pageSize
+                description: >
+                  The number of results to return per page. Defaults to 20.
+                  Maximum is 200.
+          response:
+            bodyFields:
+              links.pages.next:
+                role: nextLink
+                description: >
+                  URI of the next page of results. Absent when on the last
+                  page.
+              links.pages.prev:
+                role: prevLink
+                description: >
+                  URI of the previous page of results. Absent when on the
+                  first page.
+              links.pages.first:
+                role: firstLink
+                description: >
+                  URI of the first page of results.
+              links.pages.last:
+                role: lastLink
+                description: >
+                  URI of the last page of results.
+              meta.total:
+                role: totalCount
+                description: >
+                  The total number of objects across all pages.

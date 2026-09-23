@@ -1,0 +1,30 @@
+overlay: 1.0.0
+info:
+  title: Botify API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Botify uses page-number pagination. Responses include `count`
+            (total results), `page` (current page), `size` (results per page),
+            and `next`/`previous` URLs for navigation.
+          request:
+            queryParameters:
+              page:
+                role: page
+              size:
+                role: pageSize
+          response:
+            bodyFields:
+              next:
+                role: nextLink
+              count:
+                role: totalCount
+              page:
+                role: currentPage
+              size:
+                role: pageSize

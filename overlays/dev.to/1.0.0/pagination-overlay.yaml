@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: Forem (DEV.to) API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Forem uses page-number-based pagination across all list endpoints.
+            Clients pass a `page` query parameter (1-indexed) and a `per_page`
+            parameter to control the number of items returned per page.
+          request:
+            queryParameters:
+              page:
+                role: page
+              per_page:
+                role: pageSize

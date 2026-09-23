@@ -1,0 +1,36 @@
+overlay: 1.0.0
+info:
+  title: Plaid API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            Plaid uses offset-based pagination on list endpoints such as bank
+            transfers. Pass `count` to limit the number of results returned
+            and `offset` to skip past previously returned records. The
+            response includes a `has_more` boolean that is `true` when
+            additional results are available beyond the current page.
+          request:
+            queryParameters:
+              count:
+                role: pageSize
+                description: >
+                  The maximum number of results to return per request.
+              offset:
+                role: offset
+                description: >
+                  The offset into the list at which to begin retrieving
+                  results. Start at 0 for the first page; increment by
+                  `count` to fetch subsequent pages.
+          response:
+            bodyFields:
+              has_more:
+                role: hasMore
+                description: >
+                  `true` if additional results exist beyond those returned
+                  in this response. Fetch the next page by incrementing
+                  `offset` by `count`.

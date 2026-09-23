@@ -1,0 +1,40 @@
+overlay: 1.0.0
+info:
+  title: Brex KYB API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Used by the LEI deepsearch lookup, which paginates ISIN numbers in
+          batches of 1000 per page.
+        request:
+          queryParameters:
+            page:
+              role: page
+        response:
+          bodyFields:
+            current_page:
+              role: currentPage
+            last_page:
+              role: totalPages
+      offset:
+        type: pageNumber
+        description: Used by the company announcements search.
+        request:
+          queryParameters:
+            offset:
+              role: offset
+            limit:
+              role: pageSize
+- target: "$.paths['/api/v1/company/deepsearch/lei/{number}'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/api/v1/company/{id}/announcements'].get"
+  update:
+    x-pagination:
+    - scheme: offset

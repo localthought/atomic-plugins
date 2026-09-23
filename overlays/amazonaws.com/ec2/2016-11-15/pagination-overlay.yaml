@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS EC2 API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            EC2 Describe/List operations use token-based pagination. `MaxResults`
+            limits results per request and `NextToken` (from the previous
+            response) continues pagination. When the response omits `NextToken`,
+            all results have been retrieved.
+          request:
+            queryParameters:
+              MaxResults:
+                role: pageSize
+              NextToken:
+                role: pageToken
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

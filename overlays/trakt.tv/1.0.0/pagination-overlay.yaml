@@ -1,0 +1,38 @@
+overlay: 1.0.0
+info:
+  title: Trakt API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            Trakt uses page-number pagination. The client sends `page` (1-based,
+            default 1) and `limit` (default 10) as query parameters. The server
+            returns four response headers: `X-Pagination-Page` (current page),
+            `X-Pagination-Limit` (items per page), `X-Pagination-Page-Count`
+            (total pages), and `X-Pagination-Item-Count` (total items).
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: Number of page of results to be returned. Default is 1.
+              limit:
+                role: pageSize
+                description: Number of results to return per page. Default is 10.
+          response:
+            headers:
+              X-Pagination-Page:
+                role: currentPage
+                description: The current page number.
+              X-Pagination-Limit:
+                role: pageSize
+                description: The number of items per page.
+              X-Pagination-Page-Count:
+                role: totalPages
+                description: Total number of pages available.
+              X-Pagination-Item-Count:
+                role: totalCount
+                description: Total number of items across all pages.

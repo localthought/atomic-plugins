@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS RDS API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        marker:
+          type: pageToken
+          description: >-
+            AWS RDS Describe operations use marker-based pagination. `Marker`
+            is an optional pagination token from a previous response, and
+            `MaxRecords` limits the number of records returned. When the
+            response includes a `Marker` value, more records are available.
+          request:
+            queryParameters:
+              Marker:
+                role: pageToken
+              MaxRecords:
+                role: pageSize
+          response:
+            bodyFields:
+              Marker:
+                role: nextPageToken

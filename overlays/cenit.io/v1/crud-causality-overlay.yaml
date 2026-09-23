@@ -1,0 +1,188 @@
+overlay: 1.0.0
+info:
+  title: Cenit IO CRUD Causality
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    crudResources:
+      connection:
+        identity:
+          urlTemplate: /setup/connection/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          connections:
+            urlTemplate: /setup/connection
+      connection_role:
+        identity:
+          urlTemplate: /setup/connection_role/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          connectionRoles:
+            urlTemplate: /setup/connection_role
+      data_type:
+        identity:
+          urlTemplate: /setup/data_type/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          dataTypes:
+            urlTemplate: /setup/data_type/
+      flow:
+        identity:
+          urlTemplate: /setup/flow/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          flows:
+            urlTemplate: /setup/flow/
+      namespace:
+        identity:
+          urlTemplate: /setup/namespace/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          namespaces:
+            urlTemplate: /setup/namespace/
+      observer:
+        identity:
+          urlTemplate: /setup/observer/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          observers:
+            urlTemplate: /setup/observer/
+      scheduler:
+        identity:
+          urlTemplate: /setup/scheduler/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          schedulers:
+            urlTemplate: /setup/scheduler/
+      schema:
+        identity:
+          urlTemplate: /setup/schema/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          schemas:
+            urlTemplate: /setup/schema/
+      translator:
+        identity:
+          urlTemplate: /setup/translator/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          translators:
+            urlTemplate: /setup/translator/
+      webhook:
+        identity:
+          urlTemplate: /setup/webhook/{id}
+          bindings:
+            id:
+              field: id
+        collections:
+          webhooks:
+            urlTemplate: /setup/webhook/
+- target: "$.paths['/setup/connection'].get"
+  update:
+    x-crud: { action: list, resource: connection, collection: connections }
+- target: "$.paths['/setup/connection/{id}'].get"
+  update:
+    x-crud: { action: read, resource: connection }
+- target: "$.paths['/setup/connection/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: connection, removesFrom: "*" }
+- target: "$.paths['/setup/connection_role'].get"
+  update:
+    x-crud: { action: list, resource: connection_role, collection: connectionRoles }
+- target: "$.paths['/setup/connection_role/{id}'].get"
+  update:
+    x-crud: { action: read, resource: connection_role }
+- target: "$.paths['/setup/connection_role/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: connection_role, removesFrom: "*" }
+- target: "$.paths['/setup/data_type/'].get"
+  update:
+    x-crud: { action: list, resource: data_type, collection: dataTypes }
+- target: "$.paths['/setup/data_type/{id}'].get"
+  update:
+    x-crud: { action: read, resource: data_type }
+- target: "$.paths['/setup/data_type/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: data_type, removesFrom: "*" }
+- target: "$.paths['/setup/flow/'].get"
+  update:
+    x-crud: { action: list, resource: flow, collection: flows }
+- target: "$.paths['/setup/flow/{id}'].get"
+  update:
+    x-crud: { action: read, resource: flow }
+- target: "$.paths['/setup/flow/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: flow, removesFrom: "*" }
+- target: "$.paths['/setup/namespace/'].get"
+  update:
+    x-crud: { action: list, resource: namespace, collection: namespaces }
+- target: "$.paths['/setup/namespace/{id}'].get"
+  update:
+    x-crud: { action: read, resource: namespace }
+- target: "$.paths['/setup/namespace/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: namespace, removesFrom: "*" }
+- target: "$.paths['/setup/observer/'].get"
+  update:
+    x-crud: { action: list, resource: observer, collection: observers }
+- target: "$.paths['/setup/observer/{id}'].get"
+  update:
+    x-crud: { action: read, resource: observer }
+- target: "$.paths['/setup/observer/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: observer, removesFrom: "*" }
+- target: "$.paths['/setup/scheduler/'].get"
+  update:
+    x-crud: { action: list, resource: scheduler, collection: schedulers }
+- target: "$.paths['/setup/scheduler/{id}'].get"
+  update:
+    x-crud: { action: read, resource: scheduler }
+- target: "$.paths['/setup/scheduler/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: scheduler, removesFrom: "*" }
+- target: "$.paths['/setup/schema/'].get"
+  update:
+    x-crud: { action: list, resource: schema, collection: schemas }
+- target: "$.paths['/setup/schema/{id}'].get"
+  update:
+    x-crud: { action: read, resource: schema }
+- target: "$.paths['/setup/schema/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: schema, removesFrom: "*" }
+- target: "$.paths['/setup/translator/'].get"
+  update:
+    x-crud: { action: list, resource: translator, collection: translators }
+- target: "$.paths['/setup/translator/{id}'].get"
+  update:
+    x-crud: { action: read, resource: translator }
+- target: "$.paths['/setup/translator/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: translator, removesFrom: "*" }
+- target: "$.paths['/setup/webhook/'].get"
+  update:
+    x-crud: { action: list, resource: webhook, collection: webhooks }
+- target: "$.paths['/setup/webhook/{id}'].get"
+  update:
+    x-crud: { action: read, resource: webhook }
+- target: "$.paths['/setup/webhook/{id}'].delete"
+  update:
+    x-crud: { action: delete, resource: webhook, removesFrom: "*" }

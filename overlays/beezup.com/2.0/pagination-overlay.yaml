@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: BeezUP API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            BeezUP uses 1-based page-number pagination. `pageNumber` selects
+            the page (starting from 1) and `pageSize` controls the number of
+            results returned (range 10-100, default 10).
+          request:
+            queryParameters:
+              pageNumber:
+                role: page
+              pageSize:
+                role: pageSize

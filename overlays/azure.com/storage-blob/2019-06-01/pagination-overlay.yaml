@@ -1,0 +1,28 @@
+overlay: 1.0.0
+info:
+  title: Azure Storage Blob API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextLink:
+          type: nextLink
+          description: >-
+            Azure Storage Blob list operations use nextLink-style pagination.
+            When results exceed the page size, the response includes a
+            `nextLink` field with the full URL for the next page.
+            `$maxpagesize` controls the maximum number of items per page.
+          autoDetect:
+            matchQueryParams: false
+            matchBodyFields: false
+            matchResponseFields: true
+            requireAll: false
+          request:
+            queryParameters:
+              $maxpagesize:
+                role: pageSize
+          response:
+            bodyFields:
+              nextLink:
+                role: nextLink

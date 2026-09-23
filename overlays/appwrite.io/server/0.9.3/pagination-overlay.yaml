@@ -1,0 +1,20 @@
+overlay: 1.0.0
+info:
+  title: Appwrite Server API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: pageNumber
+          description: >-
+            Appwrite uses offset-based pagination across all list endpoints.
+            `limit` controls the number of results (default 25, max 100) and
+            `offset` sets the starting position (default 0).
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+              offset:
+                role: offset

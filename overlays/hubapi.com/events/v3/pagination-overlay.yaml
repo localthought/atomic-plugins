@@ -1,0 +1,46 @@
+overlay: 1.0.0
+info:
+  title: HubSpot Events API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            HubSpot uses cursor-based pagination. The cursor token for the
+            next page is returned in the `paging.next.after` field of paginated
+            responses. Pass this value as the `after` query parameter to fetch
+            the next page. A `before` cursor for backward navigation is
+            returned in `paging.prev.before` and passed via the `before`
+            query parameter.
+          request:
+            queryParameters:
+              after:
+                role: pageToken
+                description: >
+                  The paging cursor token of the last successfully read
+                  resource, returned as `paging.next.after` in a prior
+                  response. Omit to start from the first page.
+              before:
+                role: cursor
+                description: >
+                  The paging cursor token for backward navigation, returned
+                  as `paging.prev.before` in a prior response.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of results to return per page.
+          response:
+            bodyFields:
+              paging.next.after:
+                role: nextPageToken
+                description: >
+                  Cursor token to pass as `after` to fetch the next page of
+                  results. Absent when there are no further pages.
+              paging.prev.before:
+                role: prevPageToken
+                description: >
+                  Cursor token to pass as `before` to fetch the previous page
+                  of results.

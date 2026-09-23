@@ -1,0 +1,45 @@
+overlay: 1.0.0
+info:
+  title: Trello API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            Trello uses offset-based pagination with `limit` and `page`
+            parameters. The `page` parameter is a 0-based page offset and the
+            `limit` controls how many items are returned (default 50). The
+            product of page * limit must be less than 1000.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of items to return. Defaults to 50.
+                  The product of page * limit must be less than 1000.
+              page:
+                role: page
+                description: >
+                  The 0-based page offset. Page 0 returns the first `limit`
+                  items. The product of page * limit must be less than 1000.
+        timeBased:
+          type: pageToken
+          description: >
+            Trello list endpoints also support time-based filtering via
+            `since` and `before` parameters to restrict results to a date
+            range, often used in conjunction with limit-based pagination.
+          request:
+            queryParameters:
+              since:
+                role: pageToken
+                description: >
+                  Return only items created after this date/time. Accepts
+                  a date string, null, or "lastView".
+              before:
+                role: cursor
+                description: >
+                  Return only items created before this date/time. Accepts
+                  a date string or null.

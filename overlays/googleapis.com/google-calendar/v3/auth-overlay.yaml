@@ -1,0 +1,168 @@
+overlay: 1.0.0
+info:
+  title: google-calendar OAuth authorization requirements
+  version: 1.1.0
+actions:
+- target: $.components.securitySchemes
+  update:
+    googleOnline:
+      type: oauth2
+      x-oauth-authentication-details:
+        authorizationServerMetadata:
+          token_endpoint_auth_methods_supported:
+          - client_secret_post
+          - client_secret_basic
+          code_challenge_methods_supported:
+          - S256
+        authorizationCode:
+          pkce:
+            requirement: optional
+          profile:
+            parameters:
+            - parameter:
+                name: access_type
+                in: query
+                schema:
+                  type: string
+                  enum:
+                  - online
+                  - offline
+              value: online
+            tokenIssuance:
+              refreshToken:
+                presence: never
+      flows:
+        authorizationCode:
+          authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
+          tokenUrl: https://oauth2.googleapis.com/token
+          scopes:
+            https://www.googleapis.com/auth/calendar.events: View and edit events
+              on calendars.
+            https://www.googleapis.com/auth/calendar.calendarlist.readonly: View the
+              calendars to which the user is subscribed.
+    googleOffline:
+      type: oauth2
+      x-oauth-authentication-details:
+        authorizationServerMetadata:
+          token_endpoint_auth_methods_supported:
+          - client_secret_post
+          - client_secret_basic
+          code_challenge_methods_supported:
+          - S256
+        authorizationCode:
+          pkce:
+            requirement: optional
+          profile:
+            parameters:
+            - parameter:
+                name: access_type
+                in: query
+                schema:
+                  type: string
+                  enum:
+                  - online
+                  - offline
+              value: offline
+            capabilities:
+            - offlineAccess
+            tokenIssuance:
+              refreshToken:
+                presence: conditional
+                conditions:
+                - firstAuthorization
+                description: Google can omit a refresh token after the first authorization.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://accounts.google.com/o/oauth2/v2/auth
+          tokenUrl: https://oauth2.googleapis.com/token
+          scopes:
+            https://www.googleapis.com/auth/calendar.events: View and edit events
+              on calendars.
+            https://www.googleapis.com/auth/calendar.calendarlist.readonly: View the
+              calendars to which the user is subscribed.
+- target: $.paths['/calendars/{calendarId}/events'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/calendars/{calendarId}/events/{eventId}'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.events
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.events
+- target: $.paths['/users/me/calendarList'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+- target: $.paths['/users/me/calendarList/{calendarId}'].get
+  update:
+    security:
+    - googleOnline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+    - googleOffline:
+      - https://www.googleapis.com/auth/calendar.calendarlist.readonly
+
+# Introduces the one write operation this platform exposes: a partial update
+# to an event, matching what Devonian's google-calendar lens can send
+# (`planCalendarEdit`/`applyCalendarEdit` in localthought/devonian only ever
+# patch summary, description, location, start and end). Runs first among the
+# google-calendar overlays so crud-causality-overlay.yaml can add `x-crud` to
+# it afterwards. Reuses the `calendar.events` scope already requested for the
+# events GET operations below, so no new consent/reconnect is required.
+- target: $.paths['/calendars/{calendarId}/events/{eventId}']
+  update:
+    patch:
+      operationId: events-patch
+      summary: Update fields on an existing event
+      description: >
+        A partial update to an event. `If-Match` carries the event's
+        last-known ETag for optimistic-concurrency conflict detection;
+        Google returns 412 if the event changed remotely since it was read.
+      parameters:
+      - name: calendarId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: eventId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: sendUpdates
+        in: query
+        required: false
+        description: Whether to notify attendees of the change.
+        schema:
+          type: string
+          enum: [all, externalOnly, none]
+      - name: If-Match
+        in: header
+        required: false
+        description: The event's last-known ETag.
+        schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/event'
+      responses:
+        '200':
+          description: The updated event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/event'
+        '412':
+          description: The If-Match precondition failed.
+      security:
+      - googleOnline:
+        - https://www.googleapis.com/auth/calendar.events
+      - googleOffline:
+        - https://www.googleapis.com/auth/calendar.events

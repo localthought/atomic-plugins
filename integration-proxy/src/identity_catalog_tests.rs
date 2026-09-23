@@ -64,14 +64,11 @@ fn composed_github_identity_uses_numeric_subject_without_google_legacy_mapping()
 }
 
 #[tokio::test]
-#[ignore = "downloads the published catalog revision and its pinned OAD sources"]
+#[ignore = "downloads the pinned OAD sources the published catalog composes"]
 async fn published_catalog_loads_trusted_google_and_github_identity_operations() {
-    let catalog = Catalog::load(
-        "https://raw.githubusercontent.com/localthought/overlays/5d344a62e36f918a065bab1fbb7736571877673e/catalog.json",
-        &crate::build_http_client(),
-    )
-    .await
-    .expect("published pinned catalog must load through the runtime loader");
+    let catalog = Catalog::load_checked_in(&crate::build_http_client())
+        .await
+        .expect("published catalog must load through the runtime loader");
 
     let google = catalog.tenant_identity("google-calendar").unwrap();
     assert_eq!(

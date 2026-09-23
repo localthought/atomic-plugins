@@ -2,6 +2,8 @@
 # giphy.com/1.0/pagination-overlay.yaml (retrieved 2026-07-03, updated 2026-07-03
 # after https://github.com/localthought/overlays/pull/139 fixed the scheme's
 # invalid `type`/response `role`)
+# Now published from this monorepo at
+# https://ontola.github.io/atomic-plugins/overlays/giphy.com/1.0/pagination-overlay.yaml
 overlay: 1.0.0
 info:
   title: Giphy API Pagination Schemes

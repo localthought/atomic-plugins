@@ -1,0 +1,136 @@
+{
+  "platforms": [
+    {
+      "name": "github-issues",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/9c5cfb87b3f8b64e11069373a73e3fc85de0de5e/APIs/github.com/github-issues/1.1.4/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/crud-causality-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/canonical-paths-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/identity-overlay.yaml"
+      ],
+      "selection": {
+        "oauthSecurityScheme": "githubOAuth",
+        "tenantIdentity": {
+          "operationId": "getGitHubAuthenticatedPrincipal",
+          "namespace": "https://github.com"
+        }
+      }
+    },
+    {
+      "name": "google-calendar",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/9c5cfb87b3f8b64e11069373a73e3fc85de0de5e/APIs/googleapis.com/google-calendar/v3/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/crud-causality-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/schema-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/googleapis.com/google-calendar/v3/identity-overlay.yaml"
+      ],
+      "selection": {
+        "oauthSecurityScheme": "googleOffline",
+        "tenantIdentity": {
+          "operationId": "getGoogleAuthenticatedPrincipal",
+          "namespace": "https://accounts.google.com"
+        }
+      }
+    },
+    {
+      "name": "moneybird",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/85a6105220036a98ef0d7cd6f228d4aae0036508/APIs/moneybird.com/v2-readonly/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/moneybird.com/api/v2/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/moneybird.com/api/v2/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/moneybird.com/api/v2/crud-causality-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/moneybird.com/api/v2/throttling-overlay.yaml"
+      ],
+      "selection": {
+        "query_overrides": [
+          {
+            "path": "/{administration_id}/assets.json",
+            "values": {
+              "active": false
+            }
+          },
+          {
+            "path": "/{administration_id}/contacts/{contact_id}/additional_charges.json",
+            "values": {
+              "include_billed": true
+            }
+          },
+          {
+            "path": "/{administration_id}/contacts.json",
+            "values": {
+              "include_archived": true
+            }
+          },
+          {
+            "path": "/{administration_id}/products.json",
+            "values": {
+              "active": false
+            }
+          },
+          {
+            "path": "/{administration_id}/projects.json",
+            "values": {
+              "filter": "state:all"
+            }
+          },
+          {
+            "path": "/{administration_id}/subscriptions/{id}/additional_charges.json",
+            "values": {
+              "include_billed": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "todoist",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/ac07532b0a0ac101cf8bae2a54177fb1d8ea3779/APIs/todoist.com/1/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/todoist.com/api/v1/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/todoist.com/api/v1/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/todoist.com/api/v1/crud-causality-overlay.yaml"
+      ]
+    },
+    {
+      "name": "spotify",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/2914e6bed4db4389921b36e4ed79e645c2085668/APIs/spotify.com/1.0.0-readonly/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/spotify.com/1.0.0-readonly/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/spotify.com/1.0.0-readonly/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/spotify.com/1.0.0-readonly/crud-causality-overlay.yaml"
+      ]
+    },
+    {
+      "name": "discord",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/4087a087b080acd1931b39cc942bb7ef92b32e4e/APIs/discord.com/v10-readonly/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/discord.com/api/v10/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/discord.com/api/v10/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/discord.com/api/v10/crud-causality-overlay.yaml"
+      ]
+    },
+    {
+      "name": "notion",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/0c8e229623efdcc1d4ab50111d17bcca3214a899/APIs/notion.com/2026-03-11/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/notion.com/2026-03-11/auth-overlay.yaml"
+      ],
+      "selection": {
+        "oauthSecurityScheme": "notionOAuth"
+      }
+    },
+    {
+      "name": "clockify",
+      "openapi": "https://raw.githubusercontent.com/localthought/openapi-directory/dc7b2bdb8b9435ce7da15e48ff3955853bcc589c/APIs/clockify.me/1.0.0-readonly/openapi.yaml",
+      "overlays": [
+        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/crud-causality-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/auth-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/pagination-overlay.yaml"
+      ]
+    }
+  ]
+}

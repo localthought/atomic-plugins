@@ -1,0 +1,40 @@
+overlay: 1.0.0
+info:
+  title: todoist OAuth authorization requirements
+  version: 1.1.0
+actions:
+- target: $.components.securitySchemes
+  update:
+    todoistOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://app.todoist.com/oauth/authorize
+          tokenUrl: https://api.todoist.com/oauth/access_token
+          scopes:
+            data:read: Read the authenticated user’s data.
+- target: $.paths['/projects'].get
+  update:
+    security:
+    - todoistOAuth:
+      - data:read
+    - &id001
+      bearerAuth: []
+- target: $.paths['/projects/{project_id}'].get
+  update:
+    security:
+    - todoistOAuth:
+      - data:read
+    - *id001
+- target: $.paths['/tasks'].get
+  update:
+    security:
+    - todoistOAuth:
+      - data:read
+    - *id001
+- target: $.paths['/tasks/{task_id}'].get
+  update:
+    security:
+    - todoistOAuth:
+      - data:read
+    - *id001

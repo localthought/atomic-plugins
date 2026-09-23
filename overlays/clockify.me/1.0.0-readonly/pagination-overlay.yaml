@@ -1,0 +1,36 @@
+---
+overlay: 1.0.0
+info:
+  title: Clockify API Pagination Schemes
+  version: 1.1.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Clockify's list endpoints use 1-indexed page/page-size query
+          parameters and return a plain JSON array with no pagination
+          metadata in the body. Clockify also reports completion via a
+          custom Last-Page response header, but paging stops the same way
+          as other pageNumber platforms in this catalog: a page shorter
+          than the requested page-size is the last one.
+        request:
+          queryParameters:
+            page:
+              role: page
+            page-size:
+              role: pageSize
+- target: "$.paths['/v1/workspaces/{workspaceId}/user/{userId}/time-entries'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v1/workspaces/{workspaceId}/projects'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/v1/workspaces/{workspaceId}/users'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

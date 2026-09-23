@@ -1,0 +1,32 @@
+overlay: 1.0.0
+info:
+  title: Buffer API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      pageNumber:
+        type: pageNumber
+        description: >-
+          Buffer paginates status-update listings with a 1-based `page`
+          number and a `count` page size (1-100). Responses are a bare
+          array with no total-count envelope in this spec.
+        request:
+          queryParameters:
+            page:
+              role: page
+            count:
+              role: pageSize
+- target: "$.paths['/profiles/{id}/updates/pending{mediaTypeExtension}'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/profiles/{id}/updates/sent{mediaTypeExtension}'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber
+- target: "$.paths['/updates/{id}/interactions{mediaTypeExtension}'].get"
+  update:
+    x-pagination:
+    - scheme: pageNumber

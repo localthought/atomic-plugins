@@ -1,0 +1,44 @@
+overlay: 1.0.0
+info:
+  title: NetBox API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        offset:
+          type: offset
+          description: >
+            NetBox uses offset-limit pagination across all list endpoints.
+            Pass `limit` to control how many results are returned per page
+            and `offset` to skip a number of records from the beginning of
+            the result set. Responses include a `count` field with the total
+            number of items, and `next` / `previous` URI fields for
+            navigating to adjacent pages.
+          request:
+            queryParameters:
+              limit:
+                role: pageSize
+                description: >
+                  Number of results to return per page.
+              offset:
+                role: offset
+                description: >
+                  The initial index from which to return results. Increment
+                  by `limit` to retrieve successive pages.
+          response:
+            bodyFields:
+              count:
+                role: totalCount
+                description: >
+                  Total number of items available across all pages.
+              next:
+                role: nextLink
+                description: >
+                  URI of the next page of results, or null if this is the
+                  last page.
+              previous:
+                role: prevLink
+                description: >
+                  URI of the previous page of results, or null if this is
+                  the first page.

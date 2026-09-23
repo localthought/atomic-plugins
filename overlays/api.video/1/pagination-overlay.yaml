@@ -1,0 +1,21 @@
+overlay: 1.0.0
+info:
+  title: api.video API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >-
+            api.video uses page-number pagination. `currentPage` selects the
+            page and `pageSize` controls items per page. Pagination metadata
+            is returned in a nested `pagination` object in the response,
+            including currentPage, pagesTotal, itemsTotal, and navigation links.
+          request:
+            queryParameters:
+              currentPage:
+                role: page
+              pageSize:
+                role: pageSize

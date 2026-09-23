@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS SQS API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            SQS list operations (e.g. ListQueues, ListDeadLetterSourceQueues)
+            use NextToken-based pagination. `NextToken` from the previous
+            response is passed back in the request to retrieve the next page.
+            `MaxResults` limits the number of results per request.
+          request:
+            queryParameters:
+              NextToken:
+                role: pageToken
+              MaxResults:
+                role: pageSize
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

@@ -1,0 +1,39 @@
+overlay: 1.0.0
+info:
+  title: Discord API CRUD Causality
+  version: 1.0.0
+# This initial Discord integration is deliberately read-only. OAuth user
+# tokens can read the current user and the user's guild membership list, but
+# cannot use the bot-only guild routes to read or mutate arbitrary guilds.
+actions:
+  - target: $.components
+    update:
+      crudResources:
+        user:
+          schema:
+            $ref: '#/components/schemas/user'
+          description: The authenticated Discord user's basic profile.
+          identity:
+            urlTemplate: /users/@me
+        guild:
+          schema:
+            $ref: '#/components/schemas/guild'
+          description: A guild returned from the authenticated user's guild membership list.
+          collections:
+            myGuilds:
+              urlTemplate: /users/@me/guilds
+              x-list-query:
+                limit: 200
+
+  - target: $.paths['/users/@me'].get
+    update:
+      x-crud:
+        action: read
+        resource: user
+
+  - target: $.paths['/users/@me/guilds'].get
+    update:
+      x-crud:
+        action: list
+        resource: guild
+        collection: myGuilds

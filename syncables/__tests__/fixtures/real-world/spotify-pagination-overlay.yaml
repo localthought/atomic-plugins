@@ -1,5 +1,7 @@
 # Vendored, unmodified, from https://github.com/localthought/overlays:
 # spotify.com/1.0.0/pagination-overlay.yaml (retrieved 2026-07-03)
+# Now published from this monorepo at
+# https://ontola.github.io/atomic-plugins/overlays/spotify.com/1.0.0/pagination-overlay.yaml
 overlay: 1.0.0
 info:
   title: Spotify Web API Pagination Schemes

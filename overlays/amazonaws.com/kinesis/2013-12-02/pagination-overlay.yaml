@@ -1,0 +1,25 @@
+overlay: 1.0.0
+info:
+  title: AWS Kinesis API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        nextToken:
+          type: pageToken
+          description: >-
+            Kinesis list operations (e.g. ListStreams, ListShards) use
+            NextToken-based pagination. The `NextToken` body parameter
+            continues pagination from the previous response, and `Limit`
+            controls the maximum number of results returned.
+          request:
+            bodyFields:
+              NextToken:
+                role: pageToken
+              Limit:
+                role: pageSize
+          response:
+            bodyFields:
+              NextToken:
+                role: nextPageToken

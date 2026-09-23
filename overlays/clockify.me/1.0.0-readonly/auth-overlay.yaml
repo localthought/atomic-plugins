@@ -1,0 +1,39 @@
+---
+overlay: 1.0.0
+info:
+  title: Clockify API Authentication Profile
+  version: 1.1.0
+actions:
+- target: "$.components.securitySchemes"
+  update:
+    clockifyApiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: >-
+        A personal API key generated in Clockify's Profile Settings. Clockify
+        has no OAuth2 login; this is the only supported authentication mode.
+- target: "$.paths['/v1/workspaces/{workspaceId}/user/{userId}/time-entries'].get"
+  update:
+    security:
+    - clockifyApiKey: []
+- target: "$.paths['/v1/workspaces/{workspaceId}/time-entries/{id}'].get"
+  update:
+    security:
+    - clockifyApiKey: []
+- target: "$.paths['/v1/workspaces/{workspaceId}/projects'].get"
+  update:
+    security:
+    - clockifyApiKey: []
+- target: "$.paths['/v1/workspaces/{workspaceId}/projects/{id}'].get"
+  update:
+    security:
+    - clockifyApiKey: []
+- target: "$.paths['/v1/workspaces/{workspaceId}/users'].get"
+  update:
+    security:
+    - clockifyApiKey: []
+- target: "$.paths['/v1/workspaces/{workspaceId}/users/{id}'].get"
+  update:
+    security:
+    - clockifyApiKey: []

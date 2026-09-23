@@ -5,9 +5,13 @@ on:
     branches: [main]
     paths:
       - "integration-proxy/**"
+      # The default-catalog tests compose ../overlays/catalog.json, which is
+      # what DEFAULT_CATALOG_PATH serves from GitHub Pages once merged.
+      - "overlays/**"
   pull_request:
     paths:
       - "integration-proxy/**"
+      - "overlays/**"
 
 env:
   CARGO_TERM_COLOR: always

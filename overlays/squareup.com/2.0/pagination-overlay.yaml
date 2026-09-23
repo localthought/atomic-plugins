@@ -1,0 +1,37 @@
+overlay: 1.0.0
+info:
+  title: Square API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        cursor:
+          type: pageToken
+          description: >
+            Square uses cursor-based pagination for list endpoints. Pass
+            the `cursor` value from the response as the `cursor` query
+            parameter on the next request to retrieve the next page. When
+            the response does not include a `cursor` field (or it is empty),
+            you have reached the last page of results.
+          request:
+            queryParameters:
+              cursor:
+                role: pageToken
+                description: >
+                  A pagination cursor returned by a previous call to this
+                  endpoint. Provide this cursor to retrieve the next set of
+                  results for the original query. If cursor is absent, the
+                  first page of results is returned.
+              limit:
+                role: pageSize
+                description: >
+                  The maximum number of results to return per page. Default
+                  and maximum values vary by endpoint.
+          response:
+            bodyFields:
+              cursor:
+                role: nextPageToken
+                description: >
+                  The pagination cursor to be used in a subsequent request.
+                  If absent, this is the final response page.

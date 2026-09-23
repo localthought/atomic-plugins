@@ -1,0 +1,51 @@
+overlay: 1.0.0
+info:
+  title: bunq API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        idBased:
+          type: pageToken
+          description: >
+            bunq uses ID-based pagination. List responses include a
+            `Pagination` object with `newer_url` and `older_url` fields
+            containing pre-built URLs for the next and previous pages
+            respectively. Clients can also construct requests manually using
+            the `newer_id` (for forward pagination) and `older_id` (for
+            backward pagination) query parameters along with `count` to
+            control page size. The default page size is 10 and maximum is 200.
+          request:
+            queryParameters:
+              count:
+                role: pageSize
+                description: >
+                  The maximum number of items to return per page. Default is
+                  10. Maximum is 200.
+              newer_id:
+                role: pageToken
+                description: >
+                  Return items with IDs greater than this value (forward
+                  pagination). Set to the last item'\''s ID from the current page
+                  to fetch the next page of newer items.
+              older_id:
+                role: cursor
+                description: >
+                  Return items with IDs less than this value (backward
+                  pagination). Set to the first item'\''s ID from the current page
+                  to fetch the previous page of older items.
+          response:
+            bodyFields:
+              Pagination.newer_url:
+                role: nextLink
+                description: >
+                  Pre-built URL to fetch the next page of newer items. Use
+                  the `newer_id` from this URL as the next `newer_id`
+                  parameter.
+              Pagination.older_url:
+                role: prevLink
+                description: >
+                  Pre-built URL to fetch the previous page of older items.
+                  Use the `older_id` from this URL as the next `older_id`
+                  parameter.

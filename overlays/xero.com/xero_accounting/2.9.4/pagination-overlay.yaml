@@ -1,0 +1,29 @@
+overlay: 1.0.0
+info:
+  title: Xero Accounting API Pagination Schemes
+  version: 1.0.0
+actions:
+  - target: $.components
+    update:
+      paginationSchemes:
+        pageNumber:
+          type: pageNumber
+          description: >
+            The Xero Accounting API uses page-number pagination on collection
+            endpoints. Pass the `page` query parameter (1-based) to retrieve
+            successive pages. Each page returns up to 100 items. Omitting
+            `page` returns only the first 100 results. Increment `page` until
+            fewer than 100 results are returned, indicating the last page.
+          request:
+            queryParameters:
+              page:
+                role: page
+                description: >
+                  The page number to retrieve. Starts at 1. Each page
+                  returns up to 100 items. When omitted, only the first 100
+                  results are returned.
+              pageSize:
+                role: pageSize
+                description: >
+                  The number of records to return per page. Only applicable
+                  on certain endpoints. When supported, defaults to 100.

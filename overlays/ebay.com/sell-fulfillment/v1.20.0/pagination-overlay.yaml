@@ -1,0 +1,36 @@
+overlay: 1.0.0
+info:
+  title: eBay Sell Fulfillment API Pagination Schemes
+  version: 1.0.0
+actions:
+- target: "$.components"
+  update:
+    paginationSchemes:
+      offset:
+        type: pageNumber
+        description: >-
+          eBay's standard offset/limit pagination. The response echoes
+          limit/offset, reports the total match count, and includes a
+          next-page URI when further results are available.
+        request:
+          queryParameters:
+            limit:
+              role: pageSize
+            offset:
+              role: offset
+        response:
+          bodyFields:
+            total:
+              role: totalCount
+            next:
+              role: nextLink
+            limit:
+              role: pageSize
+- target: "$.paths['/order'].get"
+  update:
+    x-pagination:
+    - scheme: offset
+- target: "$.paths['/payment_dispute_summary'].get"
+  update:
+    x-pagination:
+    - scheme: offset
