@@ -1,10 +1,9 @@
+// @wc-ignore-file
 import { describe, expect, it } from 'vitest';
-import { planCalendarValues } from '../../platform-lenses/google-calendar/lens/edit.js';
-import {
-  applyCalendarEdit,
-  planCalendarEdit,
-} from '../../platform-lenses/google-calendar/sync.js';
+import { planCalendarValues } from './edit.js';
+import { applyCalendarEdit, planCalendarEdit } from '../sync.js';
 
+// Moved from devonian/__tests__/unit/platformLenses.test.ts with the lens.
 const name = 'https://atomicdata.dev/properties/name';
 const baseline = {
   [name]: 'Before',
@@ -127,7 +126,7 @@ describe('Calendar runtime after lens extraction', () => {
         writes++;
         throw new Error('Unexpected write');
       },
-      async (values) => {
+      async values => {
         checkpoint = values;
       },
     );

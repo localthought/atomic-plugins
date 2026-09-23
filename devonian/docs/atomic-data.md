@@ -110,9 +110,10 @@ DID identifiers (including AtomicServer `did:ad:` base64 identities) are accepte
 
 ## Passive platform lenses
 
-The `platform-lenses/google-calendar/lens/` directory, and the GitHub issues and
-Notion lenses that now live in their plugin folders in ontola/atomic-plugins
-(`integrations/issue-tracker/devonian/github-issues/lens/`,
+The Google Calendar, GitHub issues and Notion lenses, which now live in their
+plugin folders in ontola/atomic-plugins
+(`integrations/calendar/devonian/google-calendar/lens/`,
+`integrations/issue-tracker/devonian/github-issues/lens/`,
 `integrations/notion/devonian/notion/lens/`), contain passive mappings.
 A caller supplies resource data; these modules neither access datasets nor own
 credentials, subscriptions, identity lookups, or durable synchronization state.
@@ -138,12 +139,11 @@ credentials, subscriptions, identity lookups, or durable synchronization state.
   `errors`, and so are archived or trashed pages. The raw `properties` pass
   through. There is no reverse mapping yet.
 
-Import the Calendar lens through `devonian/platform-lenses/google-calendar/lens`;
-the others are no longer part of this package (see the README's "Unreleased"
-note). Calendar's projection helpers
-still require the consuming application's compatible `@tomic/lib` calendar
-helpers. Previous adapter, projection, recurrence, types, and sync entry points
-remain available.
+None of these lenses is part of this package any more (see the README's
+"Unreleased" note). Calendar's projection helpers still require the consuming
+application's compatible `@tomic/lib` calendar helpers. The Calendar lens
+folder keeps its previous adapter, projection, recurrence, types, and sync
+modules next to `lens/`.
 
 Transport, dataset membership checks, preview workflows, ETags, and checkpointing
 remain in the surrounding platform modules. This extraction does not introduce

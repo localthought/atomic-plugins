@@ -6,7 +6,12 @@
     "moduleResolution": "NodeNext",
     "typeRoots": ["../../browser/node_modules/@types"],
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tomic/lib": ["../../browser/lib/src/index.ts"]
+    }
   },
-  "include": ["adapter.ts"]
+  "include": ["adapter.ts", "devonian/**/*.ts"],
+  "exclude": ["devonian/**/*.test.ts"]
 }

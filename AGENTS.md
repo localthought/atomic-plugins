@@ -66,9 +66,10 @@ things. Pick the right one before writing code:
    OAuth/PKCE and the rotating-code authenticated proxy call, nothing more;
    `atomic-server` composes a syncables/reflector sync engine on top of it,
    optionally with a Devonian lens for local-first two-way sync.
-   `integrations/localthought/`, `integrations/timesheets/`, and the
+   `integrations/localthought/`, `integrations/timesheets/`, the
    GitHub issues lens at `integrations/issue-tracker/devonian/github-issues/`
-   are this shape. See
+   and the Google Calendar lens at
+   `integrations/calendar/devonian/google-calendar/` are this shape. See
    [Building a LocalThought (reflector/syncables/Devonian) connector](integrations/README.md#building-a-localthought-reflectorsyncablesdevonian-connector).
 
 Do not mix the two: a sandbox plugin never reaches the network itself for a
@@ -87,8 +88,7 @@ subtree`. It publishes to npm as `devonian` and is what
 reflector/syncables lens engine described above. A plugin's own lens lives in
 its plugin folder, at `integrations/<plugin>/devonian/<platform>/`, and
 imports `devonian` as a package, never by relative path into `devonian/src`;
-only `devonian/platform-lenses/google-calendar/` is still inside the
-package. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
+no lens is left inside the package. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
 and [`devonian/README.md`](devonian/README.md) for its own conventions —
 they are unrelated to the style notes below, which apply to `integrations/`
 only. Its CI and publish workflows are

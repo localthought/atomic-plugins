@@ -150,19 +150,15 @@ The native resource API accepts HTTP(S) and DID identities, including AtomicServ
 
 ### Passive platform lenses
 
-Provider transformations for Google Calendar live in
-`platform-lenses/google-calendar/lens/`, exposed through the
-`devonian/platform-lenses/google-calendar/lens` package entry point. These
-functions consume supplied data and return projections or patches; they do
-not fetch, subscribe, persist, or checkpoint. The surrounding platform module
-retains existing runtime behavior and compatibility entry points.
-
-The GitHub issues, Clockify and Notion lenses moved out of this package into
-the plugin that uses each one, in the ontola/atomic-plugins repository:
+This package no longer ships any platform lens. The Google Calendar, GitHub
+issues, Clockify and Notion lenses moved into the plugin that uses each one,
+in the ontola/atomic-plugins repository:
+`integrations/calendar/devonian/google-calendar/`,
 `integrations/issue-tracker/devonian/github-issues/`,
 `integrations/timesheets/devonian/clockify/` and
-`integrations/notion/devonian/notion/`. They import Devonian through the
-package root (`reconcileRecord` is exported from it for that reason).
+`integrations/notion/devonian/notion/`. Those that need Devonian import it
+through the package root (`reconcileRecord` is exported from it for that
+reason).
 
 See [the platform lens boundaries](docs/atomic-data.md#passive-platform-lenses)
 for the forward and reverse mappings and their scope.
@@ -170,11 +166,12 @@ for the forward and reverse mappings and their scope.
 ## Unreleased
 
 **Breaking:** the `devonian/platform-lenses/github-issues*`,
-`devonian/platform-lenses/clockify*` and `devonian/platform-lenses/notion*`
-entry points are removed from `exports`. 0.6.1 and earlier on npm still ship
-them. There are no compatibility shims: import the lens from its plugin
-folder in ontola/atomic-plugins instead (see above). The next release must
-be at least 0.7.0.
+`devonian/platform-lenses/clockify*`, `devonian/platform-lenses/notion*` and
+`devonian/platform-lenses/google-calendar*` entry points are removed from
+`exports`, and `platform-lenses/` is no longer in the published `files`.
+0.6.1 and earlier on npm still ship them. There are no compatibility shims:
+import the lens from its plugin folder in ontola/atomic-plugins instead (see
+above). The next release must be at least 0.7.0.
 
 Added: `reconcileRecord`, `acknowledgedBaseline` and their `Sync*` types are
 exported from the package root.

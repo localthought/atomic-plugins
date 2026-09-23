@@ -8,10 +8,6 @@
   },
   "exports": {
     ".": "./src/main.ts",
-    "./platform-lenses/google-calendar": "./platform-lenses/google-calendar/index.ts",
-    "./platform-lenses/google-calendar/sync": "./platform-lenses/google-calendar/sync.ts",
-    "./platform-lenses/google-calendar/recurrence": "./platform-lenses/google-calendar/recurrence.ts",
-    "./platform-lenses/google-calendar/lens": "./platform-lenses/google-calendar/lens/index.ts",
     "./reflect": {
       "types": "./build/src/reflect/index.d.ts",
       "default": "./build/src/reflect/index.js"
@@ -21,7 +17,6 @@
     "docs",
     "build",
     "vocab",
-    "platform-lenses",
     "src"
   ],
   "devDependencies": {
