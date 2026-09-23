@@ -115,11 +115,13 @@ test.describe('pets integration', () => {
         ]),
       );
     });
+    // Column names come from localthought/schema.ts's displayName
+    // (`updated_at` -> `Updated at`), capitalized since atomic-server 5dc880bf1.
     expect(datatypes).toMatchObject({
-      age: 'https://atomicdata.dev/datatypes/integer',
-      vaccinated: 'https://atomicdata.dev/datatypes/boolean',
-      weight: 'https://atomicdata.dev/datatypes/float',
-      'updated at': 'https://atomicdata.dev/datatypes/timestamp',
+      Age: 'https://atomicdata.dev/datatypes/integer',
+      Vaccinated: 'https://atomicdata.dev/datatypes/boolean',
+      Weight: 'https://atomicdata.dev/datatypes/float',
+      'Updated at': 'https://atomicdata.dev/datatypes/timestamp',
     });
   });
 });
