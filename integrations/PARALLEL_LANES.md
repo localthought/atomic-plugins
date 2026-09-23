@@ -251,7 +251,9 @@ Two failure modes are reported by cause rather than by symptom:
   that never set it (atomic-server's `e2e-server.sh` and dagger) are
   unchanged. A requested platform without a fixture is logged and skipped,
   not fatal: `issue-tracker`, `money` and `notion` lanes name `todoist`,
-  `moneybird` and `notion`.
+  `moneybird` and `notion`. `serve.mjs` does not start the mock at all for a
+  lane whose `platforms` is `[]`; only the shared, non-lane stack (which
+  passes no list) gets every fixture.
 - `server.github`, `server.calendar` and `server.clockify` remain as aliases
   of `server.fixtures[<platform>]`, for atomic-server specs that use them.
 

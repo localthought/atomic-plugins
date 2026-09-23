@@ -86,10 +86,12 @@ async function waitFor(url, what) {
  * Start the stack on `ports`. Returns a `stop()` that kills all three.
  * `platforms` is the mock proxy's fixture set, passed as
  * MOCK_PROXY_PLATFORMS: the mock serves only those of them that have a
- * fixture under integrations/localthought/fixtures/, and every fixture when
- * the list is empty. See §4 of integrations/PARALLEL_LANES.md.
+ * fixture under integrations/localthought/fixtures/. Omitted (the shared,
+ * non-lane stack) serves every fixture; an empty list — a lane whose tests
+ * never touch the shared mock — does not start the mock at all. See §4 of
+ * integrations/PARALLEL_LANES.md.
  */
-export async function bringUp({ ports, platforms = [], label = 'shared' }) {
+export async function bringUp({ ports, platforms, label = 'shared' }) {
   const config = loadLanes();
   const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
   // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
@@ -138,16 +140,18 @@ export async function bringUp({ ports, platforms = [], label = 'shared' }) {
   // SPA from — atomic-server directly (FRONTEND_URL in run-lane.mjs and
   // ci.yml), not the dev-server, which only hosts the catalog. The mock proxy
   // rejects any /connect whose redirect_uri has another origin.
-  start(
-    'mock-proxy',
-    process.execPath,
-    ['integrations/localthought/mock-proxy.mjs'],
-    {
-      MOCK_PROXY_PORT: String(ports.mockProxy),
-      MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
-      MOCK_PROXY_PLATFORMS: platforms.join(','),
-    },
-  );
+  const mock = platforms === undefined || platforms.length > 0;
+  if (mock)
+    start(
+      'mock-proxy',
+      process.execPath,
+      ['integrations/localthought/mock-proxy.mjs'],
+      {
+        MOCK_PROXY_PORT: String(ports.mockProxy),
+        MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
+        MOCK_PROXY_PLATFORMS: (platforms ?? []).join(','),
+      },
+    );
   start(
     'dev-server',
     process.execPath,
@@ -158,7 +162,8 @@ export async function bringUp({ ports, platforms = [], label = 'shared' }) {
   );
 
   await waitFor(`http://localhost:${ports.atomicServer}`, 'atomic-server');
-  await waitFor(`http://127.0.0.1:${ports.mockProxy}/catalog`, 'mock proxy');
+  if (mock)
+    await waitFor(`http://127.0.0.1:${ports.mockProxy}/catalog`, 'mock proxy');
   await waitFor(
     `http://localhost:${ports.devServer}/integrations/catalog.json`,
     'dev-server',
@@ -187,7 +192,7 @@ if (
   const ports = lane ? lanePorts(lane, config) : sharedPorts(config);
   const stop = await bringUp({
     ports,
-    platforms: lane?.platforms ?? [],
+    platforms: lane?.platforms,
     label: lane?.id ?? 'shared',
   });
   console.log(`serving ${JSON.stringify(ports)} — ctrl-c to stop`);
