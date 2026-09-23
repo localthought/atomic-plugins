@@ -35,8 +35,28 @@ import { fileURLToPath } from 'node:url';
 
 const integrationsRoot = fileURLToPath(new URL('..', import.meta.url));
 
-/** The only file allowed to handle the rotated code (posix path relative to `integrations/`). */
+/** The primary owner of the rotated code (posix path relative to `integrations/`). */
 const CODE_OWNER = 'localthought/browser.ts';
+
+/**
+ * Files allowed to handle the rotated code besides `CODE_OWNER`, each with the
+ * reason. They must hand the code only to host-provided storage (session or
+ * IndexedDB), never to a synced resource.
+ */
+const OTHER_CODE_HANDLERS = new Map([
+  [
+    // The Devonian GitHub issues proxy client rotates the code through the
+    // host's `getCode`/`setCode` (moved here from devonian/ in the
+    // plugin-folder containment change).
+    'issue-tracker/devonian/github-issues/proxy.mjs',
+    'rotates via host-provided getCode/setCode',
+  ],
+  [
+    // Only matches proxy.mjs's error message to classify it as needing a person.
+    'issue-tracker/devonian/github-issues/background.mjs',
+    'matches an error message, holds no code',
+  ],
+]);
 
 const SKIPPED_DIRS = new Set([
   'node_modules',
@@ -62,7 +82,11 @@ export function findCredentialLeaks(file, source) {
         rule: 'connection-code property',
         text: text.trim(),
       });
-    if (file !== CODE_OWNER && ROTATION_HEADER.test(text))
+    if (
+      file !== CODE_OWNER &&
+      !OTHER_CODE_HANDLERS.has(file) &&
+      ROTATION_HEADER.test(text)
+    )
       leaks.push({
         file,
         line: index + 1,
@@ -135,6 +159,12 @@ test('allows a non-secret connection reference', () => {
 
 test('the walk reaches the code owner, so it is not silently empty', () => {
   assert.ok(shippedSources(integrationsRoot).includes(CODE_OWNER));
+});
+
+test('every allow-listed code handler still exists', () => {
+  const sources = shippedSources(integrationsRoot);
+  for (const file of OTHER_CODE_HANDLERS.keys())
+    assert.ok(sources.includes(file), `${file} is allow-listed but not found`);
 });
 
 test('no shipped source persists or handles a rotating connection code outside browser.ts', () => {
