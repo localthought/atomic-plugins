@@ -1,11 +1,11 @@
 /**
- * Stands in for the `/integrations` route atomic-server embeds at build time
- * (see server/build.rs::embed_integrations and server/src/routes.rs). CI no
- * longer drops this repo's integrations/ into the atomic-server checkout
- * before building it, so nothing atomic-server itself serves at
- * `/integrations` reflects this repo's plugins. This process serves them
- * instead, using the same filter the embed does: a `plugin.js` anywhere under
- * integrations/, plus the root `catalog.json`.
+ * Serves this repo's plugin catalog, standing in for what
+ * ontola.github.io/atomic-plugins publishes. atomic-server used to embed an
+ * `/integrations` route at build time (server/build.rs::embed_integrations,
+ * removed in feat/plugin-debug 4bab16ee6), and even then it embedded its own
+ * copy, never this repo's. This process serves the same filter the embed
+ * used: a `plugin.js` anywhere under integrations/, plus the root
+ * `catalog.json`.
  *
  * That is all it does. It used to also reverse-proxy everything else through
  * to a real atomic-server, so that one origin looked like an atomic-server

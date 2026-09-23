@@ -9,17 +9,36 @@ This is `ontola/atomic-server`'s `integrations/` folder, extracted for fast
 iteration. It is **not buildable or testable on its own**: every package
 imports from `../../browser/lib/src/...`, which only exists inside a full
 `atomic-server` checkout. `.atomic-server-ref` pins the upstream commit this
-folder is meant to sit on top of; `.github/workflows/ci.yml` checks that
-commit out, replaces its `integrations/` with this repo's, and builds/tests
-from there. Reproduce that locally before running any command below:
+folder is meant to sit on top of. CI checks that commit out next to this repo
+and symlinks its `browser/` in as `./browser` (gitignored), which is all the
+relative imports need. One script does the same locally, and CI runs that same
+script, so the two setups cannot drift. Run it from the repo root (in any
+worktree) before running any command below:
 
 ```sh
-ATOMIC_SERVER_REF=$(cat .atomic-server-ref)
-git clone https://github.com/ontola/atomic-server.git /tmp/atomic-server
-cd /tmp/atomic-server && git checkout "$ATOMIC_SERVER_REF"
-rm -rf integrations
-cp -r /path/to/this-repo/integrations .
+node integrations/tooling/link-atomic-server.mjs
 ```
+
+This shallow-fetches atomic-server at `.atomic-server-ref` into
+`$ATOMIC_SERVER_CHECKOUT` (default `/tmp/atomic-server`, the default
+`run-lane.mjs`/`serve.mjs` also use; one checkout serves every worktree). It
+then symlinks `browser` and `integrations/node_modules`, and runs `pnpm
+install --frozen-lockfile` in its `browser/` (pnpm 10, per its
+`packageManager`). It refuses to move a checkout that has uncommitted changes.
+Re-run it after `.atomic-server-ref` changes. `--check` verifies the layout
+without changing anything, and `run-lane.mjs` warns when `browser/` points at
+a checkout on some other commit. After that:
+
+```sh
+node integrations/tooling/run-lane.mjs calendar --tier typecheck   # or --tier unit; one package
+node integrations/tooling/certify.mjs --layer js                   # every package: typecheck, bundle, tests
+```
+
+The live/e2e tiers additionally need the atomic-server binary built once in
+that checkout (`serve.mjs` prints the exact `cargo build` line).
+`integrations/localthought`'s `wasm-smoke.mjs` needs a `wasm-pack` build
+of atomic-server's `wasm/` crate, which neither the script nor CI provides.
+Details: [Local setup](integrations/README.md#local-setup).
 
 Everything else — the contributor checklist, certification command, config
 declaration convention, permissions/recovery model, live-testing contract —
@@ -47,8 +66,9 @@ things. Pick the right one before writing code:
    OAuth/PKCE and the rotating-code authenticated proxy call, nothing more;
    `atomic-server` composes a syncables/reflector sync engine on top of it,
    optionally with a Devonian lens for local-first two-way sync.
-   `integrations/localthought/`, `integrations/timesheets/`, and
-   `integrations/issue-tracker/devonian/` are this shape. See
+   `integrations/localthought/`, `integrations/timesheets/`, and the
+   GitHub issues lens at `integrations/issue-tracker/devonian/github-issues/`
+   are this shape. See
    [Building a LocalThought (reflector/syncables/Devonian) connector](integrations/README.md#building-a-localthought-reflectorsyncablesdevonian-connector).
 
 Do not mix the two: a sandbox plugin never reaches the network itself for a
@@ -63,8 +83,12 @@ buildable and publishable TypeScript package (own `package.json`,
 `localthought/devonian` repo, full commit history included via `git
 subtree`. It publishes to npm as `devonian` and is what
 `integrations/localthought/`, `integrations/timesheets/`, and
-`integrations/issue-tracker/devonian/` depend on for the reflector/syncables
-lens engine described above. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
+`integrations/issue-tracker/devonian/github-issues/` depend on for the
+reflector/syncables lens engine described above. A plugin's own lens lives in
+its plugin folder, at `integrations/<plugin>/devonian/<platform>/`, and
+imports `devonian` as a package, never by relative path into `devonian/src`;
+only `devonian/platform-lenses/google-calendar/` is still inside the
+package. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
 and [`devonian/README.md`](devonian/README.md) for its own conventions —
 they are unrelated to the style notes below, which apply to `integrations/`
 only. Its CI and publish workflows are

@@ -21,6 +21,13 @@ import { existsSync, symlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
 import { bringUp } from './serve.mjs';
+import { layoutProblems } from './link-atomic-server.mjs';
+
+// A warning, not a failure: testing against another atomic-server commit on
+// purpose (e.g. before bumping .atomic-server-ref) is legitimate, but doing
+// it by accident — a stale shared checkout — should never be silent.
+for (const problem of layoutProblems()) console.warn(`warning: ${problem}`);
+
 const config = loadLanes();
 const args = process.argv.slice(2);
 const laneId = args.find(a => !a.startsWith('--'));
@@ -114,6 +121,15 @@ const cleanup = () => {
   }
 };
 
+// Between tiers: stop this tier's stack and wait for it to be gone before
+// the next tier starts one on the same store, but keep the lane lock —
+// cleanup() releases that, and only process exit should.
+const stopStack = async () => {
+  const pending = stop;
+  stop = () => {};
+  await pending();
+};
+
 process.on('exit', cleanup);
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.on(signal, () => {
@@ -153,7 +169,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
       // agree only when the client talks to it directly.
       { [lane.liveEnv]: `http://localhost:${ports.atomicServer}` },
     );
-    cleanup();
+    await stopStack();
   } else if (tier === 'e2e') {
     linkE2eModules();
     stop = await bringUp({
@@ -182,7 +198,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
         ATOMIC_MOCK_INTEGRATION_PROXY: '1',
       },
     );
-    cleanup();
+    await stopStack();
   }
 
   if (status !== 0) {

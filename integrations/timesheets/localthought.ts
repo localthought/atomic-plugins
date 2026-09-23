@@ -4,7 +4,7 @@
  * secret. The personal API key is sealed by the integration proxy, the generic
  * Syncables engine pages through `timeEntries`, and this module only builds
  * the query window and re-exports the platform lens (schema translation, in
- * devonian/platform-lenses/clockify -- localthought/atomic-plugins#4) that
+ * devonian/clockify/ -- localthought/atomic-plugins#4) that
  * shapes the result into a Time Tracker table: a start/end interval per
  * completed entry, running timers and breaks left out.
  */
@@ -17,7 +17,7 @@ export {
   type FetchedPlatform,
   type FetchedRecord,
   type Term,
-} from 'devonian/platform-lenses/clockify';
+} from './devonian/clockify/index.js';
 
 export const CLOCKIFY_APP = 'https://app.clockify.me';
 export const TIME_ENTRIES_PATH =

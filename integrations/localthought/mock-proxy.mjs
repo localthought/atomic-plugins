@@ -1,7 +1,5 @@
 /** Local-only integration-proxy fixture. Never deploy this service. */
-import { calendarDocument, calendarFixture } from './mock-calendar.mjs';
-import { githubTracker } from './mock-github.mjs';
-import { clockifyDocument, clockifyFixture } from './mock-clockify.mjs';
+import { fixtures, selectPlatforms } from './fixtures/index.mjs';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -13,30 +11,25 @@ const equal = (a, b) =>
   timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const pkceChallenge = verifier =>
   createHash('sha256').update(verifier).digest('base64url');
-const platforms = {
-  clockify: 'Clockify',
-  'github-issues': 'GitHub Issues',
-  'google-calendar': 'Google Calendar',
-  pets: 'Pets',
-};
-const pets = ['Rex', 'Whiskers', 'Tweety', 'Nibbles', 'Bubbles'].map(
-  (name, i) => ({
-    id: i + 1,
-    name,
-    species: ['Dog', 'Cat', 'Bird', 'Rabbit', 'Fish'][i],
-    age: i + 1,
-    vaccinated: i % 2 === 0,
-    weight: i + 0.5,
-    updated_at: '2026-09-09T00:00:00Z',
-  }),
-);
 
+/**
+ * `platforms` restricts which fixtures load (see fixtures/index.mjs); it
+ * defaults to MOCK_PROXY_PLATFORMS, and to every fixture when that is unset.
+ */
 export function mockProxy({
   frontendOrigin = process.env.MOCK_FRONTEND_ORIGIN ?? 'http://localhost:6747',
+  platforms = process.env.MOCK_PROXY_PLATFORMS,
 } = {}) {
-  const github = githubTracker();
-  const calendar = calendarFixture();
-  const clockify = clockifyFixture();
+  const selected = selectPlatforms(
+    Array.isArray(platforms) ? platforms.join(',') : platforms,
+  );
+  if (selected.missing.length)
+    console.warn(
+      `mock-proxy: no fixture for ${selected.missing.join(', ')}; not served`,
+    );
+  const instances = Object.fromEntries(
+    selected.platforms.map(id => [id, fixtures[id].create()]),
+  );
   const codes = new Map();
   const handoffs = new Map();
 
@@ -72,39 +65,30 @@ export function mockProxy({
       res.end(JSON.stringify(value));
     };
 
-    if (url.pathname === '/catalog')
-      return json(200, [
-        'clockify',
-        'github-issues',
-        'google-calendar',
-        'pets',
-      ]);
-    if (
-      /^\/catalog\/(pets|google-calendar|github-issues|clockify)\.selection\.json$/.test(
-        url.pathname,
-      )
-    )
-      return json(200, { query_overrides: [] });
-    if (url.pathname === '/catalog/clockify.yaml')
-      return json(200, clockifyDocument);
+    if (url.pathname === '/catalog') return json(200, selected.platforms);
+    const catalogFile = url.pathname.match(
+      /^\/catalog\/([^/]+)\.(selection\.json|yaml)$/,
+    );
 
-    if (url.pathname === '/catalog/pets.yaml') {
-      res.writeHead(200, { 'Content-Type': 'application/yaml' });
+    if (catalogFile && Object.hasOwn(instances, catalogFile[1])) {
+      const fixture = fixtures[catalogFile[1]];
+      if (catalogFile[2] === 'selection.json')
+        return json(200, { query_overrides: [] });
+      if (fixture.document) return json(200, fixture.document);
 
-      return res.end(
-        readFileSync(new URL('./mock-document.json', import.meta.url)),
-      );
+      if (fixture.documentFile) {
+        res.writeHead(200, { 'Content-Type': 'application/yaml' });
+
+        return res.end(readFileSync(fixture.documentFile));
+      }
     }
-
-    if (url.pathname === '/catalog/google-calendar.yaml')
-      return json(200, calendarDocument);
 
     if (url.pathname === '/connect') {
       const p = url.searchParams;
       const platform = p.get('platform');
       const verifierChallenge = p.get('code_challenge');
       if (
-        !Object.hasOwn(platforms, platform) ||
+        !Object.hasOwn(instances, platform) ||
         !verifierChallenge ||
         p.get('code_challenge_method') !== 'S256' ||
         p.get('credentials') !== 'connection' ||
@@ -133,7 +117,7 @@ export function mockProxy({
         res.writeHead(200, { 'Content-Type': 'text/html' });
 
         return res.end(
-          `<h1>Mock integration proxy</h1><p>Signed in as mock-user.</p><p>Use the selected ${platforms[platform]} account to sync with your Atomic Data Hub.</p><form method="post"><button>Use LocalThought to sync ${platforms[platform]} with your Atomic Data Hub</button></form>`,
+          `<h1>Mock integration proxy</h1><p>Signed in as mock-user.</p><p>Use the selected ${fixtures[platform].title} account to sync with your Atomic Data Hub.</p><form method="post"><button>Use LocalThought to sync ${fixtures[platform].title} with your Atomic Data Hub</button></form>`,
         );
       }
 
@@ -192,7 +176,10 @@ export function mockProxy({
       if (!url.pathname.startsWith(`/proxy/${platform}/`))
         return json(403, {}, headers);
 
-      if (platform === 'github-issues') {
+      const fixture = fixtures[platform];
+      let input = {};
+
+      if (fixture.jsonBody) {
         try {
           let body = '';
 
@@ -201,51 +188,29 @@ export function mockProxy({
             if (body.length > 1024 * 1024) return json(413, {}, headers);
           }
 
-          const result = github.request(
-            req.method,
-            url,
-            body ? JSON.parse(body) : {},
-          );
-
-          return json(result.status, result.body, headers);
+          if (body) input = JSON.parse(body);
         } catch {
           return json(400, { error: 'Invalid request body' }, headers);
         }
       }
 
-      if (platform === 'google-calendar') {
-        const result = calendar.request(req.method, url);
+      const result = instances[platform].request(req.method, url, input);
 
-        return json(result.status, result.body, headers);
-      }
-
-      if (platform === 'clockify') {
-        const result = clockify.request(req.method, url);
-
-        return json(result.status, result.body, headers);
-      }
-
-      if (req.method !== 'GET') return json(403, {}, headers);
-      const data =
-        platform === 'pets'
-          ? url.searchParams.get('page') === '2'
-            ? pets.slice(2)
-            : pets.slice(0, 2)
-          : { items: [{ id: 'event-1', summary: 'Team meeting' }] };
-
-      return json(200, data, {
+      return json(result.status, result.body, {
         ...headers,
-        ...(platform === 'pets' && !url.searchParams.has('page')
-          ? { Link: '<https://pets.example/pets?page=2>; rel="next"' }
-          : {}),
+        ...result.headers,
       });
     }
 
     json(404, {});
   });
-  server.github = github;
-  server.calendar = calendar;
-  server.clockify = clockify;
+  // Test-side drivers, e.g. server.fixtures['github-issues'].createIssue().
+  // The short aliases predate the registry; callers outside this repo
+  // (atomic-server's browser/e2e specs) may still use them.
+  server.fixtures = instances;
+  server.github = instances['github-issues'];
+  server.calendar = instances['google-calendar'];
+  server.clockify = instances.clockify;
 
   return server;
 }
@@ -257,7 +222,11 @@ if (
   mockProxy().listen(
     Number(process.env.MOCK_PROXY_PORT ?? 19090),
     process.env.MOCK_PROXY_HOST ?? '127.0.0.1',
-    () =>
-      console.log('Mock integration proxy listening on http://127.0.0.1:19090'),
+    function () {
+      const { address, port } = this.address();
+      console.log(
+        `Mock integration proxy listening on http://${address}:${port}`,
+      );
+    },
   );
 }

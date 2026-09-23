@@ -1,11 +1,12 @@
 # Parallel plugin lanes
 
-**Status: §§1–3 and §5 are implemented; §4 (fixtures) is not.**
+**Status: §§1–3 and §5 are implemented; §4 (fixtures) is half done.**
 `integrations/lanes.json`, `integrations/tooling/lanes.mjs`,
 `serve.mjs`, `run-lane.mjs` and the rewritten `.github/workflows/ci.yml`
-are live. `integrations/localthought/mock-proxy.mjs` is untouched: it still
-dispatches on `platform` through an `if` chain and ignores the
-`MOCK_PROXY_PLATFORMS` the runner already passes it. §4 describes that work.
+are live. `integrations/localthought/mock-proxy.mjs` now loads a per-platform
+fixture registry and honours `MOCK_PROXY_PLATFORMS`; recorded fixtures,
+`record.mjs`, `fixture.test.mjs`, the three missing platforms and the drift
+guard are not started. See §4.
 
 The goal: every package under `integrations/` gets its own CI lane and its own
 locally reproducible server, so N plugins can be worked on at once without
@@ -101,6 +102,12 @@ CI and the local runner read:
 
 The path filter for lane `<id>` is `integrations/<id>/**` by convention, so
 `changes` can generate its `filters:` from this file rather than restating it.
+A lane whose code imports a shared package from source adds an optional
+`paths` array of globs inside `devonian/`, `syncables/` or `reflector/`
+(`lanes.mjs` rejects anything else, in particular another plugin's folder),
+so a change there still runs it: issue-tracker lists `devonian/src/**`
+because `devonian/github-issues/` imports the `devonian` package. Those
+globs also join the `any` filter, since `build-server` is gated on it.
 Add a `lanes.test.mjs` case asserting every directory under `integrations/`
 that is not `tooling/` has a lane entry — that is the check that would have
 caught `calendar/`.
@@ -234,6 +241,41 @@ Two failure modes are reported by cause rather than by symptom:
 
 ## 4. Mock fixtures per platform
 
+**Done:** the registry, the migration of the four existing platforms, and
+`MOCK_PROXY_PLATFORMS`. Deviations from the design below:
+
+- Fixtures live in their plugin's folder, not `integrations/tooling/fixtures/`:
+  `integrations/<plugin>/fixtures/<platform>/` (`pets/fixtures/pets/`,
+  `timesheets/fixtures/clockify/`, `issue-tracker/fixtures/github-issues/`,
+  `calendar/fixtures/google-calendar/`). Everything specific to one plugin
+  stays inside that plugin's folder, so plugins can be developed in parallel
+  and a fixture change triggers only its own lane. Only the registry,
+  `integrations/localthought/fixtures/index.mjs`, is shared; it imports each
+  fixture by relative path. Caveat: atomic-server's dagger e2e pipeline
+  copies only `integrations/localthought/` into its container, so it has to
+  copy all of `integrations/` once it takes this layout.
+- Each platform is one `scenario.mjs` whose default export declares `title`,
+  `document` or `documentFile`, `jsonBody` and `create()`; see the registry.
+  `pets` keeps its hand-written records in `pets/fixtures/pets/scenario.mjs`
+  and its document next to it in `document.json`; no `api/` recordings exist
+  for any platform yet.
+- An unset or empty `MOCK_PROXY_PLATFORMS` serves every fixture, so callers
+  that never set it (atomic-server's `e2e-server.sh` and dagger) are
+  unchanged. A requested platform without a fixture is logged and skipped,
+  not fatal: `issue-tracker`, `money` and `notion` lanes name `todoist`,
+  `moneybird` and `notion`. `serve.mjs` does not start the mock at all for a
+  lane whose `platforms` is `[]`; only the shared, non-lane stack (which
+  passes no list) gets every fixture.
+- `server.github`, `server.calendar` and `server.clockify` remain as aliases
+  of `server.fixtures[<platform>]`, for atomic-server specs that use them.
+
+**Not started:** `api/` recordings, `record.mjs`, `fixture.test.mjs`,
+fixtures for `todoist` and `moneybird` (both need live credentials to
+record, per the "enforced, not asserted" rule below), and the drift guard.
+`notion` needs no fixture (#47).
+
+The original design:
+
 Replace the `if (platform === …)` chain in `mock-proxy.mjs` with a fixture
 registry. `mock-proxy.mjs` becomes a generic host; each platform becomes data
 plus an optional behaviour module.
@@ -266,8 +308,9 @@ integrations/tooling/fixtures/
 - Migrate the three existing modules in place: `mock-github.mjs`,
   `mock-calendar.mjs`, `mock-clockify.mjs` become `scenario.mjs` under
   `github-issues/`, `google-calendar/`, `clockify/`; the inline `pets` array
-  becomes `pets/api/`. Then add the three with no fixture today: `todoist`,
-  `moneybird`, `notion`.
+  becomes `pets/api/`. Then add the two with no fixture today: `todoist` and
+  `moneybird`. `notion` is excluded on purpose; see "Resolved while
+  implementing this".
 
 ### Drift guard
 
@@ -307,26 +350,72 @@ Rules that keep parallel worktrees from fighting:
   `integration-certification` report is published whole rather than in pieces.
 - **`plugins.spec.ts` split cleanly after all**, and upstream did half of it.
   `atomic-server#1621` deleted its Pets and Notion tests; they live here now as
-  `integrations/pets/e2e/` and `integrations/notion/e2e/`. What remains
-  upstream — six generic editor/sandbox tests plus two Clockify ones — runs
-  whole in the `e2e-plugin-system` job, so nothing is duplicated and no
-  `--grep` on prose test titles was needed.
+  `integrations/pets/e2e/` and `integrations/notion/e2e/`. Its two Clockify
+  tests were deleted outright in `4bab16ee6` (#44). What remains upstream,
+  the generic editor/sandbox tests, runs whole in the `e2e-plugin-system`
+  job. Nothing is duplicated, and no `--grep` on prose test titles was
+  needed.
 - **`notion` is `enabled: false` in `catalog.json`** but keeps both a live and
   an e2e tier: the catalog flag gates whether the card is _offered_ to
   visitors, not whether the package works. Revisit if it is ever removed.
+- **The `notion` lane has no mock-proxy platform** (`"platforms": []`, #47).
+  Neither of its tiers talks to the lane's mock proxy.
+  `integrations/notion/e2e/notion.spec.ts` points `integration-proxy-url` at
+  its own `https://notion-proxy.test` origin and answers `/catalog` and
+  `/proxy/notion/**` with `page.route`. `atomic.live.test.ts` stubs `fetch`
+  in-process. Moving the spec onto the shared mock would take three things.
+  First, a `fixtures/notion/` recorded against a live Notion workspace (§4).
+  Second, a test-control channel into the mock, which `serve.mjs` runs as a
+  separate process: mid-test the spec returns 401 from `/v1/search`, asserts
+  the PATCH body, and edits the remote page, and `server.fixtures[...]`
+  drivers only work in-process. Third, driving a real `/connect` +
+  `/connect/redeem` handoff, because the mock rejects the seeded
+  `fixture-code`. Until someone does all three, an empty list keeps the lane
+  from requesting a fixture that does not exist. Note that under the fixture
+  registry an empty `MOCK_PROXY_PLATFORMS` serves every fixture. That is
+  harmless here, since nothing in the lane calls the mock.
 
 ## Still open
 
-- **The two Clockify tests are still upstream**, so `timesheets` has no e2e
-  tier: they run ungated in `e2e-plugin-system` instead of behind
-  `integrations/timesheets/**`. Deleting them from
-  `browser/e2e/tests/plugins.spec.ts` and moving them to
-  `integrations/timesheets/e2e/` is the remaining half of the split — see
+- **Quarantined e2e.** Three e2e suites are held back for blockers outside
+  this repo. Each lane keeps its `e2e` spec list, and the reason is in
+  `lanes.json`'s `quarantined` field:
+  - `pets` e2e has no tiers until #52, which moves LocalThought setup/sync to
+    reflector. Its setup dialog needs `BrowserIntegrations.describe()`, which
+    neither side has.
+  - `notion` e2e is live-only until #68 gives it a new entry point. The
+    `[data-integration=notion]` card its spec starts from was removed
+    upstream (atomic-server `4bab16ee6`).
+  - The `e2e-plugin-system` job is `continue-on-error` until upstream's
+    `plugin.spec.ts`/`plugins.spec.ts` pass at the pin.
+- **`timesheets` has no e2e tier, and nothing is left to move.** The
+  upstream Clockify tests were deleted in atomic-server `4bab16ee6` (in the
+  pin), together with the UI they drove (#44). A new timesheets e2e needs a
+  new entry point, most likely #20's timesheets drive app once
+  atomic-server#1624 and an install flow exist. See
   [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has a lane entry with no tiers, so it produces no job.
-  Its typecheck, bundle and fixture tests run inside the unsharded
-  certification step. That is correct today but means a `money`-only change
+  That is deliberate (#45): `certify.mjs --layer js` in `shared-checks` runs on
+  every `integrations/**` change and already runs exactly the
+  `tsc -p integrations/money/tsconfig.json` and
+  `vitest run --config integrations/money/vitest.config.ts` a `typecheck` or
+  `unit` tier would, plus bundle reproducibility. The lane names `moneybird`,
+  but nothing in this repo consumes Moneybird: `integrations/money/` is an
+  MT940/camt.053 uploader, and the `moneybird` entry in `catalog.json`
+  (`requires-api-plugins`) has no package here; atomic-server's generic
+  API-plugin path reads it. So a recorded `moneybird` fixture has no in-repo
+  adapter for a `fixture.test` to run it through (§4's "enforced, not
+  asserted" rule), and no tier that would start a mock proxy to serve it;
+  recording one also needs a Moneybird account. When one is recorded, it and
+  its recorder go in `integrations/money/fixtures/moneybird/`, not
+  `integrations/localthought/fixtures/`: anything specific to one plugin stays
+  in that plugin's folder, so plugins can be worked on in parallel. The shared
+  registry, `integrations/localthought/fixtures/index.mjs`, then registers it
+  as `moneybird` by importing `../../money/fixtures/moneybird/scenario.mjs`,
+  once `api/` is recorded. Give the lane a tier once
+  `money` has a server-dependent test. Until then a `money`-only change
   gets no lane feedback beyond certification.
-- The `MOCK_PROXY_PLATFORMS` the runner passes is ignored until §4 lands, so
-  every lane's mock proxy currently serves the full built-in platform set
-  rather than just its own.
+- `todoist` and `moneybird` have no mock fixture, so a lane that names them
+  gets a mock proxy serving only its other platforms (possibly none).
+  Recording them needs live credentials; see §4. `notion` needs none: both
+  its tiers stub their own proxy (#47).

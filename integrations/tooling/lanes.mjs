@@ -57,6 +57,16 @@ export function validateConfig(config) {
       throw new Error(`lane ${lane.id}: an e2e tier needs an e2e spec list`);
     if (lane.tiers.includes('live') && !lane.liveEnv)
       throw new Error(`lane ${lane.id}: a live tier needs a liveEnv name`);
+
+    if (lane.paths !== undefined) {
+      if (!Array.isArray(lane.paths))
+        throw new Error(`lane ${lane.id}: paths must be an array`);
+      for (const path of lane.paths)
+        if (!SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)))
+          throw new Error(
+            `lane ${lane.id}: path ${path} is not in a shared package (${SHARED_PACKAGES.join(', ')}); a lane owns only integrations/${lane.id}/`,
+          );
+    }
   }
 
   return config;
@@ -84,8 +94,23 @@ export function lanePorts(lane, config) {
 export const sharedPorts = config =>
   lanePorts({ index: config.sharedIndex }, config);
 
-/** The directories a lane owns, for dorny/paths-filter. */
-export const laneFilter = lane => [`integrations/${lane.id}/**`];
+/**
+ * The shared, independently built packages at the repo root that a plugin may
+ * consume by source (e.g. integrations/issue-tracker/devonian/ imports the
+ * `devonian` package). A lane may list paths in these under `paths`, so a
+ * change there still runs the plugin code that depends on it; it may never
+ * list another plugin's directory.
+ */
+export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
+
+/**
+ * The paths a lane runs on, for dorny/paths-filter: its own directory, plus
+ * any shared-package `paths` it declares.
+ */
+export const laneFilter = lane => [
+  `integrations/${lane.id}/**`,
+  ...(lane.paths ?? []),
+];
 
 /** Lanes that produce an actual matrix job; a tier-less lane is covered elsewhere. */
 export const activeLanes = lanes => lanes.filter(l => l.tiers.length > 0);
@@ -129,10 +154,14 @@ export function filtersYaml(config) {
   const block = (name, paths) =>
     `${name}:\n${paths.map(p => `  - '${p}'`).join('\n')}`;
 
+  // A lane's shared-package `paths` go into `any` too: build-server, which
+  // every lane job needs, is gated on it.
+  const lanePaths = [...new Set(config.lanes.flatMap(l => l.paths ?? []))];
+
   return [
     block('shared', SHARED_FILTER),
     ...config.lanes.map(l => block(l.id, laneFilter(l))),
-    block('any', ['integrations/**', ...SHARED_FILTER]),
+    block('any', ['integrations/**', ...SHARED_FILTER, ...lanePaths]),
   ].join('\n');
 }
 

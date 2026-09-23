@@ -1,3 +1,4 @@
+// @wc-ignore-file
 import { describe, expect, it } from 'vitest';
 import {
   clockifyImportQuery,
@@ -9,7 +10,7 @@ import {
 describe('clockifyProjection re-export', () => {
   // Projection behavior itself (start/end derivation, break/running-timer
   // skipping, project/member passthrough) is tested where it lives now:
-  // devonian/platform-lenses/clockify/lens/projection.test.ts. This just
+  // devonian/clockify/lens/projection.test.ts. This just
   // checks the wiring here still resolves to that implementation.
   it('leaves other platforms untouched', () => {
     const other = {

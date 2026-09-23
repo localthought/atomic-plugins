@@ -28,6 +28,16 @@ It was extracted from [`localthought/reflector`](https://github.com/localthought
 
 Unlike this package's other exports, `devonian/reflect` resolves to **compiled JS** (`build/src/reflect/*.js`, with matching `.d.ts`), not raw `.ts` — its target consumer is a plain `tsc`-built Node app like reflector, not a bundler/`vite`-transformed one, so `npm run build` must have run (as it does before every publish) for this subpath to resolve.
 
+## Background sync scheduler
+
+`BackgroundSync` (exported from the package root, no Node or DOM imports, so it also loads in a service worker) runs a sync pass on a persisted schedule shared by every context that can trigger it: a tab's timer (`start(pollMs)`), a service worker's `periodicsync`/`sync` events (`registerBackgroundSync` and `handleBackgroundSyncEvent`), or a Node process.
+
+- State (`nextDueAt`, `failures`, `lastError`, `paused`, with ISO 8601 times) lives in a host-supplied async key-value store under the schedule's `name`, so it survives restarts. The reflect `KvStore`s fit, and in a browser you would use IndexedDB.
+- `tick()` runs a pass only if one is due, the schedule is not paused and nobody holds the lease, and it re-reads the state inside the lease. `syncNow()` waits for the lease and ignores the due time. `withLock(fn)` puts other work that must not overlap a pass under the same lease. Leases default to Web Locks (`navigator.locks`), falling back to `processLocks()`, which is in-process only.
+- Transient failures back off exponentially, capped by `maxBackoffMs`. Failures that `isPermanent` classifies as needing a person pause the schedule until `resume()`.
+
+The GitHub issues lens (now in ontola/atomic-plugins' `integrations/issue-tracker/devonian/github-issues/`) wraps it as `createBackgroundSync`. Its README describes the browser support limits: Periodic Background Sync is Chromium-only and the browser sets the cadence. Coverage so far is unit tests with fakes, with no real-browser or service-worker run.
+
 ## Local Identifiers and IdMaps
 What I think none of the other lens projects are currently offering is a built-in way to deal with the mapping of local identifiers.
 
@@ -140,12 +150,31 @@ The native resource API accepts HTTP(S) and DID identities, including AtomicServ
 
 ### Passive platform lenses
 
-Provider transformations live in `platform-lenses/github-issues/lens/` and
-`platform-lenses/google-calendar/lens/`, exposed through the corresponding
-`devonian/platform-lenses/<platform>/lens` package entry points. These functions
-consume supplied data and return projections or patches; they do not fetch,
-subscribe, persist, or checkpoint. Their surrounding platform modules retain
-existing runtime behavior and compatibility entry points.
+Provider transformations for Google Calendar live in
+`platform-lenses/google-calendar/lens/`, exposed through the
+`devonian/platform-lenses/google-calendar/lens` package entry point. These
+functions consume supplied data and return projections or patches; they do
+not fetch, subscribe, persist, or checkpoint. The surrounding platform module
+retains existing runtime behavior and compatibility entry points.
+
+The GitHub issues, Clockify and Notion lenses moved out of this package into
+the plugin that uses each one, in the ontola/atomic-plugins repository:
+`integrations/issue-tracker/devonian/github-issues/`,
+`integrations/timesheets/devonian/clockify/` and
+`integrations/notion/devonian/notion/`. They import Devonian through the
+package root (`reconcileRecord` is exported from it for that reason).
 
 See [the platform lens boundaries](docs/atomic-data.md#passive-platform-lenses)
 for the forward and reverse mappings and their scope.
+
+## Unreleased
+
+**Breaking:** the `devonian/platform-lenses/github-issues*`,
+`devonian/platform-lenses/clockify*` and `devonian/platform-lenses/notion*`
+entry points are removed from `exports`. 0.6.1 and earlier on npm still ship
+them. There are no compatibility shims: import the lens from its plugin
+folder in ontola/atomic-plugins instead (see above). The next release must
+be at least 0.7.0.
+
+Added: `reconcileRecord`, `acknowledgedBaseline` and their `Sync*` types are
+exported from the package root.

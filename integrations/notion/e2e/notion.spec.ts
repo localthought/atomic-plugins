@@ -7,6 +7,12 @@
  * rather than any one integration, and stay upstream — the `e2e-plugin-system`
  * CI job runs them.
  *
+ * It does not use the lane's shared mock proxy. It answers its own
+ * `https://notion-proxy.test` origin with `page.route`, so it can revoke
+ * access, read PATCH bodies and edit the remote page mid-test. That is why
+ * the `notion` lane in `integrations/lanes.json` lists no platforms; see
+ * issue #47 and `integrations/PARALLEL_LANES.md`.
+ *
  * Run it the way CI does:
  *   node integrations/tooling/run-lane.mjs notion --tier e2e
  */

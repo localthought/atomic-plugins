@@ -11,6 +11,7 @@ import {
   unlanedDirectories,
   danglingLanes,
   laneFilter,
+  filtersYaml,
   root,
 } from './lanes.mjs';
 
@@ -81,18 +82,30 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
   }
 });
 
-test('a lane filter covers only its own directory', () => {
-  for (const lane of config.lanes)
-    assert.deepEqual(laneFilter(lane), [`integrations/${lane.id}/**`]);
+test('a lane filter covers its own directory and no other plugin', () => {
+  for (const lane of config.lanes) {
+    const [own, ...extra] = laneFilter(lane);
+    assert.equal(own, `integrations/${lane.id}/**`);
+    for (const path of extra)
+      assert.ok(!path.startsWith('integrations/'), `${lane.id} claims ${path}`);
+  }
 });
+
+const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
 
 test('activeLanes drops tier-less lanes', () => {
   const ids = activeLanes(config.lanes).map(l => l.id);
   assert.ok(!ids.includes('money'), 'money has no tiers and needs no job');
-  assert.ok(ids.includes('pets'));
+  // Synthetic, not a real lane: which real lanes have tiers changes when one
+  // is quarantined (see "quarantined" in lanes.json).
+  assert.deepEqual(
+    activeLanes([
+      lane({ id: 'idle' }),
+      lane({ id: 'busy', tiers: ['unit'] }),
+    ]).map(l => l.id),
+    ['busy'],
+  );
 });
-
-const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
 const cfg = (...lanes) => ({ portBase: 19100, sharedIndex: 9, lanes });
 
 test('duplicate indexes are rejected, and the message names both lanes', () => {
@@ -131,4 +144,27 @@ test('a live tier without a liveEnv is rejected', () => {
     () => validateConfig(cfg(lane({ tiers: ['live'] }))),
     /needs a liveEnv name/,
   );
+});
+
+test('lane paths are limited to shared packages', () => {
+  assert.deepEqual(laneFilter(lane({ paths: ['devonian/src/**'] })), [
+    'integrations/a/**',
+    'devonian/src/**',
+  ]);
+  assert.throws(
+    () => validateConfig(cfg(lane({ paths: ['integrations/b/**'] }))),
+    /not in a shared package/,
+  );
+  assert.throws(
+    () => validateConfig(cfg(lane({ paths: 'devonian/**' }))),
+    /paths must be an array/,
+  );
+});
+
+// build-server, which every lane job needs, runs only when `any` matched, so
+// a change to a lane's shared-package path must match `any` as well.
+test('lane paths are also in the any filter', () => {
+  const yaml = filtersYaml(cfg(lane({ paths: ['devonian/src/**'] })));
+  const any = yaml.slice(yaml.indexOf('any:'));
+  assert.match(any, /- 'devonian\/src\/\*\*'/);
 });
