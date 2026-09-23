@@ -9,8 +9,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import document from './catalog/notion.json';
-import provenance from './catalog/notion.provenance.json';
+import document from './catalog/notion.json' with { type: 'json' };
+import provenance from './catalog/notion.provenance.json' with { type: 'json' };
 import fixture, {
   DATA_SOURCE,
   FIXTURE_PAGE_SIZE,

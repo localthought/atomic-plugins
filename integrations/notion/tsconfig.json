@@ -2,8 +2,13 @@
   "extends": "../issue-tracker/tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "resolveJsonModule": true,
     "paths": {
-      "@tomic/lib": ["../../browser/lib/src/index.ts"]
+      "@tomic/lib": ["../../browser/lib/src/index.ts"],
+      // This repo's syncables source until the release with the
+      // `syncables/browser` entry point is on npm. Mirrored in
+      // vitest.config.ts and app/build.mjs.
+      "syncables/browser": ["../../syncables/src/browser.ts"]
     }
   },
   "include": [
@@ -12,6 +17,8 @@
     "atomic.ts",
     "localthought.ts",
     "host/async-plugin.ts",
-    "host/browser-sync.ts"
-  ]
+    "host/browser-sync.ts",
+    "app/*.ts"
+  ],
+  "exclude": ["app/*.test.ts", "app/fakeStore.ts"]
 }

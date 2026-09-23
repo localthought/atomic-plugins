@@ -1,12 +1,13 @@
 # Notion activation dependencies
 
 > **Moved from atomic-server's `planning/notion-proxy/`.** The two staging
-> documents this names, `notion.openapi.yaml` and `auth-overlay.yaml`, now live
-> in [`../../catalog/`](../../catalog/) as `notion.openapi.json` and
-> `auth-overlay.json` (same content, converted to JSON so tests can compose
-> them without a YAML parser), next to the new pagination and CRUD-causality
-> overlays. `offline-certification.json` is the sandbox plugin's last offline
-> run, kept as a record.
+> documents it names were published since and are not copied here:
+> `notion.openapi.yaml` is `localthought/openapi-directory@0c8e229`
+> `APIs/notion.com/2026-03-11/openapi.yaml` (the same document), and
+> `auth-overlay.yaml` is `overlays/notion.com/2026-03-11/auth-overlay.yaml`,
+> both listed in `overlays/catalog.json`. The composed result is
+> [`../../catalog/notion.json`](../../catalog/). `offline-certification.json`
+> is the sandbox plugin's last offline run, kept as a record.
 
 The generic proxy implementation is merged in [integration-proxy PR #67](https://github.com/localthought/integration-proxy/pull/67), commit
 `516079e5a3ecd254c748995b50570998e486e4fc`. CI passed, including database and network tests. Heroku release **v64** deployed this exact merge commit successfully; `/` and `/catalog` returned HTTP 200. It implements generic JSON OAuth operations and fixed OpenAPI header defaults with no provider-specific production branches. The proxy repository owns its regression fixture and code; no duplicate patch is kept here.
