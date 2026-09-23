@@ -29,15 +29,16 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      devonian: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.devonian }}
+      devonian: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.devonian }}
     steps:
       # dorny/paths-filter reads changed files from the pull_request API, which
-      # doesn't exist for a merge_group event, so this step is skipped there and
-      # the output above is forced to 'true' instead: the queue always runs the
-      # suite rather than misdetecting an empty diff.
+      # doesn't exist for a merge_group or workflow_dispatch event, so this step
+      # is skipped there and the output above is forced to 'true' instead: the
+      # queue and a manual dispatch always run the suite rather than
+      # misdetecting an empty diff and reporting a green run that tested nothing.
       - name: Path filters
         id: filter
-        if: github.event_name != 'merge_group'
+        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         with:
           filters: |

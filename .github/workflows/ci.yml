@@ -102,12 +102,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # dorny/paths-filter reads changed files from the pull_request API, which
-      # doesn't exist for a merge_group event, so it is skipped there and the
-      # decide step below forces the full matrix instead: the queue always runs
-      # everything rather than misdetecting an empty diff.
+      # doesn't exist for a merge_group or workflow_dispatch event, so it is
+      # skipped there and the decide step below forces the full matrix instead:
+      # the queue always runs everything rather than misdetecting an empty diff,
+      # and a manual dispatch (typically run to prove a branch healthy) can't
+      # skip every job and have `CI` report a green run that tested nothing.
       - name: Path filters
         id: filter
-        if: github.event_name != 'merge_group'
+        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         with:
           filters: ${{ steps.gen.outputs.filters }}
@@ -116,8 +118,8 @@ jobs:
         id: decide
         env:
           # `changes` is dorny's JSON array of the filter names that matched.
-          CHANGED: ${{ github.event_name == 'merge_group' && '["shared"]' || steps.filter.outputs.changes }}
-          ANY: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.any }}
+          CHANGED: ${{ github.event_name != 'pull_request' && '["shared"]' || steps.filter.outputs.changes }}
+          ANY: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.any }}
         run: |
           set -eu
           matrix=$(node integrations/tooling/lanes.mjs matrix "$CHANGED")
