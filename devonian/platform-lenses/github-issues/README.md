@@ -245,25 +245,20 @@ holds the user's other comments.
 for a tracker. Because it includes the drive, trackers in different drives never
 share a bridge snapshot or write journal.
 
-### Host changes needed in atomic-server (not made here)
+### Host integration
 
-These changes go in `browser/data-browser/src/chunks/DevonianDemo/demo.mjs` and
-`routes/DevonianDemoRoute.tsx` on `develop`:
+This lens has no host at the moment. atomic-server's browser demo
+(`DevonianDemo/demo.mjs` and `DevonianDemoRoute.tsx`) was removed in
+ontola/atomic-server#1612, and nothing in atomic-server imports devonian now.
+A future host that targets the user's real drive would:
 
-- `openDemo(store, { target: 'new-local' | 'current-drive', ... })`:
-  - For `current-drive`, use `store.getDrive()`.
-  - Skip creating a drive and calling `registerLocalOnlyDrive`.
-  - Replace the inline table, provenance and comments-folder setup with
-    `provisionTracker(store, { drive, repository, buildTable: spec =>
-    buildTableFromSpec(store, spec, { parent: drive, driveSubject: drive,
-    addToOntology: async () => {} }) })`.
-  - Keep `new-local` as the default sample mode.
-- Derive the state key with `trackerStateKey`. On reopen, call
-  `registerLocalOnlyDrive` only when the tracker was created as `new-local` and
-  has not been promoted.
-- In the route UI, add a "Sync into: this drive / a new local-only drive" choice.
-  Optionally add a "Push this tracker to my server" action that calls
-  `store.promoteLocalDrive(drive)`.
+- Call `provisionTracker` on an existing drive, such as `store.getDrive()`,
+  instead of creating a new drive and calling `registerLocalOnlyDrive`.
+- Pass its own table builder as `buildTable`.
+- Key its saved state with `trackerStateKey`.
+
+The earlier demo's design notes are in atomic-server's
+`planning/devonian-reconnect.md`.
 
 ### Not yet verified or supported
 
