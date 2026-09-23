@@ -18,7 +18,13 @@
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],
-      "tiers": ["unit"]
+      "tiers": ["unit"],
+      "paths": [
+        "devonian/src/**",
+        "devonian/package.json",
+        "devonian/pnpm-lock.yaml"
+      ],
+      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here."
     },
     {
       "id": "localthought",

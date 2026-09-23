@@ -9,3 +9,4 @@ export * from './atomic/Store.js';
 export * from './atomic/IdentityMap.js';
 export * from './atomic/Lens.js';
 export * from './background/index.js';
+export * from './reconcileRecord.js';

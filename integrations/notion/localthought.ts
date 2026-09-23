@@ -6,7 +6,7 @@
  * `Notion-Version` header. A host that composes `BrowserIntegrations` with a
  * sync engine pages through one data source's pages with
  * `notionDataSourceQuery`. The platform lens (in
- * devonian/platform-lenses/notion) then turns the fetched pages into typed
+ * devonian/notion/) then turns the fetched pages into typed
  * rows keyed by stable Notion property ids.
  *
  * Not here yet: the CRUD Causality and pagination overlay that would let
@@ -30,7 +30,7 @@ export {
   type NotionFieldType,
   type NotionProjectionOptions,
   type Term,
-} from 'devonian/platform-lenses/notion';
+} from './devonian/notion/index.js';
 
 export const DATA_SOURCE_QUERY_PATH = '/v1/data_sources/{data_source_id}/query';
 /** Notion's maximum `page_size` for data source queries. */

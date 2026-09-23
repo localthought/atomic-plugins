@@ -12,7 +12,7 @@ const DS = '248104cd477e80afbc30000bd28de8f9';
 describe('notionProjection re-export', () => {
   // The projection itself (the supported subset, fail-closed text,
   // archived pages, type drift) is tested where it lives:
-  // devonian/platform-lenses/notion/lens/projection.test.ts. This test only
+  // devonian/notion/lens/projection.test.ts. This test only
   // checks that the wiring here still resolves to that implementation.
   it('projects a plain title into the record name', () => {
     const projected = notionProjection({

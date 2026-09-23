@@ -11,7 +11,7 @@ import {
 import type { RawNamed, RawTimeEntry } from './clockifyApi.js';
 
 /**
- * Runs the one Clockify lens (`devonian/platform-lenses/clockify`, via
+ * Runs the one Clockify lens (`../devonian/clockify/`, via
  * `../localthought.ts`) over records fetched by this app, instead of
  * re-implementing it as the Phase 2 branch did. The lens reads the
  * lower-cased field names the generic engine produces (`timeinterval`,

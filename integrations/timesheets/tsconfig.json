@@ -9,9 +9,6 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "devonian/platform-lenses/clockify": [
-        "../../devonian/platform-lenses/clockify/index.ts"
-      ],
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },

@@ -1,7 +1,7 @@
 // @wc-ignore-file
 /**
  * Checks the recorded todoist mock-proxy fixture (fixtures/todoist/) against
- * the adapter that consumes it, ../localthought/todoist.ts. Per PARALLEL_LANES.md §4 a
+ * the adapter that consumes it, ./todoist.ts. Per PARALLEL_LANES.md §4 a
  * recording that drops a field the adapter reads must fail here, not in e2e.
  *
  * The api/-dependent tests skip until fixtures/todoist/record.mjs has been
@@ -19,10 +19,7 @@ import { fixtures } from '../localthought/fixtures/index.mjs';
 import { redactor } from './fixtures/todoist/record.mjs';
 import scenario, { recorded } from './fixtures/todoist/scenario.mjs';
 import type { FetchedPlatform, FetchedRecord } from '../localthought/schema';
-import {
-  todoistFields as fields,
-  todoistProjection,
-} from '../localthought/todoist';
+import { todoistFields as fields, todoistProjection } from './todoist';
 
 type Row = Record<string, JSONValue>;
 type Page = {

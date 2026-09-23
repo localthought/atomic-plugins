@@ -6,7 +6,8 @@ key (Preferences → **Manage API keys** → **Generate new** at
 https://app.clockify.me/manage-api-keys) is entered on LocalThought's consent
 page and sealed into a per-connection credential by the integration proxy. The
 generic Syncables engine pages through `timeEntries` from the proxy's Clockify
-catalog document; `localthought.ts` here is the only Clockify-specific code.
+catalog document; `localthought.ts` and the lens it re-exports from
+`devonian/clockify/` are the only Clockify-specific code.
 
 ## What the lens does
 
@@ -53,7 +54,7 @@ What it does today, covered by unit tests only:
 
 - `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`, the
   same window as above), plus projects and users for naming, runs the one
-  Clockify lens (`devonian/platform-lenses/clockify`) over them, and
+  Clockify lens (`devonian/clockify/`) over them, and
   reconciles rows into the host's data table (`store.getData()`), or under the
   App when there is none. Identity is a stored `entry-id` found via
   `store.query()`, restricted to children of that table; `create` in

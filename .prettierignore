@@ -1,3 +1,5 @@
 # Committed esbuild output (verified byte-for-byte against a fresh bundle by
-# certify.mjs's "reproducible-bundle" check), not hand-written source.
-integrations/*/plugin.js
+# certify.mjs's "reproducible-bundle" check, or for
+# issue-tracker/devonian/github-issues/ by its adapter.test.ts), not
+# hand-written source.
+integrations/**/plugin.js

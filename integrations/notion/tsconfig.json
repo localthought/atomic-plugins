@@ -3,9 +3,6 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "devonian/platform-lenses/notion": [
-        "../../devonian/platform-lenses/notion/index.ts"
-      ],
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },

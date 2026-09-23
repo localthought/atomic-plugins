@@ -32,9 +32,6 @@ export async function build({ outfile } = {}) {
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
     alias: {
-      'devonian/platform-lenses/clockify': path(
-        '../../../devonian/platform-lenses/clockify/index.ts',
-      ),
       '@tomic/lib': path('tomic-lib-shim.ts'),
     },
     logLevel: 'silent',

@@ -226,7 +226,7 @@ deployment or live account writes have been performed as part of this work.
 
 The `devonian-todoist` catalog entry connects the proxy's `todoist` platform
 through the same generic flow, with a read-only Devonian lens
-(`todoist.ts`) on the way in. The proxy's Todoist catalog only grants
+(`../issue-tracker/todoist.ts`) on the way in. The proxy's Todoist catalog only grants
 `data:read`, so the lens has no write direction and the folder's Sync panel
 has no "preview edits" step: closing, editing or creating an issue locally
 is never sent to Todoist.
@@ -242,7 +242,7 @@ over; the same `due-day` column also works as a Calendar view's date.
 Installation records the lens as `extension: 'tasks'` and identity suffix
 `:devonian-tasks`. A Todoist folder installed from the raw proxy card
 (`proxy:todoist`, `extension: 'none'`) stays a plain import; the lens is
-never implied for an existing installation. `todoist.test.ts` covers the
+never implied for an existing installation. `../issue-tracker/todoist.test.ts` covers the
 projection; the OAuth connection itself is checked manually against the live
 proxy, as for the other platforms.
 
