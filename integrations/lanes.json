@@ -37,7 +37,8 @@
       "id": "notion",
       "index": 4,
       "platforms": ["notion"],
-      "tiers": ["live", "e2e"],
+      "tiers": ["live"],
+      "quarantined": "e2e: the [data-integration=notion] card the spec starts from was removed upstream (atomic-server 4bab16ee6). Re-add \"e2e\" to tiers once #68 gives it an entry point. The spec list below is kept so that is a one-word change.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
@@ -45,7 +46,8 @@
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
-      "tiers": ["e2e"],
+      "tiers": [],
+      "quarantined": "e2e: the setup dialog needs BrowserIntegrations.describe(), which neither side has since the WASM bridge was removed; blocked on #52 (move LocalThought setup/sync to reflector). Re-add \"e2e\" to tiers then. With no tiers this lane produces no job, like money.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
