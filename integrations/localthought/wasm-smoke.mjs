@@ -11,7 +11,7 @@ await init({
   ),
 });
 const document = await readFile(
-  new URL('./fixtures/pets/document.json', import.meta.url),
+  new URL('../pets/fixtures/pets/document.json', import.meta.url),
   'utf8',
 );
 const description = JSON.parse(await describeIntegration(document));

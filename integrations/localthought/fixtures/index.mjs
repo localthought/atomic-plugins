@@ -1,5 +1,8 @@
 /**
- * Fixture registry for mock-proxy.mjs, one directory per platform. The proxy
+ * Fixture registry for mock-proxy.mjs. This file is the only shared part:
+ * each platform's fixture lives in its own plugin's folder, at
+ * integrations/<plugin>/fixtures/<platform>/scenario.mjs, so a plugin's mock
+ * changes with the plugin and triggers only its lane. The proxy
  * owns the protocol (PKCE, /connect, redemption, code rotation); a fixture
  * owns only its platform's catalog document and API behaviour:
  *
@@ -12,10 +15,10 @@
  * See integrations/PARALLEL_LANES.md §4 for what is still missing (recorded
  * api/ bodies, record.mjs, fixture.test.mjs, the drift guard).
  */
-import clockify from './clockify/scenario.mjs';
-import githubIssues from './github-issues/scenario.mjs';
-import googleCalendar from './google-calendar/scenario.mjs';
-import pets from './pets/scenario.mjs';
+import googleCalendar from '../../calendar/fixtures/google-calendar/scenario.mjs';
+import githubIssues from '../../issue-tracker/fixtures/github-issues/scenario.mjs';
+import pets from '../../pets/fixtures/pets/scenario.mjs';
+import clockify from '../../timesheets/fixtures/clockify/scenario.mjs';
 
 export const fixtures = {
   clockify,

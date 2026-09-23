@@ -86,7 +86,7 @@ async function waitFor(url, what) {
  * Start the stack on `ports`. Returns a `stop()` that kills all three.
  * `platforms` is the mock proxy's fixture set, passed as
  * MOCK_PROXY_PLATFORMS: the mock serves only those of them that have a
- * fixture under integrations/localthought/fixtures/. Omitted (the shared,
+ * fixture registered in integrations/localthought/fixtures/index.mjs. Omitted (the shared,
  * non-lane stack) serves every fixture; an empty list — a lane whose tests
  * never touch the shared mock — does not start the mock at all. See §4 of
  * integrations/PARALLEL_LANES.md.

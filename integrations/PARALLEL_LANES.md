@@ -238,15 +238,21 @@ Two failure modes are reported by cause rather than by symptom:
 **Done:** the registry, the migration of the four existing platforms, and
 `MOCK_PROXY_PLATFORMS`. Deviations from the design below:
 
-- Fixtures live in `integrations/localthought/fixtures/<platform>/`, not
-  `integrations/tooling/fixtures/`: atomic-server's dagger e2e pipeline copies
-  only `integrations/localthought/` into its container, so fixtures outside it
-  would not be there. Revisit if the mock moves next to `integration-proxy/`.
+- Fixtures live in their plugin's folder, not `integrations/tooling/fixtures/`:
+  `integrations/<plugin>/fixtures/<platform>/` (`pets/fixtures/pets/`,
+  `timesheets/fixtures/clockify/`, `issue-tracker/fixtures/github-issues/`,
+  `calendar/fixtures/google-calendar/`). Everything specific to one plugin
+  stays inside that plugin's folder, so plugins can be developed in parallel
+  and a fixture change triggers only its own lane. Only the registry,
+  `integrations/localthought/fixtures/index.mjs`, is shared; it imports each
+  fixture by relative path. Caveat: atomic-server's dagger e2e pipeline
+  copies only `integrations/localthought/` into its container, so it has to
+  copy all of `integrations/` once it takes this layout.
 - Each platform is one `scenario.mjs` whose default export declares `title`,
-  `document` or `documentFile`, `jsonBody` and `create()`; see
-  `fixtures/index.mjs`. `pets` keeps its hand-written records in
-  `pets/scenario.mjs` and its document at `pets/document.json`; no `api/`
-  recordings exist for any platform yet.
+  `document` or `documentFile`, `jsonBody` and `create()`; see the registry.
+  `pets` keeps its hand-written records in `pets/fixtures/pets/scenario.mjs`
+  and its document next to it in `document.json`; no `api/` recordings exist
+  for any platform yet.
 - An unset or empty `MOCK_PROXY_PLATFORMS` serves every fixture, so callers
   that never set it (atomic-server's `e2e-server.sh` and dagger) are
   unchanged. A requested platform without a fixture is logged and skipped,
