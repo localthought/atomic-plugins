@@ -1,6 +1,11 @@
 {
   "name": "syncables",
   "version": "0.18.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ontola/atomic-plugins.git",
+    "directory": "syncables"
+  },
   "description": "Reads an OpenAPI document to run a mock API server and a client that syncs a local copy of the API's dataset.",
   "type": "module",
   "main": "build/src/index.js",
