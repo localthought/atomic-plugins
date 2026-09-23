@@ -128,6 +128,13 @@ credentials, subscriptions, identity lookups, or durable synchronization state.
   It retains the existing field conflict and interval validation. It does not
   write recurrence changes or replace the complete Google event. Empty strings
   explicitly clear supported text fields.
+- Notion's `notionProjection(fetched, { dataSource })` is read-only. It maps
+  data-source pages that syncables fetched to typed values, keyed by
+  `notionFieldShortname(propertyId)`. It covers plain title/rich text, number,
+  checkbox, url, email, phone, select/status option ids and sorted
+  multi-select option ids. Formatted text is left unprojected and reported in
+  `errors`, and so are archived or trashed pages. The raw `properties` pass
+  through. There is no reverse mapping yet.
 
 Import these through `devonian/platform-lenses/github-issues/lens` or
 `devonian/platform-lenses/google-calendar/lens`. Calendar's projection helpers

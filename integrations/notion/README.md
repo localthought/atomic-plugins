@@ -108,3 +108,40 @@ The API version remains `2026-03-11`.
 
 Automated proxy tests use authored responses. Successful local tests do not
 certify live Notion authorization or production deployment.
+
+## LocalThought/Devonian lens (read-only, first slice)
+
+Issue #8 moves Notion onto the standard reflector/syncables/Devonian stack.
+This is the read-only first slice. It is not wired into any UI, and nothing
+in it has been verified against live Notion.
+
+- `devonian/platform-lenses/notion` (`notionProjection`) maps data-source
+  pages that syncables fetched (`resource: 'page'`) to typed values. They are
+  keyed by `notionFieldShortname(propertyId)`, a hex encoding of the
+  case-sensitive Notion property id. Covered: plain title/rich text, number,
+  checkbox, url, email, phone, select/status option id, and sorted
+  multi-select option ids. Notion `null` leaves the key absent. `0`, `false`
+  and `[]` are kept. Formatted text, mentions and links are left unprojected
+  and listed in `errors`, and so are archived or trashed pages. The raw
+  `properties` object passes through. A page outside the given data source,
+  or a property whose type changes during one fetch, throws.
+- `localthought.ts` re-exports the lens, together with
+  `notionDataSourceQuery(dataSource, cursor?)`. That helper builds a single
+  proxy-relative `POST /v1/data_sources/{id}/query` (`page_size` 100, with
+  `start_cursor` in the body) for `BrowserIntegrations.request()`.
+
+Not done yet:
+
+- A CRUD Causality and pagination overlay for Notion's body-cursor
+  queries. The proxy's composed document has neither.
+- A two-way Devonian bridge: journalled writes, identity by page id, and a
+  missing page treated as a conflict.
+- View and property-rename reconciliation, and a `devonian-notion` catalog
+  entry.
+
+Until those land, `plugin.ts` stays the only path with two-way sync.
+
+```sh
+./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts localthought
+(cd devonian && pnpm exec vitest run --config __tests__/vitest.config.ts platform-lenses/notion)
+```

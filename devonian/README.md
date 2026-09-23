@@ -140,8 +140,9 @@ The native resource API accepts HTTP(S) and DID identities, including AtomicServ
 
 ### Passive platform lenses
 
-Provider transformations live in `platform-lenses/github-issues/lens/` and
-`platform-lenses/google-calendar/lens/`, exposed through the corresponding
+Provider transformations live in `platform-lenses/github-issues/lens/`,
+`platform-lenses/google-calendar/lens/`, `platform-lenses/clockify/lens/` and
+`platform-lenses/notion/lens/` (read-only), exposed through the corresponding
 `devonian/platform-lenses/<platform>/lens` package entry points. These functions
 consume supplied data and return projections or patches; they do not fetch,
 subscribe, persist, or checkpoint. Their surrounding platform modules retain
