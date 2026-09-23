@@ -225,7 +225,7 @@ it('supports the demo callback and write credentials', async () => {
 
     return new Response('{"id":1}', {
       status: 201,
-      headers: { 'X-Connection-Code': 'next' },
+      headers: { 'X-Connection-Code': 'next', Link: '<https://x/?p=2>' },
     });
   });
   await expect(
@@ -239,7 +239,16 @@ it('supports the demo callback and write credentials', async () => {
       method: 'POST',
       body: '{"title":"new"}',
     }),
-  ).toEqual({ status: 201, body: '{"id":1}' });
+  ).toEqual({
+    status: 201,
+    // Response headers reach the caller (pagination needs `Link`), except
+    // the rotated code, which never leaves this class.
+    headers: {
+      'content-type': 'text/plain;charset=UTF-8',
+      link: '<https://x/?p=2>',
+    },
+    body: '{"id":1}',
+  });
   expect(JSON.parse([...values.values()][0]).code).toBe('next');
 });
 it('forwards the conditional event version while keeping authorization host-owned', async () => {

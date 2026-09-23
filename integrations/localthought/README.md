@@ -1,17 +1,20 @@
 # LocalThought browser integrations
 
 The LocalThought flow runs entirely in the browser: catalog discovery, OAuth
-consent, PKCE-protected return handling, paginated Syncables reads, ontology
-creation and local Store/OPFS writes. Installation validates access once, creates
+consent, PKCE-protected return handling, paginated reads of the platform's
+catalog document, ontology creation and local Store/OPFS writes. Installation validates access once, creates
 a folder, and starts an automatic inbound import without a proposal dialog. No AtomicServer HTTP
 instance is needed. LocalThought remains the remote OAuth and API proxy.
 Of that, `BrowserIntegrations` (`browser.ts`, this directory) provides only
 catalog discovery, OAuth/PKCE and the rotating-code authenticated proxy call
 — see [Building a LocalThought connector](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector)
 in the parent README for exactly where that boundary sits. The paginated
-Syncables read and ontology creation are done by a sync engine that
-`atomic-server` composes on top of it; that engine's code does not live in
-this repo.
+read and ontology creation are `reflector-read.ts` (this directory):
+reflector's read path ported to the browser (ontola/atomic-plugins#52), which
+reaches the provider only through `BrowserIntegrations.request()`.
+`PlatformReader` composes the two, and it is what atomic-server's data-browser
+calls for setup (`describe`), the installation access check (`check`) and
+every import (`read`).
 
 Open Integrations, select a platform and choose **Install and connect**. The
 browser creates a PKCE verifier and opens LocalThought's consent page, where
@@ -33,15 +36,30 @@ Web Locks serialize rotating codes across tabs; a request consumes its code
 before dispatch and saves the replacement before processing data. Uncertain
 requests cannot silently replay credentials.
 
-The pure import mapper produces the existing reviewed intents from what the
-sync engine reads; user-edited plugin source is not executed on this path.
-Local edits and repeated imports retain the existing reconciliation behavior.
-(This paragraph used to describe a Rust `syncables` crate vendored under
-`integrations/localthought/syncables/` and exposed to the browser via
-`atomic-server`'s `wasm/src/integrations.rs` — that vendoring has been
-removed from this repo; see the parent README's note on where the engine
-now lives. The standalone TypeScript `syncables` package is unrelated and
-lives at [`syncables/`](../../syncables/) in this repo's root.)
+The pure import mapper produces the existing reviewed intents from what
+`reflector-read.ts` reads; user-edited plugin source is not executed on this
+path. Local edits and repeated imports retain the existing reconciliation
+behavior.
+
+`reflector-read.ts` replaces the Rust `syncables` crate that used to be
+vendored under `integrations/localthought/syncables/` and exposed to the
+browser through `atomic-server`'s `wasm/src/integrations.rs` (both removed in
+atomic-server#1618). It is a port, not an import, of three sources:
+- `discoverResourceModel` in [`reflector/src/sync/resources.ts`](../../reflector/src/sync/resources.ts)
+  for `crudResources`;
+- the removed Rust `derive_ontology`, for the `FetchedPlatform` ontology shape
+  in `schema.ts`;
+- [`syncables/src/pagination/`](../../syncables/src/pagination/) for the
+  `pageNumber`/`pageToken`/`nextLink` schemes.
+
+It is a port because atomic-server's data-browser only gets `integrations/`,
+and the published `syncables` entry point imports `node:http` and `node:fs`.
+Not ported: standalone `x-crud` reads and cross-collection links. A collection
+gets its path variables only from setup values or from a parent collection's
+identity binding (a calendar's events, once per calendar). The catalog document
+is read as JSON from `/catalog/<platform>.json`. If that route 404s, the reader
+falls back to `.yaml` when its body parses as JSON. A YAML-only proxy fails
+with an explicit error.
 
 ## Installation and browser refresh
 
@@ -84,7 +102,8 @@ silently take over the old plugin tables.
 
 ## Build and proxy requirements
 
-- Build `atomic-wasm` using `cd browser/data-browser && pnpm build:wasm`.
+- The integration-proxy must serve `/catalog/<platform>.json`
+  (ontola/atomic-plugins#52); see above for the `.yaml` fallback.
 - Open **Settings → Integration** to select the integration-proxy URL. The
   preference is saved in this browser and applies without rebuilding. Connections
   are isolated by proxy origin; switching back restores that proxy’s connections.
@@ -111,8 +130,8 @@ server plugin execution, actions and schedules are outside this migration.
 ## Checks
 
 ```sh
-cargo check -p atomic-wasm --target wasm32-unknown-unknown
 browser/node_modules/.bin/vitest run --config integrations/localthought/vitest.config.ts
+browser/node_modules/.bin/tsc -p integrations/localthought/tsconfig.json
 ```
 
 For the browser-only mock journey (no AtomicServer on port 19999):

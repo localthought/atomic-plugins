@@ -33,6 +33,9 @@ Authorization Code flow with PKCE.
 - `GET /catalog` — lists the available integration platform names.
 - `GET /catalog/{platform}.yaml` — returns the OpenAPI document for that
   platform with its configured overlays applied.
+- `GET /catalog/{platform}.json` — the same document as JSON, for browser
+  clients without a YAML parser (atomic-server's data-browser reads this one;
+  see atomic-plugins#52).
 - `GET /connect?platform=github-issues&redirect_uri=<url>&user_id=<actor>&code_challenge=<S256>&code_challenge_method=S256&credentials=connection` — starts a browser connection without a tenant secret. For a catalog platform that explicitly selects `tenantIdentity`, one provider OAuth authorization establishes the tenant identity and connection credential. Other platforms retain the configured application-login flow.
 - `POST /connect/authorize` — approves the selected platform with a short-lived, cookie-bound CSRF token and starts provider OAuth. The authenticated application account determines the tenant; the caller supplies its local user/agent identifier. The consent page shows the destination hub origin and uses `Referrer-Policy: same-origin`, so its form submission retains a concrete origin without sending a referrer to the external OAuth provider.
 - `POST /connect/redeem` — exchanges `{ "code": "<callback connection_code>", "code_verifier": "<original verifier>" }` for `{ "connection_code": "<rotating proxy credential>", "platform": "github-issues" }`. The handoff expires after five minutes, requires S256 PKCE, and is consumed atomically. Wrong verifiers do not consume a legitimate handoff. Responses have `Cache-Control: no-store`; browser requests omit cookies.

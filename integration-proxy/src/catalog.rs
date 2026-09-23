@@ -637,6 +637,22 @@ pub async fn document(Path(file): Path<String>, State(state): State<AppState>) -
         )
         .into_response();
     }
+    // `.json` is the same document for browser clients, which carry no YAML
+    // parser (atomic-plugins#52: the data-browser reads it directly now that
+    // the WASM describe/fetch bridge is gone).
+    if let Some(platform) = file.strip_suffix(".json") {
+        let Some(document) = state.catalog.get(platform) else {
+            return (StatusCode::NOT_FOUND, "catalog platform not found").into_response();
+        };
+        return match serde_yaml::from_str::<serde_json::Value>(document) {
+            Ok(value) => Json(value).into_response(),
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "invalid catalog document",
+            )
+                .into_response(),
+        };
+    }
     let Some(platform) = file.strip_suffix(".yaml") else {
         return (StatusCode::NOT_FOUND, "catalog platform not found").into_response();
     };
@@ -1228,8 +1244,28 @@ mod tests {
                     .unwrap();
             assert_eq!(document["openapi"], "3.0.0");
             assert!(document["paths"].is_object());
+            // The `.json` form is the same document, for browser clients.
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/catalog/{name}.json"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{name}.json");
+            let json: Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            assert_eq!(json, document, "{name}.json");
         }
-        for path in ["/catalog/unknown.yaml", "/catalog/github-issues.json"] {
+        for path in [
+            "/catalog/unknown.yaml",
+            "/catalog/unknown.json",
+            "/catalog/github-issues.txt",
+        ] {
             let response = app
                 .clone()
                 .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())

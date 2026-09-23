@@ -109,7 +109,16 @@ test('MOCK_PROXY_PLATFORMS restricts the catalog, consent and catalog documents'
       'mock-proxy: no fixture for todoist; not served',
     ]);
     assert.equal((await fetch(`${base}/catalog/pets.yaml`)).status, 200);
+    const petsJson = await fetch(`${base}/catalog/pets.json`);
+    assert.equal(petsJson.status, 200);
+    assert.equal((await petsJson.json()).info.title, 'Pets');
+    // `.json` must not swallow `.selection.json` as platform `pets.selection`.
+    assert.deepEqual(
+      await (await fetch(`${base}/catalog/pets.selection.json`)).json(),
+      { query_overrides: [] },
+    );
     assert.equal((await fetch(`${base}/catalog/clockify.yaml`)).status, 404);
+    assert.equal((await fetch(`${base}/catalog/clockify.json`)).status, 404);
     assert.equal(
       (await fetch(`${base}/catalog/clockify.selection.json`)).status,
       404,
@@ -144,8 +153,12 @@ test('an empty platform list serves every fixture', async () => {
       'google-calendar',
       'pets',
     ]);
-    for (const id of ['clockify', 'google-calendar', 'pets'])
+
+    for (const id of ['clockify', 'google-calendar', 'pets']) {
       assert.equal((await fetch(`${base}/catalog/${id}.yaml`)).status, 200);
+      assert.equal((await fetch(`${base}/catalog/${id}.json`)).status, 200);
+    }
+
     assert.ok(server.github.createIssue);
     assert.ok(server.calendar.events);
     assert.ok(server.clockify.state);

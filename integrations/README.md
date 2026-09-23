@@ -293,15 +293,27 @@ section explains where the terms **reflector**, **syncables** and
   `Storage` and the proxy origin, **is** "a localthought instance" from a
   plugin's point of view. It runs PKCE OAuth, manages the rotating-code
   connection, and exposes `catalog()`/`request()` as a generic authenticated
-  proxy call. **It does not read or sync an OpenAPI document itself** —
-  that used to happen through an injected `Engine`
+  proxy call, plus `catalogDocument()`/`catalogSelection()` for the
+  platform's catalog document (JSON). **It does not read or sync an OpenAPI
+  document itself.** That used to happen through an injected `Engine`
   (`describeIntegration`/`fetchIntegration`) backed by a WASM build of a
-  vendored **syncables** Rust crate, but that bridge lived in the wrong
-  repo: it depended on `atomic-server`'s WASM build
-  (`wasm/src/integrations.rs`, `wasm/Cargo.toml`) and has been removed from
-  here entirely. A caller that needs full OpenAPI-driven sync composes its
-  own such engine on top of `BrowserIntegrations`'s `request()` — that's
-  `atomic-server`'s responsibility now, not this repo's.
+  vendored **syncables** Rust crate. That bridge depended on `atomic-server`'s
+  WASM build (`wasm/src/integrations.rs`, `wasm/Cargo.toml`), and it has been
+  removed from both repos (atomic-server#1618).
+- **`PlatformReader`** (`integrations/localthought/reflector-read.ts`) replaces
+  that bridge on the reflector path
+  ([#52](https://github.com/ontola/atomic-plugins/issues/52)). It is
+  reflector's read path ported to the browser: resource discovery from
+  `crudResources`, the pagination-schemes subset, and a derived ontology, all
+  over `BrowserIntegrations.request()` as its only transport. In reflector the
+  transport is `authorizedFetch()`. `describe(platform)` builds the setup form,
+  `check(...)` makes the one-request access check at installation, and
+  `read(...)` makes the full paginated import that returns a
+  `FetchedPlatform`. atomic-server's data-browser calls these three and
+  nothing lower. It is a dependency-free port, not an import of `reflector/`
+  or `syncables/`, because only `integrations/` has a copy in atomic-server
+  and the published `syncables` entry point imports Node built-ins.
+  `integrations/localthought/README.md` lists what is and isn't ported.
   **The rotating connection code never leaves `browser.ts`.** It is a
   live bearer credential: `browser.ts` keeps it in browser `Storage` and
   hands callers only an opaque connection id. Never write it into an Atomic
@@ -386,9 +398,10 @@ reference: it adds two derived `start`/`end` timestamp terms, drops
 in-progress/break entries, and leaves every other provider field untouched.
 Pair it with a query-override function if the connector needs per-run
 parameters (`clockifyImportQuery()` supplies a rolling look-back window) —
-merging that with the platform's default selection is done by whatever
-composes `BrowserIntegrations` with a sync engine (see above), not by
-anything in this repo. Use
+`PlatformReader` merges that with the platform's default selection
+(`mergeQuerySelections` in `localthought/reflector-read.ts`). An override
+must name exactly one collection URL template and query parameters that its
+GET operation declares. Use
 `platformSchema()`/`termKey()` from `localthought/schema.ts` to turn
 discovered `Term`s into a `SchemaSpec` generically — prefixed
 `lt-<platform>-<kind>-<shortname>` to avoid collisions across platforms.
@@ -465,7 +478,9 @@ declares correctly.
 
 Overlays are applied before an OpenAPI document ever reaches this repo's
 `BrowserIntegrations`: `integration-proxy/` (LocalThought) applies them
-server-side and serves the already-patched document. A native (non-browser)
+server-side and serves the already-patched document, as YAML at
+`/catalog/<platform>.yaml` and as JSON at `/catalog/<platform>.json`. The
+browser reads the JSON form. A native (non-browser)
 caller of the `syncables` npm package can instead apply them itself via
 `ClientConfig.document`/`.overlays` file paths — a convenience that only
 exists off the browser/WASM path.

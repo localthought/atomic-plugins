@@ -1,4 +1,7 @@
+// @wc-ignore-file
 /** Browser-owned credentials. Never store these in Atomic graph resources. */
+import type { CatalogDocument } from './reflector-read.js';
+
 export const DEFAULT_PROXY = 'https://localthought.io';
 const key = 'localthought-browser-v1:';
 
@@ -12,20 +15,33 @@ export interface Connection {
   codeVerifier?: string;
   ready: boolean;
 }
+// RFC 6761 gives the whole `.localhost` TLD to loopback, and browsers treat
+// those names as secure origins for exactly that reason. The e2e bundle can be
+// served from `http://atomic.localhost:<port>` when the browser runs in its
+// own container, where `127.0.0.1` is the wrong machine. atomic-server's
+// data-browser also uses this for its plugin-catalog URL check.
+export const isLoopbackHost = (host: string) =>
+  host === 'localhost' ||
+  host.endsWith('.localhost') ||
+  host === '127.0.0.1' ||
+  host === '[::1]';
 export function proxyOrigin(value = DEFAULT_PROXY): string {
   const u = new URL(value);
   if (
     u.origin !== value ||
     (u.protocol !== 'https:' &&
-      !(
-        u.protocol === 'http:' &&
-        ['localhost', '127.0.0.1'].includes(u.hostname)
-      ))
+      !(u.protocol === 'http:' && isLoopbackHost(u.hostname)))
   )
     throw new Error('Proxy must be an HTTPS origin or localhost');
 
   return value;
 }
+
+const catalogName = (platform: string) => {
+  if (!/^[a-z0-9-]{1,80}$/.test(platform)) throw new Error('Invalid platform');
+
+  return platform;
+};
 
 const base64url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))
@@ -85,6 +101,53 @@ export class BrowserIntegrations {
       throw new Error('Invalid platform catalog');
 
     return names;
+  }
+  /**
+   * The platform's catalog document: its OpenAPI description with the
+   * proxy's overlays already applied. JSON, so the browser needs no YAML
+   * parser; a proxy without the `.json` route (before ontola/atomic-plugins#52)
+   * still works when its `.yaml` body happens to be JSON, as the mock's is.
+   */
+  async catalogDocument(
+    platform: string,
+    signal?: AbortSignal,
+  ): Promise<CatalogDocument> {
+    const name = catalogName(platform);
+    let text: string;
+
+    try {
+      text = await this.get(`/catalog/${name}.json`, signal);
+    } catch (error) {
+      if (!/HTTP 404$/.test(String(error))) throw error;
+      text = await this.get(`/catalog/${name}.yaml`, signal);
+    }
+
+    let document: unknown;
+
+    try {
+      document = JSON.parse(text);
+    } catch {
+      throw new Error(
+        'LocalThought served a YAML catalog document; update the proxy',
+      );
+    }
+
+    if (typeof document !== 'object' || document === null)
+      throw new Error('Invalid catalog document');
+
+    return document as CatalogDocument;
+  }
+  /** The catalog's default query selection for the platform. */
+  async catalogSelection(
+    platform: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return JSON.parse(
+      await this.get(
+        `/catalog/${catalogName(platform)}.selection.json`,
+        signal,
+      ),
+    );
   }
   async start(
     drive: string,
@@ -206,7 +269,11 @@ export class BrowserIntegrations {
     platform: string,
     path: string,
     init: { method?: string; body?: string; ifMatch?: string } = {},
-  ): Promise<{ status: number; body: string }> {
+  ): Promise<{
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+  }> {
     if (!navigator.locks)
       throw new Error('This browser needs Web Locks for integrations');
     if (!path.startsWith('/') || path.startsWith('//') || /[\\\\#]/.test(path))
@@ -228,7 +295,17 @@ export class BrowserIntegrations {
         AbortSignal.timeout(30000),
       );
 
-      return { status: response.status, body: await limitedText(response) };
+      // Pagination reads e.g. `Link`; the rotated code stays in here.
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, name) => {
+        if (name !== 'x-connection-code') headers[name] = value;
+      });
+
+      return {
+        status: response.status,
+        headers,
+        body: await limitedText(response),
+      };
     });
   }
   private async send(

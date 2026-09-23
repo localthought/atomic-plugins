@@ -13,6 +13,7 @@
     "calendar-sync.ts",
     "schema.ts",
     "plugin.ts",
-    "browser.ts"
+    "browser.ts",
+    "reflector-read.ts"
   ]
 }

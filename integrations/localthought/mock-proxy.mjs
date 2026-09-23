@@ -67,7 +67,7 @@ export function mockProxy({
 
     if (url.pathname === '/catalog') return json(200, selected.platforms);
     const catalogFile = url.pathname.match(
-      /^\/catalog\/([^/]+)\.(selection\.json|yaml)$/,
+      /^\/catalog\/([^/.]+)\.(selection\.json|yaml|json)$/,
     );
 
     if (catalogFile && Object.hasOwn(instances, catalogFile[1])) {
@@ -75,6 +75,17 @@ export function mockProxy({
       if (catalogFile[2] === 'selection.json')
         return json(200, { query_overrides: [] });
       if (fixture.document) return json(200, fixture.document);
+
+      // `.json` is what the browser reads (integration-proxy serves both); a
+      // YAML-only documentFile has no JSON form here, so it 404s and the
+      // client falls back to `.yaml`.
+      if (catalogFile[2] === 'json') {
+        if (!fixture.documentFile?.pathname.endsWith('.json'))
+          return json(404, { error: 'catalog platform not found' });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+
+        return res.end(readFileSync(fixture.documentFile));
+      }
 
       if (fixture.documentFile) {
         res.writeHead(200, { 'Content-Type': 'application/yaml' });
