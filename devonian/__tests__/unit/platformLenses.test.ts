@@ -1,24 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  project,
-  unproject,
-  issuePatch,
-  type Issue,
-} from '../../platform-lenses/github-issues/lens/index.js';
 import { planCalendarValues } from '../../platform-lenses/google-calendar/lens/edit.js';
 import {
   applyCalendarEdit,
   planCalendarEdit,
 } from '../../platform-lenses/google-calendar/sync.js';
 
-const issue: Issue & { assignee: string } = {
-  number: 42,
-  title: 'Before',
-  body: null,
-  state: 'open',
-  labels: ['bug', { name: 'ATOMIC:DOING' }],
-  assignee: 'someone',
-};
 const name = 'https://atomicdata.dev/properties/name';
 const baseline = {
   [name]: 'Before',
@@ -37,30 +23,7 @@ const remote = {
   attendees: [{ email: 'person@example.com' }],
 };
 
-describe('passive platform lenses', () => {
-  it.each(['Todo', 'Doing', 'Done'] as const)(
-    'round trips GitHub %s without changing unrelated data',
-    (status) => {
-      const desired = { title: 'After', body: 'Edited', status };
-      const previous = structuredClone(issue);
-      const result = unproject(desired, issue);
-      expect(project(result)).toEqual(desired);
-      expect(result.number).toBe(42);
-      expect(result.assignee).toBe('someone');
-      expect(result.labels).toContain('bug');
-      expect(issue).toEqual(previous);
-      expect(unproject(desired, result)).toEqual(result);
-    },
-  );
-
-  it('keeps the GitHub runtime patch minimal', () => {
-    const before = project(issue);
-    expect(issuePatch(before, before)).toEqual({});
-    expect(issuePatch({ ...before, status: 'Done' }, before)).toEqual({
-      state: 'closed',
-    });
-  });
-
+describe('passive Calendar lens', () => {
   it('maps Calendar edits without replacing provider-only fields or mutating input', () => {
     const row = { ...baseline, [name]: 'After', description: '' };
     const previous = structuredClone(row);

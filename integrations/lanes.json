@@ -18,7 +18,13 @@
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],
-      "tiers": ["unit"]
+      "tiers": ["unit"],
+      "paths": [
+        "devonian/src/**",
+        "devonian/package.json",
+        "devonian/pnpm-lock.yaml"
+      ],
+      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here."
     },
     {
       "id": "localthought",
@@ -31,13 +37,15 @@
       "index": 3,
       "platforms": ["moneybird"],
       "tiers": [],
-      "note": "No lane job: money has no package.json-less suite and no server-dependent tier. certify.mjs discovers it (it has an atomicCertification block) and the unsharded certification step covers its typecheck, bundle and fixture tests. The entry exists so the lanes-cover-every-directory check passes and so the index stays reserved."
+      "note": "No lane job, on purpose. money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility; typecheck/unit tiers here would only repeat that. Add a tier once money has a server-dependent test. moneybird is listed but not consumed: integrations/money/ is an MT940/camt.053 uploader with no Moneybird code, and the moneybird catalog entry has no package in this repo. With no tier, no mock proxy is started for this lane. A future Moneybird fixture and its recorder go in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/localthought/fixtures/index.mjs registers it by importing ../../money/fixtures/moneybird/scenario.mjs. See PARALLEL_LANES.md, Still open."
     },
     {
       "id": "notion",
       "index": 4,
-      "platforms": ["notion"],
-      "tiers": ["live", "e2e"],
+      "platforms": [],
+      "tiers": ["live"],
+      "quarantined": "e2e: the [data-integration=notion] card the spec starts from was removed upstream (atomic-server 4bab16ee6), and at 50cf5151c nothing replaces it. Catalog install cannot: catalog.json only yields proxy:* cards, a /plugin-catalog Installation runs neither notion's installer nor a browser-side sync, and server-side sync bypasses the spec's page.route proxy. The planned entry point is a proxy:notion card, blocked on #52 (see #68 and integrations/notion/README.md). Re-add \"e2e\" to tiers then. The spec list below is kept so that is a one-word change.",
+      "note": "platforms is deliberately empty: neither tier talks to the lane's mock proxy. The e2e spec points integration-proxy-url at its own https://notion-proxy.test origin and fulfils /catalog and /proxy/notion/** with page.route; the live tier stubs fetch in-process. Moving onto the shared mock would need a recorded fixtures/notion/, a test-control channel to the out-of-process mock (the spec revokes access, asserts PATCH bodies and edits the remote page mid-test) and a real /connect handoff instead of the seeded fixture-code. See integrations/PARALLEL_LANES.md and issue #47.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
@@ -45,7 +53,8 @@
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
-      "tiers": ["e2e"],
+      "tiers": [],
+      "quarantined": "e2e: the setup dialog needs BrowserIntegrations.describe(), which neither side has since the WASM bridge was removed; blocked on #52 (move LocalThought setup/sync to reflector). Re-add \"e2e\" to tiers then. With no tiers this lane produces no job, like money.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
@@ -53,7 +62,7 @@
       "index": 6,
       "platforms": ["clockify"],
       "tiers": ["typecheck", "unit"],
-      "note": "No e2e tier yet: the two Clockify tests still live in atomic-server's browser/e2e/tests/plugins.spec.ts, which the e2e-plugin-system job runs whole. Move them to integrations/timesheets/e2e/ once they are deleted upstream — see integrations/HANDOFF-e2e-split.md."
+      "note": "No e2e tier. The upstream Clockify tests (plugins.spec.ts's pair and clockify-import.spec.ts) were deleted in atomic-server 4bab16ee6, which the pin includes, together with the UI they drove, so there was nothing to move (#44). A new e2e tier needs a new entry point, most likely #20's timesheets drive app once atomic-server#1624 and an install flow exist."
     }
   ]
 }

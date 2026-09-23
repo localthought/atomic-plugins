@@ -7,6 +7,60 @@ experimental until their advertised capabilities have current live evidence.
 Named actions, automation permissions, recovery and MCP setup are documented in
 [ACTIONS.md](ACTIONS.md). The MCP stdio protocol test runs in the JS CI gate.
 
+## Local setup
+
+Every package imports atomic-server's `browser/` tree by relative path
+(`../../browser/lib/src/...`, `../../browser/tsconfig.build.json`,
+`../../browser/node_modules/...`), which does not exist in this repo. From the
+repository root, once per clone or worktree and again after
+`.atomic-server-ref` changes:
+
+```sh
+node integrations/tooling/link-atomic-server.mjs
+```
+
+What it does, each step idempotent:
+
+1. Makes `$ATOMIC_SERVER_CHECKOUT` (default `/tmp/atomic-server`) an
+   atomic-server checkout at the commit in `.atomic-server-ref`. If the
+   directory is missing it fetches just that commit (`--depth=1`). If the
+   checkout is on another commit it fetches and detaches to the pinned one.
+   It refuses if the checkout has uncommitted changes to tracked files.
+2. Symlinks `browser` -> `$ATOMIC_SERVER_CHECKOUT/browser` and
+   `integrations/node_modules` -> `../browser/e2e/node_modules`. Both are
+   gitignored. It replaces a stale symlink but never a real directory.
+3. Runs `pnpm install --frozen-lockfile` in `$ATOMIC_SERVER_CHECKOUT/browser`.
+   atomic-server pins `pnpm@10.15.1` in `packageManager`.
+4. Verifies the result: `browser/` must resolve into a git checkout at the
+   pinned commit, and `browser/node_modules/.bin/tsc` must exist.
+
+Flags: `--check` only runs step 4 and exits 1 on any problem. `--no-fetch`
+skips step 1 and still verifies the commit. `--no-install` skips step 3.
+CI's `shared-checks`, `lane` and `e2e-plugin-system` jobs run it with
+`--no-fetch --no-install` after their own `actions/checkout` and
+`pnpm install`, so the local layout is CI's layout. `run-lane.mjs` prints the
+step-4 problems as warnings before it runs any tier.
+
+With that in place, no server is needed for:
+
+```sh
+node integrations/tooling/run-lane.mjs <lane> --tier typecheck   # tsc -p integrations/<lane>/tsconfig.json
+node integrations/tooling/run-lane.mjs <lane> --tier unit        # vitest run --config integrations/<lane>/vitest.config.ts
+node integrations/tooling/certify.mjs --layer js                 # every package (see below)
+```
+
+Not covered by the script:
+
+- the atomic-server binary. The `live` and `e2e` tiers need it; build it
+  once in the checkout with the `cargo build` line `serve.mjs` prints.
+- `localthought/wasm-smoke.mjs`'s `../../wasm/pkg/atomic_wasm.js`. That
+  needs a `wasm-pack` build of atomic-server's Rust `wasm` crate, and CI
+  does not run it either.
+- certify's `--layer sandbox` and `--layer all`. Both run
+  `cargo test -p atomic-server` from this repo's root. That has not been
+  verified to work in this symlinked layout. CI leaves it to atomic-server's
+  own CI.
+
 ## One certification command
 
 From the repository root:
@@ -248,6 +302,24 @@ section explains where the terms **reflector**, **syncables** and
   here entirely. A caller that needs full OpenAPI-driven sync composes its
   own such engine on top of `BrowserIntegrations`'s `request()` — that's
   `atomic-server`'s responsibility now, not this repo's.
+  **The rotating connection code never leaves `browser.ts`.** It is a
+  live bearer credential: `browser.ts` keeps it in browser `Storage` and
+  hands callers only an opaque connection id. Never write it into an Atomic
+  resource — not an App resource, not config, not an import record. A
+  resource syncs and its drive can later be shared, and the proxy has no
+  per-code revocation
+  ([#21](https://github.com/ontola/atomic-plugins/issues/21)). A drive plugin or App may store only a
+  non-secret connection reference: `platform`, plus a `connectionId` once
+  the persistent connections planned in
+  [#40](https://github.com/ontola/atomic-plugins/issues/40) exist. Until
+  #40 and [ontola/atomic-server#1624](https://github.com/ontola/atomic-server/issues/1624)
+  land, proxy requests for a sandboxed drive-plugin frame are made by the
+  parent page, never by the frame itself. `localthought/no-credentials-in-graph.test.mjs`
+  (`node --test`, run by CI's "Tooling unit tests" step)
+  fails the build if any shipped source under `integrations/` contains a
+  `…/properties/…connection-code` URL, or mentions `x-connection-code`
+  outside `browser.ts`. It is a text scan, not data-flow analysis, so it
+  won't catch a code stored under an unrelated property name.
 - **Syncables** — the OpenAPI-mock/sync-client engine that reads a
   platform's document plus its
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
@@ -324,12 +396,14 @@ discovered `Term`s into a `SchemaSpec` generically — prefixed
 **(b) Two-way, local-first sync — a Devonian lens.** Needed when the
 connector must let local edits flow back to the provider (closing an issue,
 editing a title) without a server round-trip. Model this on
-`integrations/issue-tracker/devonian/`:
+`integrations/issue-tracker/devonian/github-issues/`:
 
 - `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
 - `ports.mjs` — native-Atomic and provider-side projections/transports.
-- `build.mjs` — regenerates the vendored Devonian bundle:
-  `DEVONIAN_PATH=/path/to/devonian node integrations/issue-tracker/devonian/build.mjs`.
+- `proxy.mjs` — the rotating-code integration-proxy transport and a
+  labelled sample fixture.
+- `target.mjs` — which Atomic drive the sync writes into (local-only or
+  server-synced) and when that drive can be enumerated or written.
 
 Give every native resource a stable identity independent of matching text
 (explicit provider IDs bind existing rows; nothing infers identity from
@@ -452,6 +526,16 @@ Changed mapping/checkpoint formats still need explicit migration tests.
 - Mapping/checkpoint migration tests and staged release rollout.
 - Health monitoring, provider-change alerts and ownership escalation.
 - Reusable provider fixture builders and UI installation coverage for both pilots.
+- An app's signing key is node-local (upstream `atomic-server`, checked at
+  `.atomic-server-ref`). Its public agent resource syncs; the secret half in
+  `Tree::AppAgent` does not, and nothing carries it to another node
+  (activating a JS Installation there mints a _different_ agent instead). A
+  node that received the drive by sync reads the missing key as legacy. There,
+  `POST /app-write` refuses with "no key of its own", and a scheduled or
+  plugin run signs as that node's own agent rather than the app. Treat
+  app writes and unattended runs as single-node until upstream decides the
+  "second node" question in its `planning/plugins.md`
+  ([#41](https://github.com/ontola/atomic-plugins/issues/41)).
 
 No recurring live jobs or automatic releases are enabled by this command.
 

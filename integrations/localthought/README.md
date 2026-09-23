@@ -23,7 +23,11 @@ from the address bar immediately. A ten-minute, non-secret session marker resume
 setup if removing those parameters remounts the page; completing installation or
 closing its setup dialog clears the marker.
 Connection codes are stored in this browser's localStorage, outside the synced
-graph, and may be read by code running on this frontend origin. Clearing site
+graph, and may be read by code running on this frontend origin. They must never
+be written into an Atomic resource, including a drive plugin's own App resource
+(ontola/atomic-plugins#21). `node --test
+integrations/localthought/no-credentials-in-graph.test.mjs` enforces this for
+shipped source under `integrations/`. Clearing site
 data requires reconnecting. Existing server-held connections require reconnecting.
 Web Locks serialize rotating codes across tabs; a request consumes its code
 before dispatch and saves the replacement before processing data. Uncertain
@@ -109,7 +113,6 @@ server plugin execution, actions and schedules are outside this migration.
 ```sh
 cargo check -p atomic-wasm --target wasm32-unknown-unknown
 browser/node_modules/.bin/vitest run --config integrations/localthought/vitest.config.ts
-node integrations/localthought/wasm-smoke.mjs # after building wasm/pkg
 ```
 
 For the browser-only mock journey (no AtomicServer on port 19999):
@@ -224,7 +227,7 @@ deployment or live account writes have been performed as part of this work.
 
 The `devonian-todoist` catalog entry connects the proxy's `todoist` platform
 through the same generic flow, with a read-only Devonian lens
-(`todoist.ts`) on the way in. The proxy's Todoist catalog only grants
+(`../issue-tracker/todoist.ts`) on the way in. The proxy's Todoist catalog only grants
 `data:read`, so the lens has no write direction and the folder's Sync panel
 has no "preview edits" step: closing, editing or creating an issue locally
 is never sent to Todoist.
@@ -240,7 +243,7 @@ over; the same `due-day` column also works as a Calendar view's date.
 Installation records the lens as `extension: 'tasks'` and identity suffix
 `:devonian-tasks`. A Todoist folder installed from the raw proxy card
 (`proxy:todoist`, `extension: 'none'`) stays a plain import; the lens is
-never implied for an existing installation. `todoist.test.ts` covers the
+never implied for an existing installation. `../issue-tracker/todoist.test.ts` covers the
 projection; the OAuth connection itself is checked manually against the live
 proxy, as for the other platforms.
 

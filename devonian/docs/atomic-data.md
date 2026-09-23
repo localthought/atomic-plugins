@@ -110,8 +110,10 @@ DID identifiers (including AtomicServer `did:ad:` base64 identities) are accepte
 
 ## Passive platform lenses
 
-The `platform-lenses/github-issues/lens/` and
-`platform-lenses/google-calendar/lens/` directories contain passive mappings.
+The `platform-lenses/google-calendar/lens/` directory, and the GitHub issues and
+Notion lenses that now live in their plugin folders in ontola/atomic-plugins
+(`integrations/issue-tracker/devonian/github-issues/lens/`,
+`integrations/notion/devonian/notion/lens/`), contain passive mappings.
 A caller supplies resource data; these modules neither access datasets nor own
 credentials, subscriptions, identity lookups, or durable synchronization state.
 
@@ -128,9 +130,17 @@ credentials, subscriptions, identity lookups, or durable synchronization state.
   It retains the existing field conflict and interval validation. It does not
   write recurrence changes or replace the complete Google event. Empty strings
   explicitly clear supported text fields.
+- Notion's `notionProjection(fetched, { dataSource })` is read-only. It maps
+  data-source pages that syncables fetched to typed values, keyed by
+  `notionFieldShortname(propertyId)`. It covers plain title/rich text, number,
+  checkbox, url, email, phone, select/status option ids and sorted
+  multi-select option ids. Formatted text is left unprojected and reported in
+  `errors`, and so are archived or trashed pages. The raw `properties` pass
+  through. There is no reverse mapping yet.
 
-Import these through `devonian/platform-lenses/github-issues/lens` or
-`devonian/platform-lenses/google-calendar/lens`. Calendar's projection helpers
+Import the Calendar lens through `devonian/platform-lenses/google-calendar/lens`;
+the others are no longer part of this package (see the README's "Unreleased"
+note). Calendar's projection helpers
 still require the consuming application's compatible `@tomic/lib` calendar
 helpers. Previous adapter, projection, recurrence, types, and sync entry points
 remain available.

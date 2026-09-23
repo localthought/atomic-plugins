@@ -8,22 +8,10 @@
   },
   "exports": {
     ".": "./src/main.ts",
-    "./platform-lenses/github-issues": "./platform-lenses/github-issues/index.mjs",
-    "./platform-lenses/github-issues/bridge": "./platform-lenses/github-issues/bridge.mjs",
-    "./platform-lenses/github-issues/ports": "./platform-lenses/github-issues/ports.mjs",
-    "./platform-lenses/github-issues/proxy": "./platform-lenses/github-issues/proxy.mjs",
-    "./platform-lenses/github-issues/adapter": "./platform-lenses/github-issues/adapter.ts",
-    "./platform-lenses/github-issues/tracker-actions": "./platform-lenses/github-issues/tracker-actions.ts",
-    "./platform-lenses/github-issues/plugin": "./platform-lenses/github-issues/plugin.ts",
-    "./platform-lenses/github-issues/plugin.js": "./platform-lenses/github-issues/plugin.js",
-    "./platform-lenses/github-issues/atomic": "./platform-lenses/github-issues/atomic.ts",
     "./platform-lenses/google-calendar": "./platform-lenses/google-calendar/index.ts",
     "./platform-lenses/google-calendar/sync": "./platform-lenses/google-calendar/sync.ts",
     "./platform-lenses/google-calendar/recurrence": "./platform-lenses/google-calendar/recurrence.ts",
-    "./platform-lenses/github-issues/lens": "./platform-lenses/github-issues/lens/index.ts",
     "./platform-lenses/google-calendar/lens": "./platform-lenses/google-calendar/lens/index.ts",
-    "./platform-lenses/clockify": "./platform-lenses/clockify/index.ts",
-    "./platform-lenses/clockify/lens": "./platform-lenses/clockify/lens/index.ts",
     "./reflect": {
       "types": "./build/src/reflect/index.d.ts",
       "default": "./build/src/reflect/index.js"

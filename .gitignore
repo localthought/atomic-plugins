@@ -3,3 +3,6 @@
 *.log
 *.pid
 node_modules
+/integrations/tooling/playwright-report
+/integrations/tooling/test-results
+playwright-report/

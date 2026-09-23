@@ -11,17 +11,19 @@ name: CI
 # .atomic-server-ref to track feat/plugin-debug.
 #
 # atomic-server's own checkout is never mutated: this repo's integrations/
-# is not copied into it before the build, so the binary embeds whatever
-# integrations the pinned commit itself ships (build.rs::embed_integrations),
-# not this repo's. Instead:
+# is not copied into it before the build. (Since feat/plugin-debug 4bab16ee6
+# atomic-server no longer embeds any integrations at build time either.)
+# Instead:
 #   - `browser` is symlinked into this checkout (`atomic-plugins/browser` ->
 #     the pinned atomic-server's `browser/`), the layout certify.mjs and
 #     every package's relative `../../browser/lib/...` import already expect
 #     (see certify.test.mjs's "CI browser and integration symlinks" case).
 #   - `integrations/tooling/dev-server.mjs` stands in for the `/integrations`
 #     route atomic-server would otherwise embed at build time: it serves
-#     this repo's catalog.json and plugin.js bundles itself, and proxies
-#     every other request through to the real atomic-server.
+#     this repo's catalog.json and plugin.js bundles itself, with permissive
+#     CORS, and 404s everything else. Clients talk to atomic-server directly
+#     and fetch the catalog from here cross-origin (see the header of
+#     dev-server.mjs for why it no longer proxies).
 #   - `integrations/localthought/mock-proxy.mjs` (the same fixture
 #     atomic-server's own dagger e2e pipeline runs) stands in for the real
 #     LocalThought integration proxy, so the Integrations-page flow can run
@@ -55,9 +57,8 @@ name: CI
 #
 # No Rust/WASM tests run here: not the sandboxTests declared in each
 # package's atomicCertification (those are atomic-server's own `cargo test`
-# suite, run by its CI), and not localthought's wasm-smoke.mjs /
-# browser-smoke.mjs (they need a built wasm/pkg and a full Vite app
-# respectively). Building the atomic-server binary itself is unavoidable
+# suite, run by its CI), and not localthought's browser-smoke.mjs (it
+# needs a full Vite app). Building the atomic-server binary itself is unavoidable
 # infrastructure, not a test.
 
 on:
@@ -102,12 +103,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # dorny/paths-filter reads changed files from the pull_request API, which
-      # doesn't exist for a merge_group event, so it is skipped there and the
-      # decide step below forces the full matrix instead: the queue always runs
-      # everything rather than misdetecting an empty diff.
+      # doesn't exist for a merge_group or workflow_dispatch event, so it is
+      # skipped there and the decide step below forces the full matrix instead:
+      # the queue always runs everything rather than misdetecting an empty diff,
+      # and a manual dispatch (typically run to prove a branch healthy) can't
+      # skip every job and have `CI` report a green run that tested nothing.
       - name: Path filters
         id: filter
-        if: github.event_name != 'merge_group'
+        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         with:
           filters: ${{ steps.gen.outputs.filters }}
@@ -116,8 +119,8 @@ jobs:
         id: decide
         env:
           # `changes` is dorny's JSON array of the filter names that matched.
-          CHANGED: ${{ github.event_name == 'merge_group' && '["shared"]' || steps.filter.outputs.changes }}
-          ANY: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.any }}
+          CHANGED: ${{ github.event_name != 'pull_request' && '["shared"]' || steps.filter.outputs.changes }}
+          ANY: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.any }}
         run: |
           set -eu
           matrix=$(node integrations/tooling/lanes.mjs matrix "$CHANGED")
@@ -180,7 +183,9 @@ jobs:
         run: |
           set -eu
           rustup show active-toolchain
-          rustup target add wasm32-wasip2
+          # wasm32-unknown-unknown is for the browser's own WASM bundle, built
+          # in its own step below.
+          rustup target add wasm32-wasip2 wasm32-unknown-unknown
           # Fail here rather than let build.rs degrade quietly.
           rustup target list --installed | grep -qx wasm32-wasip2
 
@@ -200,6 +205,29 @@ jobs:
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
+      # The data-browser's ClientDb loads /wasm/atomic_wasm.js at startup, and
+      # /app/dev-drive (every e2e spec's sign-in) never finishes without it:
+      # the page sits on "Setting up dev drive…" and `waitForURL` times out.
+      # SKIP_WASM_BUILD=1 below skips data-browser's own `build:wasm`, so build
+      # the bundle here instead and drop it into public/wasm/, which vite
+      # copies into the embedded dist — the same split atomic-server's dagger
+      # pipeline uses (`wasmBuild()` + `jsBuild()` in .dagger/src/index.ts).
+      #
+      # wasm-pack comes from atomic-server's own pinned, checksum-verified
+      # installer. `--no-opt` skips wasm-opt, whose binaryen download from
+      # GitHub is the flakiness SKIP_WASM_BUILD was originally added to avoid;
+      # the e2e tests need a working module, not a small one.
+      - name: Build the browser WASM bundle
+        working-directory: atomic-server
+        run: |
+          set -eu
+          sh .dagger/scripts/install-wasm-pack.sh "$HOME/.local/bin"
+          cd wasm
+          CARGO_ENCODED_RUSTFLAGS='--cfg'$'\x1f''getrandom_backend="wasm_js"' \
+            "$HOME/.local/bin/wasm-pack" build --target web --out-dir pkg --no-opt
+          mkdir -p ../browser/data-browser/public/wasm
+          cp pkg/atomic_wasm.js pkg/atomic_wasm_bg.wasm ../browser/data-browser/public/wasm/
+
       # --no-default-features trims the default `https`, `telemetry` and
       # `img` features: nothing below uses TLS/ACME, OTel export
       # (tonic/opentelemetry-otlp pull in a heavy gRPC stack) or image
@@ -208,13 +236,10 @@ jobs:
       # `wasm-plugins` (the sandbox the tests execute plugins in) stays.
       #
       # server/build.rs also builds the data-browser frontend to embed
-      # (unconditionally, regardless of Cargo features), and that build's
-      # `pnpm build:wasm` step downloads a pinned binaryen/wasm-opt release
-      # from GitHub — a client-side WASM module for the browser's own
-      # offline/OPFS storage, unrelated to anything tested here, and a real
-      # point of CI flakiness. SKIP_WASM_BUILD=1 (the same variable
-      # atomic-server's own downstream-saas CI job sets, for the same "the
-      # embed only needs to exist" reason) skips it.
+      # (unconditionally, regardless of Cargo features). SKIP_WASM_BUILD=1
+      # stops that build from running its own `build:wasm`: the bundle was
+      # already built into public/wasm/ by the step above. The bundle itself
+      # is NOT optional for this binary: without it every e2e sign-in hangs.
       #
       # VITE_E2E surfaces /app/dev-drive, the Playwright suite's sign-in path
       # — the same var atomic-server's own dagger e2e pipeline sets on this
@@ -265,8 +290,15 @@ jobs:
           ref: ${{ steps.pin.outputs.sha }}
           path: atomic-server
 
+      # The same script contributors run locally (AGENTS.md), so the two
+      # layouts cannot drift. --no-fetch: actions/checkout above already put
+      # atomic-server at the pinned commit, which the script verifies;
+      # --no-install: the install step below does that. It needs only node
+      # builtins and git, so the runner's preinstalled node is enough.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
@@ -293,8 +325,10 @@ jobs:
             integrations/tooling/certify.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
+            integrations/tooling/link-atomic-server.test.mjs \
             integrations/tooling/workflow.test.mjs \
-            integrations/localthought/mock-proxy.test.mjs
+            integrations/localthought/mock-proxy.test.mjs \
+            integrations/localthought/no-credentials-in-graph.test.mjs
 
       # plugin.js is a committed esbuild output (verified byte-for-byte against
       # a fresh bundle by the "reproducible-bundle" check below), not
@@ -345,15 +379,16 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
-      # The second symlink is what makes a lane spec's bare `@playwright/test`
-      # and `@tomic/lib` imports resolve: node walks up from
+      # Besides browser/, the script links integrations/node_modules ->
+      # ../browser/e2e/node_modules, which is what makes a lane spec's bare
+      # `@playwright/test` and `@tomic/lib` imports resolve: node walks up from
       # integrations/<lane>/e2e/ and finds nothing otherwise. Both packages are
       # dependencies of the `@tomic/e2e` workspace package, so they live in
-      # browser/e2e/node_modules. run-lane.mjs creates the same link locally.
+      # browser/e2e/node_modules. Same script, same flags as shared-checks.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: |
-          ln -s ../atomic-server/browser atomic-plugins/browser
-          ln -s ../browser/e2e/node_modules atomic-plugins/integrations/node_modules
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
@@ -371,6 +406,15 @@ jobs:
 
       - name: Install JS dependencies
         working-directory: atomic-server/browser
+        run: pnpm install --frozen-lockfile
+
+      # A lane that declares devonian `paths` in lanes.json imports the
+      # `devonian` package from source (e.g. issue-tracker's
+      # devonian/github-issues/, via a vitest alias to devonian/src/main.ts),
+      # which needs devonian's own dependencies. Every lane installs them: it
+      # is a few seconds, and cheaper than keeping a second list in sync.
+      - name: Install devonian dependencies
+        working-directory: atomic-plugins/devonian
         run: pnpm install --frozen-lockfile
 
       - name: Download the server binary
@@ -414,15 +458,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.lane }}
-          path: atomic-plugins/browser/e2e/playwright-report
-          if-no-files-found: ignore
+          # integrations/tooling/playwright.config.ts writes both next to
+          # itself, not under browser/e2e/. test-results/ holds the traces
+          # and error-context.md that explain a failure.
+          path: |
+            atomic-plugins/integrations/tooling/playwright-report
+            atomic-plugins/integrations/tooling/test-results
+          if-no-files-found: warn
 
   # Proves the dev-server wiring actually works: every certified plugin.js and
   # the root catalog.json are byte-identical when fetched through it (this is
-  # the "plugin hosting" a real browser's fetch() relies on at install time —
-  # see server/build.rs::embed_integrations upstream), and an ordinary
-  # atomic-data request still reaches the real atomic-server transparently
-  # through the same URL. Not a plugin lane: it verifies shared infrastructure,
+  # the "plugin hosting" a real browser's fetch() relies on at install time),
+  # nothing outside
+  # /integrations is served, and atomic-server answers on its own port.
+  # Not a plugin lane: it verifies shared infrastructure,
   # so it runs whenever anything under integrations/ changed.
   hosting-surface:
     name: Plugin catalog and hosting surface
@@ -486,7 +535,7 @@ jobs:
             expected=$(sha256sum "$path" | cut -d' ' -f1)
             actual=$(curl -sf "http://localhost:$dev/integrations/${path#integrations/}" | sha256sum | cut -d' ' -f1)
             if [ "$expected" != "$actual" ]; then
-              echo "mismatch serving $path through the dev-server proxy" >&2
+              echo "mismatch serving $path from the dev-server" >&2
               exit 1
             fi
           }
@@ -540,8 +589,15 @@ jobs:
           ref: ${{ needs.build-server.outputs.sha }}
           path: atomic-server
 
+      # The same script contributors run locally (AGENTS.md), so the two
+      # layouts cannot drift. --no-fetch: actions/checkout above already put
+      # atomic-server at the pinned commit, which the script verifies;
+      # --no-install: the install step below does that. It needs only node
+      # builtins and git, so the runner's preinstalled node is enough.
       - name: Link atomic-server's browser workspace into atomic-plugins
-        run: ln -s ../atomic-server/browser atomic-plugins/browser
+        env:
+          ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+        run: node atomic-plugins/integrations/tooling/link-atomic-server.mjs --no-fetch --no-install
 
       - uses: actions/setup-node@v4
         with:
@@ -596,11 +652,13 @@ jobs:
           cat serve.log
           exit 1
 
-      # Both generic suites, with atomic-server's own config. plugins.spec.ts
-      # still holds the two Clockify tests; the Pets and Notion ones were
-      # deleted upstream by atomic-server#1621 and are lanes here instead, so
-      # nothing runs twice. When the Clockify pair is deleted upstream too it
-      # becomes the timesheets lane's e2e tier.
+      # Both generic suites, with atomic-server's own config. Their plugin-
+      # specific tests are gone upstream: Pets and Notion by atomic-server#1621
+      # (they are lanes here instead), the two Clockify ones by
+      # feat/plugin-debug 4bab16ee6 (nothing left to move, #44). Setting
+      # PLUGIN_CATALOG_URL also stops the config from starting its own static
+      # mock catalog (testdata/atomic-plugins-mock); neither suite depends on
+      # that mock's fixture entries.
       - name: Run the generic plugin-system specs
         working-directory: atomic-plugins
         run: |
@@ -625,8 +683,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-plugin-system
-          path: atomic-plugins/browser/e2e/playwright-report
-          if-no-files-found: ignore
+          path: |
+            atomic-plugins/browser/e2e/playwright-report
+            atomic-plugins/browser/e2e/test-results
+          if-no-files-found: warn
 
       - name: Stop the stack
         if: always()

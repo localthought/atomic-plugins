@@ -9,11 +9,9 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "devonian/platform-lenses/clockify": [
-        "../../devonian/platform-lenses/clockify/index.ts"
-      ],
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },
-  "include": ["localthought.ts"]
+  "include": ["localthought.ts", "app/*.ts"],
+  "exclude": ["app/*.test.ts"]
 }
