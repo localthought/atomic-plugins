@@ -459,8 +459,8 @@ jobs:
 
   # Proves the dev-server wiring actually works: every certified plugin.js and
   # the root catalog.json are byte-identical when fetched through it (this is
-  # the "plugin hosting" a real browser's fetch() relies on at install time —
-  # see server/build.rs::embed_integrations upstream), nothing outside
+  # the "plugin hosting" a real browser's fetch() relies on at install time),
+  # nothing outside
   # /integrations is served, and atomic-server answers on its own port.
   # Not a plugin lane: it verifies shared infrastructure,
   # so it runs whenever anything under integrations/ changed.
@@ -654,7 +654,7 @@ jobs:
       # Both generic suites, with atomic-server's own config. Their plugin-
       # specific tests are gone upstream: Pets and Notion by atomic-server#1621
       # (they are lanes here instead), the two Clockify ones by
-      # feat/plugin-debug 4bab16ee6 (their move here is #44). Setting
+      # feat/plugin-debug 4bab16ee6 (nothing left to move, #44). Setting
       # PLUGIN_CATALOG_URL also stops the config from starting its own static
       # mock catalog (testdata/atomic-plugins-mock); neither suite depends on
       # that mock's fixture entries.

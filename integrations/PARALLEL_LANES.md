@@ -264,8 +264,9 @@ Two failure modes are reported by cause rather than by symptom:
   of `server.fixtures[<platform>]`, for atomic-server specs that use them.
 
 **Not started:** `api/` recordings, `record.mjs`, `fixture.test.mjs`,
-fixtures for `todoist`, `moneybird` and `notion` (all need live credentials
-to record, per the "enforced, not asserted" rule below), and the drift guard.
+fixtures for `todoist` and `moneybird` (both need live credentials to
+record, per the "enforced, not asserted" rule below), and the drift guard.
+`notion` needs no fixture (#47).
 
 The original design:
 
@@ -343,10 +344,11 @@ Rules that keep parallel worktrees from fighting:
   `integration-certification` report is published whole rather than in pieces.
 - **`plugins.spec.ts` split cleanly after all**, and upstream did half of it.
   `atomic-server#1621` deleted its Pets and Notion tests; they live here now as
-  `integrations/pets/e2e/` and `integrations/notion/e2e/`. What remains
-  upstream — six generic editor/sandbox tests plus two Clockify ones — runs
-  whole in the `e2e-plugin-system` job, so nothing is duplicated and no
-  `--grep` on prose test titles was needed.
+  `integrations/pets/e2e/` and `integrations/notion/e2e/`. Its two Clockify
+  tests were deleted outright in `4bab16ee6` (#44). What remains upstream,
+  the generic editor/sandbox tests, runs whole in the `e2e-plugin-system`
+  job. Nothing is duplicated, and no `--grep` on prose test titles was
+  needed.
 - **`notion` is `enabled: false` in `catalog.json`** but keeps both a live and
   an e2e tier: the catalog flag gates whether the card is _offered_ to
   visitors, not whether the package works. Revisit if it is ever removed.
@@ -369,11 +371,22 @@ Rules that keep parallel worktrees from fighting:
 
 ## Still open
 
-- **The two Clockify tests are still upstream**, so `timesheets` has no e2e
-  tier: they run ungated in `e2e-plugin-system` instead of behind
-  `integrations/timesheets/**`. Deleting them from
-  `browser/e2e/tests/plugins.spec.ts` and moving them to
-  `integrations/timesheets/e2e/` is the remaining half of the split — see
+- **Quarantined e2e.** Three e2e suites are held back for blockers outside
+  this repo. Each lane keeps its `e2e` spec list, and the reason is in
+  `lanes.json`'s `quarantined` field:
+  - `pets` e2e has no tiers until #52, which moves LocalThought setup/sync to
+    reflector. Its setup dialog needs `BrowserIntegrations.describe()`, which
+    neither side has.
+  - `notion` e2e is live-only until #68 gives it a new entry point. The
+    `[data-integration=notion]` card its spec starts from was removed
+    upstream (atomic-server `4bab16ee6`).
+  - The `e2e-plugin-system` job is `continue-on-error` until upstream's
+    `plugin.spec.ts`/`plugins.spec.ts` pass at the pin.
+- **`timesheets` has no e2e tier, and nothing is left to move.** The
+  upstream Clockify tests were deleted in atomic-server `4bab16ee6` (in the
+  pin), together with the UI they drove (#44). A new timesheets e2e needs a
+  new entry point, most likely #20's timesheets drive app once
+  atomic-server#1624 and an install flow exist. See
   [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has a lane entry with no tiers, so it produces no job.
   That is deliberate (#45): `certify.mjs --layer js` in `shared-checks` runs on
@@ -396,6 +409,7 @@ Rules that keep parallel worktrees from fighting:
   once `api/` is recorded. Give the lane a tier once
   `money` has a server-dependent test. Until then a `money`-only change
   gets no lane feedback beyond certification.
-- `todoist`, `moneybird` and `notion` have no mock fixture, so a lane that
-  names them gets a mock proxy serving only its other platforms (possibly
-  none). Recording them needs live credentials; see §4.
+- `todoist` and `moneybird` have no mock fixture, so a lane that names them
+  gets a mock proxy serving only its other platforms (possibly none).
+  Recording them needs live credentials; see §4. `notion` needs none: both
+  its tiers stub their own proxy (#47).
