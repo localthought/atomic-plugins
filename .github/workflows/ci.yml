@@ -11,9 +11,9 @@ name: CI
 # .atomic-server-ref to track feat/plugin-debug.
 #
 # atomic-server's own checkout is never mutated: this repo's integrations/
-# is not copied into it before the build, so the binary embeds whatever
-# integrations the pinned commit itself ships (build.rs::embed_integrations),
-# not this repo's. Instead:
+# is not copied into it before the build. (Since feat/plugin-debug 4bab16ee6
+# atomic-server no longer embeds any integrations at build time either.)
+# Instead:
 #   - `browser` is symlinked into this checkout (`atomic-plugins/browser` ->
 #     the pinned atomic-server's `browser/`), the layout certify.mjs and
 #     every package's relative `../../browser/lib/...` import already expect
@@ -596,11 +596,13 @@ jobs:
           cat serve.log
           exit 1
 
-      # Both generic suites, with atomic-server's own config. plugins.spec.ts
-      # still holds the two Clockify tests; the Pets and Notion ones were
-      # deleted upstream by atomic-server#1621 and are lanes here instead, so
-      # nothing runs twice. When the Clockify pair is deleted upstream too it
-      # becomes the timesheets lane's e2e tier.
+      # Both generic suites, with atomic-server's own config. Their plugin-
+      # specific tests are gone upstream: Pets and Notion by atomic-server#1621
+      # (they are lanes here instead), the two Clockify ones by
+      # feat/plugin-debug 4bab16ee6 (their move here is #44). Setting
+      # PLUGIN_CATALOG_URL also stops the config from starting its own static
+      # mock catalog (testdata/atomic-plugins-mock); neither suite depends on
+      # that mock's fixture entries.
       - name: Run the generic plugin-system specs
         working-directory: atomic-plugins
         run: |
