@@ -3,7 +3,7 @@ import type {
   ConnectionState,
   ExternalIntent,
   ExternalReceipt,
-} from '../../browser/lib/src/plugin-connection';
+} from '../../../browser/lib/src/plugin-connection.js';
 
 export interface SyncSession {
   binding?: string;

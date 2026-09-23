@@ -16,6 +16,7 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
       'clockify',
       'github-issues',
       'google-calendar',
+      'notion',
       'pets',
     ]);
     const callback =
@@ -142,13 +143,102 @@ test('an empty platform list serves every fixture', async () => {
       'clockify',
       'github-issues',
       'google-calendar',
+      'notion',
       'pets',
     ]);
-    for (const id of ['clockify', 'google-calendar', 'pets'])
+    for (const id of ['clockify', 'google-calendar', 'notion', 'pets'])
       assert.equal((await fetch(`${base}/catalog/${id}.yaml`)).status, 200);
     assert.ok(server.github.createIssue);
     assert.ok(server.calendar.events);
     assert.ok(server.clockify.state);
+    assert.deepEqual(server.fixtures.notion.requests, []);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+/** Connects through /connect and /connect/redeem; returns the first code. */
+async function connect(base, platform) {
+  const url = new URL(`${base}/connect`);
+  url.search = new URLSearchParams({
+    redirect_uri: `http://localhost:6747/app/integrations?integration_state=abc&platform=${platform}`,
+    platform,
+    user_id: 'synthetic-agent',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    credentials: 'connection',
+  });
+  const consent = await fetch(url, { method: 'POST', redirect: 'manual' });
+  const handoff = new URL(consent.headers.get('location')).searchParams.get(
+    'connection_code',
+  );
+  const redeemed = await fetch(`${base}/connect/redeem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: handoff, code_verifier: verifier }),
+  });
+
+  return (await redeemed.json()).connection_code;
+}
+
+test('notion: POST list bodies reach the fixture; the cursor travels in the body', async () => {
+  const server = mockProxy({ platforms: 'notion' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const document = await (await fetch(`${base}/catalog/notion.yaml`)).json();
+    assert.ok(document.components.crudResources.page);
+    let code = await connect(base, 'notion');
+
+    const post = async (path, body) => {
+      const response = await fetch(`${base}/proxy/notion${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${code}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      code = response.headers.get('x-connection-code');
+
+      return { status: response.status, body: await response.json() };
+    };
+
+    const sources = await post('/v1/search', {
+      filter: { property: 'object', value: 'data_source' },
+    });
+    assert.equal(sources.status, 200);
+    const [source] = sources.body.results;
+    assert.equal(source.object, 'data_source');
+    const query = `/v1/data_sources/${source.id}/query`;
+    const first = await post(query, { page_size: 100 });
+    assert.equal(first.body.results.length, 2);
+    assert.equal(first.body.has_more, true);
+    const second = await post(query, {
+      page_size: 100,
+      start_cursor: first.body.next_cursor,
+    });
+    assert.equal(second.body.results.length, 1);
+    assert.equal(second.body.next_cursor, null);
+    assert.equal(
+      (await post(query, { start_cursor: 'not-a-cursor' })).status,
+      400,
+    );
+    assert.equal((await post('/v1/pages', { properties: {} })).status, 403);
+    assert.deepEqual(
+      server.fixtures.notion.requests.map(r => [r.method, r.path]).slice(0, 3),
+      [
+        ['POST', '/v1/search'],
+        ['POST', query],
+        ['POST', query],
+      ],
+    );
+    assert.equal(
+      server.fixtures.notion.requests[2].body.start_cursor,
+      first.body.next_cursor,
+    );
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

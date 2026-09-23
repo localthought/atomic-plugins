@@ -272,7 +272,9 @@ Two failure modes are reported by cause rather than by symptom:
 **Not started:** `api/` recordings, `record.mjs`, `fixture.test.mjs`,
 fixtures for `todoist` and `moneybird` (both need live credentials to
 record, per the "enforced, not asserted" rule below), and the drift guard.
-`notion` needs no fixture (#47).
+`notion` has an authored (not recorded) fixture,
+`integrations/notion/fixtures/notion/`, whose catalog document is composed
+from `integrations/notion/catalog/`; no lane requests it yet (#47, #68).
 
 The original design:
 
@@ -364,8 +366,9 @@ Rules that keep parallel worktrees from fighting:
   its own `https://notion-proxy.test` origin and answers `/catalog` and
   `/proxy/notion/**` with `page.route`. `atomic.live.test.ts` stubs `fetch`
   in-process. Moving the spec onto the shared mock would take three things.
-  First, a `fixtures/notion/` recorded against a live Notion workspace (§4).
-  Second, a test-control channel into the mock, which `serve.mjs` runs as a
+  First, a `fixtures/notion/`: an authored, read-only one now exists
+  (`integrations/notion/fixtures/notion/`); a recording against a live Notion
+  workspace (§4) does not. Second, a test-control channel into the mock, which `serve.mjs` runs as a
   separate process: mid-test the spec returns 401 from `/v1/search`, asserts
   the PATCH body, and edits the remote page, and `server.fixtures[...]`
   drivers only work in-process. Third, driving a real `/connect` +

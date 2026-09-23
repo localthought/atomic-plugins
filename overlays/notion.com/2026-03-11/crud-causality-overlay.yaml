@@ -1,0 +1,90 @@
+overlay: 1.0.0
+info:
+  title: Notion API CRUD Causality (read-only data sources and pages)
+  version: '2026-03-11'
+# Read-only, like Clockify's: no create/update/delete is declared. The two
+# resources a read-only import walks are every data source shared with the
+# connection (listed through POST /search, filtered to data sources) and each
+# data source's pages (POST /data_sources/{data_source_id}/query). Pages get
+# their data_source_id from the data source identity binding, the way Google
+# Calendar events get their calendarId.
+#
+# Both lists are POST operations. The CRUD Causality extension has no field
+# for a collection's list method or fixed request body, so each collection
+# declares two extension keys that syncables/browser reads:
+#   x-list-method: POST  -> list with paths[urlTemplate].post, not .get
+#   x-list-body          -> fixed JSON body fields; the pagination scheme's
+#                           body fields (bodyCursor, pagination-overlay.yaml)
+#                           are merged over them per page.
+# The typed schemas below cover only the top-level page and data source
+# fields. `properties` stays opaque JSON; the Notion lens in
+# atomic-plugins integrations/notion/ projects it by stable property id.
+actions:
+  - target: $.components.schemas
+    update:
+      NotionDataSource:
+        type: object
+        required: [object, id]
+        properties:
+          object: {type: string}
+          id: {type: string, format: uuid}
+          created_time: {type: string, format: date-time}
+          last_edited_time: {type: string, format: date-time}
+          title:
+            type: array
+            description: Rich text title of the data source.
+            items: {$ref: '#/components/schemas/JsonObject'}
+          properties:
+            type: object
+            description: The data source's property schema, keyed by property name.
+            additionalProperties: true
+          parent: {type: object, additionalProperties: true}
+          url: {type: string}
+          archived: {type: boolean}
+          in_trash: {type: boolean}
+      NotionPage:
+        type: object
+        required: [object, id]
+        properties:
+          object: {type: string}
+          id: {type: string, format: uuid}
+          created_time: {type: string, format: date-time}
+          last_edited_time: {type: string, format: date-time}
+          properties:
+            type: object
+            description: Property values keyed by property name; each value carries its stable property id.
+            additionalProperties: true
+          parent: {type: object, additionalProperties: true}
+          url: {type: string}
+          archived: {type: boolean}
+          in_trash: {type: boolean}
+  - target: $.components
+    update:
+      crudResources:
+        data_source:
+          description: A Notion data source (the table behind a database) shared with the connection.
+          schema: {$ref: '#/components/schemas/NotionDataSource'}
+          identity:
+            urlTemplate: /data_sources/{data_source_id}
+            bindings:
+              data_source_id: {field: id}
+          collections:
+            data_sources:
+              urlTemplate: /search
+              x-list-method: POST
+              x-list-body:
+                filter: {property: object, value: data_source}
+                page_size: 100
+        page:
+          description: A row of a Notion data source.
+          schema: {$ref: '#/components/schemas/NotionPage'}
+          identity:
+            urlTemplate: /pages/{page_id}
+            bindings:
+              page_id: {field: id}
+          collections:
+            pages:
+              urlTemplate: /data_sources/{data_source_id}/query
+              x-list-method: POST
+              x-list-body:
+                page_size: 100

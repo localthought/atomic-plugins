@@ -44,8 +44,8 @@
       "index": 4,
       "platforms": [],
       "tiers": ["live"],
-      "quarantined": "e2e: the [data-integration=notion] card the spec starts from was removed upstream (atomic-server 4bab16ee6), and at 50cf5151c nothing replaces it. Catalog install cannot: catalog.json only yields proxy:* cards, a /plugin-catalog Installation runs neither notion's installer nor a browser-side sync, and server-side sync bypasses the spec's page.route proxy. The planned entry point is a proxy:notion card, blocked on #52 (see #68 and integrations/notion/README.md). Re-add \"e2e\" to tiers then. The spec list below is kept so that is a one-word change.",
-      "note": "platforms is deliberately empty: neither tier talks to the lane's mock proxy. The e2e spec points integration-proxy-url at its own https://notion-proxy.test origin and fulfils /catalog and /proxy/notion/** with page.route; the live tier stubs fetch in-process. Moving onto the shared mock would need a recorded fixtures/notion/, a test-control channel to the out-of-process mock (the spec revokes access, asserts PATCH bodies and edits the remote page mid-test) and a real /connect handoff instead of the seeded fixture-code. See integrations/PARALLEL_LANES.md and issue #47.",
+      "quarantined": "e2e: the spec now drives the Notion drive plugin (integrations/notion/app/) through the host's integration-proxy relay (store.proxy, its consent bar and connect return), which #52 adds to atomic-server and the pinned commit does not have. Once .atomic-server-ref contains it: set platforms to [\"notion\"] (the spec uses the shared mock proxy's notion fixture) and add \"e2e\" to tiers. See #68 and integrations/notion/README.md.",
+      "note": "platforms is empty while e2e is quarantined: the live tier stubs fetch in-process and never talks to the lane's mock proxy. The e2e spec needs the mock with the authored integrations/notion/fixtures/notion/ fixture.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
