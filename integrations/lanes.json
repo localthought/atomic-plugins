@@ -56,7 +56,7 @@
       "index": 6,
       "platforms": ["clockify"],
       "tiers": ["typecheck", "unit"],
-      "note": "No e2e tier yet: the two Clockify tests still live in atomic-server's browser/e2e/tests/plugins.spec.ts, which the e2e-plugin-system job runs whole. Move them to integrations/timesheets/e2e/ once they are deleted upstream — see integrations/HANDOFF-e2e-split.md."
+      "note": "No e2e tier. The upstream Clockify tests (plugins.spec.ts's pair and clockify-import.spec.ts) were deleted in atomic-server 4bab16ee6, which the pin includes, together with the UI they drove, so there was nothing to move (#44). A new e2e tier needs a new entry point, most likely #20's timesheets drive app once atomic-server#1624 and an install flow exist."
     }
   ]
 }

@@ -38,35 +38,21 @@ What that bought this repo, in the same commit that bumped the pin:
 `browser/e2e/tests/plugins.spec.ts`; they are lanes here now
 (`integrations/pets/e2e/pets.spec.ts`, `integrations/notion/e2e/notion.spec.ts`).
 
-## Remaining: the two Clockify tests
+## Done — Clockify: nothing left to move
 
-`browser/e2e/tests/plugins.spec.ts` still holds eight tests. Six drive the
-generic plugin editor and sandbox and belong upstream. Two do not:
+`browser/e2e/tests/plugins.spec.ts` used to hold two Clockify tests besides
+its six generic editor/sandbox tests, and upstream also had a separate
+`browser/e2e/tests/clockify-import.spec.ts`. atomic-server `4bab16ee6`
+(feat/plugin-debug) deleted both, together with the Clockify LocalThought
+UI they drove, including the `[data-integration=clockify]` card.
+`.atomic-server-ref` (`50cf5151c`) includes that commit. So there is nothing
+left to move (#44), and `plugins.spec.ts` now holds only generic tests. The
+`e2e-plugin-system` job runs them.
 
-- `Clockify discovers named workspaces and surfaces preview transport errors`
-- `Clockify applies linked entries through the real sandbox and skips repeats`
-
-Both are Clockify-specific, so they belong to this repo's `timesheets` lane.
-Until they move, `ci.yml`'s `e2e-plugin-system` job runs the whole file, which
-means Clockify e2e coverage runs on **every** PR that touches anything under
-`integrations/`, rather than only when `integrations/timesheets/**` changed.
-That is the gating this whole lane scheme exists to provide, and timesheets is
-the one plugin not getting it.
-
-### To finish
-
-1. Delete those two `test(...)` blocks from
-   `browser/e2e/tests/plugins.spec.ts`. Keep `newPlugin()` and `setSource()` —
-   the six remaining tests use them, and neither Clockify test does.
-2. In `ontola/atomic-plugins`, add the pair as
-   `integrations/timesheets/e2e/timesheets.spec.ts` (the same shape as the
-   pets and notion specs: `../../../browser/e2e/tests/...` for the utils,
-   bare `@playwright/test` and `@tomic/lib`, which
-   `integrations/tsconfig.e2e.json` maps), and give the `timesheets` lane in
-   `integrations/lanes.json` an `e2e` tier naming it.
-3. Bump `.atomic-server-ref`. Do the deletion and the bump in one change, or
-   the two tests run twice — once upstream, once in the lane.
+The `timesheets` lane stays at `typecheck` and `unit`. A new timesheets e2e
+tier needs a new entry point. The most likely one is #20's timesheets drive
+app, once atomic-server#1624 (a capability for the app frame) and an install
+flow exist.
 
 `integrations/tooling/lanes.test.mjs` checks that every declared e2e spec
-exists, so step 2's wiring is covered; nothing checks for the _duplicate_, so
-step 3's ordering is on whoever does it.
+exists. Nothing checks that a lane spec is not also still running upstream.
