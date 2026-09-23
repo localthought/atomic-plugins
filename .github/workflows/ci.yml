@@ -343,6 +343,18 @@ jobs:
         working-directory: atomic-plugins
         run: browser/node_modules/.bin/oxfmt -c browser/.oxfmtrc.json --check integrations
 
+      # Playwright transpiles the lane specs without typechecking them, so a
+      # type error in integrations/<lane>/e2e/*.spec.ts would otherwise only
+      # surface as a runtime failure in that lane's e2e tier. The specs import
+      # `@tomic/lib`, which resolves to its built dist/ types — hence the build.
+      - name: Build @tomic/lib (for the e2e spec typecheck)
+        working-directory: atomic-server/browser
+        run: pnpm --filter @tomic/lib build
+
+      - name: Typecheck e2e specs
+        working-directory: atomic-plugins
+        run: browser/node_modules/.bin/tsc -p integrations/tsconfig.e2e.json --noEmit
+
       - name: Offline certification (typecheck, bundle reproducibility, fixture tests)
         working-directory: atomic-plugins
         run: node integrations/tooling/certify.mjs --layer js
