@@ -86,11 +86,10 @@ moneybird = platforms.find { |platform| platform['name'] == 'moneybird' }
 errors << 'catalog is missing Moneybird' unless moneybird
 if moneybird
   oad_pin = '85a6105220036a98ef0d7cd6f228d4aae0036508'
-  auth_pin = '14358caa72aebef5ac32ec8a9e217e7ed3e7b6f4'
-  overlay_pin = '7df9d9c6724c2d5f2d41126d7446c1021ec8e254'
+  pages_base = 'https://ontola.github.io/atomic-plugins/overlays/moneybird.com/api/v2/'
   errors << 'catalog has the wrong Moneybird OAD pin' unless moneybird['openapi'].include?(oad_pin)
-  errors << 'catalog has the wrong Moneybird auth pin' unless moneybird.fetch('overlays').first.include?(auth_pin)
-  errors << 'catalog has an unpinned Moneybird non-auth overlay' unless moneybird.fetch('overlays').drop(1).all? { |url| url.include?(overlay_pin) }
+  errors << 'catalog has the wrong Moneybird auth overlay' unless moneybird.fetch('overlays').first == "#{pages_base}auth-overlay.yaml"
+  errors << 'catalog has a Moneybird overlay not published from overlays/' unless moneybird.fetch('overlays').all? { |url| url.start_with?(pages_base) }
   errors << 'consumer selection must not be composed as an overlay' if moneybird.fetch('overlays').any? { |url| url.include?('selection') }
   errors << 'catalog selection differs from reviewed consumer config' unless moneybird['selection'] == selection
 end

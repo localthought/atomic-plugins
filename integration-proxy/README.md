@@ -88,7 +88,7 @@ Or export the variables directly without a `.env` file.
 | `PORT`                 | no       | Port to listen on. Defaults to `8080`.                                      |
 | `SESSION_SECRET`       | no       | Secret used to encrypt session cookies. If unset, a random key is generated at startup and sessions are invalidated whenever the process restarts. Set this to a persistent random value in production. |
 | `SERVER_SECRET`        | yes      | Secret used to deterministically derive each tenant's secret (see above). Must stay constant across restarts and instances. |
-| `CATALOG_PATH`         | no       | Local path or immutable HTTPS URL for the catalog JSON. Defaults to the pinned `localthought/overlays` `catalog.json` revision. |
+| `CATALOG_PATH`         | no       | Local path or HTTPS URL for the catalog JSON. Defaults to `https://ontola.github.io/atomic-plugins/overlays/catalog.json`, this repository's `overlays/catalog.json` as GitHub Pages publishes it from `main`. |
 | `DATABASE_URL`          | yes      | PostgreSQL connection URL. Stores short-lived, consumed challenge nonces to prevent replay. |
 | `ENCRYPTION_KEY`        | yes      | Base64url-encoded, random 32-byte key for versioned XChaCha20-Poly1305 credential envelopes. |
 | `REVOKED_SUBJECTS`      | no       | Comma-separated tenant and user IDs denied access. |
@@ -176,13 +176,16 @@ scope). The initial integration imports contacts; supply the administration ID
 from the Moneybird account when connecting. OAuth tokens without `expires_in`
 remain usable until revoked; tokens with an expiry use the normal refresh flow.
 
-`catalog.json` in the `localthought/overlays` repository is the source of the
-integration catalog. The proxy defaults to an immutable raw GitHub URL for a
-specific catalog commit; set `CATALOG_PATH` to another HTTPS revision for a
-controlled rollout, or to a local fixture for development. Each platform names
-one pinned OpenAPI document and zero or more pinned Overlay Specification
-documents. At startup the proxy downloads those HTTPS sources, applies each
-overlay's `update` actions, and keeps the resulting YAML in memory.
+[`overlays/catalog.json`](../overlays/catalog.json) in this repository
+(migrated from the former `localthought/overlays` repository) is the source of
+the integration catalog. GitHub Pages publishes `overlays/` from `main` at
+`https://ontola.github.io/atomic-plugins/overlays/`, and the proxy defaults to
+the `catalog.json` there; set `CATALOG_PATH` to another HTTPS URL or to a
+local fixture for development. Each platform names one pinned OpenAPI document
+(in `localthought/openapi-directory`, at a commit) and zero or more Overlay
+Specification documents, each served from that same Pages folder. At startup
+the proxy downloads those HTTPS sources, applies each overlay's `update`
+actions in the listed order, and keeps the resulting YAML in memory.
 
 A catalog entry may also contain a **selection** object. Consumer
 **query_overrides** remain separate from the composed OpenAPI document:
@@ -194,11 +197,17 @@ the one the proxy uses. The value must be a string naming a declared scheme.
 **GET /catalog/{platform}.selection.json** returns the selection object (or an
 empty object when absent).
 
-Publish catalog changes in this order: publish and verify the immutable OAD and
-overlay pins, commit the root `catalog.json`, then update the proxy's pinned
-catalog URL and restart the service. Keep each OAD and overlay URL pinned to a
-commit so the generated `/catalog` documents change only through an explicit
-catalog revision.
+Overlay URLs are no longer pinned to a commit: whatever `main` has in
+`overlays/` is what the next proxy start composes. Change the catalog in one
+PR: edit the overlays and `overlays/catalog.json` together; `Overlays CI` and
+this crate's `default_catalog_*` tests (which compose the checked-in catalog,
+reading the Pages-published overlays from `../overlays/`) validate it before
+merge; after merge, `Overlays published` checks that Pages serves the merged
+bytes; then restart the service. OAD URLs remain pinned to an
+`openapi-directory` commit. Overlay content cannot currently be pinned: a
+`CATALOG_PATH` pointing at a local file or at a commit's
+`raw.githubusercontent.com` copy of `catalog.json` still lists Pages URLs, so
+its overlays are whatever `main` serves when the proxy starts.
 
 ### 3. Run it
 

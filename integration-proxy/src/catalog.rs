@@ -69,6 +69,26 @@ impl Catalog {
     }
 
     pub async fn load(path: &str, client: &reqwest::Client) -> Result<Self, String> {
+        Self::load_with_mirror(path, client, None).await
+    }
+
+    /// Loads this checkout's `overlays/catalog.json`, reading every source
+    /// under [`crate::config::OVERLAYS_PAGES_BASE`] from the checked-in
+    /// `overlays/` folder instead of GitHub Pages, which only publishes it
+    /// once merged to `main`. Other sources (the pinned
+    /// `localthought/openapi-directory` OADs) are still downloaded.
+    #[cfg(test)]
+    pub(crate) async fn load_checked_in(client: &reqwest::Client) -> Result<Self, String> {
+        let overlays = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../overlays");
+        let catalog = overlays.join("catalog.json");
+        Self::load_with_mirror(&catalog.to_string_lossy(), client, Some(&overlays)).await
+    }
+
+    async fn load_with_mirror(
+        path: &str,
+        client: &reqwest::Client,
+        mirror: Option<&std::path::Path>,
+    ) -> Result<Self, String> {
         let source = if path.starts_with("https://") {
             fetch_yaml(client, path).await?
         } else {
@@ -80,14 +100,15 @@ impl Catalog {
 
         for platform in config.platforms {
             valid_platform_name(&platform.name)?;
-            let base = fetch_yaml(client, &platform.openapi).await?;
+            let base = fetch_source(client, &platform.openapi, mirror).await?;
             let mut document: Value = serde_yaml::from_str(&base)
                 .map_err(|err| format!("cannot parse OAD for {}: {err}", platform.name))?;
             for overlay_url in platform.overlays {
-                let overlay: Overlay = serde_yaml::from_str(
-                    &fetch_yaml(client, &overlay_url).await?,
-                )
-                .map_err(|err| format!("cannot parse overlay for {}: {err}", platform.name))?;
+                let overlay: Overlay =
+                    serde_yaml::from_str(&fetch_source(client, &overlay_url, mirror).await?)
+                        .map_err(|err| {
+                            format!("cannot parse overlay for {}: {err}", platform.name)
+                        })?;
                 for action in overlay.actions {
                     merge_at_target(&mut document, &action.target, action.update)?;
                 }
@@ -540,6 +561,23 @@ fn path_segment_matches(template: &str, path: &str) -> bool {
         && !path[prefix.len()..path.len() - suffix.len()].is_empty()
 }
 
+/// Fetches a catalog source, or with a `mirror` directory reads sources
+/// published under [`crate::config::OVERLAYS_PAGES_BASE`] from it instead.
+async fn fetch_source(
+    client: &reqwest::Client,
+    url: &str,
+    mirror: Option<&std::path::Path>,
+) -> Result<String, String> {
+    match (mirror, url.strip_prefix(crate::config::OVERLAYS_PAGES_BASE)) {
+        (Some(dir), Some(relative)) => {
+            let file = dir.join(relative);
+            fs::read_to_string(&file)
+                .map_err(|err| format!("cannot read {}: {err}", file.display()))
+        }
+        _ => fetch_yaml(client, url).await,
+    }
+}
+
 async fn fetch_yaml(client: &reqwest::Client, url: &str) -> Result<String, String> {
     let url = url::Url::parse(url).map_err(|err| format!("invalid catalog URL: {err}"))?;
     if url.scheme() != "https" {
@@ -819,29 +857,59 @@ mod tests {
     }
     use super::*;
 
-    /// Exercises the exact catalog revision the application loads by
-    /// default (`Config::from_env`'s `CATALOG_PATH` fallback), so a pass here
+    /// The default catalog is `overlays/catalog.json` as GitHub Pages
+    /// publishes it, and every overlay it lists is a file in `overlays/`.
+    #[test]
+    fn default_catalog_is_the_published_checked_in_catalog() {
+        use crate::config::{DEFAULT_CATALOG_PATH, OVERLAYS_PAGES_BASE};
+        assert_eq!(
+            DEFAULT_CATALOG_PATH,
+            format!("{OVERLAYS_PAGES_BASE}catalog.json")
+        );
+        let overlays = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../overlays");
+        let config = parse_catalog_config(
+            &fs::read_to_string(overlays.join("catalog.json")).unwrap(),
+            "catalog.json",
+        )
+        .unwrap();
+        for platform in config.platforms {
+            for url in platform.overlays {
+                let relative = url.strip_prefix(OVERLAYS_PAGES_BASE).unwrap_or_else(|| {
+                    panic!("{}: {url} is not published from overlays/", platform.name)
+                });
+                assert!(
+                    overlays.join(relative).is_file(),
+                    "{}: missing overlays/{relative}",
+                    platform.name
+                );
+            }
+        }
+    }
+
+    /// Exercises the catalog the application loads by default
+    /// (`Config::from_env`'s `CATALOG_PATH` fallback) as this commit will
+    /// publish it (see `Catalog::load_checked_in`), so a pass here
     /// establishes that the deployed configuration actually supplies these
-    /// OAuth profiles. `pinned_catalog_selects_google_offline_and_spotify_pkce_profiles`
+    /// security profiles. `pinned_catalog_selects_google_offline_and_spotify_pkce_profiles`
     /// below covers only a separately identified, non-default revision.
     #[tokio::test]
-    #[ignore = "downloads the pinned production catalog sources"]
+    #[ignore = "downloads the pinned OAD sources the default catalog composes"]
     async fn default_catalog_pin_selects_google_offline_and_spotify_pkce_profiles() {
-        let catalog = Catalog::load(
-            crate::config::DEFAULT_CATALOG_PATH,
-            &crate::build_http_client(),
-        )
-        .await
-        .unwrap();
+        let catalog = Catalog::load_checked_in(&crate::build_http_client())
+            .await
+            .unwrap();
         for name in catalog.names() {
-            let provider = catalog
-                .oauth_provider(&name)
+            let scheme = catalog
+                .security_scheme(&name)
                 .unwrap_or_else(|error| panic!("{name}: {error}"));
             // Notion's security scheme declares no per-operation OAuth
             // scopes (it authorizes by integration capability instead), so
-            // it is the one platform excluded from the non-empty check.
-            if name != "notion" {
-                assert!(!provider.scopes.is_empty(), "{name}");
+            // it is the one OAuth platform excluded from the non-empty
+            // check. Clockify uses a static apiKey scheme, which has none.
+            if let crate::providers::SecurityScheme::OAuth(provider) = scheme {
+                if name != "notion" {
+                    assert!(!provider.scopes.is_empty(), "{name}");
+                }
             }
         }
         let google = catalog.oauth_provider("google-calendar").unwrap();

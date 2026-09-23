@@ -18,9 +18,16 @@ from openapi_spec_validator import validate
 ROOT = pathlib.Path(__file__).parents[1]
 CATALOG = json.loads((ROOT / "catalog.json").read_text())
 IDENTITY_PLATFORMS = ("google-calendar", "github-issues")
+# GitHub Pages publishes this folder here once merged to ontola/atomic-plugins'
+# main. Sources under it are read from the checkout instead, so a change is
+# validated before it is published.
+PAGES_BASE = "https://ontola.github.io/atomic-plugins/overlays/"
 
 
 def fetch(url, cache):
+    if url.startswith(PAGES_BASE):
+        data = (ROOT / url[len(PAGES_BASE):]).read_bytes()
+        return data, {"url": url, "sha256": hashlib.sha256(data).hexdigest()}
     name = hashlib.sha256(url.encode()).hexdigest() + ".yaml"
     path = cache / name
     if not path.exists():

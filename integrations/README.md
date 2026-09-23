@@ -378,9 +378,12 @@ project do the actual work:
   implements it, deliberately keeping scheme/role strings open-ended rather
   than closed enums, since the spec allows `x-` extension roles.
 
-**`localthought/overlays`** is the upstream collection of ready-made overlay
-files for real providers (an external repo/catalog, not a directory in this
-checkout) —
+**[`overlays/`](../overlays/)** (migrated from `localthought/overlays`) is
+the collection of ready-made overlay files for real providers, and its
+`catalog.json` is what `integration-proxy` composes; GitHub Pages serves it
+at `https://ontola.github.io/atomic-plugins/overlays/`. Note that this is a
+top-level folder of this repo, so like `devonian/` it is not part of the
+`integrations/` tree copied into an `atomic-server` checkout —
 [`syncables/__tests__/fixtures/real-world/`](../syncables/__tests__/fixtures/real-world/)
 vendors overlay and OpenAPI fixtures unmodified from it and from apis.guru,
 with provenance in each file's header comment. When adding a new platform

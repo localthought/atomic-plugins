@@ -211,7 +211,10 @@ Tests under `__tests__/unit/` mirror this `src/` layout one-to-one (e.g.
   across multiple test files for CRUD-resource-shaped scenarios.
 - `__tests__/fixtures/real-world/`, real OpenAPI documents and pagination
   overlays vendored unmodified from apis.guru and localthought/overlays
-  (see the header comment in each file for provenance). `acceptance/*.test.ts`
+  (see the header comment in each file for provenance; the overlays have
+  since moved into this monorepo's [`overlays/`](../overlays/), published at
+  `https://ontola.github.io/atomic-plugins/overlays/`, and the vendored
+  copies are byte-identical to the files there). `acceptance/*.test.ts`
   runs the full pipeline against these and deliberately documents real
   quirks rather than working around them — e.g. an enveloped (non-array)
   collection response, or a 405 on a collection that only supports `POST`.
