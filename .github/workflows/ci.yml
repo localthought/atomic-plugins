@@ -319,7 +319,8 @@ jobs:
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
             integrations/tooling/workflow.test.mjs \
-            integrations/localthought/mock-proxy.test.mjs
+            integrations/localthought/mock-proxy.test.mjs \
+            integrations/localthought/no-credentials-in-graph.test.mjs
 
       # plugin.js is a committed esbuild output (verified byte-for-byte against
       # a fresh bundle by the "reproducible-bundle" check below), not
