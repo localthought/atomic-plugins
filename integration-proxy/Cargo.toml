@@ -1,10 +1,37 @@
 [package]
-name = "auth-proxy"
+name = "atomic-integration-proxy"
 version = "0.1.0"
 edition = "2021"
-description = "Stateless Rust auth proxy with Google login"
+description = "Stateless OAuth/catalog integration proxy (OIDC login, pinned OpenAPI catalog, rotating-code authenticated proxy) used by LocalThought and Atomic Server"
 license = "MIT"
-repository = "https://github.com/localthought/auth-proxy"
+repository = "https://github.com/ontola/atomic-plugins"
+homepage = "https://github.com/ontola/atomic-plugins/tree/main/integration-proxy"
+documentation = "https://docs.rs/atomic-integration-proxy"
+readme = "README.md"
+keywords = ["oauth", "proxy", "openapi", "axum", "localthought"]
+categories = ["web-programming::http-server", "authentication"]
+# Only what the library and binary need to build. Test fixtures (tests/), the
+# Heroku wrapper template (examples/) and repo-only docs stay out of the
+# published crate; src/ is shipped whole so the #[cfg(test)] module
+# declarations still resolve for anyone reading the source.
+include = [
+    "/src/**/*.rs",
+    "/static/index.html",
+    "/static/logo.png",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/SECURITY.md",
+    "/LICENSE",
+]
+
+[lib]
+name = "atomic_integration_proxy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "integration-proxy"
+path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }

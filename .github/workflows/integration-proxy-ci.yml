@@ -51,3 +51,14 @@ jobs:
         run: cargo build --all-targets
       - name: Test
         run: cargo test -- --include-ignored
+      # The published crate must build from only the files `include`d in
+      # Cargo.toml (no test fixtures), and the Heroku wrapper template must
+      # compile against the library's public API, so an API change that
+      # would break localthought/integration-proxy fails here first.
+      - name: Package (builds from the packaged sources only)
+        run: cargo package --locked
+      - name: Build the Heroku wrapper template against this crate
+        working-directory: integration-proxy/examples/heroku-wrapper
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/integration-proxy/target
+        run: cargo build --config 'patch.crates-io.atomic-integration-proxy.path="../.."'
