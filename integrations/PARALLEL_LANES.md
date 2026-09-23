@@ -301,8 +301,9 @@ integrations/tooling/fixtures/
 - Migrate the three existing modules in place: `mock-github.mjs`,
   `mock-calendar.mjs`, `mock-clockify.mjs` become `scenario.mjs` under
   `github-issues/`, `google-calendar/`, `clockify/`; the inline `pets` array
-  becomes `pets/api/`. Then add the three with no fixture today: `todoist`,
-  `moneybird`, `notion`.
+  becomes `pets/api/`. Then add the two with no fixture today: `todoist` and
+  `moneybird`. `notion` is excluded on purpose; see "Resolved while
+  implementing this".
 
 ### Drift guard
 
@@ -349,6 +350,22 @@ Rules that keep parallel worktrees from fighting:
 - **`notion` is `enabled: false` in `catalog.json`** but keeps both a live and
   an e2e tier: the catalog flag gates whether the card is _offered_ to
   visitors, not whether the package works. Revisit if it is ever removed.
+- **The `notion` lane has no mock-proxy platform** (`"platforms": []`, #47).
+  Neither of its tiers talks to the lane's mock proxy.
+  `integrations/notion/e2e/notion.spec.ts` points `integration-proxy-url` at
+  its own `https://notion-proxy.test` origin and answers `/catalog` and
+  `/proxy/notion/**` with `page.route`. `atomic.live.test.ts` stubs `fetch`
+  in-process. Moving the spec onto the shared mock would take three things.
+  First, a `fixtures/notion/` recorded against a live Notion workspace (§4).
+  Second, a test-control channel into the mock, which `serve.mjs` runs as a
+  separate process: mid-test the spec returns 401 from `/v1/search`, asserts
+  the PATCH body, and edits the remote page, and `server.fixtures[...]`
+  drivers only work in-process. Third, driving a real `/connect` +
+  `/connect/redeem` handoff, because the mock rejects the seeded
+  `fixture-code`. Until someone does all three, an empty list keeps the lane
+  from requesting a fixture that does not exist. Note that under the fixture
+  registry an empty `MOCK_PROXY_PLATFORMS` serves every fixture. That is
+  harmless here, since nothing in the lane calls the mock.
 
 ## Still open
 

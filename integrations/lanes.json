@@ -36,9 +36,10 @@
     {
       "id": "notion",
       "index": 4,
-      "platforms": ["notion"],
+      "platforms": [],
       "tiers": ["live"],
       "quarantined": "e2e: the [data-integration=notion] card the spec starts from was removed upstream (atomic-server 4bab16ee6). Re-add \"e2e\" to tiers once #68 gives it an entry point. The spec list below is kept so that is a one-word change.",
+      "note": "platforms is deliberately empty: neither tier talks to the lane's mock proxy. The e2e spec points integration-proxy-url at its own https://notion-proxy.test origin and fulfils /catalog and /proxy/notion/** with page.route; the live tier stubs fetch in-process. Moving onto the shared mock would need a recorded fixtures/notion/, a test-control channel to the out-of-process mock (the spec revokes access, asserts PATCH bodies and edits the remote page mid-test) and a real /connect handoff instead of the seeded fixture-code. See integrations/PARALLEL_LANES.md and issue #47.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
