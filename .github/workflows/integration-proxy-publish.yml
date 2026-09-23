@@ -1,0 +1,91 @@
+name: integration-proxy publish to crates.io
+
+# Publishes integration-proxy/ to crates.io as `atomic-integration-proxy`
+# when a tag `integration-proxy-v<version>` is pushed, e.g.
+#
+#   git tag integration-proxy-v0.1.1 && git push origin integration-proxy-v0.1.1
+#
+# The tag's version must equal integration-proxy/Cargo.toml's `version`; the
+# job fails before publishing otherwise. Unlike the npm *-publish.yml
+# workflows this is tag-triggered rather than "whenever main's version is new",
+# because a crates.io release is permanent (it can be yanked, never deleted or
+# overwritten), so it should be an explicit act.
+#
+# Auth is crates.io Trusted Publishing (OIDC), via
+# rust-lang/crates-io-auth-action: it exchanges this job's GitHub OIDC token
+# (`id-token: write` below) for a short-lived, run-scoped crates.io token, so
+# no long-lived CARGO_REGISTRY_TOKEN secret is stored. Two one-time steps
+# before this can publish:
+#
+# 1. crates.io only lets Trusted Publishing be configured on a crate that
+#    already exists, so the first version (0.1.0) has to be published by hand
+#    by the crate's owner: `cd integration-proxy && cargo publish`.
+# 2. Then, on crates.io under the crate's Settings -> Trusted Publishing, add
+#    repository `ontola/atomic-plugins`, workflow filename
+#    `integration-proxy-publish.yml`, environment left empty.
+#
+# To use a token instead, delete the "Authenticate" step and set
+# `CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}` on the publish
+# step, with a crates.io API token scoped to publish-update on this crate.
+
+on:
+  push:
+    tags:
+      - "integration-proxy-v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: integration-proxy
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: connect_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OAUTH_GITHUB_ISSUES_CLIENT_ID: fixture-client
+      OAUTH_GITHUB_ISSUES_CLIENT_SECRET: fixture-secret
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/connect_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check the tag matches Cargo.toml's version
+        run: |
+          tag_version="${GITHUB_REF_NAME#integration-proxy-v}"
+          crate_version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "atomic-integration-proxy") | .version')
+          echo "tag version: $tag_version; Cargo.toml version: $crate_version"
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $crate_version"
+            exit 1
+          fi
+      # Same gate as integration-proxy-ci.yml, so a tag on an untested commit
+      # cannot publish.
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --locked -- --include-ignored
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

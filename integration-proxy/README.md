@@ -218,8 +218,94 @@ cargo build            # build
 cargo test             # test
 ```
 
-CI runs the same checks on every push and pull request (see
-`.github/workflows/ci.yml`).
+CI runs the same checks on every push and pull request that touches
+`integration-proxy/` (see the repository's
+`.github/workflows/integration-proxy-ci.yml`), plus `cargo package --locked`
+and a build of the [Heroku wrapper template](examples/heroku-wrapper/).
+
+## Library crate
+
+This package is published to crates.io as
+[`atomic-integration-proxy`](https://crates.io/crates/atomic-integration-proxy)
+(library `atomic_integration_proxy`, binary `integration-proxy`), so a
+deployment can be a thin wrapper that depends on it by semver instead of a
+copy of the source. The public API is intentionally small; everything else is
+private and may change in any release:
+
+| Item | What it does |
+| --- | --- |
+| `Config`, `Config::from_env()` | All configuration, read from the environment variables described above. |
+| `DEFAULT_CATALOG_PATH` | The pinned catalog URL used when `CATALOG_PATH` is unset. |
+| `build_app(&Config) -> Result<axum::Router, Error>` | Loads the catalog, connects to PostgreSQL, returns the router (CORS and tracing layers included). |
+| `serve(Config) -> Result<(), Error>` | `build_app`, then bind `0.0.0.0:{PORT}` and serve. |
+| `run() -> ExitCode` | What the binary does: init `tracing` from `RUST_LOG` (default `info`), `Config::from_env`, `serve`, print any `Error` to stderr. |
+| `Error` | Startup/serve failure; `Display` is the one-line message the binary prints. |
+
+A complete wrapper `main.rs` is:
+
+```rust
+#[tokio::main]
+async fn main() -> std::process::ExitCode {
+    atomic_integration_proxy::run().await
+}
+```
+
+The only runtime file access is `CATALOG_PATH` when it is set to a local
+path; the default is a pinned HTTPS URL, and `static/` is compiled into the
+binary, so the crate needs no files next to the executable.
+
+### Publishing the crate
+
+`.github/workflows/integration-proxy-publish.yml` publishes when a tag
+`integration-proxy-v<version>` matching `Cargo.toml`'s `version` is pushed.
+It reruns fmt, clippy and the full test suite (including the PostgreSQL tests)
+first, then publishes through crates.io Trusted Publishing. crates.io only
+allows Trusted Publishing to be configured on a crate that already exists, so
+0.1.0 must be published once by hand by whoever will own the crate; the
+workflow header lists the one-time crates.io settings. To release:
+
+```sh
+# bump `version` in integration-proxy/Cargo.toml, merge, then on main:
+cd integration-proxy && cargo publish --dry-run
+git tag integration-proxy-v0.1.1 && git push origin integration-proxy-v0.1.1
+```
+
+Only `src/`, `static/index.html`, `static/logo.png`, `Cargo.toml`,
+`Cargo.lock`, `README.md`, `SECURITY.md` and `LICENSE` are packaged
+(`cargo package --list` shows the exact list). `tests/` fixtures are not, so
+`cargo test` only works from a checkout of this repository.
+
+### Production deployment (localthought.io)
+
+Production runs on Heroku from the separate repository
+`localthought/integration-proxy`, which today still carries its own full copy
+of this source. The target state is that it contains only the files in
+[`examples/heroku-wrapper/`](examples/heroku-wrapper/) and picks up proxy
+changes by bumping the `atomic-integration-proxy` version in its `Cargo.lock`;
+that directory's README has the switch-over steps.
+
+Until that switch-over, every change merged here must be duplicated there by
+hand, or production will not get it. Copy the whole tree rather than
+cherry-picking patches — this package's `src/main.rs` became `src/lib.rs`
+plus a thin `src/main.rs`, so patches against one layout do not apply to the
+other:
+
+```sh
+# from the root of an ontola/atomic-plugins checkout on the merged main,
+# with localthought/integration-proxy checked out at ../localthought-integration-proxy
+rsync -a --delete \
+  --exclude .git --exclude .github --exclude target --exclude .env \
+  --exclude examples \
+  integration-proxy/ ../localthought-integration-proxy/
+cd ../localthought-integration-proxy
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
+git add -A && git commit -m "Sync from ontola/atomic-plugins@<sha>"
+```
+
+The synced `Procfile` runs `target/release/integration-proxy` (the binary was
+`auth-proxy` before this package became a crate), and log lines are tagged
+`atomic_integration_proxy` instead of `auth_proxy`, which matters only if
+`RUST_LOG` names the old target.
 
 ## Security
 

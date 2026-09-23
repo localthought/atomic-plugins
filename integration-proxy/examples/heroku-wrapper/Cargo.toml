@@ -1,0 +1,21 @@
+# Deployment wrapper for localthought.io (Heroku). Copy this directory's
+# files to the root of localthought/integration-proxy; see README.md here.
+#
+# The package and binary stay named `auth-proxy` so the existing
+# `web: target/release/auth-proxy` Procfile line keeps working unchanged.
+[package]
+name = "auth-proxy"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+# All proxy code lives in this crate, published from
+# ontola/atomic-plugins/integration-proxy. Bump this to deploy a new release.
+atomic-integration-proxy = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[profile.release]
+opt-level = 3
+lto = true

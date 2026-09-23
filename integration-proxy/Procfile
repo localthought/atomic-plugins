@@ -1,1 +1,1 @@
-web: target/release/auth-proxy
+web: target/release/integration-proxy
