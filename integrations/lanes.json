@@ -47,8 +47,7 @@
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
-      "tiers": [],
-      "quarantined": "e2e: the setup dialog needs BrowserIntegrations.describe(), which neither side has since the WASM bridge was removed; blocked on #52 (move LocalThought setup/sync to reflector). Re-add \"e2e\" to tiers then. With no tiers this lane produces no job, like money.",
+      "tiers": ["e2e"],
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
