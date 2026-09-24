@@ -52,7 +52,7 @@ proxy. No credential ever reaches the frame.
     into the lens store, the page is `ingest`ed through the data source's
     Devonian `AtomicLens`, and the lens row's values are written back to the
     host row, removals included. New pages become new rows.
-- `app/build.mjs`: `dist/ui.js`, minified, about 116 KB since #89's UI,
+- `app/build.mjs`: `dist/ui.js`, minified (JS and CSS), about 116 KB since #89's UI,
   including the catalog document, syncables' read path and devonian's Atomic
   Data API. `@tomic/lib` is shimmed, as in timesheets (`Datatype` and
   `validateDatatype` only; `build.test.ts` pins both to the real library).

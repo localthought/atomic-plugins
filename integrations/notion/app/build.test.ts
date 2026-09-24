@@ -17,10 +17,12 @@ describe('Notion drive-plugin bundle', async () => {
     );
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
-    // Stored as a string property on a resource: it bundles syncables'
-    // read path, the catalog document and (since #89) the UI, minified, so
-    // keep an eye on the size.
-    expect(bytes).toBeLessThan(160 * 1024);
+    // Stored as a string property on a resource, so the size is capped at
+    // the measured size plus about 10% (the owner's rule for bundle limits):
+    // 115 953 bytes at #89 (syncables' read path, the catalog document,
+    // devonian's Atomic Data API and the UI; JS and embedded CSS minified by
+    // esbuild). A change that needs more should say why and re-measure.
+    expect(bytes).toBeLessThan(128_000);
   });
 
   it('carries no credential handling or network access of its own', () => {

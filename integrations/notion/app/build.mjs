@@ -13,10 +13,37 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
+
+/**
+ * The stylesheets are TS modules exporting one CSS template literal each
+ * (`ui/styles.ts`, `view/styles.ts`), so tests and typecheck read them as
+ * plain strings. For the bundle, each literal goes through esbuild's own CSS
+ * minifier before it is embedded.
+ */
+const minifiedStyles = esbuild => ({
+  name: 'minified-styles',
+  setup(builder) {
+    builder.onLoad({ filter: /[\\/]app[\\/](ui|view)[\\/]styles\.ts$/ }, async args => {
+      const source = readFileSync(args.path, 'utf8');
+      const match = /export const (\w+) = `([^`]*)`;/.exec(source);
+      if (!match || match[2].includes('${'))
+        throw new Error(`${args.path}: expected one CSS template literal`);
+      const { code } = await esbuild.transform(match[2], {
+        loader: 'css',
+        minify: true,
+      });
+
+      return {
+        contents: `export const ${match[1]} = ${JSON.stringify(code.trim())};`,
+        loader: 'js',
+      };
+    });
+  },
+});
 
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
@@ -36,6 +63,7 @@ export async function build({ outfile } = {}) {
     alias: {
       '@tomic/lib': path('tomic-lib-shim.ts'),
     },
+    plugins: [minifiedStyles(esbuild)],
     logLevel: 'silent',
   });
   const text = result.outputFiles[0].text;
