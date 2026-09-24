@@ -1,102 +1,149 @@
 # Fediverse
 
-Status: **scaffold**. No protocol handler, listener or installable bundle is
-implemented here yet. CI checks the planning contract; a green lane is not
-protocol conformance or live verification. `plugin.json` is planning metadata,
-not an AtomicServer runtime manifest.
+Status: **experimental read implementation**, not a working federated server.
+The QuickJS plugin serves one ActivityStreams Service actor, public Atomic
+objects, a paginated outbox, WebFinger and NodeInfo. HTTP GETs perform actual
+scoped `ctx.read` calls. Inbox receipt, signed delivery and client writes remain
+unavailable; the plugin never pretends a POST succeeded.
 
-## Scope
+`plugin.js` and `manifest.json` are the host release inputs. `plugin.json` is
+repository metadata. No Rust crate, network client, private key or process-local
+persistent state is bundled.
 
-Expose one ActivityPub actor with an inbox and durable outbound delivery jobs.
+## Native Atomic mapping
 
-This is the single-actor phase 2 package described as
-`integrations/activitypub/` in [#137](https://github.com/ontola/atomic-plugins/issues/137)
-and AP-05 of the accepted [server route design](../../docs/design/server-plugin-routes.md).
-Its folder and CI lane are named `fediverse`; this scaffold does not complete
-that implementation issue.
+The installation explicitly configures a public profile resource and at most
+50 publication bindings. The actor takes its name and escaped summary from the
+profile's Atomic `name` and `description`. Actor type is `Service` because this
+is an operator-curated publication feed, not an assertion that the source
+resource is a human Agent.
 
-The intended split is sandbox routes (placement C) for actor/object reads,
-inbox receipt and bounded outbox/follower collections, plus sandbox jobs
-(placement B) for outbound deliveries and retries. WebFinger resolves the
-actor; NodeInfo and generated host-meta use the host's discovery dispatcher.
-The first profile is one actor, not a multi-user social server. Shared inbox
-support and the supported ActivityStreams activity types need a separate
-scope decision before implementation.
+Each binding has a stable local ID, an existing HTTPS Atomic subject and an
+operator-provided publication time. Only selected properties are projected:
 
-## Host requirements
+| Atomic resource | ActivityStreams object | Data |
+| --- | --- | --- |
+| Message or PlainText | Note | `description`, HTML-escaped as plain text; optional `name` |
+| Document or DocumentV2 | Article | `name` and a link to the actual document; no invented CRDT content |
 
-Target runtime: **QuickJS**, with JavaScript/TypeScript bundled to JavaScript.
-The plugin cannot load native Rust crates, open sockets or keep a delivery
-queue alive in invocation memory. Route dispatch, persistent scoped writes
-and durable queued jobs must come from the host.
+Each projected object has a stable `/ap/objects/<id>` identity, public addressing,
+actor attribution, the configured publication timestamp, and `url` linking to
+the source document in the data browser. A matching `/ap/activities/<id>` returns
+its Create representation. The outbox is an OrderedCollection whose pages
+contain those activities, newest configured time first and ID ascending for ties.
 
-Proposed capabilities: `http-routes`, `outbound-http`, `persistent-state`,
-`background-jobs`. These are design requirements, not an existing Atomic
-plugin API. The host owns HTTP signature verification on inbound requests,
-HTTP signing for deliveries and authorized fetches, and the actor's private
-key. The plugin gets scoped signing operations, never private key material
-or a secret copied into its JavaScript bundle.
+These are live read projections, **not immutable activity records or a delivery
+log**. Editing a source changes its projected content; updating ACLs removes
+it from subsequent reads. Previously fetched content cannot be recalled. Delete,
+Update, tombstone and delivery semantics are not implemented. Pagination is stable
+for unchanged config/resources; there is no snapshot across concurrent changes.
 
-The accepted route design requires all three gates: AtomicServer compiled
-with the `plugin-routes` Cargo feature, the operator setting
-`--plugin-routes read-write` or `ATOMIC_PLUGIN_ROUTES=read-write`, and explicit
-per-Installation consent after reviewing the public endpoints and writes.
-atomic.place builds without the feature. The route grant bounds inbox writes;
-host quotas and egress checks bound queued deliveries, including wildcard
-peer destinations. Closing a gate must pause pending deliveries.
+## Authorization and bounds
 
-Implementation depends on these host issues being available at the pin:
+Every manifest route has `principal: anonymous` and `auth: none`. At pinned
+Atomic Server `35504494261f59e922e79d536fd437954451e6a3`, `route_exec.rs` translates
+that to `ForAgent::Public`; `host_core.rs::get_resource` also checks installation
+read grants. Thus a configured subject alone does not grant public access.
+There is no fallback to the installation principal, no network permission and
+no traversal of referenced properties. A denied/missing object returns 404 and
+is omitted from counts and outbox pages. An unreadable profile hides the actor,
+all objects and discovery. Host errors are not returned to strangers.
 
-- [atomic-server#1711](https://github.com/ontola/atomic-server/issues/1711),
-  [#1712](https://github.com/ontola/atomic-server/issues/1712) and
-  [#1713](https://github.com/ontola/atomic-server/issues/1713): gates,
-  manifest v3 and installation review.
-- [atomic-server#1714](https://github.com/ontola/atomic-server/issues/1714),
-  [#1715](https://github.com/ontola/atomic-server/issues/1715) and
-  [#1716](https://github.com/ontola/atomic-server/issues/1716): route mounts,
-  sandbox request execution and discovery dispatch.
-- [atomic-server#1717](https://github.com/ontola/atomic-server/issues/1717):
-  scoped route writes, quotas and provenance.
-- [atomic-server#1718](https://github.com/ontola/atomic-server/issues/1718):
-  host-held keys and HTTP signature operations.
-- [atomic-server#1719](https://github.com/ontola/atomic-server/issues/1719):
-  durable delivery queue and guarded wildcard destinations.
-- [atomic-plugins#134](https://github.com/ontola/atomic-plugins/issues/134):
-  gated catalog, certification and a route-enabled test host.
+The class/property mapping was inspected against the pinned
+`lib/defaults/chatroom.json` Message schema and
+`browser/lib/src/ontologies/dataBrowser.ts` document/PlainText definitions.
+Message Markdown is exported as escaped literal text, not interpreted as HTML.
+Document Loro/Yjs bytes and arbitrary Atomic fields never enter responses.
 
-## First interoperability milestone
+Limits: 50 configured objects, 10 entries per outbox page, 8,192 characters per
+text field, 255 per name and 2,048 per source URL/Accept header. Unsupported
+classes and oversized content are omitted. Public HTTPS subjects only; other
+subject encodings are not supported in this slice. Config uses exact UTC times
+such as `2026-09-24T12:00:00.000Z` and rejects normalized invalid calendar dates.
+Duplicate IDs/subjects and malformed configuration yield a generic 503.
 
-Deliver and receive one supported activity with one independent Mastodon or GoToSocial peer, persist it once when redelivered, and resume a queued delivery after a host restart.
+## Routes and discovery
 
-This is a target, not evidence. Select the activity type and record the peer
-version, actor setup, exact commands and results when it is actually tested.
+- GET/HEAD `/ap/actor`, `/ap/objects/{id}`, `/ap/activities/{id}`.
+- GET/HEAD `/ap/outbox`, with `?page=1`, `?page=2`, etc. Root supplies `first`;
+  pages provide bounded `orderedItems` and `next`/`prev` as appropriate.
+- POST `/ap/inbox` and `/ap/outbox`: 501, with no intents or enqueues.
+  GET/HEAD inbox likewise reports unavailable. JSON POST bodies are bounded
+  to 16,384 bytes by the host.
+- GET/HEAD `/webfinger`, claimed through `/.well-known/webfinger` for `acct:`.
+  Exact account matching prevents arbitrary user discovery; repeated `resource`
+  parameters are rejected. `rel` filters self links.
+- GET/HEAD `/nodeinfo` and `/nodeinfo/2.1`, with an exclusive well-known NodeInfo
+  claim. Metadata explicitly reports `federationEnabled: false`; no federation
+  protocol is advertised as operational.
 
-## Implementation checklist
+ActivityStreams endpoints negotiate `application/activity+json` and
+`application/ld+json` (with ActivityStreams profile), including q=0 exclusions.
+Unsupported Accept values return 406. HEAD shares GET status and headers with
+no body. Responses use `no-store` to avoid caching private-to-public ACL changes.
+The host supplies CORS for the declared WebFinger route and generates host-meta
+from its registered claim. This plugin does not implement a separate host-meta.
 
-- [ ] Specify the initial activity types, actor/resource mapping, discovery
-      claims and content negotiation; define request byte limits, collection
-      page limits and permitted write targets.
-- [ ] Implement bounded inbox validation with host-verified signatures,
-      authorization and persistent activity-ID deduplication.
-- [ ] Use host signing and the durable queue for outbound delivery; specify
-      retry/backoff, per-peer concurrency and terminal failure limits.
-- [ ] Test invalid signatures, unauthorized writes, duplicate delivery,
-      blocked peers, retry exhaustion, restart recovery and gate closure.
-- [ ] Add protocol fixtures and executable tests here before replacing the
-      scaffold contract tier; test gate refusal on an unsupported host.
-- [ ] Record independent peer/version interoperability evidence before
-      describing a capability as verified. Keep #137 open until its remaining
-      implementation and evidence requirements are complete.
+## Configuration and deployment
 
-## CI
-
-From the repository root:
-
-```sh
-node integrations/tooling/run-lane.mjs fediverse --tier contract
+```json
+{
+  "origin": "https://social.example",
+  "username": "news",
+  "profile": "https://atomic.example/public-profile",
+  "objects": [
+    {
+      "id": "announcement-1",
+      "subject": "https://atomic.example/public-announcement",
+      "published": "2026-09-24T12:00:00.000Z"
+    }
+  ]
+}
 ```
 
-The `Lane: fediverse (contract)` lane validates `plugin.json` and this README.
-It uses no provider fixture (`platforms` is empty) and does not run protocol
-handlers. Add implementation checks and live evidence before promoting this
-scaffold to an implemented plugin.
+The profile and bound resources must be local to the host and readable both
+publicly and by the Installation. `origin` must be the configured drive-host
+origin. Treat origin/username/object IDs as stable protocol identifiers; this
+plugin does not implement identity migrations. Publishing a resource through
+this feed also attributes it to the configured Service actor, so bindings must
+be operator-approved material.
+
+Public surfaces require all three gates: build feature `plugin-routes`, operator
+`--plugin-routes read-write`, and Installation consent. **Read-write is required
+by this manifest even though it never writes**, because it declares POST routes
+that explicitly refuse unsupported requests; the host gate classifies POST as
+read-write. atomic.place builds omit the feature. Read-only deployments would
+need a separately reviewed GET/HEAD-only manifest; this bundle does not bypass
+that gate.
+
+The current host dispatch/read APIs exist, but `route_exec.rs` refuses protected
+authentication and route intents/enqueues. Full federation needs host write
+support (#1717), host-held keys/signatures (#1718), and durable deliveries (#1719).
+No public key is invented, and no private key is configurable. ActivityPub actor
+inbox/outbox URLs are present, but a Mastodon or GoToSocial peer cannot yet follow,
+post, or receive signed fanout from this actor.
+
+## Validation and remaining work
+
+```sh
+node integrations/fediverse/build.mjs
+node integrations/tooling/run-lane.mjs fediverse --tier node
+```
+
+The dependency-free Node lane executes actor/object mapping, data exclusion,
+private read denial, outbox pagination and activity dereferencing, WebFinger,
+NodeInfo, negotiation, HEAD, malformed configuration, POST refusal and bundle
+reproducibility. It checks the manifest route principals/body modes. These tests
+exercise the JavaScript with an in-memory host fixture; they are not QuickJS,
+live AtomicServer or independent-peer verification.
+
+[Implementation issue #137](https://github.com/ontola/atomic-plugins/issues/137)
+remains open: verified signatures, inbox deduplication, Follow/Accept/Undo,
+Update/Delete, durable signed deliveries/retries, restart recovery and an
+independent-peer round trip remain required. The accepted C routes/B deliveries
+placement is documented in the [server route design](../../docs/design/server-plugin-routes.md).
+
+Wire shapes follow the [W3C ActivityPub Recommendation](https://www.w3.org/TR/activitypub/)
+and [ActivityStreams vocabulary](https://www.w3.org/TR/activitystreams-vocabulary/).
+Discovery follows [WebFinger RFC 7033](https://www.rfc-editor.org/rfc/rfc7033)
+and [NodeInfo 2.1](https://nodeinfo.diaspora.software/protocol.html).

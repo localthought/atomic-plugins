@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "fediverse",
   "name": "Fediverse",
-  "status": "scaffold",
+  "status": "experimental",
   "runtime": "quickjs",
-  "scope": "Expose one ActivityPub actor with an inbox and durable outbound delivery jobs.",
+  "scope": "Single read-only ActivityStreams actor and public Atomic object projection, bounded outbox and discovery; signed federation unavailable.",
   "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/137",
   "proposedHostCapabilities": [
     "http-routes",

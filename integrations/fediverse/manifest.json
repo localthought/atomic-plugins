@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 3,
+  "name": "fediverse",
+  "namespace": "ontola",
+  "capabilities": [
+    {
+      "name": "storage",
+      "reason": "Reads only operator-selected, anonymously readable Atomic profile and object resources."
+    }
+  ],
+  "config": {
+    "key": "fediverse",
+    "properties": {
+      "origin": {
+        "type": "string",
+        "description": "HTTPS drive-host origin; stable base for ActivityStreams identities."
+      },
+      "username": {
+        "type": "string",
+        "description": "Single lowercase actor account name."
+      },
+      "profile": {
+        "type": "string",
+        "description": "Public Atomic profile subject; only name and description are projected."
+      },
+      "objects": {
+        "type": "array",
+        "description": "At most 50 explicit {id, subject, published} mappings; published is UTC ISO with .000Z. Publication order is timestamp descending then id."
+      }
+    },
+    "required": [
+      "origin",
+      "username",
+      "profile",
+      "objects"
+    ]
+  },
+  "http": {
+    "mount": "drive-host",
+    "routes": [
+      {
+        "id": "actor",
+        "path": "/ap/actor",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "objects",
+        "path": "/ap/objects/{id}",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "activities",
+        "path": "/ap/activities/{id}",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "outbox",
+        "path": "/ap/outbox",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "outbox-unavailable",
+        "path": "/ap/outbox",
+        "methods": [
+          "POST"
+        ],
+        "principal": "anonymous",
+        "auth": "none",
+        "body": "json",
+        "maxBodyBytes": 16384
+      },
+      {
+        "id": "inbox-read-unavailable",
+        "path": "/ap/inbox",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "inbox-unavailable",
+        "path": "/ap/inbox",
+        "methods": [
+          "POST"
+        ],
+        "principal": "anonymous",
+        "auth": "none",
+        "body": "json",
+        "maxBodyBytes": 16384
+      },
+      {
+        "id": "webfinger",
+        "path": "/webfinger",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none",
+        "cors": "any-origin-no-credentials"
+      },
+      {
+        "id": "nodeinfo-links",
+        "path": "/nodeinfo",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "nodeinfo",
+        "path": "/nodeinfo/2.1",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "principal": "anonymous",
+        "auth": "none"
+      }
+    ],
+    "wellKnown": [
+      {
+        "name": "webfinger",
+        "kind": "shared",
+        "match": {
+          "resourcePrefix": "acct:"
+        },
+        "route": "webfinger"
+      },
+      {
+        "name": "nodeinfo",
+        "kind": "exclusive",
+        "route": "nodeinfo-links"
+      }
+    ],
+    "reason": "Public single-actor ActivityStreams projection and discovery; inbox and client writes return unavailable until host authentication and durable delivery exist. No route writes."
+  }
+}

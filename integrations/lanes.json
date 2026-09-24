@@ -47,7 +47,8 @@
       "id": "fediverse",
       "index": 13,
       "platforms": [],
-      "tiers": ["contract"],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/fediverse/plugin.test.mjs"],
       "note": "Single-actor ActivityPub scaffold (#137, named activitypub in the assessment). Planning contract only; no protocol implementation or interoperability evidence."
     },
     {
