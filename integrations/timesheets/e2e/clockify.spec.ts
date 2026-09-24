@@ -146,6 +146,9 @@ test.describe('timesheets drive app', () => {
     await expect(openLink).toContainText('app.clockify.me');
     await openLink.getByRole('button', { name: 'Cancel' }).click();
     await expect(openLink).toHaveCount(0);
+    // Keyboard focus is back in the host page after its prompt: return to
+    // the drawer before Esc.
+    await detail.getByRole('heading', { name: 'Weekly sync' }).click();
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await expect(weekly).toBeFocused();
