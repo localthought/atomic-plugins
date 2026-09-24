@@ -28,7 +28,13 @@ to `main` changes what the proxy composes at its next start. The OAD
 Overlays are applied in the order `catalog.json` lists them, and an action
 whose target does not exist yet fails the whole catalog load. Clockify's
 `crud-causality-overlay.yaml` is listed first because it defines the
-projects/users paths its auth and pagination overlays target.
+projects/users paths its auth and pagination overlays target. Its
+`time-entry-write-overlay.yaml` is listed last and carries its own
+`security`, so removing that one line returns Clockify to read-only; it adds
+create (`POST`), full-replacement update (`PUT`) and delete on time entries
+for the timesheets app's two-way sync (ontola/atomic-plugins#123). Its
+request shapes follow Clockify's published reference and are not verified
+against a live account.
 
 Checks:
 

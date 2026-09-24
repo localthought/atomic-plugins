@@ -37,6 +37,35 @@ class IdentityOverlayTests(unittest.TestCase):
         self.assertIn("412", operation["responses"])
         self.assertIn("etag", document["components"]["schemas"]["Event"]["properties"])
 
+    def test_clockify_time_entry_write_overlay(self):
+        # compose() also validates the composed document as OpenAPI 3.
+        document = self.composed("clockify")
+        paths = document["paths"]
+        item = "/v1/workspaces/{workspaceId}/time-entries/{id}"
+        # Reading one entry by id comes from the base document, unchanged.
+        self.assertEqual(paths[item]["get"]["operationId"], "get-time-entry")
+        self.assertEqual(paths[item]["get"]["x-crud"], {"action": "read", "resource": "timeEntry"})
+        create = paths["/v1/workspaces/{workspaceId}/time-entries"]["post"]
+        update = paths[item]["put"]
+        delete = paths[item]["delete"]
+        self.assertEqual(create["x-crud"]["action"], "create")
+        self.assertEqual(update["x-crud"], {"action": "update", "mode": "replace", "resource": "timeEntry"})
+        self.assertEqual(delete["x-crud"], {"action": "delete", "resource": "timeEntry"})
+        for operation in (create, update, delete):
+            self.assertEqual(operation["security"], [{"clockifyApiKey": []}])
+        # The proxy only forwards a body to an operation with a requestBody
+        # for that media type (integration-proxy catalog.rs validate_request).
+        for operation in (create, update):
+            self.assertEqual(
+                operation["requestBody"]["content"]["application/json"]["schema"],
+                {"$ref": "#/components/schemas/TimeEntryWriteRequest"},
+            )
+        self.assertNotIn("requestBody", delete)
+        self.assertEqual(document["components"]["schemas"]["TimeEntryWriteRequest"]["required"], ["start"])
+        # Still no write on the list path, and no PATCH anywhere.
+        self.assertEqual(set(paths["/v1/workspaces/{workspaceId}/user/{userId}/time-entries"]), {"get"})
+        self.assertEqual(set(paths[item]), {"get", "put", "delete"})
+
     def test_github_auth_and_identity_overlay(self):
         document = self.composed("github-issues")
         operation = document["paths"]["/user"]["get"]

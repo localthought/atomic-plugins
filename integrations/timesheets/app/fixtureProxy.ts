@@ -25,7 +25,11 @@ export function fixtureProxy(now: number, options?: { withNames?: boolean }) {
     for (const [k, v] of Object.entries(req.query ?? {}))
       url.searchParams.set(k, v);
 
-    return fixture.request(req.method ?? 'GET', url);
+    return fixture.request(
+      req.method ?? 'GET',
+      url,
+      req.body === undefined ? undefined : JSON.parse(req.body),
+    );
   };
 
   return { fixture, seen, request };

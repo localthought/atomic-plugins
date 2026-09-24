@@ -362,3 +362,100 @@ test('google-calendar: If-Match reaches the fixture, ETag comes back, CORS allow
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('clockify: JSON write bodies reach the fixture, PUT passes CORS, a dropped response never answers', async () => {
+  const server = mockProxy({ platforms: 'clockify' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const workspace = '/api/v1/workspaces/aaaaaaaaaaaaaaaaaaaaaaaa';
+
+  try {
+    const preflight = await fetch(`${base}/proxy/clockify${workspace}`, {
+      method: 'OPTIONS',
+    });
+    assert.match(
+      preflight.headers.get('access-control-allow-methods'),
+      /\bPUT\b/,
+    );
+    assert.match(
+      preflight.headers.get('access-control-expose-headers'),
+      /\bLast-Page\b/,
+    );
+    let code = await connect(base, 'clockify');
+
+    const call = async (method, path, body) => {
+      const response = await fetch(`${base}/proxy/clockify${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${code}`,
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      code = response.headers.get('x-connection-code');
+      const text = await response.text();
+
+      return {
+        status: response.status,
+        headers: response.headers,
+        body: text ? JSON.parse(text) : null,
+      };
+    };
+
+    const put = await call('PUT', `${workspace}/time-entries/entry-1`, {
+      start: '2026-09-01T08:00:00Z',
+      end: '2026-09-01T09:00:00Z',
+      projectId: 'cccccccccccccccccccccccc',
+    });
+    assert.equal(put.status, 200);
+    assert.equal(put.body.timeInterval.end, '2026-09-01T09:00:00Z');
+    assert.equal(put.body.description, '');
+    assert.deepEqual(server.clockify.state.writes.at(-1), {
+      method: 'PUT',
+      path: `/proxy/clockify${workspace}/time-entries/entry-1`,
+      body: {
+        start: '2026-09-01T08:00:00Z',
+        end: '2026-09-01T09:00:00Z',
+        projectId: 'cccccccccccccccccccccccc',
+      },
+    });
+
+    const list = await call(
+      'GET',
+      `${workspace}/user/bbbbbbbbbbbbbbbbbbbbbbbb/time-entries`,
+    );
+    assert.equal(list.headers.get('last-page'), 'true');
+    assert.equal(
+      (await call('DELETE', `${workspace}/time-entries/entry-2`)).status,
+      204,
+    );
+    assert.equal(
+      (await call('GET', `${workspace}/time-entries/entry-2`)).status,
+      404,
+    );
+
+    // A write whose response is lost: applied, then no answer at all.
+    server.clockify.control({ action: 'applyThenDrop', hang: true });
+    const controller = new AbortController();
+    const pending = fetch(`${base}/proxy/clockify${workspace}/time-entries`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${code}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ start: '2026-09-02T08:00:00Z' }),
+      signal: controller.signal,
+    });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(
+      server.clockify.state.entries.some(
+        e => e.timeInterval.start === '2026-09-02T08:00:00Z',
+      ),
+    );
+    controller.abort();
+    await assert.rejects(pending);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -105,9 +105,10 @@ describe('syncClockify against the shared Clockify mock', () => {
       unchanged: 0,
       warnings: [],
     });
+    // The mock lists newest start first, as Clockify is believed to.
     expect(rows().map(([, r]) => r[schema.row.entryId])).toEqual([
-      'entry-1',
       'entry-2',
+      'entry-1',
     ]);
     const first = rows().find(
       ([, r]) => r[schema.row.entryId] === 'entry-1',

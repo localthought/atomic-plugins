@@ -44,7 +44,7 @@ export function mockProxy({
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(
       'Access-Control-Allow-Methods',
-      'GET, POST, PATCH, DELETE, OPTIONS',
+      'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     );
     // As integration-proxy's browser_cors(): If-Match in, ETag and
     // Retry-After out, so a conditional write works the same here.
@@ -54,7 +54,7 @@ export function mockProxy({
     );
     res.setHeader(
       'Access-Control-Expose-Headers',
-      'X-Connection-Code, Link, Retry-After, ETag',
+      'X-Connection-Code, Link, Retry-After, ETag, Last-Page',
     );
 
     if (req.method === 'OPTIONS') {
@@ -264,7 +264,9 @@ export function mockProxy({
       const forwarded = req.headers['if-match']
         ? { 'if-match': req.headers['if-match'] }
         : {};
-      const result = instances[platform].request(
+      // A fixture may answer asynchronously, or never (to simulate a lost
+      // response; see the Clockify fixture's `applyThenDrop`).
+      const result = await instances[platform].request(
         req.method,
         url,
         input,

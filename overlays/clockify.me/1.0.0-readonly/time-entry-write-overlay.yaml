@@ -1,0 +1,157 @@
+overlay: 1.0.0
+info:
+  title: Clockify API Time Entry Writes
+  version: 1.0.0
+# Adds the three time-entry write operations the timesheets app's two-way
+# interval sync plans with (ontola/atomic-plugins#123, design #97): create,
+# full-replacement update and delete, all on the connected user's own
+# entries in one workspace. Reading one entry by id
+# (`GET /v1/workspaces/{workspaceId}/time-entries/{id}`) is already in the
+# base document and the CRUD causality overlay; the sync uses it to confirm
+# that an entry missing from a list read was really deleted.
+#
+# The base OAD (localthought/openapi-directory, `1.0.0-readonly`) keeps
+# only the list and single-item reads, so the write operations are defined
+# here from scratch, the way crud-causality-overlay.yaml defines projects
+# and members. The directory name stays `1.0.0-readonly` because it names
+# the base document these overlays apply to, not what they allow.
+#
+# This overlay is listed last in catalog.json, after the auth and
+# pagination overlays, and carries its own `security`, so removing that
+# one catalog line returns Clockify to read-only.
+#
+# Request and response shapes follow Clockify's published API reference
+# (docs.clockify.me). Not checked against a live account:
+# - PUT replaces the whole entry: a field left out of the body is cleared,
+#   and leaving out `end` turns a completed entry into a running timer
+#   (docs, plus Clockify support in forum thread 3708). Callers must send
+#   every field they want to keep, `end` included.
+# - The request's `customFields` ([{customFieldId, value}]) differs from
+#   the response's `customFieldValues`; the conversion is not verified.
+# - No idempotency key, ETag, If-Match or version exists on time entries.
+# - The status for writing a locked entry is not documented.
+actions:
+  - target: $.paths
+    update:
+      /v1/workspaces/{workspaceId}/time-entries:
+        post:
+          operationId: create-time-entry
+          summary: Add a new time entry for the connected user
+          parameters:
+            - $ref: '#/components/parameters/WorkspaceId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/TimeEntryWriteRequest'}
+          responses:
+            '201':
+              description: The created time entry.
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/TimeEntry'}
+            '400': {description: The request body is not a valid time entry.}
+            '401': {description: The API key is missing or invalid.}
+            '403': {description: The request is not allowed.}
+          security:
+            - clockifyApiKey: []
+          x-crud:
+            action: create
+            resource: timeEntry
+            url:
+              source: template
+            addedFields:
+              id:
+                schema: {type: string}
+                source: generated
+                description: Server-generated identifier for the new time
+                  entry. Clockify has no client-chosen ids.
+
+  - target: $.paths['/v1/workspaces/{workspaceId}/time-entries/{id}']
+    update:
+      put:
+        operationId: update-time-entry
+        summary: Replace a time entry on a workspace
+        description: >-
+          Full replacement: only `start` is required, and every field left
+          out of the body is cleared. Leaving out `end` makes the entry a
+          running timer.
+        parameters:
+          - $ref: '#/components/parameters/WorkspaceId'
+          - name: id
+            in: path
+            required: true
+            description: Represents a time entry identifier across the system.
+            schema: {type: string}
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimeEntryWriteRequest'}
+        responses:
+          '200':
+            description: The updated time entry.
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/TimeEntry'}
+          '400': {description: The request body is not a valid time entry.}
+          '401': {description: The API key is missing or invalid.}
+          '403': {description: The request is not allowed.}
+          '404': {description: The time entry does not exist.}
+        security:
+          - clockifyApiKey: []
+        x-crud:
+          action: update
+          mode: replace
+          resource: timeEntry
+      delete:
+        operationId: delete-time-entry
+        summary: Delete a time entry from a workspace
+        parameters:
+          - $ref: '#/components/parameters/WorkspaceId'
+          - name: id
+            in: path
+            required: true
+            description: Represents a time entry identifier across the system.
+            schema: {type: string}
+        responses:
+          '204': {description: The time entry was deleted.}
+          '401': {description: The API key is missing or invalid.}
+          '403': {description: The request is not allowed.}
+          '404': {description: The time entry does not exist.}
+        security:
+          - clockifyApiKey: []
+        x-crud:
+          action: delete
+          resource: timeEntry
+
+  - target: $.components.schemas
+    update:
+      TimeEntryWriteRequest:
+        type: object
+        description: >-
+          Body of a create or full-replacement update. Only the fields the
+          timesheets app writes are listed; Clockify documents more
+          (customAttributes, sourceType on custom fields).
+        required: [start]
+        properties:
+          start: {type: string, format: date-time}
+          end: {type: string, format: date-time}
+          billable: {type: boolean}
+          description: {type: string}
+          projectId: {type: string}
+          taskId: {type: string}
+          tagIds:
+            type: array
+            items: {type: string}
+          type:
+            type: string
+            enum: [REGULAR, BREAK]
+          customFields:
+            type: array
+            items:
+              type: object
+              required: [customFieldId]
+              properties:
+                customFieldId: {type: string}
+                value: {}

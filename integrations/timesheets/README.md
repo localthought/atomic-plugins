@@ -112,6 +112,17 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
   three rows readable in the table and recovers on reopen. Provider changes
   and failures are driven through the mock proxy's local-only
   `POST /__fixture/clockify`.
+- **Mock write endpoints** (`app/fixture.test.ts`, #123 M0), for the
+  two-way sync that is not built yet: `GET`/`PUT`/`DELETE` one time entry
+  and `POST` a new one, `PUT` as full replacement (fields left out are
+  cleared, no `end` makes a running timer), 400 on a locked entry, lists
+  newest start first with `Last-Page`, and a 404 for any operation the
+  catalog document does not declare, as the proxy answers. Test switches on
+  `POST /__fixture/clockify`: `forbid` (403 without applying), `catalog`
+  (`readOnly`: the catalog before the write overlay), `applyThenDrop`,
+  `failBefore`, `onNextRequest`, `deleteDuringPaging`, `add`, `delete`.
+  This models Clockify's published API reference; none of it is a
+  recording, and the app does not write to Clockify.
 - **Not verified:** a real integration proxy or a real Clockify account.
   The `/api/v1/...` paths match the mock fixture, not a recorded live
   response. No live evidence is recorded, so every capability here is
