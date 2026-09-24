@@ -1,60 +1,58 @@
 // @wc-ignore-file
 import { LOOKBACK_OPTIONS, type LookbackDays } from '../localthought.js';
-import { config as props } from './ontology.js';
+import type { Schema } from './schema.js';
 import type { JSONValue } from './store.js';
 
-/** What the App resource holds about its Clockify connection. No secret. */
-export interface ConnectionReference {
-  platform: 'clockify';
-  connectionId: string;
+/**
+ * What the App resource holds about its Clockify setup. Public ids and a
+ * window, no secret, and no connection id either: the host page owns the
+ * connection and lists it with `store.proxy.connections()`.
+ */
+export interface Settings {
   workspaceId: string;
   userId: string;
   lookbackDays: LookbackDays;
 }
 
-export type ConfigResult =
-  | { ok: true; reference: ConnectionReference }
-  | { ok: false; missing: string[] };
+export type SettingsResult =
+  | { ok: true; settings: Settings }
+  | { ok: false; missing: (keyof Settings)[]; partial: Partial<Settings> };
 
 const text = (value: JSONValue) =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
+export const lookback = (value: JSONValue): LookbackDays | undefined =>
+  LOOKBACK_OPTIONS.find(days => String(days) === String(value));
+
 /**
- * Reads the connection reference off the App resource's properties. A
- * missing look-back falls back to 7 days, the same default as
- * `defaultClockifySelection()`; an unsupported one is reported as missing
- * rather than silently widened.
+ * Reads the settings off the App resource. Unlike a connection, every field
+ * is required: an unsupported look-back is reported as missing rather than
+ * silently widened, and nothing is fetched until the person has chosen.
  */
-export function readConnectionReference(
+export function readSettings(
   get: (property: string) => JSONValue,
-): ConfigResult {
-  const connectionId = text(get(props.connectionId));
-  const workspaceId = text(get(props.workspaceId));
-  const userId = text(get(props.userId));
-  const rawLookback = get(props.lookbackDays);
-  const lookbackDays =
-    rawLookback === undefined || rawLookback === null
-      ? 7
-      : LOOKBACK_OPTIONS.find(days => String(days) === String(rawLookback));
+  schema: Pick<Schema, 'settings'>,
+): SettingsResult {
+  const read = (subject: string | undefined) =>
+    subject ? get(subject) : undefined;
+  const workspaceId = text(read(schema.settings.workspaceId));
+  const userId = text(read(schema.settings.userId));
+  const lookbackDays = lookback(read(schema.settings.lookbackDays));
 
-  const missing = [
-    ...(connectionId ? [] : ['connectionId']),
-    ...(workspaceId ? [] : ['workspaceId']),
-    ...(userId ? [] : ['userId']),
-    ...(lookbackDays ? [] : ['lookbackDays']),
-  ];
-
-  if (!connectionId || !workspaceId || !userId || !lookbackDays)
-    return { ok: false, missing };
+  if (workspaceId && userId && lookbackDays)
+    return { ok: true, settings: { workspaceId, userId, lookbackDays } };
 
   return {
-    ok: true,
-    reference: {
-      platform: 'clockify',
-      connectionId,
-      workspaceId,
-      userId,
-      lookbackDays,
+    ok: false,
+    missing: [
+      ...(workspaceId ? [] : (['workspaceId'] as const)),
+      ...(userId ? [] : (['userId'] as const)),
+      ...(lookbackDays ? [] : (['lookbackDays'] as const)),
+    ],
+    partial: {
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(userId ? { userId } : {}),
+      ...(lookbackDays ? { lookbackDays } : {}),
     },
   };
 }

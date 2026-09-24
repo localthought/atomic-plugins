@@ -13,5 +13,5 @@
     }
   },
   "include": ["localthought.ts", "app/*.ts"],
-  "exclude": ["app/*.test.ts"]
+  "exclude": ["app/*.test.ts", "app/fixtureProxy.ts"]
 }

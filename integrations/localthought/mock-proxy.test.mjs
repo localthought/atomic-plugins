@@ -182,6 +182,36 @@ async function connect(base, platform) {
   return (await redeemed.json()).connection_code;
 }
 
+test('fixture driver: POST /__fixture/<platform> reaches control(), nothing else does', async () => {
+  const server = mockProxy({ platforms: 'clockify,notion' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const drive = (platform, command, method = 'POST') =>
+    fetch(`${base}/__fixture/${platform}`, {
+      method,
+      ...(method === 'POST' ? { body: JSON.stringify(command) } : {}),
+    });
+
+  try {
+    assert.equal((await drive('clockify', {}, 'GET')).status, 405);
+    // No control() on the notion fixture, and no such fixture at all.
+    assert.equal((await drive('notion', { action: 'requests' })).status, 404);
+    assert.equal((await drive('pets', { action: 'requests' })).status, 404);
+
+    const failed = await drive('clockify', { action: 'fail', status: 503 });
+    assert.deepEqual(await failed.json(), {
+      failures: { count: 1, status: 503 },
+    });
+    assert.deepEqual(server.clockify.state.failures, {
+      count: 1,
+      status: 503,
+    });
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('notion: POST list bodies reach the fixture; the cursor travels in the body', async () => {
   const server = mockProxy({ platforms: 'notion' });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

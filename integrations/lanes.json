@@ -62,8 +62,9 @@
       "id": "timesheets",
       "index": 6,
       "platforms": ["clockify"],
-      "tiers": ["typecheck", "unit"],
-      "note": "No e2e tier. The upstream Clockify tests (plugins.spec.ts's pair and clockify-import.spec.ts) were deleted in atomic-server 4bab16ee6, which the pin includes, together with the UI they drove, so there was nothing to move (#44). A new e2e tier needs a new entry point, most likely #20's timesheets drive app once atomic-server#1624 and an install flow exist."
+      "tiers": ["typecheck", "unit", "e2e"],
+      "note": "The e2e drives the timesheets drive app (integrations/timesheets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, set up workspace and look-back in the frame, then import, reload, refresh and recover from a proxy failure through the host relay (atomic-server#1657; the pin has it). Provider changes and failures go through the mock proxy's local-only fixture driver (POST /__fixture/clockify). The install is test-side (New app + replaced source) until #94. The old upstream Clockify tests were deleted in atomic-server 4bab16ee6 with the UI they drove (#44).",
+      "e2e": ["integrations/timesheets/e2e/clockify.spec.ts"]
     }
   ]
 }

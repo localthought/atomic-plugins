@@ -166,6 +166,35 @@ export function mockProxy({
       });
     }
 
+    // Test-side driver for a fixture that offers `control(command)`, so an
+    // e2e spec in another process can change provider data or inject
+    // failures between syncs. Local-only, like the rest of this server.
+    const driver = url.pathname.match(/^\/__fixture\/([^/]+)$/);
+
+    if (driver) {
+      const instance = Object.hasOwn(instances, driver[1])
+        ? instances[driver[1]]
+        : undefined;
+      if (typeof instance?.control !== 'function') return json(404, {});
+      if (req.method !== 'POST') return json(405, {});
+      let command;
+
+      try {
+        let text = '';
+
+        for await (const chunk of req) {
+          text += chunk;
+          if (text.length > 64 * 1024) return json(413, {});
+        }
+
+        command = text ? JSON.parse(text) : {};
+      } catch {
+        return json(400, { error: 'Invalid fixture command' });
+      }
+
+      return json(200, instance.control(command) ?? {});
+    }
+
     if (url.pathname.startsWith('/proxy/')) {
       const code = req.headers.authorization?.replace(/^Bearer /, '');
       const platform = codes.get(code);

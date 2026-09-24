@@ -5,14 +5,19 @@
  * `server/src/plugins/assets/view-client.js`, served from
  * `/plugin-ui?format=client`), never bundled here. These types are kept in
  * sync with that file by hand because there is no package to import them
- * from; if they disagree, view-client.js is ground truth.
+ * from; if they disagree, view-client.js is ground truth. The Pets and Notion
+ * apps keep their own copies (per-plugin containment).
  *
- * Differences from the Phase 1 scaffold on the unmerged
- * `claude/hopeful-hawking-kqlrdy` branch, checked against view-client.js and
- * `browser/data-browser/src/chunks/AppPage/hostStore.ts`:
+ * Checked against view-client.js and
+ * `browser/data-browser/src/chunks/AppPage/hostStore.ts` at the pinned
+ * atomic-server (`.atomic-server-ref`):
  * - `getApp()` resolves to the app's subject string, not an object.
- * - `proxy` is not part of the host today. It is the op this app expects
- *   atomic-server#1624 to add; see `transport.ts`.
+ * - `save()` sends only the properties set since the last save, plus any
+ *   removed with `remove()`; the host writes the removals as an `/app-write`
+ *   `remove` and then sets the rest (atomic-server#1690). Afterwards the
+ *   host re-reads the resource, so the next `get` sees the write.
+ * - `proxy` is the relay from atomic-server#1657 (for #1624): `request`,
+ *   `connections` and `connect`. Feature-detected, never assumed.
  */
 
 export type JSONValue =
@@ -43,13 +48,34 @@ export interface PluginResource {
 export interface HostProxyRequest {
   platform: string;
   connectionId: string;
+  /** Provider path after the proxy's `/proxy/<platform>` prefix. */
   path: string;
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   query?: Record<string, string>;
+  /** JSON text. */
+  body?: string;
 }
 
 export interface HostProxyResponse {
   status: number;
+  /** Lower-cased; only `link`, `retry-after`, `etag`, `content-type`. */
+  headers?: Record<string, string>;
+  /** Parsed JSON when the response was JSON, the raw text otherwise. */
   body: unknown;
+}
+
+/** A connection held by the host page, named by public ids only. */
+export interface ConnectionReference {
+  platform: string;
+  connectionId: string;
+}
+
+export interface HostProxy {
+  request(request: HostProxyRequest): Promise<HostProxyResponse>;
+  /** This app's connections for `platform`, in this browser. */
+  connections(args: { platform: string }): Promise<ConnectionReference[]>;
+  /** Shows the host's consent bar; settles only when the person cancels. */
+  connect(args: { platform: string }): Promise<{ status: 'cancelled' }>;
 }
 
 export interface PluginStore {
@@ -64,13 +90,8 @@ export interface PluginStore {
   }): Promise<PluginResource>;
   /** `handler` takes no argument; re-fetch via getResource for the new data. */
   subscribe(subject: string, handler: () => void): () => void;
-  /**
-   * Not provided by any host yet (atomic-server#1624). Feature-detected, never
-   * assumed.
-   */
-  proxy?: {
-    request(request: HostProxyRequest): Promise<HostProxyResponse>;
-  };
+  /** Feature-detected: hosts without the relay (atomic-server#1624) lack it. */
+  proxy?: HostProxy;
 }
 
 export interface ViewArgs {

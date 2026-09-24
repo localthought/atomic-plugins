@@ -1,20 +1,17 @@
 // @wc-ignore-file
-import type { ConnectionReference } from './config.js';
-import type { PluginStore } from './store.js';
+import type { ConnectionReference, HostProxy } from './store.js';
+
+export const PLATFORM = 'clockify';
 
 /**
  * How the app reaches Clockify through the integration proxy. The sync loop
  * only ever sees this interface, so it cannot hold, rotate or persist a
  * credential; whoever implements it owns authority.
  *
- * Two implementations are anticipated, neither available yet:
- * - host relay: the parent page performs the call with its own
- *   BrowserIntegrations (rotating code in the parent's localStorage) and
- *   returns only `{ status, body }` — `hostTransport()` below, pending the op
- *   in atomic-server#1624;
- * - signed capability (#40): the parent mints a short-lived capability as the
- *   app agent and a frame-side implementation sends
- *   `Authorization: Capability <token>` itself. Not built: #40 is unaccepted.
+ * The one implementation is the host relay (`relayTransport`): the parent
+ * page performs the call with the connection it holds and returns only
+ * `{ status, headers, body }`. A signed capability (#40) would be a second
+ * implementation; it is not built.
  */
 export interface ProxyTransport {
   request(
@@ -50,24 +47,21 @@ export async function requestJson<T>(
 }
 
 /**
- * The host-relayed transport, or `undefined` when this host cannot reach
- * the proxy on the app's behalf. There is intentionally no frame-side
- * fallback that takes a rotating code: the frame is null-origin, has no
- * storage, and a resource must not carry a credential (#21).
+ * The host-relayed transport for one connection. There is intentionally no
+ * frame-side fallback that takes a rotating code: the frame is null-origin,
+ * has no storage, and a resource must not carry a credential (#21).
  */
-export function hostTransport(
-  store: PluginStore,
-  reference: ConnectionReference,
-): ProxyTransport | undefined {
-  const proxy = store.proxy;
-  if (!proxy || typeof proxy.request !== 'function') return undefined;
-
+export function relayTransport(
+  proxy: HostProxy,
+  connection: ConnectionReference,
+): ProxyTransport {
   return {
     request: (path, query) =>
       proxy.request({
-        platform: reference.platform,
-        connectionId: reference.connectionId,
+        platform: connection.platform,
+        connectionId: connection.connectionId,
         path,
+        method: 'GET',
         ...(query ? { query } : {}),
       }),
   };
