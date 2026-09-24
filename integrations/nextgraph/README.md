@@ -57,14 +57,14 @@ broker conformance or general graph/CRDT synchronization. No evidence exists yet
 
 - [ ] Resolve AS-13's scoped operation, host gates and supported broker interface.
 - [ ] Select a compatible client and document encoding; assess licensing,
-  encryption/key custody, identity mapping and any merge semantics.
+      encryption/key custody, identity mapping and any merge semantics.
 - [ ] Specify the 64 KiB limit, job timeout, cancellation, checkpoint and retry
-  behavior before implementing bounded JavaScript jobs.
+      behavior before implementing bounded JavaScript jobs.
 - [ ] Add fixtures and executable tests for round-trip fidelity, denied access,
-  oversize rejection, disconnect and retry inside this folder.
+      oversize rejection, disconnect and retry inside this folder.
 - [ ] Replace the contract tier before marking the adapter implemented.
 - [ ] Record the peer versions, command and results of independent live interop;
-  capabilities remain declared until that evidence exists.
+      capabilities remain declared until that evidence exists.
 
 ## CI
 
