@@ -384,7 +384,10 @@ Rules that keep parallel worktrees from fighting:
   `pets` (#52) and `notion` (#68) are back: both drive their drive app in its
   plugin iframe through the host proxy relay (store.proxy), so they need an
   `.atomic-server-ref` that contains ontola/atomic-server#1657 (#1624's host
-  relay). The `e2e-plugin-system` job is required again since #71.
+  relay). The pin does: it is `bae5cdbe3`, the head of atomic-server's
+  `feat/plugin-debug` after #1657 and #1658 (the Notion code removal) were
+  merged there, no longer a PR head. The `e2e-plugin-system` job is required
+  again since #71.
 - **`timesheets` has no e2e tier, and nothing is left to move.** The
   upstream Clockify tests were deleted in atomic-server `4bab16ee6` (in the
   pin), together with the UI they drove (#44). A new timesheets e2e needs a
