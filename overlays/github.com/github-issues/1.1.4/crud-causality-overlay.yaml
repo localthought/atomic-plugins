@@ -11,8 +11,13 @@ info:
 #     global `id` the payload also carries — so the identity binding maps
 #     `issue_number` to the `number` field.
 #   * `owner`/`repo` are context path variables with no collection to enumerate
-#     them from (there is no "list my repositories" step in this flow), so a
-#     client supplies them from configuration rather than discovering them.
+#     them from, so a client supplies them from configuration rather than
+#     discovering them. `GET /user/repos` (repositories-read-overlay.yaml) is a
+#     picker read for a person choosing that configuration, not a collection.
+#   * Labels are not a resource here. The two label writes below add or remove
+#     one label on an issue without replacing its other labels (a PATCH with
+#     `labels` would replace them all), so they are declared as partial
+#     updates of `issue`, not as a `crudResources` entry Reflector would sync.
 actions:
   - target: $.components
     update:
@@ -136,3 +141,104 @@ actions:
         action: delete
         resource: issueComment
         removesFrom: "*"
+
+  # --- Issue labels -------------------------------------------------------
+  # The issue-tracker drive app shows an open issue carrying the
+  # `atomic:doing` label as Doing (ontola/atomic-plugins#147): it adds that
+  # one label on entering Doing and removes it on going back to Todo. Shapes
+  # follow GitHub's "Labels" reference
+  # (https://docs.github.com/en/rest/issues/labels) and are not verified
+  # against a live account. Both need write access to the repository's
+  # issues, which the `repo` scope grants.
+  - target: $.paths
+    update:
+      /repos/{owner}/{repo}/issues/{issue_number}/labels:
+        post:
+          operationId: issues-add-labels
+          summary: Add labels to an issue
+          description: >-
+            Adds the named labels, keeping the issue's other labels. A name
+            the repository has no label for creates that label with a
+            default colour; a label already on the issue is left as is.
+          security:
+            - githubOAuth:
+                - repo
+          parameters:
+            - {name: owner, in: path, required: true, schema: {type: string}}
+            - {name: repo, in: path, required: true, schema: {type: string}}
+            - {name: issue_number, in: path, required: true, schema: {type: integer}}
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [labels]
+                  properties:
+                    labels:
+                      type: array
+                      minItems: 1
+                      items: {type: string}
+          responses:
+            '200':
+              description: Every label now on the issue (not the issue).
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/label'
+            '404':
+              description: No such repository or issue, or no access.
+            '410':
+              description: Issues are turned off for the repository.
+            '422':
+              description: Validation failed.
+          x-crud:
+            action: update
+            mode: patch
+            resource: issue
+            description: >-
+              Adds labels to the issue's `labels`; other labels are kept.
+              Not a merge patch: the body names labels to add, and the
+              response is the issue's full label list, not the issue.
+              Repeating it is harmless.
+      /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}:
+        delete:
+          operationId: issues-remove-label
+          summary: Remove a label from an issue
+          description: >-
+            Removes one label from the issue; the repository's label itself
+            is kept. `name` is percent-encoded in the path (`atomic%3Adoing`).
+          security:
+            - githubOAuth:
+                - repo
+          parameters:
+            - {name: owner, in: path, required: true, schema: {type: string}}
+            - {name: repo, in: path, required: true, schema: {type: string}}
+            - {name: issue_number, in: path, required: true, schema: {type: integer}}
+            - {name: name, in: path, required: true, schema: {type: string}}
+          responses:
+            '200':
+              description: The labels still on the issue.
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/label'
+            '301':
+              description: Moved permanently.
+            '404':
+              description: The label is not on the issue, or no such issue.
+            '410':
+              description: Issues are turned off for the repository.
+          x-crud:
+            action: update
+            mode: patch
+            resource: issue
+            description: >-
+              Removes one label from the issue's `labels`; other labels are
+              kept. Not idempotent on the wire: repeating it answers 404
+              once the label is gone, so a client reads the issue's labels
+              first (the issue-tracker app does) or treats that 404 as done.

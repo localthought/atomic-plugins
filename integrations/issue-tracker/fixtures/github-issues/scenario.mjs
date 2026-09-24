@@ -124,14 +124,25 @@ export function githubTracker() {
             );
           if (method === 'POST') value = api.createComment(name, number, input);
         } else if (issue && resource === 'labels') {
-          if (method === 'POST')
-            value = issue.labels = [
-              ...new Set([...issue.labels, ...input.labels]),
-            ];
-          if (method === 'DELETE')
-            value = issue.labels = issue.labels.filter(
-              l => l !== decodeURIComponent(label),
-            );
+          // As GitHub: both answer 200 with the labels now on the issue (as
+          // names here, where GitHub sends label objects), and removing a
+          // label the issue does not carry is a 404.
+          const labelName =
+            label === undefined ? undefined : decodeURIComponent(label);
+
+          if (method === 'POST' && labelName === undefined) {
+            if (!Array.isArray(input.labels) || !input.labels.length)
+              return { status: 422, body: { message: 'Validation Failed' } };
+            issue.labels = [...new Set([...issue.labels, ...input.labels])];
+
+            return { status: 200, body: structuredClone(issue.labels) };
+          }
+
+          if (method === 'DELETE' && issue.labels.includes(labelName)) {
+            issue.labels = issue.labels.filter(l => l !== labelName);
+
+            return { status: 200, body: structuredClone(issue.labels) };
+          }
         }
       }
 
@@ -142,7 +153,95 @@ export function githubTracker() {
     },
   };
 
+  // GitHub's GET /user/repos, the issue-tracker drive app's repository
+  // picker (overlays/github.com/github-issues/1.1.4/
+  // repositories-read-overlay.yaml). Kept outside `request` above so it stays
+  // a separate hunk from the issue routes.
+  const issueRequest = api.request;
+  api.request = (method, url, input) =>
+    url.pathname === `${PROXY}/user/repos`
+      ? listRepositories(method, url)
+      : issueRequest(method, url, input);
+
+  /**
+   * Every repository this fixture has seen (the seeded one first), plus one
+   * with issues turned off, in that order whatever `sort` asks for. Paged
+   * like GitHub: `per_page` (default 30, at most 100) and `page`, with a
+   * `Link` header naming the next, last, first and previous pages as
+   * absolute api.github.com URLs that keep the other query parameters. The
+   * real proxy forwards that header unchanged.
+   */
+  function listRepositories(method, url) {
+    if (method !== 'GET') return { status: 404, body: {} };
+    repo(SEEDED_REPOSITORY);
+    const all = [
+      ...[...repositories.entries()].map(([fullName, state], index) =>
+        repository(index + 1, fullName, {
+          has_issues: true,
+          open_issues_count: state.issues.filter(i => i.state === 'open')
+            .length,
+        }),
+      ),
+      repository(repositories.size + 1, NO_ISSUES_REPOSITORY, {
+        has_issues: false,
+        open_issues_count: 0,
+      }),
+    ];
+    const size = Math.min(
+      100,
+      Math.max(1, Number(url.searchParams.get('per_page') ?? 30) || 30),
+    );
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? 1) || 1);
+    const last = Math.max(1, Math.ceil(all.length / size));
+
+    const at = n => {
+      const link = new URL('https://api.github.com/user/repos');
+      for (const [k, v] of url.searchParams)
+        if (k !== 'page') link.searchParams.set(k, v);
+      link.searchParams.set('page', String(n));
+
+      return link.href;
+    };
+
+    const rels = [
+      ...(page < last
+        ? [`<${at(page + 1)}>; rel="next"`, `<${at(last)}>; rel="last"`]
+        : []),
+      ...(page > 1
+        ? [
+            `<${at(1)}>; rel="first"`,
+            `<${at(Math.min(page, last + 1) - 1)}>; rel="prev"`,
+          ]
+        : []),
+    ];
+
+    return {
+      status: 200,
+      body: all.slice((page - 1) * size, page * size),
+      ...(rels.length ? { headers: { Link: rels.join(', ') } } : {}),
+    };
+  }
+
   return api;
+}
+
+const PROXY = '/proxy/github-issues';
+
+/** Listed by `GET /user/repos` with `has_issues: false`; never has issues. */
+export const NO_ISSUES_REPOSITORY = 'atomic-fixture/no-issues';
+
+function repository(id, fullName, fields) {
+  const [owner, name] = fullName.split('/');
+
+  return {
+    id,
+    name,
+    full_name: fullName,
+    owner: { login: owner },
+    private: false,
+    html_url: `https://github.com/${fullName}`,
+    ...fields,
+  };
 }
 
 // No `document`: the mock has never served /catalog/github-issues.yaml.

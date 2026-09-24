@@ -805,6 +805,96 @@ mod tests {
         assert!(catalog
             .allows("github-issues", "GET", "/repositories/123/issues")
             .is_some());
+        // atomic-plugins#147: the issue-tracker app's repository picker read
+        // and its `atomic:doing` label writes.
+        let repos = "/user/repos";
+        assert!(catalog.allows("github-issues", "GET", repos).is_some());
+        for method in ["POST", "PATCH", "PUT", "DELETE"] {
+            assert!(
+                catalog.allows("github-issues", method, repos).is_none(),
+                "{method} {repos}"
+            );
+        }
+        assert!(catalog
+            .validate_request(
+                "github-issues",
+                "GET",
+                repos,
+                Some("per_page=100&page=2&sort=updated"),
+                None,
+                false
+            )
+            .is_ok());
+        assert_eq!(
+            catalog.validate_request(
+                "github-issues",
+                "GET",
+                repos,
+                Some("sort=stars"),
+                None,
+                false
+            ),
+            Err("query parameter value is not permitted")
+        );
+        // Other users' and organizations' listings stay outside the document.
+        for path in ["/users/octocat/repos", "/orgs/ontola/repos", "/user/orgs"] {
+            assert!(
+                catalog.allows("github-issues", "GET", path).is_none(),
+                "{path}"
+            );
+        }
+        let labels = "/repos/owner/repo/issues/7/labels";
+        let doing = "/repos/owner/repo/issues/7/labels/atomic%3Adoing";
+        assert!(catalog.allows("github-issues", "POST", labels).is_some());
+        assert!(catalog.allows("github-issues", "DELETE", doing).is_some());
+        // Neither replacing every label nor listing or clearing them.
+        for method in ["GET", "PUT", "DELETE"] {
+            assert!(
+                catalog.allows("github-issues", method, labels).is_none(),
+                "{method} {labels}"
+            );
+        }
+        for method in ["GET", "POST", "PATCH"] {
+            assert!(
+                catalog.allows("github-issues", method, doing).is_none(),
+                "{method} {doing}"
+            );
+        }
+        // Repository label definitions are not issue labels.
+        assert!(catalog
+            .allows("github-issues", "POST", "/repos/owner/repo/labels")
+            .is_none());
+        assert!(catalog
+            .allows("github-issues", "DELETE", "/repos/owner/repo/labels/bug")
+            .is_none());
+        assert!(catalog
+            .validate_request(
+                "github-issues",
+                "POST",
+                labels,
+                None,
+                Some("application/json"),
+                true
+            )
+            .is_ok());
+        assert_eq!(
+            catalog.validate_request("github-issues", "POST", labels, None, None, false),
+            Err("operation requires a request body")
+        );
+        assert_eq!(
+            catalog.validate_request(
+                "github-issues",
+                "DELETE",
+                doing,
+                None,
+                Some("application/json"),
+                true
+            ),
+            Err("operation does not accept a request body")
+        );
+        // Still the one `repo` scope: labels need no scope of their own.
+        let github = catalog.oauth_provider("github-issues").unwrap();
+        assert_eq!(github.scopes, vec!["repo".to_string()]);
         // atomic-plugins#5 Phase 1: the composed google-calendar document
         // now allows the one write operation Devonian's lens sends.
         assert!(catalog

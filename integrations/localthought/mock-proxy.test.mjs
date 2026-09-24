@@ -1022,3 +1022,89 @@ test('clockify: JSON write bodies reach the fixture, PUT passes CORS, a dropped 
     await close();
   }
 });
+
+test('github-issues: the repository picker pages with Link; labels change one at a time', async () => {
+  const { base, close } = await start({ platforms: 'github-issues' });
+
+  try {
+    const call = frameClient(
+      base,
+      await connect(base, 'github-issues'),
+      'github-issues',
+    );
+
+    const read = async (method, path, body) => {
+      const response = await call(method, path, {
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+
+      return {
+        status: response.status,
+        link: response.headers.get('link'),
+        body: await response.json(),
+      };
+    };
+
+    // The seeded repository plus the one with issues turned off.
+    const all = await read('GET', '/user/repos?per_page=100&sort=updated');
+    assert.equal(all.status, 200);
+    assert.equal(all.link, null);
+    assert.deepEqual(
+      all.body.map(r => [r.full_name, r.has_issues]),
+      [
+        ['atomic-fixture/tracker', true],
+        ['atomic-fixture/no-issues', false],
+      ],
+    );
+    assert.equal(all.body[0].open_issues_count, 2);
+    const first = await read('GET', '/user/repos?per_page=1&sort=updated');
+    assert.deepEqual(
+      first.body.map(r => r.full_name),
+      ['atomic-fixture/tracker'],
+    );
+    assert.equal(
+      first.link,
+      '<https://api.github.com/user/repos?per_page=1&sort=updated&page=2>; rel="next", ' +
+        '<https://api.github.com/user/repos?per_page=1&sort=updated&page=2>; rel="last"',
+    );
+    const second = await read(
+      'GET',
+      '/user/repos?per_page=1&sort=updated&page=2',
+    );
+    assert.deepEqual(
+      second.body.map(r => r.full_name),
+      ['atomic-fixture/no-issues'],
+    );
+    assert.match(second.link, /page=1>; rel="first"/);
+    assert.doesNotMatch(second.link, /rel="next"/);
+    assert.equal((await read('POST', '/user/repos', {})).status, 404);
+
+    // Issue 1 carries `bug`; Doing adds one label and keeps the others.
+    const labels = '/repos/atomic-fixture/tracker/issues/1/labels';
+    const added = await read('POST', labels, { labels: ['atomic:doing'] });
+    assert.deepEqual(added, {
+      status: 200,
+      link: null,
+      body: ['bug', 'atomic:doing'],
+    });
+    assert.equal((await read('POST', labels, { labels: [] })).status, 422);
+    const removed = await read('DELETE', `${labels}/atomic%3Adoing`);
+    assert.deepEqual([removed.status, removed.body], [200, ['bug']]);
+    // As GitHub: removing a label the issue no longer has is a 404.
+    assert.equal(
+      (await read('DELETE', `${labels}/atomic%3Adoing`)).status,
+      404,
+    );
+    assert.equal(
+      (
+        await read(
+          'DELETE',
+          '/repos/atomic-fixture/tracker/issues/99/labels/bug',
+        )
+      ).status,
+      404,
+    );
+  } finally {
+    await close();
+  }
+});

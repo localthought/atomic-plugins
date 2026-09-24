@@ -6,6 +6,7 @@
       "overlays": [
         "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/auth-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/repositories-read-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/crud-causality-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/canonical-paths-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/github.com/github-issues/1.1.4/identity-overlay.yaml"

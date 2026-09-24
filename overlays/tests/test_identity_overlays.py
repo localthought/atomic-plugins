@@ -101,6 +101,57 @@ class IdentityOverlayTests(unittest.TestCase):
         self.assertEqual(operation["x-authenticated-principal"]["subject"], "$response.body#/id")
         self.assertEqual(operation["security"], [{"githubOAuth": []}])
 
+    def test_github_repository_picker_and_label_operations(self):
+        # The issue-tracker drive app (ontola/atomic-plugins#147): the
+        # repository picker's read and the two `atomic:doing` label writes.
+        document = self.composed("github-issues")
+        paths = document["paths"]
+        repos = paths["/user/repos"]
+        self.assertEqual(set(repos), {"get"})
+        read = repos["get"]
+        self.assertEqual(read["operationId"], "repos-list-for-authenticated-user")
+        self.assertEqual(read["security"], [{"githubOAuth": ["repo"]}])
+        # GitHub pages it with the Link header, like the issue lists.
+        self.assertEqual(read["x-pagination"], [{"scheme": "nextLink"}])
+        self.assertEqual(
+            document["components"]["paginationSchemes"]["nextLink"]["response"]["headers"]["Link"]["role"],
+            "nextLink",
+        )
+        query = {p["name"]: p for p in read["parameters"] if p["in"] == "query"}
+        self.assertEqual(set(query), {"per_page", "page", "sort", "direction"})
+        self.assertFalse(any(p.get("required") for p in query.values()))
+        self.assertIn("updated", query["sort"]["schema"]["enum"])
+        self.assertNotIn("requestBody", read)
+        self.assertNotIn("x-crud", read)
+        self.assertIn("full_name", document["components"]["schemas"]["repository"]["required"])
+        # A read, not a collection Reflector would sync.
+        self.assertEqual(set(document["components"]["crudResources"]), {"issue", "issueComment"})
+
+        labels = paths["/repos/{owner}/{repo}/issues/{issue_number}/labels"]
+        label = paths["/repos/{owner}/{repo}/issues/{issue_number}/labels/{name}"]
+        self.assertEqual(set(labels), {"post"})
+        self.assertEqual(set(label), {"delete"})
+        add, remove = labels["post"], label["delete"]
+        for operation in (add, remove):
+            self.assertEqual(operation["security"], [{"githubOAuth": ["repo"]}])
+            self.assertEqual(operation["x-crud"]["action"], "update")
+            self.assertEqual(operation["x-crud"]["resource"], "issue")
+        body = add["requestBody"]
+        self.assertTrue(body["required"])
+        self.assertEqual(
+            body["content"]["application/json"]["schema"]["properties"]["labels"]["items"],
+            {"type": "string"},
+        )
+        self.assertNotIn("requestBody", remove)
+        # The OAuth app still asks for one scope, `repo`, which covers issue
+        # labels and private repositories.
+        scopes = set()
+        for item in paths.values():
+            for operation in item.values():
+                for requirement in operation.get("security", []):
+                    scopes.update(requirement.get("githubOAuth", []))
+        self.assertEqual(scopes, {"repo"})
+
 
 if __name__ == "__main__":
     unittest.main()
