@@ -721,8 +721,20 @@ function bankingSchema() {
       "Original imported transaction content used to detect conflicting reimports."
     ]
   ];
+  const notes = [
+    [
+      "money-category",
+      "Category",
+      "Your own category for this transaction, as free text. Never written by the importer."
+    ],
+    [
+      "money-note",
+      "Note",
+      "Your own note on this transaction. Never written by the importer."
+    ]
+  ];
   return {
-    properties: fields.map(([shortname, name, description]) => ({
+    properties: [...fields, ...notes].map(([shortname, name, description]) => ({
       shortname,
       name,
       description,
@@ -740,7 +752,7 @@ function bankingSchema() {
           "bank-value-date",
           "bank-source-id"
         ],
-        recommends: fields.slice(0, 9).map((f) => f[0])
+        recommends: [...fields.slice(0, 9), ...notes].map((f) => f[0])
       }
     ]
   };

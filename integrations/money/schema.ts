@@ -65,9 +65,23 @@ export function bankingSchema(): SchemaSpec {
       'Original imported transaction content used to detect conflicting reimports.',
     ],
   ];
+  // The person's own annotations, edited in the Money app. The importer never
+  // writes them, so a reimport leaves them alone.
+  const notes = [
+    [
+      'money-category',
+      'Category',
+      'Your own category for this transaction, as free text. Never written by the importer.',
+    ],
+    [
+      'money-note',
+      'Note',
+      'Your own note on this transaction. Never written by the importer.',
+    ],
+  ];
 
   return {
-    properties: fields.map(([shortname, name, description]) => ({
+    properties: [...fields, ...notes].map(([shortname, name, description]) => ({
       shortname,
       name,
       description,
@@ -86,7 +100,7 @@ export function bankingSchema(): SchemaSpec {
           'bank-value-date',
           'bank-source-id',
         ],
-        recommends: fields.slice(0, 9).map(f => f[0]),
+        recommends: [...fields.slice(0, 9), ...notes].map(f => f[0]),
       },
     ],
   };

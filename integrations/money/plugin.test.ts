@@ -93,3 +93,59 @@ describe('input', () => {
     expect(() => run(host)).toThrow('under Import');
   });
 });
+
+describe('annotations (money-category, money-note)', () => {
+  const category = properties['money-category'];
+  const note = properties['money-note'];
+  const host = {
+    config,
+    query: () => [] as string[],
+    read: () => ({}),
+  };
+
+  it('are declared on the row class but never written by the importer', () => {
+    const [klass] = manifest.destination.schema.classes;
+    expect(klass.recommends).toEqual(
+      expect.arrayContaining(['money-category', 'money-note']),
+    );
+    expect(klass.requires).not.toContain('money-category');
+    for (const intent of run({ ...host, text: fixture }).intents as {
+      set: Record<string, unknown>;
+    }[]) {
+      expect(intent.set).not.toHaveProperty(category);
+      expect(intent.set).not.toHaveProperty(note);
+    }
+  });
+
+  it('survive a reimport of the same statement, which proposes nothing', () => {
+    const first = run({ ...host, text: fixture }).intents as {
+      parent: string;
+      isA?: string[];
+      set: Record<string, unknown>;
+    }[];
+    const saved = new Map(
+      first.map((intent, n) => [
+        `row-${n}`,
+        {
+          ...intent.set,
+          'https://atomicdata.dev/properties/parent': intent.parent,
+          'https://atomicdata.dev/properties/isA': intent.isA,
+        } as Record<string, unknown>,
+      ]),
+    );
+    // The person categorises one row and writes a note on it.
+    saved.get('row-0')![category] = 'Lunch';
+    saved.get('row-0')![note] = 'Client lunch, invoice 2026-031';
+    const again = run({
+      ...host,
+      text: fixture,
+      query: (prop: string, value: string) =>
+        [...saved].filter(([, v]) => v[prop] === value).map(([id]) => id),
+      read: (id: string) => saved.get(id)!,
+    });
+    expect(again.intents).toHaveLength(0);
+    expect(again.problems.filter(p => p.severity === 'error')).toEqual([]);
+    expect(saved.get('row-0')![category]).toBe('Lunch');
+    expect(saved.get('row-0')![note]).toBe('Client lunch, invoice 2026-031');
+  });
+});

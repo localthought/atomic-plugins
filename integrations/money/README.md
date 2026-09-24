@@ -103,6 +103,16 @@ offline peers still need collision resolution after synchronization.
   since-removed `ImportMT940` upload dialog. Private bank data is not committed. Synthetic fixtures
   test format behavior; this does not establish compatibility with every bank's
   dialect.
+- `money-category` and `money-note` (the person's own category and note,
+  edited in the Money app) are declared on the Bank transaction class but
+  never written by the importer, so a reimport leaves them alone
+  (`plugin.test.ts`). The category is free text; a Category resource was
+  the alternative (issues.md M-5) and is not built. Installations set up
+  before these properties existed do not have them: running Set up again
+  goes through `ensureSchema`, which creates missing terms by `localId`,
+  but whether it also adds them to an existing class's `recommends` is not
+  verified. Until the class declares both, the app shows Category and Note
+  as unavailable instead of writing undeclared properties.
 - Set up reuses the table and view (found by `localId` beneath the importer)
   when it runs again after a lost response. Schema creation goes through the
   host's `ensureSchema`, which finds existing terms by `localId`.
