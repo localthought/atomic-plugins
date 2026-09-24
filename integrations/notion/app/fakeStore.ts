@@ -104,11 +104,18 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
 }
 
 /** #52's relay in front of the notion fixture, recording every request. */
-export function fixtureProxy(connectionId = 'conn-1') {
-  const api = notionFixture();
+export function fixtureProxy(
+  connectionId = 'conn-1',
+  { scenario = 'default' }: { scenario?: string } = {},
+) {
+  const api = notionFixture({ scenario });
   const calls: HostProxyRequest[] = [];
-  const proxy: HostProxy & { calls: HostProxyRequest[] } = {
+  const proxy: HostProxy & {
+    calls: HostProxyRequest[];
+    api: typeof api;
+  } = {
     calls,
+    api,
     async request(request) {
       calls.push(request);
       if (
@@ -125,7 +132,10 @@ export function fixtureProxy(connectionId = 'conn-1') {
 
       return {
         status: result.status,
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(result.headers ?? {}),
+        },
         body: result.body,
       };
     },
