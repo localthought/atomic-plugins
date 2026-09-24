@@ -29,6 +29,26 @@ export interface Problem {
 
 export const DEFAULT_RETRY_SECONDS = 60;
 
+/** Proxy refusal codes that mean: connect again (#54 phase 2). */
+const REAUTH = new Set([
+  'unknown_connection',
+  'not_delegated',
+  'capability_scope',
+  'platform_mismatch',
+  'credential_refresh_failed',
+  // Only after the frame client's own single retry. (The retired
+  // Bearer-code refusal is left out, as in transport.ts: only a host from
+  // before #54 sends it, and build.test.ts keeps that word out of the bundle.)
+  'capability_expired',
+]);
+/** Proxy refusal codes that mean: this app or person may not do that. */
+const ACCESS = new Set([
+  'unauthorized',
+  'forbidden',
+  'access_denied',
+  'not_owner',
+]);
+
 /** `retry-after` as seconds (a number or an HTTP date), else undefined. */
 export function retryAfterSeconds(
   header: string | undefined,
@@ -73,9 +93,18 @@ export function classify(error: unknown, now = Date.now()): Problem {
   }
 
   const detail = text(error);
-  // The integration proxy's own refusal of a connection that is gone or no
-  // longer this app's (#54 phase 2, `transport.ts`'s `proxyRefusal`).
-  if (/refused this connection/.test(detail)) return { kind: 'reauth', detail };
+  // The integration proxy's own refusals (#54 phase 2): `transport.ts`'s
+  // `proxyRefusal` messages, or an error from the host's frame client that
+  // carries the proxy's code.
+  const code =
+    typeof (error as { code?: unknown } | null)?.code === 'string'
+      ? (error as { code: string }).code
+      : /refused (?:this connection|the request) \((\w+)/.exec(detail)?.[1];
+  if (/refused this connection/.test(detail) || (code && REAUTH.has(code)))
+    return { kind: 'reauth', detail };
+  if (code && ACCESS.has(code)) return { kind: 'forbidden', detail };
+  if (code || /refused the request/.test(detail))
+    return { kind: 'other', detail };
   if (/returned more than \d+ pages/.test(detail))
     return { kind: 'too-many', detail };
 

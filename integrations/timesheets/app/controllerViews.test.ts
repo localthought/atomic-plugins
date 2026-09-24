@@ -68,6 +68,21 @@ describe('classify', () => {
       ).kind,
     ).toBe('reauth');
     expect(classify(new Error('Simulated write failure')).kind).toBe('other');
+    expect(
+      classify(
+        new Error(
+          'The integration proxy refused the request (capability_expired).',
+        ),
+      ).kind,
+    ).toBe('reauth');
+    expect(
+      classify(Object.assign(new Error('refused'), { code: 'forbidden' })).kind,
+    ).toBe('forbidden');
+    expect(
+      classify(
+        new Error('The integration proxy refused the request (bad_signature).'),
+      ).kind,
+    ).toBe('other');
   });
 
   it('reads retry-after as seconds or a date, else 60', () => {
