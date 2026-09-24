@@ -13,6 +13,9 @@
     "camt053.ts",
     "statement.ts",
     "plugin.ts",
+    "errors.ts",
+    "identity.ts",
+    "schema.ts",
     "app/*.ts",
     "app/ui/*.ts",
     "app/harness/*.ts"

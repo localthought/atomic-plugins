@@ -164,3 +164,120 @@ describe('MT940 parser and import proposals', () => {
     ).toThrow('500');
   });
 });
+
+describe('structured errors (code + data, same message)', () => {
+  const caught = (read: () => unknown) => {
+    try {
+      read();
+    } catch (error) {
+      return error as { code?: string; data?: unknown; message: string };
+    }
+
+    throw new Error('expected a throw');
+  };
+
+  it('BALANCE_MISMATCH carries the figures of the failing statement', () => {
+    const error = caught(() => parseMT940(fixture.replace('107,66', '107,67')));
+    expect(error.message).toBe(
+      'Statement balance does not reconcile; no transactions will be imported',
+    );
+    expect(error.code).toBe('BALANCE_MISMATCH');
+    expect(error.data).toEqual({
+      statement: '1/1',
+      account: 'NL00BUNQ0000000000',
+      currency: 'EUR',
+      opening: '100',
+      entries: 2,
+      entriesSum: '7.66',
+      expectedClosing: '107.66',
+      closing: '107.67',
+      start: '2026-09-01',
+      end: '2026-09-03',
+    });
+  });
+
+  it('JSON_NARRATIVE counts every affected row', () => {
+    const error = caught(() =>
+      parseMT940(
+        fixture
+          .replace('Lunch\nSecond line', '["literal text"]')
+          .replace('Refund', '{"a":1}'),
+      ),
+    );
+    expect(error.code).toBe('JSON_NARRATIVE');
+    expect(error.data).toEqual({ count: 2 });
+    expect(error.message).toMatch(/JSON-shaped/);
+  });
+
+  it('INVALID_FIELD names the tag and the 1-based line', () => {
+    const unknown = caught(() => parseMT940(fixture + ':99:unknown'));
+    expect(unknown.code).toBe('INVALID_FIELD');
+    expect(unknown.data).toEqual({ tag: '99', line: 11 });
+    expect(unknown.message).toBe('Unsupported MT940 field :99:');
+    const date = caught(() =>
+      parseMT940(fixture.replace('2609020902', '2602300230')),
+    );
+    expect(date.code).toBe('INVALID_FIELD');
+    expect(date.data).toEqual({ tag: '61', line: 5 });
+    expect(date.message).toBe('Invalid MT940 date');
+  });
+
+  it('FILE_TOO_LARGE, TOO_MANY_ENTRIES and MISSING_BALANCE', () => {
+    expect(caught(() => parseMT940('x'.repeat(512001)))).toMatchObject({
+      code: 'FILE_TOO_LARGE',
+      data: { limit: 512000, format: 'mt940' },
+    });
+    expect(
+      caught(() =>
+        parseMT940(
+          ':25:test\n:28C:1\n:60F:C260901EUR0,\n' +
+            ':61:260901C0,NTRFNONREF\n'.repeat(501) +
+            ':62F:C260901EUR0,',
+        ),
+      ),
+    ).toMatchObject({ code: 'TOO_MANY_ENTRIES', data: { limit: 500 } });
+    expect(caught(() => parseMT940(fixture.split(':62F:')[0]))).toMatchObject({
+      code: 'MISSING_BALANCE',
+      data: { statement: '1/1' },
+    });
+  });
+
+  it('REPEATED_REFERENCE, CONFLICTING_REFERENCE and OVERLAP_WITHOUT_REFERENCES from the importer', () => {
+    const twice = fixture.replace(
+      ':62F:C260903EUR107,66',
+      ':61:2609020902D12,34NTRFNONREF//TEST-1\n:86:Lunch\nSecond line\n:62F:C260903EUR95,32',
+    );
+    expect(caught(() => run({ ...host, text: twice }))).toMatchObject({
+      code: 'REPEATED_REFERENCE',
+      data: { reference: 'TEST-1' },
+      message:
+        'Repeated bank transaction reference in this file; export non-overlapping statements',
+    });
+    const changed = twice.replace('Lunch\nSecond line\n:62F', 'Dinner\n:62F');
+    expect(caught(() => run({ ...host, text: changed }))).toMatchObject({
+      code: 'CONFLICTING_REFERENCE',
+      data: { reference: 'TEST-1' },
+    });
+    const overlap = caught(() =>
+      run({
+        ...host,
+        text: fixture.replace(/\/\/TEST-\d/g, ''),
+        query: prop => (prop === p['bank-fingerprint'] ? ['saved'] : []),
+        read: () => ({
+          'https://atomicdata.dev/properties/parent': config.table,
+          [p['bank-value-date']]: '2026-08-30',
+        }),
+      }),
+    );
+    expect(overlap).toMatchObject({
+      code: 'OVERLAP_WITHOUT_REFERENCES',
+      data: {
+        statement: '1/1',
+        account: 'NL00BUNQ0000000000',
+        thisPeriod: { start: '2026-09-01', end: '2026-09-03' },
+        overlappingDate: '2026-08-30',
+      },
+    });
+    expect(overlap.message).toMatch(/overlaps/);
+  });
+});

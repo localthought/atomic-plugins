@@ -4,6 +4,8 @@ import {
   type ImportRecord,
 } from '../../browser/lib/src/import-records.js';
 import { CAMT053_MAX_BYTES } from './camt053.js';
+import { statementError } from './errors.js';
+import { entries, OVERLAP_MESSAGE } from './identity.js';
 import { bankingSchema } from './schema.js';
 import { parseBankStatement } from './statement.js';
 
@@ -104,107 +106,57 @@ export function run(ctx: Host) {
       `Configure this importer before running it: missing ${missing.join(', ')}`,
     );
   const records: ImportRecord[] = [];
-  const seen = new Map<string, string>();
   let fallback = 0;
+  const inTable = (subject: string) =>
+    ctx.read(subject)['https://atomicdata.dev/properties/parent'] === table;
 
-  for (const statement of statements) {
-    const statementKey = JSON.stringify([
-      statement.number,
-      statement.start,
-      statement.end,
-      statement.opening,
-      statement.closing,
-    ]);
+  for (const entry of entries(format, statements)) {
+    const { statement, row, identity, fingerprint, reference } = entry;
 
-    for (const [index, row] of statement.transactions.entries()) {
-      // Identities are per export format: the same booking exported twice as
-      // MT940 and camt.053 carries different narratives, which would otherwise
-      // surface as a conflict instead of a second row.
-      const fingerprint =
-        `${format}-content:` +
-        JSON.stringify([
-          statement.account,
-          statement.currency,
-          row.date,
-          row.bookingDate,
-          row.amount,
-          row.code,
-          row.reference,
-          row.description,
-        ]);
-      const reference =
-        row.bankReference && row.bankReference !== 'NONREF'
-          ? row.bankReference
-          : '';
-      const identity = JSON.stringify([
-        format,
-        statement.account,
-        statement.currency,
-        reference ? ['bank', reference] : ['statement', statementKey, index],
-      ]);
+    if (!reference) {
+      fallback++;
+      const earlier = ctx
+        .query(p['bank-fingerprint'], fingerprint)
+        .filter(inTable);
 
-      if (seen.has(identity)) {
-        if (seen.get(identity) !== fingerprint)
-          throw new Error(
-            'Conflicting bank transaction references in this file',
-          );
-        throw new Error(
-          'Repeated bank transaction reference in this file; export non-overlapping statements',
-        );
-      }
-
-      seen.set(identity, fingerprint);
-
-      if (!reference) {
-        fallback++;
-        if (
-          !ctx
-            .query(p['bank-source-id'], identity)
-            .some(
-              subject =>
-                ctx.read(subject)[
-                  'https://atomicdata.dev/properties/parent'
-                ] === table,
-            ) &&
-          ctx
-            .query(p['bank-fingerprint'], fingerprint)
-            .some(
-              subject =>
-                ctx.read(subject)[
-                  'https://atomicdata.dev/properties/parent'
-                ] === table,
-            )
-        )
-          throw new Error(
-            'This statement overlaps an earlier import without unique bank references. Use the original statement or export a non-overlapping period.',
-          );
-      }
-
-      const values: Record<string, string> = {
-        'https://atomicdata.dev/properties/name':
-          row.description || row.reference,
-        [p['bank-account']]: statement.account,
-        [p['bank-currency']]: statement.currency,
-        [p['bank-amount']]: row.amount,
-        [p['bank-value-date']]: row.date,
-        [p['bank-booking-date']]: row.bookingDate,
-        [p['bank-description']]: row.description,
-        [p['bank-reference']]: row.bankReference || row.reference,
-        [p['bank-transaction-code']]: row.code,
-        [p['bank-statement']]: statement.number,
-        [p['bank-source-id']]: identity,
-        [p['bank-fingerprint']]: fingerprint,
-      };
-      records.push({
-        sourceId: identity,
-        mode: 'append',
-        legacy: { property: p['bank-source-id'], value: identity },
-        localId: `transaction-${records.length}`,
-        parent: table,
-        isA: [rowClass],
-        values,
-      });
+      if (
+        earlier.length &&
+        !ctx.query(p['bank-source-id'], identity).some(inTable)
+      )
+        throw statementError('OVERLAP_WITHOUT_REFERENCES', OVERLAP_MESSAGE, {
+          statement: statement.number,
+          account: statement.account,
+          thisPeriod: { start: statement.start, end: statement.end },
+          overlappingDate: String(
+            ctx.read(earlier[0])[p['bank-value-date']] ?? '',
+          ),
+        });
     }
+
+    const values: Record<string, string> = {
+      'https://atomicdata.dev/properties/name':
+        row.description || row.reference,
+      [p['bank-account']]: statement.account,
+      [p['bank-currency']]: statement.currency,
+      [p['bank-amount']]: row.amount,
+      [p['bank-value-date']]: row.date,
+      [p['bank-booking-date']]: row.bookingDate,
+      [p['bank-description']]: row.description,
+      [p['bank-reference']]: row.bankReference || row.reference,
+      [p['bank-transaction-code']]: row.code,
+      [p['bank-statement']]: statement.number,
+      [p['bank-source-id']]: identity,
+      [p['bank-fingerprint']]: fingerprint,
+    };
+    records.push({
+      sourceId: identity,
+      mode: 'append',
+      legacy: { property: p['bank-source-id'], value: identity },
+      localId: `transaction-${records.length}`,
+      parent: table,
+      isA: [rowClass],
+      values,
+    });
   }
 
   const result = importRecords(ctx, records);
