@@ -50,15 +50,13 @@ test.describe('money integration', () => {
     const main = page.getByRole('main');
 
     // Maintainer: publish the committed bundle to this server's store.
-    await publishBundle(page);
+    const release = await publishBundle(page);
 
     // User: discover it and create a draft from the release.
     await page
       .getByRole('checkbox', { name: 'Show experimental plugins' })
       .check();
-    const card = page.locator('[data-release]').filter({
-      has: page.getByRole('heading', { name: 'Bank statements', exact: true }),
-    });
+    const card = releaseCard(page, release);
     await expect(card.getByText('Unverified', { exact: true })).toBeVisible();
     await card.getByRole('button', { name: 'Open', exact: true }).click();
     await page
@@ -221,21 +219,12 @@ test.describe('money integration', () => {
     test.setTimeout(300_000);
     const main = page.getByRole('main');
 
-    // The importer, set up and fed the synthetic statement, as above. An
-    // earlier test in this run may have published a release too.
-    await publishBundle(page);
+    // The importer, set up and fed the synthetic statement, as above.
+    const release = await publishBundle(page);
     await page
       .getByRole('checkbox', { name: 'Show experimental plugins' })
       .check();
-    await page
-      .locator('[data-release]')
-      .filter({
-        has: page.getByRole('heading', {
-          name: 'Bank statements',
-          exact: true,
-        }),
-      })
-      .first()
+    await releaseCard(page, release)
       .getByRole('button', { name: 'Open', exact: true })
       .click();
     await page
@@ -396,7 +385,7 @@ async function installApp(page: Page, source: string, rowClass: string) {
   );
 }
 
-async function publishBundle(page: Page) {
+async function publishBundle(page: Page): Promise<string> {
   await createFromCatalog(page, 'Plugin');
   await expect(
     page
@@ -434,9 +423,27 @@ async function publishBundle(page: Page) {
     .click();
   const published = await publication;
   expect(published.ok(), await published.text()).toBe(true);
+  const { id } = (await published.json()) as { id: string };
   await expect(
     page.getByRole('heading', { name: 'Integrations', exact: true }),
   ).toBeVisible();
+
+  return id;
+}
+
+/**
+ * The store card of the release just published. Matched by its
+ * content-addressed id, not by name: a lane store kept from an earlier run
+ * (or an earlier test in this one) lists more "Bank statements" cards, and
+ * publishing the same bundle again lists the same release once more.
+ */
+function releaseCard(page: Page, id: string) {
+  return page
+    .locator(`[data-release="${id}"]`)
+    .filter({
+      has: page.getByRole('heading', { name: 'Bank statements', exact: true }),
+    })
+    .first();
 }
 
 async function choose(page: Page, name: string, text: string) {
