@@ -13,10 +13,39 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
+
+/** Modules whose one export is a stylesheet in a template literal. */
+const STYLESHEETS = /[\\/]app[\\/](ui[\\/]css|styles)\.ts$/;
+
+/**
+ * Minifies the embedded stylesheets with esbuild's CSS minifier before they
+ * are bundled, so the module carries them without source whitespace. The
+ * source stays readable; only the build output is minified.
+ */
+const minifiedStylesheets = esbuild => ({
+  name: 'money-minified-stylesheets',
+  setup(plugin) {
+    plugin.onLoad({ filter: STYLESHEETS }, async args => {
+      const source = readFileSync(args.path, 'utf8');
+      const match = source.match(/export const (\w+) = `([^`]*)`;/);
+      if (!match || match[2].includes('${'))
+        throw new Error(`${args.path}: expected one plain template literal`);
+      const { code } = await esbuild.transform(match[2], {
+        loader: 'css',
+        minify: true,
+      });
+
+      return {
+        contents: `export const ${match[1]} = ${JSON.stringify(code.trim())};`,
+        loader: 'ts',
+      };
+    });
+  },
+});
 
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
@@ -34,6 +63,8 @@ export async function build({ outfile } = {}) {
     target: 'es2022',
     splitting: false,
     legalComments: 'none',
+    minify: true,
+    plugins: [minifiedStylesheets(esbuild)],
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
     logLevel: 'silent',
