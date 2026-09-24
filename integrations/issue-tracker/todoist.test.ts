@@ -200,6 +200,7 @@ describe('tasks that stop appearing (#99)', () => {
       }),
     };
   };
+
   const byId = (records: FetchedPlatform['records'], id: string) =>
     records.find(r => r.resource === 'task' && r.id === id)!;
 
@@ -219,8 +220,8 @@ describe('tasks that stop appearing (#99)', () => {
 
   it('active -> completed only when Todoist says checked', () => {
     const { ids, platform, summary } = second([task('1', 'Buy milk')], {
-      lookups: ids =>
-        ids.map(id => ({
+      lookups: absent =>
+        absent.map(id => ({
           id,
           status: 200,
           body: { id, content: 'Call the dentist (done)', checked: true },
@@ -239,7 +240,7 @@ describe('tasks that stop appearing (#99)', () => {
 
   it('active -> absent with a 404 is unavailable, never completed', () => {
     const { platform, summary } = second([task('1', 'Buy milk')], {
-      lookups: ids => ids.map(id => ({ id, status: 404, body: {} })),
+      lookups: absent => absent.map(id => ({ id, status: 404, body: {} })),
     });
     expect(byId(platform.records, '2').values).toMatchObject({
       [fields.presence]: 'unavailable',
@@ -253,8 +254,8 @@ describe('tasks that stop appearing (#99)', () => {
 
   it('a task Todoist reports deleted is deleted, not completed', () => {
     const { platform } = second([task('1', 'Buy milk')], {
-      lookups: ids =>
-        ids.map(id => ({
+      lookups: absent =>
+        absent.map(id => ({
           id,
           status: 200,
           body: { id, content: 'x', checked: true, is_deleted: true },
@@ -307,8 +308,8 @@ describe('tasks that stop appearing (#99)', () => {
   it('a task that comes back is active again, whatever it was', () => {
     for (const status of [404, 200]) {
       const gone = second([task('1', 'Buy milk')], {
-        lookups: ids =>
-          ids.map(id => ({
+        lookups: absent =>
+          absent.map(id => ({
             id,
             status,
             body: { id, content: 'Call the dentist', checked: true },
@@ -330,7 +331,7 @@ describe('tasks that stop appearing (#99)', () => {
 
   it('does not look up settled tasks again, and never drops a row', () => {
     const gone = second([task('1', 'Buy milk')], {
-      lookups: ids => ids.map(id => ({ id, status: 404, body: {} })),
+      lookups: absent => absent.map(id => ({ id, status: 404, body: {} })),
     });
     const later = read([task('1', 'Buy milk')]);
     expect(absentTodoistTasks(gone.platform.records, later)).toEqual([]);
