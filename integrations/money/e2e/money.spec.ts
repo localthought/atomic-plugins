@@ -11,6 +11,9 @@
  * a person does: find "Bank statements" among the community plugins, create
  * a draft, set it up, import, reload, import again.
  *
+ * A second test adds the Money drive app (`app/`) as a view of the same
+ * table and checks its ledger, detail and in-app check against the host.
+ *
  * Needs an atomic-server with manifest `accepts`/`destination` and the
  * PluginPage Import tab (atomic-server#1691, for #1653; in the pinned
  * `.atomic-server-ref`); against a host without them, publishing fails on
@@ -211,7 +214,187 @@ test.describe('money integration', () => {
     ).toBeVisible({ timeout: 60_000 });
     await expect(dialog.getByText('"Café lunch"').first()).toBeVisible();
   });
+
+  test('Money app: a view of the Bank transactions table, with detail and an in-app check', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const main = page.getByRole('main');
+
+    // The importer, set up and fed the synthetic statement, as above. An
+    // earlier test in this run may have published a release too.
+    await publishBundle(page);
+    await page
+      .getByRole('checkbox', { name: 'Show experimental plugins' })
+      .check();
+    await page
+      .locator('[data-release]')
+      .filter({
+        has: page.getByRole('heading', {
+          name: 'Bank statements',
+          exact: true,
+        }),
+      })
+      .first()
+      .getByRole('button', { name: 'Open', exact: true })
+      .click();
+    await page
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Create draft', exact: true })
+      .click();
+    await expect(
+      main.getByRole('heading', { name: 'Bank statements', level: 1 }),
+    ).toBeVisible({ timeout: 45_000 });
+    await main.getByRole('button', { name: 'Set up', exact: true }).click();
+    await expect(main.getByLabel('File to import')).toBeVisible({
+      timeout: 120_000,
+    });
+    await choose(page, 'statement.mt940', mt940);
+    await preview(page);
+    const dialog = page.locator('dialog[open]');
+    await dialog
+      .getByRole('button', { name: 'Apply 2 changes' })
+      .click({ timeout: 120_000 });
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+    await page.reload();
+    await main.getByRole('link', { name: 'Open workspace' }).click();
+    await expect(main.getByText('Fixture lunch').first()).toBeVisible({
+      timeout: 30_000,
+    });
+    const table = new URL(page.url()).searchParams.get('subject')!;
+    const rowClass = await page.evaluate(
+      async subject =>
+        (await window.store!.getResource(subject)).get(
+          'https://atomicdata.dev/properties/classtype',
+        ) as string,
+      table,
+    );
+
+    // A new App running the Money bundle, told it renders bank transactions
+    // (test-side: no catalog entry installs it yet).
+    await createFromCatalog(page, 'App');
+    await expect(main.locator('iframe[title="App"]')).toBeVisible({
+      timeout: 45_000,
+    });
+    const moneyApp = (
+      (await import('../app/build.mjs' as string)) as {
+        build(): Promise<{ text: string }>;
+      }
+    ).build;
+    await installApp(page, (await moneyApp()).text, rowClass);
+
+    // The person adds it as a view of the importer's table.
+    await page.goto(showUrl(page, table));
+    await main.getByRole('button', { name: 'Add view' }).click();
+    await page.getByRole('menuitem', { name: 'New app' }).click();
+    const app = page.frameLocator('iframe[title="App"]');
+    await expect(
+      app.getByRole('heading', { name: 'Money', level: 1 }),
+    ).toBeVisible({ timeout: 45_000 });
+    await expect(app.getByRole('status').first()).toContainText(
+      'Latest entry',
+      { timeout: 60_000 },
+    );
+    const lunch = app.getByRole('button', { name: /Fixture lunch/ });
+    await expect(lunch).toBeVisible();
+    await expect(
+      app.getByText('−€12.34', { exact: true }).first(),
+    ).toBeVisible();
+
+    // Detail: the bank's fields, read-only; the category is the person's.
+    await lunch.click();
+    const details = app.getByLabel('Transaction details');
+    await expect(details).toContainText('NL00 BUNQ 0000 0000 00 · EUR');
+    await expect(details).toContainText('TEST-1');
+    await details.getByLabel('Category').fill('Meals');
+    await details.getByLabel('Category').press('Tab');
+    // At this pin the host refuses an app's writes outside its own subtree,
+    // and the importer's table is under the importer: the app says so and
+    // keeps the text. When the host allows it, this becomes "Saved".
+    await expect(details.getByRole('alert')).toContainText(
+      "Couldn't save the category. This app isn't allowed to write to the importer's table yet.",
+      { timeout: 30_000 },
+    );
+    await expect(details.getByLabel('Category')).toHaveValue('Meals');
+    await page.keyboard.press('Escape');
+
+    // The in-app check agrees with the importer: nothing new in the same file,
+    // and a changed transaction blocks the file.
+    const input = app.locator('input[type="file"]');
+    await input.setInputFiles({
+      name: 'statement.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940),
+    });
+    const sheet = app.getByRole('dialog', { name: 'Import statement' });
+    await expect(sheet).toContainText(
+      'Nothing new in this file. All 2 transactions were imported before.',
+      { timeout: 30_000 },
+    );
+    await sheet.getByRole('button', { name: 'Close' }).first().click();
+    await input.setInputFiles({
+      name: 'changed.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940.replace('Fixture lunch', 'Fixture dinner')),
+    });
+    await expect(sheet).toContainText(
+      'This file changes a transaction you already have',
+      { timeout: 30_000 },
+    );
+  });
 });
+
+/**
+ * Loads `source` into the App on screen and lets it render `rowClass`, as an
+ * install from the catalog would. The entry point and `renders` are found by
+ * value: their property subjects are minted per drive.
+ */
+async function installApp(page: Page, source: string, rowClass: string) {
+  await page.evaluate(
+    async args => {
+      const store = window.store!;
+      const subject = new URL(location.href).searchParams.get('subject')!;
+      const app = await store.getResource(subject);
+      let loaded = false;
+
+      for (const [property, value] of Object.entries(app.getPropVals())) {
+        if (Array.isArray(value)) {
+          // `renders`: the drive's own property listing the classes this app
+          // can show (Atomic's own, like isA, are not it).
+          if (property.startsWith('https://atomicdata.dev/')) continue;
+          const first = await store
+            .getResource(String(value[0]))
+            .catch(() => undefined);
+          const isA = first?.get('https://atomicdata.dev/properties/isA');
+          if (
+            Array.isArray(isA) &&
+            isA.includes('https://atomicdata.dev/classes/Class')
+          )
+            await app.set(property, [...value, args.rowClass]);
+          continue;
+        }
+
+        if (typeof value !== 'string' || !value.includes(':')) continue;
+        const child = await store.getResource(value).catch(() => undefined);
+        const sourceProp =
+          child &&
+          Object.entries(child.getPropVals()).find(
+            ([, v]) =>
+              typeof v === 'string' && v.includes('export async function view'),
+          )?.[0];
+        if (!child || !sourceProp) continue;
+        await child.set(sourceProp, args.source);
+        await child.save();
+        loaded = true;
+      }
+
+      await app.set('https://atomicdata.dev/properties/name', 'New app');
+      await app.save();
+      if (!loaded) throw new Error('could not find the app’s entry point');
+    },
+    { source, rowClass },
+  );
+}
 
 async function publishBundle(page: Page) {
   await createFromCatalog(page, 'Plugin');

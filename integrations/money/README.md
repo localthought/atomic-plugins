@@ -156,9 +156,14 @@ view; the table's own Table tab stays next to it.
 - **Sources**: statement files; Moneybird and QuickBooks shown as not
   available yet.
 
-What the pinned host does not let the app do yet (not verified in a host;
-the app has unit tests with a fake store and screenshots from
-`app/harness/screenshots.mjs`, but no host E2E):
+Evidence: unit tests with a fake store (`app/*.test.ts`), screenshots and
+axe from `app/harness/screenshots.mjs`, and a host E2E test in
+`e2e/money.spec.ts` (passed 2026-09-24 against `11264e83e`): it sets up the
+importer, imports the synthetic MT940, installs the built app test-side as
+a new App that renders bank transactions, adds it as a view of the Bank
+transactions table through Add view, and checks the ledger, the detail,
+the refused category save and the in-app check (nothing new; a changed
+transaction blocks). What the pinned host does not let the app do yet:
 
 - **Apply an import.** There is no app bridge op that runs a sandbox
   importer (issues.md M-8). The preview says to choose the same file on the
