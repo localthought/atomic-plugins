@@ -112,7 +112,7 @@ export function rowValues(
  *
  * Row identity is a stored `clockify-entry-id` found with `store.query()`,
  * restricted to children of the app's table (`query` is drive-scoped).
- * Requests are sequential; each is one relay round trip.
+ * Requests are sequential; each is one `store.proxy.request` round trip.
  */
 export async function syncClockify(
   store: PluginStore,
