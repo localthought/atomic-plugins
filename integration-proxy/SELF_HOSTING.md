@@ -193,6 +193,9 @@ ENCRYPTION_KEY=...
 SESSION_SECRET=...
 # CATALOG_PATH=/etc/integration-proxy/catalog.json
 # ALLOWED_AGENTS=atomic:agent:...
+# Who runs this proxy, as the landing and consent pages say (0.2.1 and later).
+OPERATOR_NAME=Example Org
+OPERATOR_URL=https://example.org
 OAUTH_GITHUB_ISSUES_CLIENT_ID=...
 OAUTH_GITHUB_ISSUES_CLIENT_SECRET=...
 RUST_LOG=info
@@ -208,6 +211,8 @@ RUST_LOG=info
 | `CATALOG_PATH` | no | Catalog location. Defaults to `https://ontola.github.io/atomic-plugins/overlays/catalog.json`. |
 | `ALLOWED_AGENTS` | no | Comma-separated agent ids. When set, only these agents may own connections. |
 | `REVOKED_SUBJECTS` | no | Comma-separated agent ids that may not own connections. |
+| `OPERATOR_NAME` | no, recommended | Who runs this proxy, as the landing page and the consent page name them ("Use Example Org to sync …", "run by Example Org"). The consent page also shows the host of `BASE_URL`. Defaults to `this integration proxy`, and the pages then name no one. 0.2.1 and later. |
+| `OPERATOR_URL` | no | Link for `OPERATOR_NAME` on those pages: an absolute `http(s)` URL without credentials. Anything else stops the proxy at startup. 0.2.1 and later. |
 | `OAUTH_<PLATFORM>_CLIENT_ID`, `_CLIENT_SECRET`, `_CLIENT_AUTH_METHOD` | per OAuth platform | See [Registering OAuth apps](#registering-oauth-apps). |
 | `RUST_LOG` | no | Log filter, default `info`. |
 
@@ -600,8 +605,8 @@ again. Delegations made after the backup are lost.
 
 ## Limits
 
-These are properties of 0.2.0 that affect whether self-hosting fits your
-needs:
+These are properties of 0.2.0 (0.2.1 where noted) that affect whether
+self-hosting fits your needs:
 
 - **No rate limiting.** One agent can send as many requests as the provider
   allows. `ALLOWED_AGENTS` is the only way to limit who can use the proxy at
@@ -615,8 +620,13 @@ needs:
 - **Sizes and timeouts:** request bodies up to 2 MiB; upstream responses up
   to 10 MiB; 10 s to connect upstream and 30 s per upstream request.
 - **One `ENCRYPTION_KEY`**, with no rotation (see above).
-- **Branding:** the landing and consent pages say "LocalThought" and use its
-  logo, whoever runs the proxy. They are compiled into the binary.
+- **Branding:** the landing and consent pages name the operator from
+  `OPERATOR_NAME` (linked to `OPERATOR_URL`), and the consent page shows the
+  host of `BASE_URL`, so users can see whose proxy they are granting access
+  to. Before 0.2.1 both pages said "LocalThought" whoever ran the proxy. The
+  logo (`/logo.png`, LocalThought's) and the page layout are still compiled
+  into the binary and are not configurable, and the `User-Agent` sent to
+  providers is still `LocalThought-integration-proxy`.
 - **Binds `0.0.0.0` only**, with no graceful drain on shutdown.
 - **Startup depends on the network:** the catalog and every document it
   lists are downloaded at each start.

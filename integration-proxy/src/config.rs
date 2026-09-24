@@ -33,7 +33,17 @@ pub struct Config {
     /// `ALLOWED_AGENTS`: when set, comma-separated agent ids; the default
     /// access policy admits only these owners.
     pub allowed_agents: Option<Vec<String>>,
+    /// `OPERATOR_NAME`: who runs this proxy, as the landing and consent pages
+    /// name them. Defaults to [`DEFAULT_OPERATOR_NAME`] when unset or blank.
+    pub operator_name: String,
+    /// `OPERATOR_URL`: optional absolute http(s) link for the operator's
+    /// name on those pages.
+    pub operator_url: Option<String>,
 }
+
+/// The operator name when `OPERATOR_NAME` is unset: neutral, because the
+/// crate does not know who runs it.
+pub const DEFAULT_OPERATOR_NAME: &str = "this integration proxy";
 
 /// Where GitHub Pages serves this repository's `overlays/` folder. Every
 /// overlay URL in `overlays/catalog.json` starts with this prefix.
@@ -86,6 +96,46 @@ pub(crate) fn validate_base_url(value: &str) -> Result<String, String> {
     Ok(value.trim_end_matches('/').to_owned())
 }
 
+/// `OPERATOR_NAME`, trimmed; unset or blank means [`DEFAULT_OPERATOR_NAME`].
+pub(crate) fn operator_name(value: Option<&str>) -> String {
+    match value.map(str::trim) {
+        Some(name) if !name.is_empty() => name.to_owned(),
+        _ => DEFAULT_OPERATOR_NAME.to_owned(),
+    }
+}
+
+/// `OPERATOR_URL`, if set: an absolute http(s) URL without credentials. It is
+/// rendered as a link, so anything else (`javascript:`, a relative path) is
+/// refused at startup.
+pub(crate) fn validate_operator_url(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let url = Url::parse(value)
+        .map_err(|_| "OPERATOR_URL must be an absolute http(s) URL".to_string())?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("OPERATOR_URL must be an http(s) URL without credentials".into());
+    }
+    Ok(Some(url.to_string()))
+}
+
+/// `host[:port]` of an http(s) URL, the port only when it is not the
+/// scheme's default. Falls back to the input when it does not parse.
+pub(crate) fn public_host(base_url: &str) -> String {
+    match Url::parse(base_url) {
+        Ok(url) => match (url.host_str(), url.port()) {
+            (Some(host), Some(port)) => format!("{host}:{port}"),
+            (Some(host), None) => host.to_owned(),
+            _ => base_url.to_owned(),
+        },
+        Err(_) => base_url.to_owned(),
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         let base_url = validate_base_url(
@@ -112,6 +162,8 @@ impl Config {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .map(|value| list(&value));
+        let operator_name = operator_name(env::var("OPERATOR_NAME").ok().as_deref());
+        let operator_url = validate_operator_url(env::var("OPERATOR_URL").ok().as_deref())?;
 
         Ok(Self {
             base_url,
@@ -122,6 +174,8 @@ impl Config {
             encryption_key,
             revoked_subjects,
             allowed_agents,
+            operator_name,
+            operator_url,
         })
     }
 
@@ -131,6 +185,11 @@ impl Config {
         Url::parse(&self.base_url)
             .map(|url| url.origin().ascii_serialization())
             .unwrap_or_else(|_| self.base_url.clone())
+    }
+
+    /// `host[:port]` of [`Config::base_url`], as the consent page shows it.
+    pub fn public_host(&self) -> String {
+        public_host(&self.base_url)
     }
 
     /// OAuth callback and credential variable names are deterministic from the
@@ -207,8 +266,38 @@ mod tests {
             encryption_key: String::new(),
             revoked_subjects: vec![],
             allowed_agents: None,
+            operator_name: DEFAULT_OPERATOR_NAME.into(),
+            operator_url: None,
         };
         assert_eq!(config.public_origin(), "https://proxy.example:8443");
+        assert_eq!(config.public_host(), "proxy.example:8443");
+        assert_eq!(public_host("https://proxy.example"), "proxy.example");
+        assert_eq!(public_host("http://127.0.0.1:8080"), "127.0.0.1:8080");
+    }
+
+    #[test]
+    fn operator_name_defaults_to_a_neutral_phrase() {
+        assert_eq!(operator_name(None), DEFAULT_OPERATOR_NAME);
+        assert_eq!(operator_name(Some("  ")), DEFAULT_OPERATOR_NAME);
+        assert_eq!(operator_name(Some(" Atomic Data ")), "Atomic Data");
+    }
+
+    #[test]
+    fn operator_url_is_optional_and_must_be_a_plain_http_url() {
+        assert_eq!(validate_operator_url(None).unwrap(), None);
+        assert_eq!(validate_operator_url(Some(" ")).unwrap(), None);
+        assert_eq!(
+            validate_operator_url(Some("https://atomic.place")).unwrap(),
+            Some("https://atomic.place/".into())
+        );
+        for invalid in [
+            "atomic.place",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "https://u:p@atomic.place",
+        ] {
+            assert!(validate_operator_url(Some(invalid)).is_err(), "{invalid}");
+        }
     }
 
     #[test]

@@ -209,6 +209,7 @@ pub async fn page(
     let mut response = protected((
         jar,
         Html(templates::render_platform_connect(
+            &state.operator,
             &request.platform,
             &destination_label(&target),
             &consent.csrf,
@@ -554,6 +555,55 @@ mod tests {
             assert!(body.contains("https://hub.example"));
         } else {
             assert!(body.contains("not available"));
+        }
+    }
+
+    async fn get_body(s: AppState, uri: &str) -> (StatusCode, String) {
+        let response = crate::router(s)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(uri)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), 65_536)
+            .await
+            .unwrap();
+        (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn the_pages_name_the_configured_operator_and_the_proxy_host() {
+        let mut s = state(None);
+        s.catalog = crate::catalog::Catalog::for_test("github-issues");
+        s.operator = crate::templates::Operator::new(
+            "Example <Co>",
+            Some("https://operator.example/"),
+            &crate::config::public_host(crate::test_support::BASE_URL),
+        );
+
+        let (status, home) = get_body(s.clone(), "/").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(home.contains("Example &lt;Co&gt;"), "{home}");
+        assert!(home.contains("proxy.example"), "{home}");
+        assert!(!home.contains("LocalThought"), "{home}");
+
+        // As above: the fixture provider is only configured under CI's
+        // fixture OAuth env vars.
+        let (status, consent) = get_body(s, &connect_uri(&request())).await;
+        if status == StatusCode::OK {
+            assert!(
+                consent.contains(
+                    r#"Integration proxy <strong>proxy.example</strong>, run by <a href="https://operator.example/" rel="noopener noreferrer">Example &lt;Co&gt;</a>."#
+                ),
+                "{consent}"
+            );
+            assert!(!consent.contains("LocalThought"), "{consent}");
+        } else {
+            assert!(consent.contains("not available"));
         }
     }
 

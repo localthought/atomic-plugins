@@ -200,6 +200,8 @@ Nothing in the process reads `.env` files; export the variables, or load a
 | `ENCRYPTION_KEY` | yes | Base64url-encoded, random 32-byte key for sealed provider credentials. Changing it makes every stored connection unreadable. |
 | `REVOKED_SUBJECTS` | no | Comma-separated agent ids (any accepted spelling) the default access policy refuses. |
 | `ALLOWED_AGENTS` | no | When set, comma-separated agent ids; the default access policy admits only these owners. |
+| `OPERATOR_NAME` | no | Who runs this proxy, as the landing and consent pages name them. Defaults to `this integration proxy`, and the pages then name no one. The consent page also shows the host of `BASE_URL`. 0.2.1 and later. |
+| `OPERATOR_URL` | no | Absolute `http(s)` link for `OPERATOR_NAME` on those pages. Anything else (`javascript:`, a relative path, credentials in the URL) is refused at startup. 0.2.1 and later. |
 | `OAUTH_<PLATFORM>_CLIENT_ID`, `OAUTH_<PLATFORM>_CLIENT_SECRET`, `OAUTH_<PLATFORM>_CLIENT_AUTH_METHOD` | per OAuth platform | See below. |
 
 OAuth credentials are provider-specific. For a catalog platform named
@@ -408,6 +410,11 @@ The synced `Procfile` runs `target/release/integration-proxy` (the binary was
 `auth-proxy` before this package became a crate), and log lines are tagged
 `atomic_integration_proxy` instead of `auth_proxy`, which matters only if
 `RUST_LOG` names the old target.
+
+From 0.2.1 the landing and consent pages no longer say "LocalThought"
+unless told to: set `OPERATOR_NAME=LocalThought` and
+`OPERATOR_URL=https://localthought.io` (Heroku config vars) to keep naming
+it, or leave both unset for the neutral "this integration proxy".
 
 #### Deploying 0.2 (issue #54 flag day)
 
