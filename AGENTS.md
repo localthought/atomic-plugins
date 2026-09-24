@@ -174,3 +174,85 @@ whole publish if any file in the repository breaks the Jekyll build.
 - A capability is "declared", not "verified", until it has current live
   evidence (`integrations/README.md`'s certification command explains the
   distinction) — keep that language when writing catalog copy or docs.
+
+## Agent collaboration
+
+Several Claude Code sessions and their subagents work on this repo at the
+same time. These are the working agreements between them.
+
+### Roles
+
+- **Repo oversight.** One long-lived session watches all open issues,
+  picks up new ones, starts agents for them, and does every GitHub write:
+  pushing, opening PRs, merging, filing and closing issues, and commenting.
+  Subagents can't push or open PRs, because a relayed approval doesn't count
+  as the user's approval. So a subagent commits in its own worktree and
+  reports back, and the oversight session publishes the work.
+- **Plugin oversight (optional).** When one plugin has several issues in
+  flight, the repo oversight can hand that plugin to a separate session.
+  That session is a peer session, not a subagent, so it can push. It owns
+  `integrations/<plugin>/` and its issues. It asks the repo oversight about
+  anything outside that folder.
+- **Workers.** These are short-lived subagents, one per issue or task. Each
+  runs in an isolated worktree and writes a plan first
+  (`plans/<topic>.md` in the oversight session's scratchpad). It checks
+  sibling plans for overlap before writing code.
+
+### Issue comments
+
+- **When work starts,** comment on the issue with who is working on it: the
+  session name and short id (for example "atomic-plugins oversight
+  `e6ce43`"), plus the workflow run id or branch if there is one.
+- **When work pauses on a blocker,** comment again. Say what the blocker is
+  and who can remove it: the user, an atomic-server review, a pin bump,
+  credentials or a recording.
+- **When a PR resolves an issue,** put `Closes #N` in the PR body. If an
+  issue stays open after partial work, leave a hand-off comment that lists
+  the remaining steps.
+
+### Boundaries
+
+- Keep each plugin inside its own folder (see "Two plugin runtimes" and
+  `integrations/README.md`). Moving shared code out of plugin folders needs
+  the user's decision.
+- Never merge ontola/atomic-server PRs; they are reviewed by its
+  maintainer. Pin `.atomic-server-ref` to a commit SHA instead, which may be
+  on an unmerged branch.
+- Merge an atomic-plugins PR only after the required `CI` check passes.
+  Never bypass it with admin rights.
+- Never pop the shared git stash. Use a WIP commit instead.
+
+### Shared pinned atomic-server build
+
+Building the atomic-server e2e binary takes about 10 minutes, and each
+worktree that ran the e2e tier used to build its own. Share one build per
+pinned SHA instead. It lives at a stable path outside any session
+scratchpad, because scratchpads are per session:
+
+```sh
+SHA=$(cat .atomic-server-ref)
+DIR=~/.cache/atomic-plugins/atomic-server/$SHA
+if [ ! -x "$DIR/target/e2e/atomic-server" ]; then
+  git -C ~/gh/ontola/atomic-server fetch origin
+  [ -d "$DIR" ] || git -C ~/gh/ontola/atomic-server worktree add --detach "$DIR" "$SHA"
+  (cd "$DIR/wasm" && rustup target add wasm32-unknown-unknown \
+    && cargo bin wasm-pack build --target web --out-dir pkg --no-opt \
+    && cp pkg/atomic_wasm.js pkg/atomic_wasm_bg.wasm ../browser/data-browser/public/wasm/)
+  (cd "$DIR" && SKIP_WASM_BUILD=1 VITE_E2E=true cargo build --profile e2e \
+    -p atomic-server --no-default-features --features wasm-plugins)
+fi
+export ATOMIC_SERVER_CHECKOUT=$DIR
+node integrations/tooling/link-atomic-server.mjs
+```
+
+`link-atomic-server.mjs` only symlinks into the checkout; it doesn't write to
+it, apart from `pnpm install` in `browser/`. `run-lane.mjs` and `serve.mjs`
+read the same `ATOMIC_SERVER_CHECKOUT`, so keep it exported while you run
+lanes.
+
+- Treat `$DIR` as read-only once it's built. Never commit in it or change
+  its checkout, because other sessions may be using it at the same moment.
+- If you need atomic-server changes, make them in a separate worktree on a
+  branch.
+- Delete old SHAs with `git -C ~/gh/ontola/atomic-server worktree remove`
+  once no pin refers to them.
