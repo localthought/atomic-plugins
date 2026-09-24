@@ -738,7 +738,7 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
       return renderBanner(doc, {
         tone: 'warn',
         title: 'Notion asked Atomic to slow down',
-        text: `The sync paused after ${plural(state.pagesRead, 'page')} and tries again at ${clock(state.retryAt, ctx.locale)}. Rows already here stay as they are.`,
+        text: `The sync paused ${state.pagesRead ? `after ${plural(state.pagesRead, 'page')}` : 'before reading any pages'} and tries again at ${clock(state.retryAt, ctx.locale)}. Rows already here stay as they are.`,
         action: { kind: 'secondary', label: 'Try now', key: 'try-now', onClick: ctx.sync },
         technical: state.technical,
         alert: ctx.alert,

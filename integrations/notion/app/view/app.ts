@@ -145,13 +145,24 @@ export function createApp(
       update({ selected: row.subject, linkFallback: { subject: row.subject, href } });
   };
 
-  const onPointer = (event: Event) => {
+  // On click, not pointerdown: a re-render between pointerdown and click
+  // would replace the button under the pointer and lose the click.
+  const onClick = (event: Event) => {
     const target = event.target as Element | null;
-    if (ui.menu && !target?.closest?.('.pl-menu-wrap')) update({ menu: false });
-    if (ui.details && !target?.closest?.('.nt-details, [data-key="details-toggle"]'))
-      update({ details: false });
+    const patch: Partial<UiState> = {};
+    if (ui.menu && !target?.closest?.('.pl-menu-wrap')) patch.menu = false;
+    if (ui.details && !target?.closest?.('.nt-details, [data-key="details-toggle"], .pl-menu-wrap'))
+      patch.details = false;
+    if (Object.keys(patch).length) update(patch);
   };
-  doc.addEventListener('pointerdown', onPointer);
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !(ui.menu || ui.details)) return;
+    if (ui.details) focusAfter = 'details-toggle';
+    else focusAfter = 'menu:More';
+    update({ menu: false, details: false });
+  };
+  doc.addEventListener('click', onClick);
+  doc.addEventListener('keydown', onKey);
 
   const observer =
     typeof win.ResizeObserver === 'function'
@@ -426,7 +437,8 @@ export function createApp(
       clearTimeout(retry);
       clearTimeout(flashTimer);
       clearTimeout(searchTimer);
-      doc.removeEventListener('pointerdown', onPointer);
+      doc.removeEventListener('click', onClick);
+      doc.removeEventListener('keydown', onKey);
       style.remove();
     },
   };

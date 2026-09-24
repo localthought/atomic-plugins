@@ -21,9 +21,20 @@ It is one ES module whose `view({ root, store })` reads through
 `syncables/browser` over `store.proxy`, the host's relay to the integration
 proxy. No credential ever reaches the frame.
 
-- `app/main.ts`, `controller.ts`: plain DOM. "Connect Notion" asks the host
-  to connect (`store.proxy.connect`). Once a connection exists, it imports on
-  open and again on "Sync now".
+- `app/main.ts`, `controller.ts`: "Connect Notion" asks the host to connect
+  (`store.proxy.connect`). Once a connection exists, the app shows the rows
+  already in the drive at once (`rows.ts`) and syncs in the background when
+  the last sync is unknown or older than 15 minutes, and on "Sync now". The
+  controller's states (importing, syncing, no databases, reconnect needed,
+  rate limited, failed) are classified by HTTP status (`errors.ts`). The last
+  sync record (counts, per-database schema with option names and colours,
+  grouped warnings) is a JSON string property, `notion-sync-record`, on the
+  data table resource (`record.ts`).
+- `app/view/`, `app/ui/`: the #89 design (`design/DESIGN.md`,
+  `design/mockups.html`): table, board and list views, database chips, side
+  peek, sync details, banners and empty states. `app/ui/` is the shared
+  plugin shell (`pl-*` tokens mapped from the host's `--t-*` theme), kept
+  free of Notion specifics so it can move to a shared kit.
 - `app/transport.ts`: syncables' `Transport` over `store.proxy.request`. It
   sends the provider path (`/v1/search`), the method and the JSON body, and
   refuses any URL outside the document's `https://api.notion.com/v1`.
@@ -41,7 +52,7 @@ proxy. No credential ever reaches the frame.
     into the lens store, the page is `ingest`ed through the data source's
     Devonian `AtomicLens`, and the lens row's values are written back to the
     host row, removals included. New pages become new rows.
-- `app/build.mjs`: `dist/ui.js`, 98081 bytes at the time of writing,
+- `app/build.mjs`: `dist/ui.js`, about 190 KB unminified since #89's UI,
   including the catalog document, syncables' read path and devonian's Atomic
   Data API. `@tomic/lib` is shimmed, as in timesheets (`Datatype` and
   `validateDatatype` only; `build.test.ts` pins both to the real library).
@@ -71,7 +82,9 @@ What it does not do, and what is not verified:
   row on the next import. A value the lens cannot read losslessly (formatted
   text) leaves the row's value as it was, and is listed in the warnings.
 - Select, status and multi-select columns hold Notion option ids, which stay
-  stable across renames, rather than option names.
+  stable across renames, rather than option names. The app shows names and
+  colours from the sync record's schema, so a rename shows after one sync
+  without rewriting rows.
 - All shared data sources go into one table, with their columns merged. A
   "Data source" column says where each row came from.
 - The e2e shows the pinned host lets the app add Properties under its
@@ -83,16 +96,22 @@ What it does not do, and what is not verified:
   Without it, the app says so and fetches nothing.
 - The e2e runs against the mock proxy (see below). Nothing here has run against live Notion
   or a real proxy.
-- The view is a heading, a status line and one button. Its design is
-  pending #89, which has no Notion design or implementation issue yet;
-  `controller.ts`'s `ViewState` is the data a designed view would render.
+- Links ("Open in Notion", URL and email values) try a new tab. The host's
+  app frame is sandboxed without `allow-popups` at the pin, so that fails
+  and the app shows the URL to copy instead.
+- View choices (database, view, sort) are kept in memory only: the frame is
+  null-origin, where `localStorage` throws.
 
 ## E2E
 
 `e2e/notion.spec.ts` drives the drive plugin the same way the pets spec does:
 a test-side install (`setAppSource` with `build().text`), then Connect, the
-host's consent bar and the mock proxy's consent page, then "Last synced" with
-3 rows and their column types. It runs against the shared mock proxy's
+host's consent bar and the mock proxy's consent page, then the 3 rows in the
+app's own table and their column types. It then walks the #89 states against
+the fixture's scenarios (`setScenario`, `renameOption` drivers): two
+databases, side peek, board, sync details, a renamed option, rate limited,
+failed, nothing shared and revoked access, saving a screenshot of each as a
+test artefact. It runs against the shared mock proxy's
 `notion` fixture (`fixtures/notion/`), so the lane has
 `platforms: ["notion"]` and `tiers: ["live", "e2e"]`. It needs an
 `.atomic-server-ref` with frame capabilities (ontola/atomic-server#1697; the

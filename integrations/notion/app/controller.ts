@@ -249,9 +249,20 @@ export function createController(
       }
 
       try {
+        const failure = classifyFailure(
+          failures,
+          error ??
+            (result?.readErrors.length
+              ? new Error(result.readErrors.join('; '))
+              : undefined),
+          now(),
+        );
         let last = before.last;
 
-        if (result) {
+        // A sync that ended in a failure state keeps the previous record: it
+        // would otherwise count as fresh (no re-sync on open for 15 minutes)
+        // and carry a partial schema.
+        if (result && !failure) {
           last = toRecord(result, startedAt, now());
 
           try {
@@ -283,15 +294,6 @@ export function createController(
           ...(last ? { last } : {}),
           ...(changed.length ? { changed } : {}),
         };
-        const failure = classifyFailure(
-          failures,
-          error ??
-            (result?.readErrors.length
-              ? new Error(result.readErrors.join('; '))
-              : undefined),
-          now(),
-        );
-
         if (failure?.kind === 'rate-limited')
           return set({
             ...after,

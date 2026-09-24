@@ -211,6 +211,17 @@ describe('controller (N2)', () => {
     expect(state).toMatchObject({ kind: 'rate-limited', retryAt: T0 + 120_000 });
   });
 
+  it('keeps the previous sync record when a sync fails, so it is not counted as fresh', async () => {
+    const { controller, proxy, advance } = setup();
+    await controller.load();
+    await controller.sync();
+    advance(60 * 60 * 1000);
+    proxy.api.setScenario('rate-limited');
+    const state = await controller.sync();
+    expect(state).toMatchObject({ kind: 'rate-limited', last: { at: T0 } });
+    expect(controller.isStale()).toBe(true);
+  });
+
   it('goes to failed with plain words on a 502', async () => {
     const { controller } = setup('bad-gateway');
     await controller.load();
