@@ -31,9 +31,9 @@ Authenticate a test client and read one authorized resource while denying anothe
 - [ ] Test identity validation, access control, content negotiation and conditional writes.
 
 - [ ] Add protocol fixtures and executable tests here, covering the milestone
-  and denied access before changing the status to `implemented`.
+      and denied access before changing the status to `implemented`.
 - [ ] Record the peer/version, command and result when live interoperability
-  has actually been verified.
+      has actually been verified.
 
 ## CI
 
