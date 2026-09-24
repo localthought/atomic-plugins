@@ -1,80 +1,117 @@
-# NextGraph
+# NextGraph RDF snapshot adapter
 
-Status: **scaffold**. No adapter, broker, listener or installable bundle is
-implemented here. CI checks planning metadata; a green lane is not protocol
-conformance or live verification. `plugin.json` is not a runtime manifest.
+Status: **implemented bounded interchange adapter; no live broker verification**.
+This is a QuickJS sandbox job using actual Atomic read/query APIs and reviewed
+create intents. It is not an `ngd` broker, WebSocket client, CRDT synchronizer,
+or encrypted-session implementation.
 
-## Scope
+## Verified interchange boundary
 
-Evaluate a bounded QuickJS data adapter to an operator-managed NextGraph broker.
+The official [NextGraph App Protocol](https://docs.nextgraph.org/en/specs/protocol-app/)
+specifies SPARQL Results JSON for ReadQuery SELECT responses and SPARQL Update
+for WriteQuery. Its [framework examples](https://docs.nextgraph.org/en/framework/getting-started/)
+show `ng.sparql_query` returning `results.bindings`. This adapter consumes that
+standard decoded JSON, not the encrypted broker wire envelope. It emits an
+ordinary SPARQL INSERT DATA statement for a separately authorized client to run.
+Neither exchange performs broker I/O from QuickJS.
 
-The [accepted server plugin design](../../docs/design/server-plugin-routes.md#3-per-protocol-feasibility)
-places the NextGraph broker (`ngd`) in **E** (sidecar, phase 4). Its long-lived
-WebSocket connection, session state and NextGraph encryption/key lifecycle do
-not fit a stateless QuickJS invocation. This folder tracks adapter feasibility,
-not a broker implementation. It adds no native Rust crate, executable or sidecar.
+The parser follows [SPARQL 1.1 Results JSON](https://www.w3.org/TR/sparql11-results-json/)
+for a deliberately bounded triple projection. It accepts URI, blank-node and
+literal terms, preserving exact literal strings, datatype IRIs and language
+labels. Subjects cannot be literals, predicates must be IRIs, and every row must
+bind exactly `s`, `p`, `o`. Blank-node labels are scoped to one snapshot and
+remapped to safe output labels. Numeric lexical values are never converted to
+JavaScript numbers. ASK, RDF-star and arbitrary variable projections are rejected.
 
-The browser client is a separate **A** placement: the browser store backend in
-atomic-server's `planning/nextgraph-interop.md`, referenced by the accepted
-design. That client does not run in the server QuickJS sandbox and is outside
-this scaffold's scope.
+## Actual Atomic storage
 
-## Host requirements
+Import mode validates the result and proposes an existing host `create` intent
+for a native `https://atomicdata.dev/classes/PlainText` resource. The original
+SPARQL JSON bytes are retained in the real `description` property, alongside
+name, mimetype and localId. These are actual atoms in Atomic's store **after the
+host reviews and applies the intent**. They are not an in-memory plugin store.
+The native class requires name and description, as verified in pinned host
+`lib/defaults/default_store.json` (PlainText) and browser ontology definitions.
+The snapshot uses those ordinary resource fields, not DocumentV2/Loro content.
 
-Target runtime: **QuickJS**, with JavaScript/TypeScript bundled to JavaScript
-for bounded adapter jobs only. Plugins cannot directly load Rust crates or
-keep a broker WebSocket/session alive across invocations.
+Export mode reads that actual stored resource using `ctx.read`, preserving host
+access checks, revalidates it, and proposes another PlainText resource containing
+SPARQL INSERT DATA with MIME type `application/sparql-update`. Permission errors
+propagate before any export intent is produced. This provides a reviewable atom
+storage round-trip; it does not map RDF predicates to new Atomic ontologies or
+mutate the original external subjects.
 
-Proposed capabilities: `peer-transport`, `persistent-state`, `background-jobs`.
-These are planning requirements, not existing callable plugin APIs. A scoped
-host/sidecar operation must expose bounded document access, keep broker
-sessions and credentials outside the sandbox, enforce authorization and byte
-limits, and define retries/checkpoints before adapter implementation can start.
+## Operator workflow
 
-The accepted design's phase 4 **AS-13** listener/sidecar access depends on
-**AS-01** gates and **AS-02** manifests; it still requires a design and a host
-implementation merged and pinned here. Operator exposure requires all three
-[public-surface gates](../../docs/design/server-plugin-routes.md): the
-`plugin-routes` Cargo build feature, `--plugin-routes`/`ATOMIC_PLUGIN_ROUTES`
-runtime level, and per-installation consent. Sidecars additionally require
-operator `ATOMIC_PLUGIN_SIDECARS` configuration. These are pending host
-requirements, not settings this metadata activates. atomic.place excludes the
-build feature. A per-message WebSocket hook alone does not establish that
-NextGraph sessions fit the sandbox.
+1. In an authorized NextGraph client, select the intended graph/document and run:
 
-## First interoperability milestone
+   ```sparql
+   SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 257
+   ```
 
-After scoped host broker access exists, transfer one explicitly mapped document of at most 64 KiB from Atomic to an authorized NextGraph test broker and read it back with field-for-field equality.
+   Transfer the decoded JSON response. The adapter accepts at most 256 rows;
+   the extra row is a sentinel that rejects oversized results instead of silently
+   taking a partial snapshot. Input cannot prove which query generated it: do
+   not provide results truncated by a smaller limit or an intermediate client.
+2. Configure and run the sandbox job with an actual writable Atomic parent:
 
-Pin the broker/client versions and document encoding, and keep any encryption
-keys in the approved host/broker boundary. Use two explicitly authorized test
-identities plus one denied identity. Verify denied read/write leaves both
-stores unchanged; disconnect before acknowledgement, retry, and verify one
-logical document with no duplicated write. This is an adapter milestone, not
-broker conformance or general graph/CRDT synchronization. No evidence exists yet.
+   ```json
+   {
+     "mode": "import",
+     "parent": "https://your-atomic-server.example/folder",
+     "id": "snapshot-1",
+     "name": "NextGraph RDF snapshot",
+     "result": "<UTF-8 SPARQL Results JSON string>"
+   }
+   ```
 
-## Implementation checklist
+   Review/apply the proposed create intent and retain its assigned Atomic subject.
+3. For export, use the following config and review/apply the resulting resource:
 
-- [ ] Resolve AS-13's scoped operation, host gates and supported broker interface.
-- [ ] Select a compatible client and document encoding; assess licensing,
-      encryption/key custody, identity mapping and any merge semantics.
-- [ ] Specify the 64 KiB limit, job timeout, cancellation, checkpoint and retry
-      behavior before implementing bounded JavaScript jobs.
-- [ ] Add fixtures and executable tests for round-trip fidelity, denied access,
-      oversize rejection, disconnect and retry inside this folder.
-- [ ] Replace the contract tier before marking the adapter implemented.
-- [ ] Record the peer versions, command and results of independent live interop;
-      capabilities remain declared until that evidence exists.
+   ```json
+   {
+     "mode": "export",
+     "parent": "https://your-atomic-server.example/folder",
+     "id": "export-1",
+     "name": "NextGraph SPARQL import",
+     "sourceSubject": "<actual Atomic snapshot subject>"
+   }
+   ```
 
-## CI
+   Use the exported resource's description as the authorized NextGraph client's
+   update text against the intended destination graph. It adds triples to that
+   client's default graph; it does not erase, synchronize or select another graph.
+   Repeated application with blank nodes creates new blank nodes, so this is an
+   explicit snapshot transfer, not a retry-safe replication engine.
 
-From the repository root, with Node only:
+## Bounds and safety
+
+Input is capped at 65,536 UTF-8 bytes and 256 triples; generated N-Triples/update
+text at 131,072 bytes; IDs at 64 ASCII letters/digits/underscore/hyphen; names
+at 256 characters. IRIs and language tags are validated before interpolation;
+literals are escaped, and raw blank labels never enter generated SPARQL. All
+validation completes before a verdict is returned. Duplicate local identities
+are refused to avoid accidental overwrites. This query preflight is not an
+atomic uniqueness transaction: concurrent reviewed jobs still need host review.
+
+No keys, credentials, binary blobs, broker sessions or peer requests are accepted.
+There is no public HTTP route and no authentication shortcut. Automatic transfer
+would require host/sidecar scoped operations with broker authorization and durable
+acknowledgements, unavailable in the inspected host
+`35504494261f59e922e79d536fd437954451e6a3`. The broker remains a native sidecar as
+specified by the accepted server plugin design.
+
+## Build and verification
 
 ```sh
-node integrations/tooling/run-lane.mjs nextgraph
+node integrations/nextgraph/build.mjs
+node integrations/tooling/run-lane.mjs nextgraph --tier node
 ```
 
-`Lane: nextgraph (contract)` validates the planning metadata, README and scaffold
-status. It does not execute QuickJS, start `ngd`, or test a NextGraph peer. The
-lane has no provider fixture or host setup requirement. Add implementation
-checks to this lane when the scoped host interface is available.
+The build writes `integrations/nextgraph/dist/plugin.js` and `manifest.json`.
+Thirteen Node tests cover standard result parsing, exact RDF term serialization,
+reviewed atom import/export, denied reads, malformed/injected input, blank nodes,
+UTF-8/row bounds, duplicate snapshots and reproducible executable bundles.
+`fixtures/select.json` is a hand-authored standards fixture, not a broker capture.
+No live QuickJS execution, actual Atomic commit, independent SPARQL engine or
+NextGraph broker transfer has been verified; green CI does not establish those.

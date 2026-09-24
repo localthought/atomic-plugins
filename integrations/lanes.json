@@ -64,8 +64,9 @@
       "id": "nextgraph",
       "index": 15,
       "platforms": [],
-      "tiers": ["contract"],
-      "note": "Planning contract only: bounded QuickJS adapter feasibility. The NextGraph ngd broker belongs in an operator-managed sidecar; no protocol implementation or live interoperability is verified."
+      "tiers": ["node"],
+      "nodeTests": ["integrations/nextgraph/plugin.test.mjs"],
+      "note": "Executable RDF interchange and reviewed Atomic snapshot storage; no live NextGraph broker verification."
     },
     {
       "id": "timesheets",

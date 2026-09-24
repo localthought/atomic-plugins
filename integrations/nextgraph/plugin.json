@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "nextgraph",
   "name": "NextGraph",
-  "status": "scaffold",
+  "status": "partial",
   "runtime": "quickjs",
-  "scope": "Evaluate a bounded QuickJS data adapter to an operator-managed NextGraph broker.",
+  "scope": "Bounded NextGraph SPARQL Results JSON snapshot import and SPARQL Update export through actual Atomic PlainText resource intents.",
   "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
   "proposedHostCapabilities": [
     "peer-transport",
