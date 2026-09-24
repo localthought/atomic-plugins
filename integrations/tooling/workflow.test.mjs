@@ -201,10 +201,17 @@ test("build-server's artifact is the same whether it pulled or built", () => {
   assert.match(image, /atomic-server\/target\/e2e\/atomic-server/);
 });
 
+/** The Dockerfile's cargo command with CARGO_FEATURES set to `features`. */
+const dockerCargo = features =>
+  command(dockerfile, 'cargo build --profile e2e').map(w =>
+    w === '"${CARGO_FEATURES}"' ? features : w,
+  );
+
 test('the Dockerfile builds exactly what build-server builds', () => {
   const ci = workflow.join('\n');
+  assert.match(dockerfile, /\nARG CARGO_FEATURES=wasm-plugins\n/);
   assert.deepEqual(
-    command(dockerfile, 'cargo build --profile e2e'),
+    dockerCargo('wasm-plugins'),
     command(ci, 'cargo build --profile e2e'),
   );
   assert.deepEqual(
@@ -268,6 +275,42 @@ test('every tooling test file runs in CI', () => {
     [],
     "add these to ci.yml's Tooling unit tests step",
   );
+});
+
+test('the plugin-routes image variant is the Dockerfile with the feature, and CI pulls it before building', () => {
+  // The workflow builds :<sha>-plugin-routes with that build argument.
+  assert.match(imageWorkflow, /CARGO_FEATURES=\$\{\{ matrix\.features \}\}/);
+  assert.ok(imageWorkflow.includes('"wasm-plugins,plugin-routes"'));
+  assert.ok(imageWorkflow.includes('"-" + .'), 'the variant tag suffix');
+  // Only :<sha> (the default variant) moves :latest-pin.
+  assert.match(imageWorkflow, /matrix\.variant == 'default'/);
+  assert.match(dockerfile, /dev\.atomicdata\.atomic-server\.features=/);
+
+  const steps = stepsOf(workflow, 'build-server-plugin-routes');
+  const image = steps.findIndex(s => /id: image\b/.test(s));
+  assert.notEqual(image, -1, 'no step with id: image');
+  assert.match(
+    steps[image],
+    new RegExp(
+      `${IMAGE}:\\$\\{\\{ steps\\.pin\\.outputs\\.sha \\}\\}-plugin-routes`,
+    ),
+  );
+  assert.match(steps[image], /dev\.atomicdata\.atomic-server\.features/);
+  const build = steps.findIndex(s => s.includes('cargo build --profile e2e'));
+  assert.ok(build > image, 'the image has to be tried before the cargo build');
+  assert.deepEqual(
+    command(steps[build], 'cargo build --profile e2e'),
+    dockerCargo('wasm-plugins,plugin-routes'),
+  );
+
+  for (const step of steps.slice(image + 1)) {
+    if (step.includes('actions/upload-artifact')) continue;
+    assert.match(
+      step,
+      /if: steps\.image\.outputs\.hit != 'true'/,
+      `a source-build step runs even when the image was used:\n${step}`,
+    );
+  }
 });
 
 test('the plugin-routes build runs only for lanes that need it, and those lanes get it', () => {

@@ -327,8 +327,14 @@ as long as the default build), from `~/gh/ontola/atomic-server` or
   that finds it waits and then uses the finished binary. A lock whose pid is
   gone on this host is removed as stale. Take the same lock if you build a
   `<sha>-plugin-routes` directory by hand.
-- Read-only once built, like `<sha>`. `ATOMIC_SERVER_IMAGE` does not apply
-  to these lanes: the published image is the default build.
+- Read-only once built, like `<sha>`.
+- CI also publishes this build as
+  `ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes` (for a SHA that has
+  the feature) and `build-server-plugin-routes` pulls it before building
+  from source. Locally, `ATOMIC_SERVER_IMAGE` does not apply to these
+  lanes; to use that image, copy its binary out (`docker create`, `docker
+  cp .../usr/local/bin/atomic-server`, a linux binary) and point
+  `ATOMIC_SERVER_ROUTES_BINARY` at it on linux.
 
 #### Or run the published image instead of building
 

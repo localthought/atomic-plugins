@@ -363,10 +363,13 @@ jobs:
   # (docs/design/server-plugin-routes.md, section 0.2), for the lanes that
   # declare `pluginRoutes` in lanes.json; see
   # integrations/tooling/server-build.mjs, which makes the same build locally.
-  # Runs only when such a lane is in this run's matrix. Always from source:
-  # the published e2e image is the default build and stays that way. Its own
+  # Runs only when such a lane is in this run's matrix. Like build-server, it
+  # first tries the published image for the pin, here its plugin-routes
+  # variant (ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes, from
+  # atomic-server-e2e-image.yml), and builds from source only without one;
+  # every step after "Use the published image" is that fallback. Its own
   # job, not steps in build-server, so that job's image-or-source contract
-  # (workflow.test.mjs) is untouched and the two builds run side by side.
+  # (workflow.test.mjs) is untouched and the two run side by side.
   build-server-plugin-routes:
     name: Build atomic-server (pinned, plugin-routes feature)
     needs: changes
@@ -375,6 +378,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout atomic-plugins
         uses: actions/checkout@v4
@@ -385,7 +389,51 @@ jobs:
         id: pin
         run: echo "sha=$(cat atomic-plugins/.atomic-server-ref)" >> "$GITHUB_OUTPUT"
 
+      # As in build-server: never fatal.
+      - name: Log in to ghcr.io
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The same checks as build-server's, plus the features label: a binary
+      # built without `plugin-routes` refuses to start with `--plugin-routes`,
+      # so the lanes would only fail later and less clearly.
+      - name: Use the published plugin-routes image for this pin, if there is one
+        id: image
+        env:
+          IMAGE: ghcr.io/ontola/atomic-server-e2e:${{ steps.pin.outputs.sha }}-plugin-routes
+          SHA: ${{ steps.pin.outputs.sha }}
+        run: |
+          set -u
+          hit=false
+          if docker pull --platform linux/amd64 "$IMAGE"; then
+            label=$(docker image inspect --format '{{ index .Config.Labels "dev.atomicdata.atomic-server.sha" }}' "$IMAGE")
+            features=$(docker image inspect --format '{{ index .Config.Labels "dev.atomicdata.atomic-server.features" }}' "$IMAGE")
+            cid=$(docker create --platform linux/amd64 "$IMAGE")
+            mkdir -p extracted
+            docker cp "$cid:/usr/local/bin/atomic-server" extracted/atomic-server
+            docker rm "$cid" > /dev/null
+            if [ "$label" != "$SHA" ]; then
+              echo "::warning::$IMAGE is labelled '$label', not $SHA; building from source"
+            elif ! printf '%s' "$features" | tr ',' '\n' | grep -qx plugin-routes; then
+              echo "::warning::$IMAGE was built with features '$features', without plugin-routes; building from source"
+            elif ! extracted/atomic-server --version; then
+              echo "::warning::the binary in $IMAGE does not run here; building from source"
+            else
+              mkdir -p atomic-server/target/e2e
+              mv extracted/atomic-server atomic-server/target/e2e/atomic-server
+              hit=true
+            fi
+          else
+            echo "No plugin-routes image for $SHA yet; building from source"
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+
       - name: Checkout atomic-server at the pinned commit
+        if: steps.image.outputs.hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: ontola/atomic-server
@@ -393,19 +441,23 @@ jobs:
           path: atomic-server
 
       - uses: actions/setup-node@v4
+        if: steps.image.outputs.hit != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - uses: pnpm/action-setup@v4
+        if: steps.image.outputs.hit != 'true'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Install Rust
+        if: steps.image.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       # As in build-server: from inside the checkout, so the targets land in
       # the toolchain rust-toolchain.toml pins.
       - name: Add the plugin-runtime target to the pinned toolchain
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         run: |
           set -eu
@@ -415,22 +467,26 @@ jobs:
       # Its own key: the feature changes what cargo builds, so sharing
       # build-server's cache would make the two evict each other.
       - name: Cache cargo
+        if: steps.image.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: atomic-server -> target
           prefix-key: atomic-server-plugin-routes-${{ steps.pin.outputs.sha }}
 
       - name: Cache pnpm store
+        if: steps.image.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
           key: pnpm-${{ steps.pin.outputs.sha }}-${{ hashFiles('atomic-server/browser/pnpm-lock.yaml') }}
 
       - name: Install JS dependencies
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
       - name: Build the browser WASM bundle
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         run: |
           set -eu
@@ -444,6 +500,7 @@ jobs:
       # build-server's build plus `plugin-routes`. A pin without that feature
       # (older than atomic-server#1726) fails here, naming the feature.
       - name: Build atomic-server (e2e profile, plugin-routes feature)
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         env:
           SKIP_WASM_BUILD: "1"

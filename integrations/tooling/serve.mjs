@@ -28,8 +28,9 @@
  * A lane that declares `pluginRoutes` in lanes.json (see server-build.mjs)
  * gets a different binary: one built with the `plugin-routes` feature,
  * started with `--plugin-routes <level>` and `--routes-origin
- * http://routes.localhost:<port>`. The published image is the default build,
- * so such a lane never runs it, even with ATOMIC_SERVER_IMAGE set.
+ * http://routes.localhost:<port>`. ATOMIC_SERVER_IMAGE names the default
+ * build, so such a lane never runs it; the `:<sha>-plugin-routes` image
+ * variant is what CI's build-server-plugin-routes pulls (AGENTS.md).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';

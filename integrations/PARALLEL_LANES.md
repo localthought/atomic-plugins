@@ -124,9 +124,11 @@ Two optional fields came later ([#134](https://github.com/ontola/atomic-plugins/
   binary comes from `tooling/server-build.mjs`: `ATOMIC_SERVER_ROUTES_BINARY`
   in CI, locally `~/.cache/atomic-plugins/atomic-server/<sha>-plugin-routes`,
   built on first use under a `<dir>.lock` lock. In CI only a run whose matrix
-  holds such a lane starts `build-server-plugin-routes`; `build-server` and
-  the published e2e image stay the default build. Lanes without the field
-  are unchanged.
+  holds such a lane starts `build-server-plugin-routes`, which pulls
+  `ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes` (the e2e image
+  workflow's second variant) and builds from source only without it.
+  `build-server` and the `:<sha>` image stay the default build. Lanes
+  without the field are unchanged.
 - `dir`: a tooling lane (not a plugin) lives in `integrations/tooling` or a
   directory under it instead of `integrations/<id>`. Its filter is only its
   `paths`, which must be listed and may name files under
