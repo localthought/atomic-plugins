@@ -39,7 +39,7 @@ export const css = `
 }
 .pl *, .pl *::before, .pl *::after { box-sizing: border-box; }
 .pl *:focus-visible { outline: 2px solid var(--pl-accent); outline-offset: 2px; }
-.pl button { font: inherit; color: inherit; }
+:where(.pl) button { font: inherit; color: inherit; }
 .pl h1, .pl h2, .pl h3 { font-family: var(--pl-font-h); margin: 0; }
 .pl .num { font-variant-numeric: tabular-nums; }
 .pl .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -64,7 +64,7 @@ export const css = `
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: var(--pl-radius); padding: 6px 14px; font-weight: 600; font-size: 13.5px; cursor: pointer; white-space: nowrap; background: var(--pl-accent); color: #fff !important; text-decoration: none; }
 .btn.sec { background: var(--pl-surface); border-color: var(--pl-border); color: var(--pl-text) !important; }
 .btn.ghost { background: transparent; color: var(--pl-text) !important; padding-inline: 8px; }
-.btn.danger { background: transparent; color: var(--pl-neg) !important; border-color: color-mix(in srgb, var(--pl-neg) 50%, var(--pl-surface)); }
+.btn.danger { background: transparent; color: color-mix(in srgb, var(--pl-neg) 70%, var(--pl-text)) !important; border-color: color-mix(in srgb, var(--pl-neg) 50%, var(--pl-surface)); }
 .btn[disabled] { opacity: 0.55; cursor: default; }
 .btn.icon { padding: 6px; }
 .link { color: var(--pl-accent); text-decoration: underline; text-underline-offset: 2px; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }

@@ -18,6 +18,9 @@
  * `../fixtures/clockify/scenario.mjs`). Run it the way CI does:
  *   node integrations/tooling/run-lane.mjs timesheets --tier e2e
  */
+import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 import {
   before,
@@ -27,6 +30,8 @@ import {
 import { build } from '../app/build.mjs';
 
 const APP_FRAME = 'iframe[title="App"]';
+/** The fixture's workspace (`../fixtures/clockify/scenario.mjs`). */
+const WORKSPACE_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
 /** Sends a command to the mock proxy's Clockify fixture. */
 async function fixture(command: Record<string, unknown>) {
@@ -102,14 +107,11 @@ test.describe('timesheets drive app', () => {
     await expect(status).toContainText('Choose the workspace', {
       timeout: 30_000,
     });
-    await expect(app.getByText('Clockify account: Test Person')).toBeVisible();
-    await app
-      .getByRole('combobox', { name: 'Workspace' })
-      .selectOption({ label: 'Test workspace' });
-    await app
-      .getByRole('combobox', { name: 'Look-back' })
-      .selectOption({ label: 'the last 7 days' });
-    await app.getByRole('button', { name: 'Save and import' }).click();
+    // #89 frame G2: a radio per workspace (the key sees two), the window.
+    await expect(app.getByText('Test Person', { exact: true })).toBeVisible();
+    await app.getByRole('radio', { name: 'Test workspace' }).check();
+    await app.getByRole('button', { name: 'Last 7 days' }).click();
+    await app.getByRole('button', { name: 'Import entries' }).click();
 
     // Two completed entries; the running timer and the break are not rows.
     await expect(status.filter({ hasText: 'Last synced' })).toContainText(
@@ -118,6 +120,30 @@ test.describe('timesheets drive app', () => {
         timeout: 60_000,
       },
     );
+
+    // #89 views, read from the observation log's mirror (not the rows).
+    await expect(
+      app.getByRole('table', { name: /^Hours per project/ }),
+    ).toBeVisible();
+    await expect(app.getByText('Clockify · Test workspace')).toBeVisible();
+    await app.getByRole('tab', { name: 'Projects' }).click();
+    await expect(
+      app.getByRole('list', { name: 'Time per project' }),
+    ).toContainText('Atomic plugins');
+    // Both entries were yesterday: on a week's first day, that is last week.
+    await app.getByRole('tab', { name: 'Entries' }).click();
+    const weekly = app.getByRole('button', { name: /Weekly sync/ });
+    if (!(await weekly.count()))
+      await app.getByRole('button', { name: 'Previous week' }).click();
+    await weekly.click();
+    const detail = app.getByRole('dialog', { name: 'Weekly sync' });
+    await expect(detail).toContainText('Atomic plugins');
+    await expect(detail).toContainText('Test client');
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(weekly).toBeFocused();
+    await app.getByRole('tab', { name: 'Week' }).click();
+
     const table = await tableOf(page);
 
     // The drive holds settings, never the connection or the key.
@@ -178,11 +204,12 @@ test.describe('timesheets drive app', () => {
     expect(Date.parse(starts.at(-1)!)).toBeGreaterThan(Date.parse(starts[0]));
 
     // Widening to 30 days brings in the older entry, and only that one.
-    await app.getByRole('button', { name: 'Change settings' }).click();
-    await app
-      .getByRole('combobox', { name: 'Look-back' })
-      .selectOption({ label: 'the last 30 days' });
-    await app.getByRole('button', { name: 'Save and import' }).click();
+    // #89 frame M: the settings sheet over the views.
+    await app.getByRole('button', { name: 'Settings', exact: true }).click();
+    const settings = app.getByRole('dialog', { name: 'Settings' });
+    await expect(settings.getByLabel('Workspace')).toHaveValue(WORKSPACE_ID);
+    await settings.getByRole('button', { name: 'Last 30 days' }).click();
+    await settings.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(status.filter({ hasText: 'Last synced' })).toContainText(
       '1 created, 0 updated, 2 unchanged, last 30 days.',
       {
@@ -198,6 +225,11 @@ test.describe('timesheets drive app', () => {
     });
     await expect(status).toContainText('failed with 503');
     await expect(status).toContainText('Rows already in the table are kept.');
+    // #89 frame J: a banner over the data already on screen.
+    await expect(app.getByRole('alert')).toContainText('The last sync failed.');
+    await expect(
+      app.getByRole('table', { name: /^Hours per project/ }),
+    ).toBeVisible();
 
     // The rows stay an ordinary, readable table outside the app: each entry
     // once, no running timer, no break.
@@ -408,4 +440,104 @@ async function setAppSource(page: Page, source: string) {
 
     throw new Error('could not find the app’s entry point');
   }, source);
+}
+
+/**
+ * The #89 views frame by frame (`app/ui/preview.ts`: the real views, the
+ * mockup's sample data, a stub controller), at the mockups' widths, checked
+ * with axe (WCAG 2.1 A/AA rules) and attached as screenshots. No server is
+ * needed; it runs in this lane because the lane is where Playwright is.
+ */
+test.describe('timesheets views, frame by frame', () => {
+  test('every design frame renders without axe violations', async ({
+    browser,
+  }, testInfo) => {
+    const script = await previewScript();
+    const { default: AxeBuilder } = await import('@axe-core/playwright');
+    // Reduced motion: the drawer does not slide in, so axe measures its
+    // final colours (and the reduced-motion styles get exercised).
+    const context = await browser.newContext({
+      timezoneId: 'Europe/Amsterdam',
+      reducedMotion: 'reduce',
+    });
+    const page = await context.newPage();
+    await page.setContent(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Timesheets frames</title></head><body></body></html>',
+    );
+    await page.addScriptTag({ content: script });
+    const frames = await page.evaluate(() =>
+      Object.entries(
+        (window as unknown as { FRAMES: Record<string, { width: number }> })
+          .FRAMES,
+      ).map(([id, f]) => [id, f.width] as const),
+    );
+    expect(frames.length).toBeGreaterThanOrEqual(20);
+
+    for (const [id, width] of frames) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.evaluate(frame => {
+        document.body.replaceChildren();
+        const root = document.createElement('div');
+        document.body.append(root);
+        (
+          window as unknown as {
+            renderFrame: (root: HTMLElement, id: string) => void;
+          }
+        ).renderFrame(root, frame);
+      }, id);
+      await testInfo.attach(`frame-${id}.png`, {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      });
+      // Frame O uses a dark accent chosen for the harness; the host picks
+      // the real one (DESIGN.md §8: accent contrast is not guaranteed).
+      const axe = new AxeBuilder({ page }).withTags([
+        'wcag2a',
+        'wcag2aa',
+        'wcag21a',
+        'wcag21aa',
+      ]);
+      if (id === 'o') axe.disableRules(['color-contrast']);
+      const { violations } = await axe.analyze();
+      expect(violations.map(v => `${id}: ${v.id} (${v.nodes.length})`)).toEqual(
+        [],
+      );
+    }
+
+    await context.close();
+  });
+});
+
+/** `app/ui/preview.ts` bundled for the page, with esbuild from `browser/`. */
+async function previewScript(): Promise<string> {
+  const require = createRequire(
+    new URL('../../../browser/package.json', import.meta.url),
+  );
+  // esbuild's types are not resolvable from here; only `build` is used.
+  const esbuild = require('esbuild') as {
+    build(options: object): Promise<{ outputFiles: { text: string }[] }>;
+  };
+  const preview = fileURLToPath(
+    new URL('../app/ui/preview.ts', import.meta.url),
+  );
+  const result = await esbuild.build({
+    stdin: {
+      contents: `import { renderFrame, FRAMES } from ${JSON.stringify(preview)};\nObject.assign(window, { renderFrame, FRAMES });`,
+      resolveDir: dirname(preview),
+      loader: 'ts',
+    },
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2022',
+    write: false,
+    alias: {
+      '@tomic/lib': fileURLToPath(
+        new URL('../app/tomic-lib-shim.ts', import.meta.url),
+      ),
+    },
+    logLevel: 'silent',
+  });
+
+  return result.outputFiles[0].text;
 }
