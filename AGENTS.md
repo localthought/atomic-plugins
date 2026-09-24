@@ -36,8 +36,6 @@ node integrations/tooling/certify.mjs --layer js                   # every packa
 
 The live/e2e tiers additionally need the atomic-server binary built once in
 that checkout (`serve.mjs` prints the exact `cargo build` line).
-`integrations/localthought`'s `wasm-smoke.mjs` needs a `wasm-pack` build
-of atomic-server's `wasm/` crate, which neither the script nor CI provides.
 Details: [Local setup](integrations/README.md#local-setup).
 
 Everything else — the contributor checklist, certification command, config
@@ -47,34 +45,51 @@ companion docs ([`ACTIONS.md`](integrations/ACTIONS.md),
 [`AUTHORIZATION.md`](integrations/AUTHORIZATION.md),
 [`LIVE_TESTING.md`](integrations/LIVE_TESTING.md)). Read that before adding
 or changing a package under `integrations/`; this file only orients you
-towards it and towards the two plugin shapes below.
+towards it and towards the plugin shapes below.
 
-## Two plugin runtimes
+## Plugin runtimes
 
-`integrations/<name>/` packages are one of two fundamentally different
-things. Pick the right one before writing code:
+`integrations/<name>/` packages hold code for one of the shapes below, and
+some hold more than one. Pick the right one before writing code. Which
+plugin uses which shape today, and how far each gets on the pinned host, is
+in [`integrations/READINESS.md`](integrations/READINESS.md).
 
-1. **Server-executed sandbox plugins** — a bundled `plugin.js` with a
+1. **Drive apps** (`integrations/<name>/app/`) — the current direction for
+   provider integrations. One ES module built by `app/build.mjs` that
+   exports `view({ root, store })`. atomic-server runs it as an App's entry
+   point in a null-origin iframe (`sandbox="allow-scripts allow-modals"`).
+   It never holds a credential: every provider call goes through the host relay
+   `store.proxy.request`/`.connections`/`.connect` (ontola/atomic-server#1657),
+   and the top page holds the integration-proxy connection. Reading uses
+   the npm `syncables/browser` package where an OpenAPI document drives the
+   paging, and optionally a lens from the npm `devonian` package for the
+   mapping. `pets/app/` (syncables), `notion/app/` (syncables plus a
+   Devonian `AtomicLens`) and `timesheets/app/` (its own Clockify client)
+   are this shape. No host UI installs a drive app from the catalog yet
+   ([#94](https://github.com/ontola/atomic-plugins/issues/94)); their E2Es
+   install test-side.
+2. **Server-executed sandbox plugins** — a bundled `plugin.js` with a
    `manifest` and a `run(ctx)`, executed server-side in a QuickJS/WASM
    sandbox against scoped `ctx.query`/`ctx.read`/`ctx.http`/`ctx.config`.
-   File-upload importers (**Bank statements**, `integrations/money/`) and
-   most existing integrations (`pets`, `issue-tracker`, `notion`) are this
-   shape. See [Building an uploader plugin](integrations/README.md#building-an-uploader-plugin).
-2. **Browser-only LocalThought/Devonian connectors** — no server sandbox,
-   no AtomicServer HTTP dependency; runs entirely client-side. This repo
-   provides `BrowserIntegrations` (`integrations/localthought/browser.ts`) —
-   OAuth/PKCE and the rotating-code authenticated proxy call, nothing more;
-   `atomic-server` composes a syncables/reflector sync engine on top of it,
-   optionally with a Devonian lens for local-first two-way sync.
-   `integrations/localthought/`, `integrations/timesheets/`, the
-   GitHub issues lens at `integrations/issue-tracker/devonian/github-issues/`
-   and the Google Calendar lens at
-   `integrations/calendar/devonian/google-calendar/` are this shape. See
-   [Building a LocalThought (reflector/syncables/Devonian) connector](integrations/README.md#building-a-localthought-reflectorsyncablesdevonian-connector).
+   **Bank statements** (`money/`), the static Pets demo (`pets/plugin.ts`),
+   the two-way Notion pilot (`notion/plugin.ts`), the GitHub sandbox plugin
+   (`issue-tracker/devonian/github-issues/plugin.ts`) and the generic
+   mapper `localthought/plugin.ts` are this shape. The runtime is still in
+   atomic-server, but atomic-server removed the UI that installed and ran
+   these (`4bab16ee6` the per-plugin setup dialogs, `c707ca4ed` the
+   LocalThought flow), so none of them has a host entry point at the pin. See [Building an uploader plugin](integrations/README.md#building-an-uploader-plugin).
+3. **Unhosted libraries** — mapping code, Devonian lenses and bridges with
+   no runtime of their own: `calendar/adapter.ts` and
+   `calendar/devonian/google-calendar/`, `issue-tracker/todoist.ts`, the
+   GitHub issues lens and bridge in `issue-tracker/devonian/github-issues/`,
+   and `BrowserIntegrations` (`localthought/browser.ts`). Their former
+   hosts in atomic-server's data-browser (the LocalThought connect dialog
+   and sync panel, the Devonian demo) were removed; the data-browser no
+   longer imports anything from `integrations/`. A library reaches users
+   only once a drive app (shape 1) wraps it.
 
-Do not mix the two: a sandbox plugin never reaches the network itself for a
-LocalThought-flow provider, and a browser connector is never loaded into the
-QuickJS sandbox.
+Do not mix the shapes: a drive app never runs in the QuickJS sandbox, and a
+sandbox plugin never reaches a LocalThought-flow provider itself.
 
 ## devonian/
 
@@ -82,10 +97,10 @@ Unlike `integrations/`, `devonian/` is a self-contained, independently
 buildable and publishable TypeScript package (own `package.json`,
 `pnpm-lock.yaml`, `tsconfig.json`) migrated in from the standalone
 `localthought/devonian` repo, full commit history included via `git
-subtree`. It publishes to npm as `devonian` and is what
-`integrations/localthought/`, `integrations/timesheets/`, and
-`integrations/issue-tracker/devonian/github-issues/` depend on for the
-reflector/syncables lens engine described above. A plugin's own lens lives in
+subtree`. It publishes to npm as `devonian`. Two plugins use it:
+`integrations/notion/` depends on the published npm version (exact version
+in its `package.json`), and `integrations/issue-tracker/devonian/github-issues/`
+imports this folder's source through a Vitest alias. A plugin's own lens lives in
 its plugin folder, at `integrations/<plugin>/devonian/<platform>/`, and
 imports `devonian` as a package, never by relative path into `devonian/src`;
 no lens is left inside the package. See [`devonian/AGENTS.md`](devonian/AGENTS.md)
@@ -212,7 +227,7 @@ same time. These are the working agreements between them.
 
 ### Boundaries
 
-- Keep each plugin inside its own folder (see "Two plugin runtimes" and
+- Keep each plugin inside its own folder (see "Plugin runtimes" and
   `integrations/README.md`). Moving shared code out of plugin folders needs
   the user's decision.
 - Never merge ontola/atomic-server PRs; they are reviewed by its

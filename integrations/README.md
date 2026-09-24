@@ -3,9 +3,14 @@
 Each provider lives in its own directory and ships a bundled ES module. The
 runtime, permissions, reconciliation and recovery stay shared. Packages remain
 experimental until their advertised capabilities have current live evidence.
+[READINESS.md](READINESS.md) records, per plugin, which runtime its current
+code uses, how it is installed on the pinned atomic-server, and which of its
+evidence is unit, host E2E, live or historical.
 
 Named actions, automation permissions, recovery and MCP setup are documented in
-[ACTIONS.md](ACTIONS.md). The MCP stdio protocol test runs in the JS CI gate.
+[ACTIONS.md](ACTIONS.md). Those are atomic-server features; the MCP stdio
+protocol test (`browser/data-browser/scripts/integration-mcp.test.mjs`) lives
+in atomic-server and is not run by this repo's CI.
 
 ## Local setup
 
@@ -53,26 +58,26 @@ Not covered by the script:
 
 - the atomic-server binary. The `live` and `e2e` tiers need it; build it
   once in the checkout with the `cargo build` line `serve.mjs` prints.
-- `localthought/wasm-smoke.mjs`'s `../../wasm/pkg/atomic_wasm.js`. That
-  needs a `wasm-pack` build of atomic-server's Rust `wasm` crate, and CI
-  does not run it either.
-- certify's `--layer sandbox` and `--layer all`. Both run
-  `cargo test -p atomic-server` from this repo's root. That has not been
-  verified to work in this symlinked layout. CI leaves it to atomic-server's
-  own CI.
+- certify's `--layer sandbox` and `--layer all` (the default). Both run
+  `cargo test -p atomic-server` from this repo's root for the Rust tests
+  named in each `package.json`'s `atomicCertification.sandboxTests`. That
+  has not been verified to work in this symlinked layout, and it cannot pass
+  at the current pin: atomic-server `4bab16ee6` removed those tests. CI runs
+  `--layer js` only.
 
 ## One certification command
 
 From the repository root:
 
 ```sh
-node integrations/tooling/certify.mjs
+node integrations/tooling/certify.mjs --layer js
 ```
 
-Or from `browser`: `pnpm certify:integrations`.
-This discovers every integration with a `package.json`, validates required
-metadata/files, checks the committed bundle against a fresh build, typechecks,
-runs fixture tests, and runs exact named Rust tests through QuickJS/WASM.
+This discovers every integration with a `package.json` (today `money`,
+`notion` and `pets`), validates required metadata/files, checks the committed
+bundle against a fresh build, typechecks and runs fixture tests. Without
+`--layer js` it also runs exact named Rust tests through QuickJS/WASM, which
+the current pin no longer has (see [Local setup](#local-setup)).
 It fails if a requested test matches nothing. It never rebuilds the shipped file
 in place to make a reproducibility failure disappear.
 
@@ -88,11 +93,12 @@ credentials and skipped tests never count as successful live verification.
 The report binds evidence to the shipped bundle hash and package version.
 Do not infer compatibility of a later release from an older report.
 
-CI's JS gate discovers all providers. Rust CI mounts the complete integration
-folder so compiled sandbox tests can include shipped bundles and manifest
-fixtures. `dagger call integration-certification-report export --path ./report`
-exports the JS-layer evidence. The full local command includes sandbox evidence;
-CI's exported JS report deliberately does not claim its separate Rust gate ran.
+CI's "Lint, tooling tests, certification" job runs `--layer js` for all
+providers and uploads the report as the `integration-certification-report`
+artifact. That report deliberately does not claim any sandbox layer ran.
+Drive apps (`<name>/app/`) and packages without a `package.json` are not
+certified by this command; their evidence is their lane's unit and e2e tiers
+(`lanes.json`).
 
 ## Declaring config
 
@@ -137,9 +143,11 @@ never advertise a version other than the one actually shipped. A card whose
 or the generic LocalThought/Devonian bridge — carries no `version` here,
 since this repo is not the source of its published releases.
 
-A host reads a package's `version` (directly, or via `catalog.json`) at
-install time to record which release an installation is pinned to, and later
-compares it against this repo's current `version` to offer an update. Bump
+A host is meant to read a package's `version` (directly, or via
+`catalog.json`) at install time to record which release an installation is
+pinned to, and later compare it against this repo's current `version` to
+offer an update. No host does this at the current pin
+([#94](https://github.com/ontola/atomic-plugins/issues/94)). Bump
 `package.json` `version` (and the matching catalog entry) whenever an
 integration's shipped `plugin.js` changes.
 
@@ -148,11 +156,17 @@ integration's shipped `plugin.js` changes.
 A file-upload importer — like **Bank statements** (`integrations/money/`,
 which reads MT940 and camt.053 bank statement exports) — is not a special
 plugin kind with its own base class or interface. It is an ordinary
-server-executed sandbox plugin (see [Two plugin runtimes](../AGENTS.md#two-plugin-runtimes))
+server-executed sandbox plugin (see [Plugin runtimes](../AGENTS.md#plugin-runtimes))
 whose `run(ctx)` reads file contents that UI code already collected, instead
 of calling `ctx.http` against a provider. Everything else — config
 declaration, `importRecords`, identity/reconciliation — is the same
 contract every importer plugin follows.
+
+At the current pin no host UI supplies the file text: atomic-server
+`4bab16ee6` removed the upload dialog (`ImportMT940`) that did, and a
+replacement is [#95](https://github.com/ontola/atomic-plugins/issues/95).
+The contract below is what `money/plugin.ts` implements and its unit tests
+exercise.
 
 1. **Declare no network access.** `operations: []` and `secrets: []` in the
    manifest is what marks a plugin as needing neither: contrast with
@@ -268,151 +282,102 @@ contract every importer plugin follows.
 
 ## Building a LocalThought (reflector/syncables/Devonian) connector
 
-This is the other plugin runtime from [Two plugin runtimes](../AGENTS.md#two-plugin-runtimes):
-no server sandbox, no `plugin.js` executed by QuickJS. It runs entirely in
-the browser against a remote platform's HTTP API, through **LocalThought**
-(the remote OAuth/API proxy at `https://localthought.io`, or a
-self-hosted `integration-proxy`) and its supporting engines. Read
-[`integrations/localthought/README.md`](localthought/README.md) for the
-end-to-end connect/install/refresh flow before adding a new platform; this
-section explains where the terms **reflector**, **syncables** and
-**Devonian** fit, and when to reach for which.
+A provider integration today is a **drive app**: shape 1 in
+[Plugin runtimes](../AGENTS.md#plugin-runtimes). It runs in the browser, in
+the App's iframe, against the provider's HTTP API through **LocalThought**
+(the OAuth/API proxy at `https://localthought.io`, or a self-hosted
+[`integration-proxy`](../integration-proxy/)). `pets/app/` is the smallest
+working example and `notion/app/` the fullest; both pass a host E2E against
+the pinned atomic-server and the shared mock proxy. This section explains
+where **syncables**, **Devonian** and **reflector** fit.
+
+Earlier versions of this section described a different runtime: a
+LocalThought connect dialog and sync panel inside atomic-server's
+data-browser, built on `BrowserIntegrations` (`localthought/browser.ts`),
+with catalog `platform` entries, lens hooks and the generic sandbox mapper
+`localthought/plugin.ts`. atomic-server removed that flow (`f3efedf65`,
+`c707ca4ed`), and the data-browser no longer imports anything from this
+repo. [`localthought/README.md`](localthought/README.md) still documents
+it, as history.
 
 ### The stack, top to bottom
 
-- **LocalThought** — the OAuth/API proxy. It owns provider credentials
-  (never the browser or AtomicServer), publishes a **catalog** of supported
-  platforms, and for each platform serves the provider's OpenAPI document
-  (already patched with the overlays it needs — see below) plus a default
-  query selection. A plugin declares which platform it targets with a
-  plain string, not a class: `Config.platform` in
-  `integrations/localthought/plugin.ts`, or `catalog.json`'s per-entry
-  `"platform"` field.
-- **`BrowserIntegrations`** (`integrations/localthought/browser.ts`) — the
-  browser-side client class; an instance of it, constructed with browser
-  `Storage` and the proxy origin, **is** "a localthought instance" from a
-  plugin's point of view. It runs PKCE OAuth, manages the rotating-code
-  connection, and exposes `catalog()`/`request()` as a generic authenticated
-  proxy call. **It does not read or sync an OpenAPI document itself** —
-  that used to happen through an injected `Engine`
-  (`describeIntegration`/`fetchIntegration`) backed by a WASM build of a
-  vendored **syncables** Rust crate, but that bridge lived in the wrong
-  repo: it depended on `atomic-server`'s WASM build
-  (`wasm/src/integrations.rs`, `wasm/Cargo.toml`) and has been removed from
-  here entirely. A caller that needs full OpenAPI-driven sync composes its
-  own such engine on top of `BrowserIntegrations`'s `request()` — that's
-  `atomic-server`'s responsibility now, not this repo's.
-  **The rotating connection code never leaves `browser.ts`.** It is a
-  live bearer credential: `browser.ts` keeps it in browser `Storage` and
-  hands callers only an opaque connection id. Never write it into an Atomic
-  resource — not an App resource, not config, not an import record. A
-  resource syncs and its drive can later be shared, and the proxy has no
-  per-code revocation
-  ([#21](https://github.com/ontola/atomic-plugins/issues/21)). A drive plugin or App may store only a
-  non-secret connection reference: `platform`, plus a `connectionId` once
-  the persistent connections planned in
-  [#40](https://github.com/ontola/atomic-plugins/issues/40) exist. Until
-  #40 and [ontola/atomic-server#1624](https://github.com/ontola/atomic-server/issues/1624)
-  land, proxy requests for a sandboxed drive-plugin frame are made by the
-  parent page, never by the frame itself. `localthought/no-credentials-in-graph.test.mjs`
-  (`node --test`, run by CI's "Tooling unit tests" step)
-  fails the build if any shipped source under `integrations/` contains a
-  `…/properties/…connection-code` URL, or mentions `x-connection-code`
-  outside `browser.ts`. It is a text scan, not data-flow analysis, so it
-  won't catch a code stored under an unrelated property name.
-- **Syncables** — the OpenAPI-mock/sync-client engine that reads a
-  platform's document plus its
+- **LocalThought / integration-proxy** — the OAuth/API proxy. It owns
+  provider credentials (never the frame, the drive or AtomicServer),
+  publishes a **catalog** of supported platforms, and serves each platform's
+  OpenAPI document, already patched with the overlays it needs (see below).
+- **The host relay** — atomic-server's top page holds the proxy connection
+  (a rotating connection code in its own `localStorage`, bound to the proxy
+  origin, drive, agent and app) and answers the frame's
+  `store.proxy.request({ platform, connectionId, path, method, query, body, ifMatch })`
+  with `{ status, headers, body }` only. `store.proxy.connections` lists the
+  app's connections, and `store.proxy.connect` asks the host to draw a
+  consent bar and start the PKCE handoff. This is
+  ontola/atomic-server#1657 (`helpers/proxyConnections.ts`, a port of
+  `localthought/browser.ts`), in the pin. It is an interim shape: #40/#54
+  and atomic-server#1624 are meant to replace the rotating code with a
+  scoped capability without changing the apps.
+  **The connection code never reaches the frame or the graph.** Never
+  write it into an Atomic resource, not an App resource, config or row: a
+  resource syncs, its drive can be shared, and the proxy has no per-code
+  revocation ([#21](https://github.com/ontola/atomic-plugins/issues/21)).
+  `localthought/no-credentials-in-graph.test.mjs` (`node --test`, run by
+  CI's "Tooling unit tests" step) fails the build if any shipped source
+  under `integrations/` contains a `…/properties/…connection-code` URL, or
+  mentions `x-connection-code` outside `browser.ts`. It is a text scan, not
+  data-flow analysis.
+- **Syncables** — the npm `syncables` package, used in the frame as
+  `syncables/browser` (`readPlatform`, `describePlatform`, a `Transport`
+  over the relay). It reads an OpenAPI document plus its
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
-  (`components.crudResources`) block, discovers a resource model (identity
-  bindings, collections, nested collections — e.g. a repo's issues, then
-  each issue's comments), and drives a full paginated read into local
-  storage, deriving a neutral Atomic-Data-shaped ontology as it goes. This
-  is the mechanism that lets a connector support a new platform's _shape_
-  purely from spec annotations, "nothing about issues, comments, calendars
-  or events is compiled in" (`sync/resource_model.rs`).
-- **Reflector** ([`localthought/reflector`](https://github.com/localthought/reflector) /
-  `reflector-rs`) — the sync-engine/plugin-runtime layer one level above
-  syncables; `SyncClient`'s `ClientConfig` contract is written to match
-  what `reflector-rs`'s `src/syncables.rs` already expects, field-for-field,
-  so the two are meant to converge. A "reflector plugin," in this repo's
-  vocabulary, is a connector built on this sync-engine layer rather than on
-  the plain OpenAPI-mock-and-mirror layer syncables also provides on its own.
-- **Devonian** — a separate, native browser-local resource-lens/storage
-  engine (vendored bundle at
-  `browser/data-browser/src/chunks/DevonianDemo/devonian.js`), used only
-  when a connector needs **two-way, local-first sync**: native Atomic-shaped
-  resources stored in WASM/OPFS + IndexedDB, "lenses" that project a
-  provider's shape onto those native resources, and checkpointed
-  three-way reconciliation. No AtomicServer instance or plugin executor is
-  involved at all for a Devonian connector.
+  (`components.crudResources`) block, discovers the resource model and
+  pages through it, so the app carries no provider-specific paging code.
+  Each app bundles the document it reads (`pets/app/openapi.json`,
+  `notion/catalog/notion.json`) and pins an exact `syncables` version in its
+  own `package.json`/`pnpm-lock.yaml`; this repo's `syncables/` source is
+  not bundled.
+- **Devonian** — the npm `devonian` package's lenses, for the mapping from
+  provider records to Atomic rows (and back, for two-way). `notion/app/`
+  uses its `AtomicLens` (`notion/devonian/notion/`). A plugin's own lens
+  lives in its plugin folder at `integrations/<plugin>/devonian/<platform>/`.
+  Two-way Devonian sync with journalled writes exists only as the unhosted
+  GitHub issues bridge (`issue-tracker/devonian/github-issues/`).
+- **Reflector** ([`reflector/`](../reflector/)) — the sync-engine/plugin-runtime
+  layer one level above syncables. No drive app uses it yet.
 
 ### Two shapes, pick one
 
-**(a) One-way import through the generic LocalThought flow — no lens
-needed unless you're reshaping fields.** This is the default and the
-smallest amount of new code. Add a `catalog.json` entry with `"platform":
-"<your-platform-id>"` so LocalThought's setup dialog handles OAuth and the
-generic `integrations/localthought/plugin.ts` maps fetched records onto
-Atomic properties/classes via `Config.destinations`/`.properties`/`.records`.
-Write a **lens** only if the platform's raw fields need reshaping before
-they become a table — a pure function over `FetchedPlatform`/`FetchedRecord`
-(types in `integrations/localthought/schema.ts`), run _after_ the engine has
-already fetched and paginated:
+**(a) Read-only import.** Model it on `pets/app/`: a `transport.ts` that
+turns syncables' requests into relay calls and refuses any URL outside the
+document's `servers[0].url`; a `sync.ts` that creates one Property per field
+under the app's ontology, adds them to the row class's `recommends`, and
+upserts rows under the app's table keyed by a provider id; a `controller.ts`
+and `main.ts` for a plain-DOM view; a `build.mjs` producing `dist/ui.js`
+with a `build.test.ts` that checks the bundle has no `fetch`, storage or
+`Authorization` handling. Add a mock-proxy fixture in
+`integrations/<plugin>/fixtures/<platform>/` and an e2e spec, and give the
+lane an `e2e` tier in `lanes.json`. What happens to local edits of imported
+fields on refresh is not settled yet
+([#97](https://github.com/ontola/atomic-plugins/issues/97)).
 
-```ts
-import type {
-  FetchedPlatform,
-  FetchedRecord,
-  Term,
-} from '../localthought/schema.js';
-
-export function myPlatformProjection(
-  fetched: FetchedPlatform,
-): FetchedPlatform {
-  if (fetched.platform !== 'my-platform') return fetched;
-  // add/derive fields on fetched.records, extend fetched.ontology.terms
-  return {
-    ...fetched,
-    ontology: {
-      /* ... */
-    },
-    records: [] /* ... */,
-  };
-}
-```
-
-`integrations/timesheets/localthought.ts` (`clockifyProjection`) is the
-reference: it adds two derived `start`/`end` timestamp terms, drops
-in-progress/break entries, and leaves every other provider field untouched.
-Pair it with a query-override function if the connector needs per-run
-parameters (`clockifyImportQuery()` supplies a rolling look-back window) —
-merging that with the platform's default selection is done by whatever
-composes `BrowserIntegrations` with a sync engine (see above), not by
-anything in this repo. Use
-`platformSchema()`/`termKey()` from `localthought/schema.ts` to turn
-discovered `Term`s into a `SchemaSpec` generically — prefixed
-`lt-<platform>-<kind>-<shortname>` to avoid collisions across platforms.
-
-**(b) Two-way, local-first sync — a Devonian lens.** Needed when the
-connector must let local edits flow back to the provider (closing an issue,
-editing a title) without a server round-trip. Model this on
-`integrations/issue-tracker/devonian/github-issues/`:
+**(b) Two-way sync.** Needed when local edits must flow back to the
+provider. No drive app does this yet. The design to port is
+`issue-tracker/devonian/github-issues/`:
 
 - `bridge.mjs` — Devonian lenses and checkpointed three-way reconciliation.
 - `ports.mjs` — native-Atomic and provider-side projections/transports.
-- `proxy.mjs` — the rotating-code integration-proxy transport and a
-  labelled sample fixture.
-- `target.mjs` — which Atomic drive the sync writes into (local-only or
-  server-synced) and when that drive can be enumerated or written.
+- `proxy.mjs` — the integration-proxy transport and a labelled sample
+  fixture.
+- `target.mjs` — which Atomic drive the sync writes into and when that
+  drive can be enumerated or written.
 
 Give every native resource a stable identity independent of matching text
 (explicit provider IDs bind existing rows; nothing infers identity from
 title/body equality), journal writes before sending them (the provider side
 has no idempotent create, so an uncertain/lost response must stop rather
 than retry blindly), and treat a missing record as a conflict to resolve,
-never an implicit deletion. Add a `catalog.json` entry with the `(Devonian)`
-naming convention (`devonian-<platform>`) and, unless it reuses the generic
-LocalThought setup dialog, its own `callback-platform`.
+never an implicit deletion. The relay passes `method` and `ifMatch`, so
+conditional `PATCH` requests are possible from a frame.
 
 ### OpenAPI overlays and the pondersource extensions
 
@@ -466,17 +431,21 @@ one; when you do write a new overlay, keep the same minimal-diff spirit —
 patch what the provider's spec is missing, don't restate what it already
 declares correctly.
 
-Overlays are applied before an OpenAPI document ever reaches this repo's
-`BrowserIntegrations`: `integration-proxy/` (LocalThought) applies them
-server-side and serves the already-patched document. A native (non-browser)
+Overlays are applied before an OpenAPI document reaches a drive app:
+`integration-proxy/` (LocalThought) applies them server-side, and a drive
+app bundles an already-composed document (`notion/catalog/generate.py`
+composes Notion's from `overlays/notion.com/`). A native (non-browser)
 caller of the `syncables` npm package can instead apply them itself via
 `ClientConfig.document`/`.overlays` file paths — a convenience that only
 exists off the browser/WASM path.
 
 ## Adding or changing an integration
 
-1. Supply `plugin.ts`, reproducible `plugin.js`, `tsconfig.json`,
-   `vitest.config.ts`, README and `atomicCertification` in `package.json`.
+1. For a sandbox plugin, supply `plugin.ts`, reproducible `plugin.js`,
+   `tsconfig.json`, `vitest.config.ts`, README and `atomicCertification` in
+   `package.json`. For a drive app, see
+   [the drive-app shapes](#two-shapes-pick-one) and add its lane tiers to
+   `lanes.json`. Update [READINESS.md](READINESS.md) in the same PR.
 2. Metadata identifies owner, support tier, pinned API version, supported scope
    and fully qualified Rust sandbox test names. A new package without metadata
    fails CI rather than silently escaping it.
@@ -505,13 +474,17 @@ node integrations/tooling/publish-evidence.mjs artifacts/integration-certificati
 This writes `integrations/evidence.json` locally; it does not publish a release.
 The command rejects partial, failed, stale or mismatched reports and requires
 every current provider sandbox test. Review and commit the asset with the bundle.
-The two bundled store cards expose these results on demand, checking the actual
-shipped source hash before showing owner, version, date and check count. Results
-older than 30 days are labelled. Third-party catalog entries remain unverified.
 These results contain no live-provider certification or per-capability claims.
 
-The GitHub sandbox regression exercises a compatible code-only upgrade with
-existing bindings and no duplicate writes. An unresolved approved effect blocks
+The committed `evidence.json` (generated 2026-09-18) is historical: its
+sandbox checks ran against an atomic-server from before `4bab16ee6`, which
+removed those tests, so it cannot be regenerated at the current pin. The
+store cards that used to display it (`IntegrationEvidence`) were removed in
+the same commit, and nothing at the pin reads it.
+
+atomic-server's own `sync_session_tests.rs`, against its `testdata/plugin-sync`
+bundle rather than one from this repo, exercises a compatible code-only
+upgrade with existing bindings and no duplicate writes. An unresolved approved effect blocks
 replacement by an upgrade or rollback and resumes against its original release.
 Changed mapping/checkpoint formats still need explicit migration tests.
 

@@ -74,8 +74,9 @@ What it does not do, and what is not verified:
   stable across renames, rather than option names.
 - All shared data sources go into one table, with their columns merged. A
   "Data source" column says where each row came from.
-- It is not verified that the host lets an app add Properties under its
-  ontology and edit its class's `recommends`. The fake store assumes so.
+- The e2e shows the pinned host lets the app add Properties under its
+  ontology and add them to its class's `recommends` (it checks the column
+  datatypes). Only the fake store covers later edits to them.
 - It depends on `store.proxy` (`request`, `connections`, `connect`), which
   atomic-server gets from #52's relay (ontola/atomic-server#1657, pinned).
   Without it, the app says so and fetches nothing.

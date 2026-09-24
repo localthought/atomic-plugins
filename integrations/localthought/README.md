@@ -1,5 +1,18 @@
 # LocalThought browser integrations
 
+> **Historical.** Most of this file describes the LocalThought connect
+> dialog, sync panel and lens hooks that atomic-server's data-browser used
+> to have. atomic-server removed them (`f3efedf65`, `c707ca4ed`), and the
+> pinned host (`.atomic-server-ref`) no longer imports anything from this
+> folder; its relay (`helpers/proxyConnections.ts`) is a port of `browser.ts`.
+> The UI steps, Settings, the Calendar and Todoist behaviour and the
+> browser-only regression below refer to that retired runtime, and the
+> verification notes were made against it. What this folder still provides
+> is the shared mock proxy (`mock-proxy.mjs`) every e2e lane uses, and the
+> `no-credentials-in-graph` check. Current provider integrations are drive
+> apps; see
+> [`../READINESS.md`](../READINESS.md).
+
 The LocalThought flow runs entirely in the browser: catalog discovery, OAuth
 consent, PKCE-protected return handling, paginated Syncables reads, ontology
 creation and local Store/OPFS writes. Installation validates access once, creates
@@ -157,6 +170,14 @@ bounds and recurrence expansion are passed to Syncables as collection query
 settings. That historical verification exercised the earlier manual snapshot importer.
 
 ## Calendar view
+
+This section describes the retired LocalThought import, which also imported
+recurring series, expanded instances and cancellations. The current
+`devonian-google-calendar` catalog entry and `../calendar/adapter.ts` skip
+recurring and cancelled events; the lens in
+`../calendar/devonian/google-calendar/` still carries recurrence query and
+projection helpers from that flow. None of it has a host at the pin
+([#101](https://github.com/ontola/atomic-plugins/issues/101)).
 
 Google event imports now install a Calendar view alongside the source table.
 The projected date uses the day in Google's supplied start offset (or the

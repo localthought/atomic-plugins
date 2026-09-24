@@ -64,9 +64,12 @@ What it does today, covered by unit tests only:
   `workspace-id`, `user-id`, `lookback-days`; see `ontology.ts`). No connection
   code, token or capability is ever stored or held by the frame (#21).
 - All provider traffic goes through `ProxyTransport` (`transport.ts`). The only
-  implementation is `hostTransport()`, which feature-detects a `store.proxy`
-  op that **no host provides yet**. Without it the app says it cannot sync and
-  fetches nothing. There is deliberately no fallback that holds a code.
+  implementation is `hostTransport()`, which feature-detects the host relay's
+  `store.proxy.request`. The pinned host provides it (ontola/atomic-server#1657),
+  but this app does not yet call `store.proxy.connect`/`.connections`, so it
+  still depends on a connection reference nothing writes (#96). Without the
+  relay the app says it cannot sync and fetches nothing. There is
+  deliberately no fallback that holds a code.
 - `build.mjs` bundles `main.ts` into one ES module (~17 KB, no imports, exports
   only `view`). `@tomic/lib` is aliased to `tomic-lib-shim.ts`, because the lens
   needs only `Datatype.TIMESTAMP` from it.
