@@ -64,13 +64,13 @@ chosen peer and OCM version before implementing its wire contract.
 - [ ] Define share-to-resource mapping, ownership, durable identity and revocation.
 - [ ] Implement bounded discovery and receiving a share through host-managed routes.
 - [ ] Test duplicate deliveries, rejected peers, unauthorized writes, signature
-  failures, quotas, retry behavior and restart recovery with synthetic fixtures.
+      failures, quotas, retry behavior and restart recovery with synthetic fixtures.
 - [ ] Verify host egress policy on peer destinations and keep all key material
-  in host-held credentials.
+      in host-held credentials.
 - [ ] Add protocol fixtures and executable tests here before changing status to
-  `implemented`; prove the gates refuse activation when unavailable.
+      `implemented`; prove the gates refuse activation when unavailable.
 - [ ] Record the independent peer/version, command and outcome after live
-  interoperability has actually been verified. No such evidence exists yet.
+      interoperability has actually been verified. No such evidence exists yet.
 
 ## CI
 
