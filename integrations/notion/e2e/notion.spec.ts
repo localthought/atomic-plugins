@@ -221,7 +221,8 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await linkBar.getByRole('button', { name: 'Cancel' }).click();
     await expect(linkBar).toBeHidden();
     await expect(app.locator('.pl-copy')).toHaveCount(0);
-    await peek.press('Escape');
+    // Focus went to the host's bar; Esc from inside the peek closes it.
+    await peek.getByRole('button', { name: 'Open in Notion' }).press('Escape');
     await expect(peek).toBeHidden();
 
     // S8: board by status.
@@ -297,8 +298,9 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await page.goto(appUrl);
 
     // "Disconnect Notion…" (store.proxy.disconnect), after a confirmation:
-    // the rows stay, and the app offers to connect again.
-    await expect(status).toContainText('Synced', { timeout: 60_000 });
+    // the rows stay, and the app offers to connect again. (The last saved
+    // record is the "nothing shared" one, so the pill says so.)
+    await expect(status).toHaveText('No databases shared', { timeout: 60_000 });
     await app.getByRole('button', { name: 'More' }).click();
     await app.getByRole('menuitem', { name: 'Disconnect Notion…' }).click();
     await expect(banner).toContainText('Disconnect Notion from this app?');

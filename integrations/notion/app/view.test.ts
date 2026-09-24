@@ -439,14 +439,16 @@ describe('view (DOM)', () => {
       expect(host.openTable).toHaveBeenCalledOnce();
     });
 
-    it('asks before disconnecting, and Cancel does nothing', () => {
-      app.render(ready);
+    it('asks before disconnecting, in place of the state banner; Cancel does nothing', () => {
+      app.render({ kind: 'no-databases', connectionId: 'c', rows, last });
       q<HTMLButtonElement>('[data-key="menu:More"]')!.click();
       all('[role=menuitem]').find(b => b.textContent === 'Disconnect Notion…')!.click();
-      expect(q('.pl-banner')?.textContent).toContain('Disconnect Notion from this app?');
+      expect(all('.pl-banner').map(b => b.textContent)).toEqual([
+        expect.stringContaining('Disconnect Notion from this app?'),
+      ]);
       expect(document.activeElement?.getAttribute('data-key')).toBe('disconnect-cancel');
       q<HTMLButtonElement>('[data-key=disconnect-cancel]')!.click();
-      expect(q('.pl-banner')).toBeNull();
+      expect(q('.pl-banner')?.textContent).toContain('no longer shares any databases');
       expect(host.disconnect).not.toHaveBeenCalled();
       q<HTMLButtonElement>('[data-key="menu:More"]')!.click();
       all('[role=menuitem]').find(b => b.textContent === 'Disconnect Notion…')!.click();

@@ -459,8 +459,8 @@ export function createApp(
                   onClick: () => update({ confirmDisconnect: false }),
                 },
               })
-            : null,
-          stateBanner(ctx),
+            : // One banner at a time: the confirmation stands in for the state's.
+              stateBanner(ctx),
           ui.details ? renderDetails(ctx) : null,
           ...content(ctx),
         ),
