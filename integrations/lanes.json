@@ -67,6 +67,14 @@
       "tiers": ["typecheck", "unit", "e2e"],
       "note": "The e2e drives the timesheets drive app (integrations/timesheets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, set up workspace and look-back in the frame, then import, reload, refresh and recover from a proxy failure through the host relay (atomic-server#1657; the pin has it). Provider changes and failures go through the mock proxy's local-only fixture driver (POST /__fixture/clockify). The install is test-side (New app + replaced source) until #94. The old upstream Clockify tests were deleted in atomic-server 4bab16ee6 with the UI they drove (#44).",
       "e2e": ["integrations/timesheets/e2e/clockify.spec.ts"]
+    },
+    {
+      "id": "willow-drop",
+      "index": 7,
+      "platforms": [],
+      "tiers": ["typecheck", "unit", "e2e"],
+      "note": "Willow drop importer (#139), a sandbox job like money: no provider, so no mock proxy (platforms is empty). typecheck and unit are lane tiers rather than certify.mjs's, because certification requires named atomic-server sandbox tests that do not exist for this package; the unit tier also checks that the committed plugin.js is a fresh esbuild bundle. The e2e publishes the bundle and imports fixture drops through the host's generic file entry point (atomic-server#1653, in the pin), so the QuickJS sandbox runs the Ed25519 and WILLIAM3 code and a binary file crosses the text-only hand-over. The fixtures come from willow25 (fixtures/generate/), which CI does not run.",
+      "e2e": ["integrations/willow-drop/e2e/willow-drop.spec.ts"]
     }
   ]
 }

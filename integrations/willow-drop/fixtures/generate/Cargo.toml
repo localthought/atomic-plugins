@@ -1,0 +1,19 @@
+[package]
+name = "willow-drop-fixtures"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Writes the willow-drop importer's fixture drops with the reference Rust implementation (willow25)."
+
+# Not part of any workspace in this repo, and not built by CI: run it by hand
+# when the fixtures need regenerating (see ../../README.md).
+[workspace]
+
+[dependencies]
+# Exact version: the Drop Format is a "Proposal" and willow25's encodings are
+# still being fixed upstream, so a regeneration must be a deliberate bump.
+willow25 = { version = "=0.7.9", features = ["drop_format"] }
+ufotofu = { version = "0.12.6", features = ["alloc", "std"] }
+pollster = "0.4.0"
+rand_chacha = "0.3.1"
+rand_core = "0.6.4"
