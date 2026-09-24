@@ -90,6 +90,11 @@ export interface HostProxy {
    * settles.
    */
   connect(args: { platform: string }): Promise<ConnectResult>;
+  /**
+   * Forgets this app's connection. Not in the pinned host (#89 gap 6);
+   * feature-detected, and the app offers no Disconnect without it.
+   */
+  disconnect?(args: { platform: string }): Promise<unknown>;
 }
 
 export interface PluginStore {

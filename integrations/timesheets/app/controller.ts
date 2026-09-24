@@ -1,11 +1,21 @@
 // @wc-ignore-file
 import type { LookbackDays } from '../localthought.js';
-import { fetchSetupOptions, type SetupOptions } from './clockifyApi.js';
+import {
+  fetchSetupOptions,
+  type RawNamed,
+  type SetupOptions,
+} from './clockifyApi.js';
 import { readSettings, type Settings } from './config.js';
+import { timesheetFromMirror } from './model/source.js';
+import { browserTimeZone } from './model/time.js';
+import type { Timesheet } from './model/types.js';
+import { emptyMirror, type Mirror } from './observations.js';
+import { classify, type Problem } from './problem.js';
 import { ensureSchema, findSchema } from './schema.js';
 import type { ConnectionReference, PluginStore } from './store.js';
 import { syncClockify, type SyncResult } from './sync.js';
-import { PLATFORM, relayTransport } from './transport.js';
+import { PLATFORM, relayTransport, type ProxyTransport } from './transport.js';
+import { readMirror } from './viewData.js';
 
 /**
  * Everything the view shows, as data, so it is testable without a DOM. The
@@ -36,13 +46,27 @@ export type ViewState =
       kind: 'syncing';
       connection: ConnectionReference;
       settings: Settings;
+      progress?: SyncProgressState;
     }
   /** The app itself cannot run: no table, a broken schema, a host error. */
   | { kind: 'failed'; message: string };
 
 export type SyncOutcome =
   | { ok: true; result: SyncResult; at: number }
-  | { ok: false; error: string; at: number };
+  | { ok: false; error: string; at: number; problem: Problem };
+
+/** Design frame H: which page is being read, then which row is saved. */
+export type SyncProgressState =
+  | { phase: 'fetch'; page: number }
+  | { phase: 'save'; done: number; total: number };
+
+/** What the views were last given to show, besides the state (#89). */
+interface SheetInput {
+  mirror: Mirror;
+  projects?: RawNamed[];
+  members?: RawNamed[];
+  weekStart?: string;
+}
 
 export interface SettingsChoice {
   workspaceId: string;
@@ -59,6 +83,17 @@ export interface Controller {
   openSettings(): Promise<ViewState>;
   saveSettings(choice: SettingsChoice): Promise<ViewState>;
   sync(): Promise<ViewState>;
+  /** Back from the settings form to `ready`, without saving (#89 frame M). */
+  cancelSettings(): ViewState;
+  /** Change only the look-back window, then sync (#89 frames I and J). */
+  setLookback(days: LookbackDays): Promise<ViewState>;
+  /** Ask the host to connect again after a 401 (#89 frame J). */
+  reconnect(): Promise<ViewState>;
+  /** Whether the host can forget the connection (`store.proxy.disconnect`). */
+  canDisconnect(): boolean;
+  disconnect(): Promise<ViewState>;
+  /** The timesheet the views show, or undefined before anything was read. */
+  sheet(now?: number): Timesheet | undefined;
 }
 
 const message = (error: unknown) =>
@@ -71,6 +106,24 @@ export function createController(
 ): Controller {
   let current: ViewState = { kind: 'loading' };
   let running = false;
+  let input: SheetInput | undefined;
+  const timeZone = browserTimeZone();
+
+  const settingsOf = (state: ViewState): Settings | undefined =>
+    state.kind === 'ready' || state.kind === 'syncing'
+      ? state.settings
+      : state.kind === 'setup'
+        ? readComplete(state.draft)
+        : undefined;
+
+  /** The log is read-only here; a failure only means nothing to show yet. */
+  const readInput = async () => {
+    try {
+      input = { ...input, mirror: await readMirror(store, now) };
+    } catch {
+      input ??= { mirror: emptyMirror() };
+    }
+  };
 
   const set = (next: ViewState) => {
     current = next;
@@ -104,6 +157,8 @@ export function createController(
       const proxy = store.proxy;
 
       if (!proxy || typeof proxy.connections !== 'function') {
+        // Entries imported earlier still show, read-only (#89 frame K).
+        await readInput();
         set({ kind: 'no-proxy' });
 
         return {};
@@ -128,6 +183,7 @@ export function createController(
           return {};
         }
 
+        await readInput();
         set({ kind: 'ready', connection, settings: read.settings });
 
         return { syncing: controller.sync() };
@@ -224,16 +280,43 @@ export function createController(
       const { connection, settings } = current;
       set({ kind: 'syncing', connection, settings });
 
+      const progress = (next: SyncProgressState) => {
+        if (current.kind === 'syncing') set({ ...current, progress: next });
+      };
+
+      // Counts list pages as the sync reads them, for the progress line.
+      const relay = relayTransport(store.proxy, connection);
+      const transport: ProxyTransport = {
+        request(path, query) {
+          if (path.endsWith('/time-entries') && query?.page)
+            progress({ phase: 'fetch', page: Number(query.page) });
+
+          return relay.request(path, query);
+        },
+      };
+
       try {
         const schema = await ensureSchema(store);
         const result = await syncClockify(
           store,
-          relayTransport(store.proxy, connection),
+          transport,
           settings,
           schema,
           now(),
-          { clock: now },
+          {
+            clock: now,
+            onProgress: ({ done, total }) =>
+              progress({ phase: 'save', done, total }),
+          },
         );
+        input = {
+          mirror: result.mirror,
+          projects: result.projects,
+          members: result.members,
+          ...(result.account.weekStart
+            ? { weekStart: result.account.weekStart }
+            : {}),
+        };
 
         return set({
           kind: 'ready',
@@ -246,15 +329,119 @@ export function createController(
           kind: 'ready',
           connection,
           settings,
-          last: { ok: false, error: message(error), at: now() },
+          last: {
+            ok: false,
+            error: message(error),
+            at: now(),
+            problem: classify(error, now()),
+          },
         });
       } finally {
         running = false;
       }
     },
+
+    cancelSettings() {
+      if (current.kind !== 'setup' || current.busy) return current;
+      const settings = readComplete(current.draft);
+      if (!settings) return current;
+
+      return set({ kind: 'ready', connection: current.connection, settings });
+    },
+
+    async setLookback(days) {
+      if (current.kind !== 'ready') return current;
+      const { connection } = current;
+      const settings = { ...current.settings, lookbackDays: days };
+
+      try {
+        const schema = await ensureSchema(store);
+        const app = await store.getResource(await store.getApp());
+        app.set(schema.settings.lookbackDays, days);
+        await app.save();
+      } catch (error) {
+        return set({
+          ...current,
+          last: {
+            ok: false,
+            error: message(error),
+            at: now(),
+            problem: classify(error, now()),
+          },
+        });
+      }
+
+      set({ kind: 'ready', connection, settings });
+
+      return controller.sync();
+    },
+
+    async reconnect() {
+      if (current.kind !== 'ready' || !store.proxy) return current;
+      const before = current;
+      set({ kind: 'connecting' });
+
+      try {
+        // As connect(): a new account reloads this view; a host that can
+        // hand over an existing connection resolves `connected` instead.
+        const result: unknown = await store.proxy.connect({
+          platform: PLATFORM,
+        });
+
+        if ((result as { status?: unknown } | null)?.status === 'connected') {
+          await controller.load();
+
+          return current;
+        }
+
+        return set(before);
+      } catch (error) {
+        return set({ kind: 'failed', message: message(error) });
+      }
+    },
+
+    canDisconnect: () => typeof store.proxy?.disconnect === 'function',
+
+    async disconnect() {
+      const proxy = store.proxy;
+      if (typeof proxy?.disconnect !== 'function') return current;
+      if (current.kind !== 'ready' && current.kind !== 'setup') return current;
+
+      try {
+        await proxy.disconnect({ platform: PLATFORM });
+      } catch (error) {
+        return set({ kind: 'failed', message: message(error) });
+      }
+
+      // Imported entries and settings stay; only the connection goes.
+      return set({ kind: 'not-connected' });
+    },
+
+    sheet(at = now()) {
+      if (!input) return undefined;
+      const settings = settingsOf(current);
+
+      return timesheetFromMirror({
+        mirror: input.mirror,
+        ...(input.projects ? { projects: input.projects } : {}),
+        ...(input.members ? { members: input.members } : {}),
+        ...(settings ? { settings } : {}),
+        now: at,
+        timeZone,
+        ...(input.weekStart ? { weekStart: input.weekStart } : {}),
+      });
+    },
   };
 
   return controller;
+}
+
+function readComplete(draft: Partial<Settings>): Settings | undefined {
+  const { workspaceId, userId, lookbackDays } = draft;
+
+  return workspaceId && userId && lookbackDays
+    ? { workspaceId, userId, lookbackDays }
+    : undefined;
 }
 
 /** `90 min`, `6 h`, `1.5 h`: how much of the window no complete read covers. */

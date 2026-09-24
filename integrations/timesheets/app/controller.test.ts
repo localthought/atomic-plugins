@@ -68,7 +68,8 @@ describe('controller', () => {
     const kinds: string[] = [];
     const controller = createController(
       store,
-      s => kinds.push(s.kind),
+      // Progress updates while syncing are not new states.
+      s => void (s.kind === 'syncing' && s.progress ? 0 : kinds.push(s.kind)),
       () => NOW,
     );
 
