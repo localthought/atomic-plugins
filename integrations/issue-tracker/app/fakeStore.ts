@@ -88,6 +88,8 @@ export function fakeStore({
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = structuredClone(stored);
+    /** Removed since the last save; `save` sends them, as view-client.js does. */
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -97,11 +99,13 @@ export function fakeStore({
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
@@ -112,8 +116,12 @@ export function fakeStore({
             props: structuredClone(before),
             reads: fake.lagReads,
           });
-        // /app-write `save` sets every property sent; it never removes one.
-        resources.set(subject, { ...before, ...structuredClone(props) });
+        // /app-write `save` sets every property sent and removes only the
+        // ones `remove` named since the last save.
+        const next = { ...before, ...structuredClone(props) };
+        for (const property of removed) delete next[property];
+        removed.clear();
+        resources.set(subject, next);
         writes.push({ op: 'save', subject });
 
         return this;

@@ -118,6 +118,8 @@ export interface PassError extends Error {
   fields?: string[];
   /** The Atomic row or Message it is about, when bound. */
   local?: string;
+  /** "Missing … record": which side lost a bound record, and which one. */
+  missing?: { side: 'local' | 'remote'; subject: string; entity?: string };
 }
 
 /**
@@ -335,6 +337,18 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
     // Name the Atomic resource a conflict is about, for the view's marker.
     const e = error as PassError;
 
+    const gone = /^Missing (local|remote) record: (.+)$/.exec(e?.message ?? '');
+
+    if (gone) {
+      const subject = gone[2];
+      const entity = (bridge.records as Record<string, { entity: string }>)[
+        subject
+      ]?.entity;
+      e.missing = { side: gone[1] as 'local' | 'remote', subject, entity };
+      e.entity ??= entity;
+      e.subject ??= subject;
+    }
+
     if (e?.subject && e.entity) {
       const at = bridge.id('local', e.entity, e.subject);
       if (typeof at === 'string') e.local = at;
@@ -468,4 +482,53 @@ async function commentsByIssue(
     );
 
   return out;
+}
+
+/**
+ * "Keep here only" for an issue GitHub no longer has: the Bridge forgets
+ * its GitHub identity (and its comments'), and the row's issue-number
+ * column is cleared so nothing binds it back. Sends nothing to GitHub.
+ */
+export async function keepLocalOnly(
+  options: PassOptions,
+  subject: string,
+): Promise<void> {
+  const { bridge } = bridgeFor(options);
+  const row = bridge.id('local', 'issue', subject);
+
+  try {
+    await bridge.keepLocalOnly(subject);
+
+    if (typeof row === 'string') {
+      const resource = await options.store.getResource(row);
+      if (resource.get(options.tracker.properties.number) !== undefined)
+        await resource.remove(options.tracker.properties.number).save();
+    }
+  } finally {
+    await options.state.flush();
+  }
+}
+
+/**
+ * "Remove from board" for an issue GitHub no longer has: the Bridge forgets
+ * it on both sides, then its row and comment Messages are deleted from the
+ * table. Sends nothing to GitHub.
+ */
+export async function removeFromBoard(
+  options: PassOptions,
+  subject: string,
+): Promise<void> {
+  const { bridge } = bridgeFor(options);
+  let local: string[] = [];
+
+  try {
+    local = await bridge.forget(subject);
+  } finally {
+    await options.state.flush();
+  }
+
+  for (const id of local) {
+    const resource = await options.store.getResource(id).catch(() => undefined);
+    await resource?.destroy();
+  }
 }

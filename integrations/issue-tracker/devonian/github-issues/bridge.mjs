@@ -232,6 +232,59 @@ export class Bridge {
     return decision.conflicts.map(c => c.property);
   }
 
+  /**
+   * A record missing on GitHub (deleted or transferred), kept in the table
+   * only: its GitHub identity is forgotten and it is never recreated there.
+   * Its comments' GitHub identities go too. Nothing is sent to GitHub. If
+   * the same issue shows up on GitHub again, the next pass binds it back
+   * to this record. The caller clears the row's issue-number column.
+   * Returns the GitHub number it was bound to.
+   */
+  async keepLocalOnly(subject) {
+    const record = this.records[subject];
+    if (record?.entity !== 'issue') throw new Error(`Unknown issue: ${subject}`);
+    const number = this.identities.unbind(this.scope('remote', 'issue'), subject);
+    delete record.pending;
+    record.localOnly = true;
+    for (const [child, r] of Object.entries(this.records))
+      if (r.entity === `comment:${subject}`) {
+        this.identities.unbind(this.scope('remote', r.entity), child);
+        delete r.pending;
+      }
+    await this.checkpoint();
+
+    return number;
+  }
+
+  /**
+   * A record missing on GitHub, removed from the board: both identities and
+   * the record (and its comments' records) are forgotten, so the next pass
+   * sees neither side. The caller deletes the Atomic resources, which it
+   * gets back here (the row, then its comment Messages). Nothing is sent to
+   * GitHub. If the issue shows up on GitHub again, the next pass imports
+   * it as a new row under the same subject.
+   */
+  async forget(subject) {
+    const record = this.records[subject];
+    if (record?.entity !== 'issue') throw new Error(`Unknown issue: ${subject}`);
+    const local = [];
+
+    for (const [child, r] of Object.entries(this.records)) {
+      if (child !== subject && r.entity !== `comment:${subject}`) continue;
+
+      for (const side of ['remote', 'local']) {
+        const id = this.identities.unbind(this.scope(side, r.entity), child);
+        if (side === 'local' && id !== undefined) local.push(id);
+      }
+
+      delete this.records[child];
+    }
+
+    await this.checkpoint();
+
+    return local;
+  }
+
   async syncEntity(entity) {
     const lists = {};
 
@@ -251,6 +304,9 @@ export class Bridge {
       if (row.remoteId === undefined) continue;
       const scope = this.scope('remote', entity);
       const subject = this.identities.subjectFor(scope, row.remoteId);
+      // Kept here only: a stale number column must not bind it back. The
+      // issue coming back on GitHub does (below, through the remote list).
+      if (this.records[subject]?.localOnly) continue;
       this.identities.bind(scope, row.remoteId, subject);
       this.identities.bind(this.scope('local', entity), row.id, subject);
       this.records[subject] ??= { entity };
@@ -268,6 +324,16 @@ export class Bridge {
 
     for (const [subject, record] of Object.entries(this.records)) {
       if (record.entity !== entity) continue;
+      let relink = false;
+
+      if (record.localOnly) {
+        // Back on GitHub (ingested and bound again): sync it as before.
+        if (this.id('remote', entity, subject) === undefined) continue;
+        delete record.localOnly;
+        // Write the row once more, so its issue-number column comes back.
+        relink = true;
+      }
+
       const rows = {};
 
       for (const side of ['local', 'remote']) {
@@ -300,7 +366,8 @@ export class Bridge {
         rows.local &&
         rows.remote &&
         equal(rows.local.value, rows.remote.value) &&
-        equal(rows.local.metadata, metadata)
+        equal(rows.local.metadata, metadata) &&
+        !relink
       ) {
         record.baseline = copy(desired);
         await this.checkpoint();
@@ -313,6 +380,7 @@ export class Bridge {
         remote: rows.remote?.value,
         desired,
         metadata,
+        ...(relink ? { relink } : {}),
       };
       this.store.patch(subject, { set: this.properties(desired) });
       await this.checkpoint();
@@ -345,7 +413,8 @@ export class Bridge {
       if (
         !row ||
         !equal(row.value, pending.desired) ||
-        (side === 'local' && !equal(row.metadata, pending.metadata))
+        (side === 'local' &&
+          (pending.relink || !equal(row.metadata, pending.metadata)))
       ) {
         await this.lens(
           side,

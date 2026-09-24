@@ -328,5 +328,83 @@ group('issue-tracker controller: host calls from pin 007869464', () => {
         .last!.result.rows.map(r => [r.number, r.title, r.status, r.comments.map(x => x.body)])
         .sort();
     expect(shape(batched.controller)).toEqual(shape(single.controller));
+group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
+  /** GitHub stops returning issue `n` (deleted or transferred) until `back()`. */
+  function hide(store: FakeStore, n: number) {
+    const request = store.proxy!.request.bind(store.proxy);
+    let hidden = true;
+    store.proxy!.request = async r => {
+      const own = new RegExp(`/issues/${n}(/|$)`);
+      if (hidden && own.test(r.path)) return { status: 404, headers: {}, body: {} };
+      const response = await request(r);
+      if (hidden && /\/issues$/.test(r.path) && Array.isArray(response.body))
+        return {
+          ...response,
+          body: (response.body as { number: number }[]).filter(i => i.number !== n),
+        };
+
+      return response;
+    };
+
+    return { back: () => (hidden = false) };
+  }
+
+  const writes = (store: FakeStore) =>
+    store.calls.filter(c => (c.method ?? 'GET') !== 'GET').length;
+
+  it('keeps it here only, never recreates it, and binds it back when it returns', async () => {
+    const { store, controller } = await bound();
+    const row = rowByNumber(ready(controller.state()), 1).subject;
+    const gh = hide(store, 1);
+    const paused = ready(await controller.sync());
+    expect(paused.problem).toMatchObject({
+      kind: 'paused',
+      reason: 'missing',
+      missing: { side: 'remote', entity: 'issue', local: row },
+    });
+    const sent = writes(store);
+
+    const kept = ready(await controller.keepHereOnly());
+    expect(kept.problem).toBeUndefined();
+    expect(kept.last!.result.held).toEqual([]);
+    const here = kept.last!.result.rows.find(r => r.subject === row)!;
+    expect(here.number).toBeUndefined();
+    expect(store.resources.get(row)?.[property(store, 'github-issue-number')]).toBeUndefined();
+    expect(ready(await controller.sync()).last!.result.held).toEqual([]);
+    expect(writes(store)).toBe(sent);
+
+    // The same issue shows up on GitHub again: bound back to the same row.
+    gh.back();
+    const again = ready(await controller.sync());
+    expect(again.problem).toBeUndefined();
+    const rows = again.last!.result.rows;
+    expect(rows).toHaveLength(2);
+    expect(rows.find(r => r.subject === row)?.number).toBe(1);
+    expect(writes(store)).toBe(sent);
+  });
+
+  it('removes it from the board without touching GitHub, and imports it again if it returns', async () => {
+    const { store, controller } = await bound();
+    const first = rowByNumber(ready(controller.state()), 1);
+    const gh = hide(store, 1);
+    await controller.sync();
+    const sent = writes(store);
+
+    const removed = ready(await controller.removeFromBoard());
+    expect(removed.problem).toBeUndefined();
+    expect(store.resources.has(first.subject)).toBe(false);
+    expect(store.resources.has(first.comments[0].subject)).toBe(false);
+    expect(removed.last!.result.rows.map(r => r.number)).toEqual([2]);
+    expect(writes(store)).toBe(sent);
+    expect(ready(await controller.sync()).problem).toBeUndefined();
+
+    gh.back();
+    const again = ready(await controller.sync());
+    expect(again.problem).toBeUndefined();
+    const back = again.last!.result.rows.find(r => r.number === 1)!;
+    expect(back.title).toBe(first.title);
+    expect(back.comments.map(c => c.body)).toEqual(['I can reproduce this in Firefox.']);
+    expect(again.last!.result.rows).toHaveLength(2);
+    expect(writes(store)).toBe(sent);
   });
 });

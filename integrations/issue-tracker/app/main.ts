@@ -190,6 +190,8 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
   const onState = (state: ViewState) => {
     if (state.kind === 'ready') {
+      if (state.problem?.kind !== 'paused' || !state.problem.missing)
+        ui.confirmRemove = false;
       ui.alert = settled && !!state.problem;
       // A settled conflict closes its review panel.
       if (
@@ -399,6 +401,15 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
     disconnect() {
       void controller.disconnect();
+    },
+
+    keepHereOnly() {
+      void controller.keepHereOnly();
+    },
+
+    removeFromBoard() {
+      ui.confirmRemove = false;
+      void controller.removeFromBoard();
     },
   };
 

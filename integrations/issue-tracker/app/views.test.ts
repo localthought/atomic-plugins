@@ -390,5 +390,32 @@ describe('host calls from pin 007869464', () => {
     await wait(20);
     expect(store.disconnected).toEqual(['github-issues']);
     expect(document.querySelector('[aria-label="Connect GitHub Issues"]')).not.toBeNull();
+describe('an issue gone from GitHub', () => {
+  it('asks before removing it from the board, and never writes to GitHub', async () => {
+    const { root, store } = await mount();
+    const request = store.proxy!.request.bind(store.proxy);
+    store.proxy!.request = async r => {
+      if (/\/issues\/1(\/|$)/.test(r.path)) return { status: 404, headers: {}, body: {} };
+      const response = await request(r);
+
+      return /\/issues$/.test(r.path) && Array.isArray(response.body)
+        ? { ...response, body: (response.body as { number: number }[]).filter(i => i.number !== 1) }
+        : response;
+    };
+    q(root, '[data-key=sync-now]').click();
+    await settle(root);
+    const banner = () => q(root, '.pl-banner');
+    expect(banner().textContent).toContain('#1 is on this board but no longer on GitHub.');
+    const button = (label: string) =>
+      [...banner().querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === label)!;
+    button('Remove from board').click();
+    expect(banner().textContent).toContain('Remove #1 from this board?');
+    button('Cancel').click();
+    button('Remove from board').click();
+    button('Remove').click();
+    await settle(root);
+    expect(root.querySelector('.pl-banner')).toBeNull();
+    expect(root.querySelectorAll('[data-issue]')).toHaveLength(1);
+    expect(store.calls.filter(c => (c.method ?? 'GET') !== 'GET')).toHaveLength(0);
   });
 });

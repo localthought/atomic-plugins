@@ -6,7 +6,9 @@ import type { Overlay } from './frameStore.js';
 import type { PluginResource, PluginStore } from './store.js';
 import {
   describeConflict,
+  keepLocalOnly,
   readRows,
+  removeFromBoard,
   resolveConflict,
   runPass,
   type ConflictField,
@@ -56,7 +58,18 @@ export type Problem =
   /** GitHub or the host refused the connection: connect again. */
   | { kind: 'reconnect'; message: string }
   /** A person must look first (uncertain write, missing record, …). */
-  | { kind: 'paused'; message: string; reason: PausedReason }
+  | {
+      kind: 'paused';
+      message: string;
+      reason: PausedReason;
+      /** For `missing`: the record, the side it is gone from, and its row. */
+      missing?: {
+        side: 'local' | 'remote';
+        subject: string;
+        entity?: string;
+        local?: string;
+      };
+    }
   /** Anything else; "Sync now" retries. */
   | { kind: 'failed'; message: string };
 
@@ -130,6 +143,13 @@ export interface Controller {
   comment(subject: string, body: string): Promise<ViewState>;
   /** Adds a row to the table; resolves with its subject once written. */
   create(input: IssueInput): Promise<{ state: ViewState; subject?: string }>;
+  /**
+   * For an issue GitHub no longer has (the paused `missing` problem): keep
+   * it in the table only, or remove it from the board. Neither sends
+   * anything to GitHub. Both sync again afterwards.
+   */
+  keepHereOnly(): Promise<ViewState>;
+  removeFromBoard(): Promise<ViewState>;
   /** Board/list choice and filters, kept per installation. */
   prefs(): ViewPrefs;
   savePrefs(prefs: ViewPrefs): Promise<void>;
@@ -173,7 +193,20 @@ export function classify(error: unknown): Problem {
   if (RECONNECT.some(p => p.test(message)))
     return { kind: 'reconnect', message };
   const paused = PAUSED.find(([p]) => p.test(message));
-  if (paused) return { kind: 'paused', message, reason: paused[1] };
+  if (paused)
+    return {
+      kind: 'paused',
+      message,
+      reason: paused[1],
+      ...(e?.missing
+        ? {
+            missing: {
+              ...e.missing,
+              ...(e.local ? { local: e.local } : {}),
+            },
+          }
+        : {}),
+    };
 
   return { kind: 'failed', message };
 }
@@ -387,6 +420,14 @@ export function createController(
 
       return false;
     }
+  };
+
+  /** The issue record a paused pass found gone from GitHub, if any. */
+  const missingIssue = () => {
+    const p = current.kind === 'ready' ? current.problem : undefined;
+    const m = p?.kind === 'paused' ? p.missing : undefined;
+
+    return m?.side === 'remote' && m.entity === 'issue' ? m.subject : undefined;
   };
 
   const controller: Controller = {
@@ -626,6 +667,30 @@ export function createController(
       optimistic(subject, row => ({ ...row, ...input }));
 
       return { state: await this.sync(), subject };
+    },
+
+    keepHereOnly() {
+      const gone = missingIssue();
+      if (!gone) return Promise.resolve(current);
+
+      return run('resolving', async (s, ready) => {
+        const options = passOptions(s, ready.connectionId, ready.repository);
+        await keepLocalOnly(options, gone);
+
+        return runPass(options);
+      });
+    },
+
+    removeFromBoard() {
+      const gone = missingIssue();
+      if (!gone) return Promise.resolve(current);
+
+      return run('resolving', async (s, ready) => {
+        const options = passOptions(s, ready.connectionId, ready.repository);
+        await removeFromBoard(options, gone);
+
+        return runPass(options);
+      });
     },
 
     prefs: () => ({ ...prefs }),

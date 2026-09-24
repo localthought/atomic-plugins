@@ -99,6 +99,8 @@ export interface Ui {
   alert: boolean;
   /** The host can take this app off its connection (`proxy.disconnect`). */
   canDisconnect?: boolean;
+  /** Asking to confirm "Remove from board" (state 13). */
+  confirmRemove?: boolean;
   /** Rows to highlight after new data arrived. */
   flash: Set<string>;
   /** Seconds until the automatic retry after a transient failure. */
@@ -124,6 +126,8 @@ export interface Actions {
   openGitHub(url: string): void;
   focusSearch(): void;
   disconnect(): void;
+  keepHereOnly(): void;
+  removeFromBoard(): void;
 }
 
 const GLYPH: Record<Status, Glyph> = {
@@ -385,7 +389,7 @@ function bannerNode(
   ui: Ui,
   actions: Actions,
 ): HTMLElement | null {
-  const model = bannerFor(state);
+  const model = bannerFor(state, ui.confirmRemove);
   if (!model || state.kind !== 'ready') return null;
 
   const run = (action: BannerAction) => {
@@ -394,6 +398,11 @@ function bannerNode(
       actions.open({ kind: 'conflict', choices: {} }, 'banner-action');
     else if (action === 'send') actions.send();
     else if (action === 'sync') actions.sync();
+    else if (action === 'keep-here') actions.keepHereOnly();
+    else if (action === 'remove') actions.setUi({ confirmRemove: true });
+    else if (action === 'cancel-remove')
+      actions.setUi({ confirmRemove: false });
+    else if (action === 'confirm-remove') actions.removeFromBoard();
     else actions.openGitHub(`${repoUrl(state.repository)}/issues`);
   };
 
@@ -406,7 +415,7 @@ function bannerNode(
     ...(model.details ? { details: model.details } : {}),
     actions: model.actions.map((a, i) =>
       button(a.label, () => run(a.action), {
-        kind: a.primary ? 'primary' : '',
+        kind: a.primary ? 'primary' : a.danger ? 'danger' : '',
         sm: true,
         disabled: !!state.busy && a.action !== 'open-github',
         ...(i === model.actions.length - 1

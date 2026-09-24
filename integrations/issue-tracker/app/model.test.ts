@@ -267,3 +267,29 @@ describe('helpers', () => {
     expect(typing(null)).toBe(false);
   });
 });
+
+describe('an issue gone from GitHub', () => {
+  const problem = {
+    kind: 'paused' as const,
+    message: 'Missing remote record: b',
+    reason: 'missing' as const,
+    missing: { side: 'remote' as const, subject: 'b', entity: 'issue', local: 's2' },
+  };
+
+  it('offers Keep here only and Remove from board, and confirms removal inline', () => {
+    const offer = bannerFor(ready({ problem }))!;
+    expect(offer.title).toBe('#2 is on this board but no longer on GitHub.');
+    expect(offer.actions.map(a => a.action)).toEqual(['keep-here', 'remove']);
+    const confirm = bannerFor(ready({ problem }), true)!;
+    expect(confirm.title).toBe('Remove #2 from this board?');
+    expect(confirm.actions.map(a => a.action)).toEqual(['cancel-remove', 'confirm-remove']);
+  });
+
+  it('offers no removal for a record deleted from the table', () => {
+    const local = { ...problem, missing: { ...problem.missing, side: 'local' as const } };
+    expect(bannerFor(ready({ problem: local }), true)!.actions.map(a => a.action)).toEqual([
+      'open-github',
+      'sync',
+    ]);
+  });
+});

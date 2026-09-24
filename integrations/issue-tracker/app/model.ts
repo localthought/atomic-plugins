@@ -90,14 +90,23 @@ export type BannerAction =
   | 'review-conflict'
   | 'send'
   | 'sync'
-  | 'open-github';
+  | 'open-github'
+  | 'keep-here'
+  | 'remove'
+  | 'confirm-remove'
+  | 'cancel-remove';
 
 export interface BannerModel {
   tone: Tone;
   icon: IconName;
   title: string;
   text: string;
-  actions: { label: string; action: BannerAction; primary?: boolean }[];
+  actions: {
+    label: string;
+    action: BannerAction;
+    primary?: boolean;
+    danger?: boolean;
+  }[];
   details?: string;
   /** Set for problems; `views.ts` makes it an alert only when a sync raised it. */
   problem?: Problem;
@@ -111,7 +120,10 @@ export const unconfirmed = (state: Ready): Held[] =>
   (state.last?.result.held ?? []).filter(h => h.unconfirmed);
 
 /** The one banner under the connection bar, or none. Transient failures get none. */
-export function bannerFor(state: ViewState): BannerModel | undefined {
+export function bannerFor(
+  state: ViewState,
+  confirmingRemove = false,
+): BannerModel | undefined {
   if (state.kind !== 'ready') return undefined;
   const p = state.problem;
 
@@ -160,16 +172,54 @@ export function bannerFor(state: ViewState): BannerModel | undefined {
         details: p.message,
         problem: p,
       };
-    if (p.reason === 'missing')
-      return {
-        tone: 'warn',
-        icon: 'ghost',
-        title: 'An issue on this board is no longer on GitHub.',
-        text: 'It may have been deleted or moved to another repository. Nothing on GitHub will change. Removing or unlinking it here is not available yet.',
-        actions: [{ label: 'Check on GitHub', action: 'open-github' }],
-        details: p.message,
-        problem: p,
-      };
+    if (p.reason === 'missing') {
+      const issue =
+        p.missing?.side === 'remote' && p.missing.entity === 'issue';
+      const name = ref(p.missing?.local);
+
+      if (issue && confirmingRemove)
+        return {
+          tone: 'warn',
+          icon: 'ghost',
+          title: `Remove ${name === 'An issue' ? 'this issue' : name} from this board?`,
+          text: 'Its row and its comments are deleted from this table. Nothing on GitHub changes.',
+          actions: [
+            { label: 'Cancel', action: 'cancel-remove' },
+            { label: 'Remove', action: 'confirm-remove', danger: true },
+          ],
+          details: p.message,
+          problem: p,
+        };
+
+      return issue
+        ? {
+            tone: 'warn',
+            icon: 'ghost',
+            title: `${name} is on this board but no longer on GitHub.`,
+            text: 'It may have been deleted or moved to another repository. Nothing on GitHub will change.',
+            actions: [
+              { label: 'Keep here only', action: 'keep-here' },
+              { label: 'Remove from board', action: 'remove', danger: true },
+            ],
+            details: p.message,
+            problem: p,
+          }
+        : {
+            tone: 'warn',
+            icon: 'ghost',
+            title:
+              p.missing?.side === 'local'
+                ? 'A synced record was deleted from this table.'
+                : 'A comment on this board is no longer on GitHub.',
+            text: 'Sync is paused so nothing is deleted on the other side. Check GitHub and the table before syncing again.',
+            actions: [
+              { label: 'Check on GitHub', action: 'open-github' },
+              { label: 'Sync now', action: 'sync' },
+            ],
+            details: p.message,
+            problem: p,
+          };
+    }
     if (p.reason === 'rejected')
       return {
         tone: 'neg',
