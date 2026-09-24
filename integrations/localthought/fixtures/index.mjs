@@ -10,7 +10,10 @@
  *   document      catalog document served as JSON at /catalog/<id>.yaml
  *   documentFile  or: a file served verbatim as application/yaml there
  *   jsonBody      true to read and JSON-parse request bodies (max 1 MiB)
- *   create()      returns { request(method, url, body) -> { status, body, headers? } }
+ *   create()      returns { request(method, url, body, headers) -> { status, body, headers? } }
+ *                 where `headers` holds only `if-match`, when the caller sent it
+ *   drivers       names of instance methods an e2e spec may call over HTTP,
+ *                 as POST /fixture/<id>/<name> with a JSON array of arguments
  *
  * See integrations/PARALLEL_LANES.md §4 for what is still missing (recorded
  * api/ bodies, record.mjs, fixture.test.mjs, the drift guard).

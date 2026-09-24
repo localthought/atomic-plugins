@@ -12,6 +12,6 @@
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },
-  "include": ["adapter.ts", "devonian/**/*.ts"],
-  "exclude": ["devonian/**/*.test.ts"]
+  "include": ["adapter.ts", "app/*.ts", "devonian/**/*.ts"],
+  "exclude": ["app/*.test.ts", "app/fakeStore.ts", "devonian/**/*.test.ts"]
 }

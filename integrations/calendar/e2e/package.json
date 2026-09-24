@@ -1,0 +1,5 @@
+{
+  "//": "Only so Playwright loads calendar.spec.ts as an ES module, which lets it import ../app/build.mjs (pets and notion get this from their package.json). Not a package; integrations/tooling/certify.mjs only looks at integrations/<plugin>/package.json.",
+  "private": true,
+  "type": "module"
+}

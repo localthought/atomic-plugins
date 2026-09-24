@@ -274,3 +274,91 @@ test('notion: POST list bodies reach the fixture; the cursor travels in the body
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('google-calendar: If-Match reaches the fixture, ETag comes back, CORS allows both', async () => {
+  const server = mockProxy({ platforms: 'google-calendar' });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const preflight = await fetch(`${base}/proxy/google-calendar/x`, {
+      method: 'OPTIONS',
+    });
+    assert.match(
+      preflight.headers.get('access-control-allow-headers'),
+      /If-Match/,
+    );
+    assert.match(
+      preflight.headers.get('access-control-expose-headers'),
+      /ETag/,
+    );
+
+    let code = await connect(base, 'google-calendar');
+
+    const call = async (method, path, { body, ifMatch } = {}) => {
+      const response = await fetch(
+        `${base}/proxy/google-calendar/calendar/v3${path}`,
+        {
+          method,
+          headers: {
+            Authorization: `Bearer ${code}`,
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            ...(ifMatch ? { 'If-Match': ifMatch } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        },
+      );
+      code = response.headers.get('x-connection-code');
+
+      return {
+        status: response.status,
+        etag: response.headers.get('etag'),
+        body: await response.json(),
+      };
+    };
+
+    const event = await call('GET', '/calendars/primary/events/timed');
+    assert.equal(event.status, 200);
+    assert.equal(event.etag, event.body.etag);
+    const path = '/calendars/primary/events/timed?sendUpdates=all';
+    const patch = { summary: 'Renamed' };
+    assert.equal((await call('PATCH', path, { body: patch })).status, 428);
+    assert.equal(
+      (await call('PATCH', path, { body: patch, ifMatch: '"stale"' })).status,
+      412,
+    );
+    const written = await call('PATCH', path, {
+      body: patch,
+      ifMatch: event.etag,
+    });
+    assert.equal(written.status, 200);
+    assert.equal(written.body.summary, 'Renamed');
+    assert.notEqual(written.etag, event.etag);
+    assert.deepEqual(server.calendar.writes, [
+      { id: 'timed', patch, ifMatch: event.etag },
+    ]);
+
+    // Drivers: only the listed ones, POST only, JSON array arguments.
+    const drive = (name, args, method = 'POST') =>
+      fetch(`${base}/fixture/google-calendar/${name}`, {
+        method,
+        ...(method === 'POST' ? { body: JSON.stringify(args) } : {}),
+      });
+    const edited = await drive('editRemote', ['timed', { location: 'Room 9' }]);
+    assert.equal(edited.status, 200);
+    assert.equal((await edited.json()).location, 'Room 9');
+    assert.equal((await drive('editRemote', ['nope', {}])).status, 409);
+    assert.equal((await drive('request', [])).status, 404);
+    assert.equal((await drive('state', [], 'GET')).status, 404);
+    assert.equal((await drive('state', {})).status, 400);
+    const state = await (await drive('state', [])).json();
+    assert.equal(state.writes.length, 1);
+    assert.equal(
+      (await fetch(`${base}/fixture/pets/state`, { method: 'POST' })).status,
+      404,
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

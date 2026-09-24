@@ -54,6 +54,32 @@ describe('Google Calendar package', () => {
       'primary',
     );
     expect(result.changes).toHaveLength(249);
+    expect(result.skipped).toEqual({ recurring: 1, cancelled: 1 });
+    // The ETag each later edit is conditioned on comes from this same read.
+    expect(result.changes[0]).toMatchObject({ id: 'e1', etag: '"e1"' });
+  });
+
+  it('fails loudly past the page cap instead of importing a partial calendar', async () => {
+    let reads = 0;
+    await expect(
+      preview(
+        {
+          read: async () => {
+            reads++;
+
+            return {
+              status: 200,
+              body: JSON.stringify({ items: [], nextPageToken: 'more' }),
+            };
+          },
+          cards: async () => [],
+          state: async () => ({ revision: 0, records: {}, cursor: null }),
+        },
+        'primary',
+        { maxPages: 3 },
+      ),
+    ).rejects.toThrow('at most 750 events');
+    expect(reads).toBe(3);
   });
 
   it('refuses failed reads instead of treating them as deletions', async () => {

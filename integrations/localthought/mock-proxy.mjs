@@ -46,11 +46,16 @@ export function mockProxy({
       'Access-Control-Allow-Methods',
       'GET, POST, PATCH, DELETE, OPTIONS',
     );
+    // As integration-proxy's browser_cors(): If-Match in, ETag and
+    // Retry-After out, so a conditional write works the same here.
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Authorization, Content-Type',
+      'Authorization, Content-Type, If-Match',
     );
-    res.setHeader('Access-Control-Expose-Headers', 'X-Connection-Code, Link');
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'X-Connection-Code, Link, Retry-After, ETag',
+    );
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -195,6 +200,37 @@ export function mockProxy({
       return json(200, instance.control(command) ?? {});
     }
 
+    // Test-side drivers over HTTP, for e2e specs, which run in another process
+    // than this mock: POST /fixture/<platform>/<driver> with a JSON array of
+    // arguments. Only the names a fixture lists in its `drivers`.
+    const namedDriver = url.pathname.match(/^\/fixture\/([^/]+)\/([^/]+)$/);
+
+    if (namedDriver) {
+      const [, platform, name] = namedDriver;
+      if (
+        req.method !== 'POST' ||
+        !Object.hasOwn(instances, platform) ||
+        !(fixtures[platform].drivers ?? []).includes(name)
+      )
+        return json(404, {});
+      let args;
+
+      try {
+        let text = '';
+        for await (const chunk of req) text += chunk;
+        args = text ? JSON.parse(text) : [];
+        if (!Array.isArray(args)) throw new Error('arguments must be an array');
+      } catch (error) {
+        return json(400, { error: String(error) });
+      }
+
+      try {
+        return json(200, (await instances[platform][name](...args)) ?? null);
+      } catch (error) {
+        return json(409, { error: String(error) });
+      }
+    }
+
     if (url.pathname.startsWith('/proxy/')) {
       const code = req.headers.authorization?.replace(/^Bearer /, '');
       const platform = codes.get(code);
@@ -223,7 +259,17 @@ export function mockProxy({
         }
       }
 
-      const result = instances[platform].request(req.method, url, input);
+      // Only the one request header the real proxy forwards upstream besides
+      // Content-Type (proxy.rs upstream_request); never Authorization.
+      const forwarded = req.headers['if-match']
+        ? { 'if-match': req.headers['if-match'] }
+        : {};
+      const result = instances[platform].request(
+        req.method,
+        url,
+        input,
+        forwarded,
+      );
 
       return json(result.status, result.body, {
         ...headers,

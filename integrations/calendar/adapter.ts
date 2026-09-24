@@ -52,13 +52,30 @@ export interface Change {
   local?: Projection;
   remote?: Projection;
   desired: Projection;
+  /** The event's ETag as read in this preview; an edit sent later is conditioned on it. */
+  etag?: string;
 }
 export interface Preview {
   calendarId: string;
   revision: number;
   changes: Change[];
   conflicts: Array<{ subject?: string; id?: string; fields: string[] }>;
+  /** Events read but not imported, by reason. A cancelled instance of a
+   * series counts as recurring. */
+  skipped: { recurring: number; cancelled: number };
 }
+
+/** Google answered a conditional write with 412: the event changed after the
+ * preview that the edit was planned from. Nothing was written. */
+export class StaleEventError extends Error {
+  constructor(readonly id: string) {
+    super('Google event changed after preview; preview again');
+  }
+}
+
+/** 250 events per page; the default cap of 100 pages is 25,000 events. */
+export const PAGE_SIZE = 250;
+export const MAX_PAGES = 100;
 
 const headers = {
   Authorization: 'secret:google-calendar',
@@ -274,6 +291,7 @@ export async function get(
 export async function preview(
   host: Host,
   calendarId: string,
+  { maxPages = MAX_PAGES }: { maxPages?: number } = {},
 ): Promise<Preview> {
   const root = endpoint(calendarId);
   const state = await host.state();
@@ -282,13 +300,17 @@ export async function preview(
       'A saved sync is pending; resume it before previewing another run',
     );
   const events = new Map<string, Projection>();
+  const etags = new Map<string, string>();
+  const skipped = { recurring: 0, cancelled: 0 };
   let pageToken: string | undefined;
   let pages = 0;
 
   do {
-    if (++pages > 100)
-      throw new Error('Pilot supports at most 25,000 events per scan');
-    const url = `${root}?singleEvents=false&showDeleted=true&maxResults=250${
+    if (++pages > maxPages)
+      throw new Error(
+        `Pilot supports at most ${String(maxPages * PAGE_SIZE).replace(/\B(?=(\d{3})+$)/g, ',')} events per scan`,
+      );
+    const url = `${root}?singleEvents=false&showDeleted=true&maxResults=${PAGE_SIZE}${
       pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''
     }`;
     const page = parse<{ items: Event[]; nextPageToken?: string }>(
@@ -299,7 +321,13 @@ export async function preview(
 
     for (const event of page.items) {
       const projection = project(event);
-      if (projection) events.set(event.id, projection);
+
+      if (projection) {
+        events.set(event.id, projection);
+        if (typeof event.etag === 'string') etags.set(event.id, event.etag);
+      } else if (event.recurrence?.length || event.recurringEventId)
+        skipped.recurring++;
+      else skipped.cancelled++;
     }
 
     pageToken = page.nextPageToken;
@@ -323,6 +351,7 @@ export async function preview(
     revision: state.revision,
     changes: [],
     conflicts: [],
+    skipped,
   };
 
   for (const [id, remote] of events) {
@@ -358,6 +387,7 @@ export async function preview(
       local: card?.value,
       remote,
       desired,
+      etag: etags.get(id),
     });
   }
 
@@ -436,8 +466,7 @@ export async function applyEdit(
       etag,
     ),
   );
-  if (response.status === 412)
-    throw new Error('Google event changed after preview; preview again');
+  if (response.status === 412) throw new StaleEventError(edit.id);
 
   return parse<Event>(response);
 }
