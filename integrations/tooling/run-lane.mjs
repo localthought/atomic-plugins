@@ -168,7 +168,8 @@ for (const tier of order.filter(t => tiers.includes(t))) {
 
   if (tier === 'contract') {
     status = run(process.execPath, [
-      'integrations/tooling/server-contract.mjs', lane.id,
+      'integrations/tooling/server-contract.mjs',
+      lane.id,
     ]);
   } else if (tier === 'typecheck') {
     status = run(requireTool(`${bin}/tsc`, 'run pnpm install in browser/'), [
