@@ -65,6 +65,7 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     repoFilter: '',
     typedRepo: '',
     alert: false,
+    canDisconnect: typeof store.proxy?.disconnect === 'function',
     flash: new Set(),
     now: Date.now(),
   };
@@ -218,6 +219,38 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     }, 800);
   };
 
+  /**
+   * Opens an http(s) link outside the frame: `store.openExternal` (the host
+   * shows where it goes, pin 007869464). Older hosts: `window.open`, which
+   * the frame's sandbox (no allow-popups) may refuse.
+   */
+  const openExternal = async (url: string) => {
+    if (!/^https?:/i.test(url)) return;
+
+    if (store.openExternal) {
+      await store.openExternal(url).catch(() => undefined);
+
+      return;
+    }
+
+    try {
+      win.open(url, '_blank', 'noopener');
+    } catch {
+      // Refused by the sandbox.
+    }
+  };
+
+  // Every outside link in the view (Open on GitHub, links in Markdown) goes
+  // through the host when it can.
+  root.addEventListener('click', event => {
+    const link = (event.target as HTMLElement).closest?.('a[href]');
+    if (!link || !store.openExternal) return;
+    const href = (link as HTMLAnchorElement).href;
+    if (!/^https?:/i.test(href)) return;
+    event.preventDefault();
+    void openExternal(href);
+  });
+
   const readyState = () => {
     const s = controller.state();
 
@@ -357,17 +390,15 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     },
 
     openGitHub(url) {
-      // The frame is sandboxed without allow-popups, so this can be refused;
-      // the issue panel's footer link shows the URL either way.
-      try {
-        win.open(url, '_blank', 'noopener');
-      } catch {
-        // Refused by the sandbox.
-      }
+      void openExternal(url);
     },
 
     focusSearch() {
       focusKey('search');
+    },
+
+    disconnect() {
+      void controller.disconnect();
     },
   };
 
@@ -514,10 +545,19 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     render();
   });
 
-  watchFrame(root, size => {
-    ui.size = size;
-    render();
-  });
+  watchFrame(
+    root,
+    size => {
+      ui.size = size;
+      render();
+    },
+    {
+      ...(store.getTheme ? { getTheme: () => store.getTheme!() } : {}),
+      ...(store.onThemeChange
+        ? { onThemeChange: handler => store.onThemeChange!(handler) }
+        : {}),
+    },
+  );
   // Relative times ("Synced 3 min ago") and the retry countdown; never
   // under someone typing.
   setInterval(() => {

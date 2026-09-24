@@ -350,3 +350,45 @@ describe('sync problems', () => {
     expect(cardOf(root, '#2').textContent).toContain('There');
   });
 });
+
+describe('host calls from pin 007869464', () => {
+  it('opens GitHub links through store.openExternal', async () => {
+    const { root, store } = await mount();
+    cardOf(root, '#1').click();
+    const link = [...root.querySelectorAll<HTMLAnchorElement>('.detail a')].find(
+      a => a.textContent === 'Open on GitHub',
+    )!;
+    link.click();
+    await wait();
+    expect(store.opened).toEqual([`https://github.com/${SEEDED_REPOSITORY}/issues/1`]);
+  });
+
+  it('follows the host colour scheme, not the page background', async () => {
+    const store = fakeStore();
+    store.setScheme('dark');
+    const { root } = await mount({ store });
+    expect(root.dataset.plScheme).toBe('dark');
+    store.setScheme('light');
+    expect(root.dataset.plScheme).toBe('light');
+  });
+
+  it('offers Disconnect only where the host supports it', async () => {
+    const item = async (store: FakeStore) => {
+      const { root } = await mount({ store });
+      q(root, '[aria-label="Connection menu"]').click();
+
+      return [...root.querySelectorAll<HTMLButtonElement>('[role=menu] button')].find(
+        b => b.textContent === 'Disconnect GitHub',
+      )!;
+    };
+
+    expect((await item(fakeStore({ hostApis: false }))).disabled).toBe(true);
+    const store = fakeStore();
+    const disconnect = await item(store);
+    expect(disconnect.disabled).toBe(false);
+    disconnect.click();
+    await wait(20);
+    expect(store.disconnected).toEqual(['github-issues']);
+    expect(document.querySelector('[aria-label="Connect GitHub Issues"]')).not.toBeNull();
+  });
+});

@@ -97,6 +97,8 @@ export interface Ui {
   typedRepo: string;
   /** A banner raised by a sync in this view (`role="alert"`). */
   alert: boolean;
+  /** The host can take this app off its connection (`proxy.disconnect`). */
+  canDisconnect?: boolean;
   /** Rows to highlight after new data arrived. */
   flash: Set<string>;
   /** Seconds until the automatic retry after a transient failure. */
@@ -121,6 +123,7 @@ export interface Actions {
   setDrafts(patch: Partial<Drafts>, render?: boolean): void;
   openGitHub(url: string): void;
   focusSearch(): void;
+  disconnect(): void;
 }
 
 const GLYPH: Record<Status, Glyph> = {
@@ -245,9 +248,7 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
         : h('span', { class: 'acct' }, 'GitHub'),
       // A phone-width bar keeps to the repository and its actions; the
       // pill already says when it last synced.
-      ui.size === 's' && !held
-        ? null
-        : h('span', null, connectionLine(state)),
+      ui.size === 's' && !held ? null : h('span', null, connectionLine(state)),
     ],
     [
       held && !state.last?.result.held.some(x => x.unconfirmed)
@@ -299,6 +300,11 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
                   label: 'Reconnect GitHub',
                   run: () => actions.connect(),
                   disabled: state.problem?.kind !== 'reconnect',
+                },
+                {
+                  label: 'Disconnect GitHub',
+                  run: () => actions.disconnect(),
+                  disabled: !ui.canDisconnect,
                 },
                 {
                   label: 'Change repository: install another app',

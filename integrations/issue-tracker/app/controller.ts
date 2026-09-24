@@ -107,6 +107,12 @@ export interface Controller {
   state(): ViewState;
   load(): Promise<ViewState>;
   connect(): Promise<ViewState>;
+  /**
+   * Takes this app's delegation off its GitHub connection (the host's
+   * `proxy.disconnect`); the table and its issues stay. Unsupported on
+   * hosts from before pin 007869464.
+   */
+  disconnect(): Promise<ViewState>;
   /** Lists the connection's repositories for the picker (state 3). */
   listRepositories(): Promise<ViewState>;
   choose(repository: string): Promise<ViewState>;
@@ -431,6 +437,14 @@ export function createController(
       // connecting a new account navigates away and the view comes back
       // fresh. Either way, the connections decide what shows next.
       await store.proxy.connect({ platform: PLATFORM });
+
+      return this.load();
+    },
+
+    async disconnect() {
+      const proxy = store.proxy;
+      if (!proxy?.disconnect || current.kind !== 'ready') return current;
+      await serial(() => proxy.disconnect!({ platform: PLATFORM }));
 
       return this.load();
     },

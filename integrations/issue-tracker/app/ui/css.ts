@@ -8,10 +8,11 @@
  * empty state, buttons, segmented control, search field, label chip and
  * status glyph. Values follow `design/mockups.html`.
  *
- * Rules: every colour comes from a host variable, except the `--pl-pos`
- * fallback (the host has no success colour yet; IT-18). Light or dark is the
- * host's choice, never `prefers-color-scheme`: `ui/theme.ts` sets
- * `data-pl-scheme` from the host's background so `--pl-pos` can follow.
+ * Rules: every colour comes from a host variable. `--pl-pos` is the host's
+ * `--t-color-success`, with a literal fallback only for hosts from before
+ * it existed. Light or dark is the host's choice, never
+ * `prefers-color-scheme`: `ui/theme.ts` sets `data-pl-scheme` from the
+ * host's `colorScheme` (or, on older hosts, its background).
  *
  * Kept inside this plugin (per-plugin containment) until the maintainer
  * decides on a shared package; nothing here is issue-specific.

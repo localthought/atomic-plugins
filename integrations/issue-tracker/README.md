@@ -201,8 +201,15 @@ read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
   requests are not synced; deletion on either side is never propagated.
 - Editing an existing comment has no control in the view yet (the Bridge
   syncs such edits made in the table).
-- The frame's sandbox has no `allow-popups`, so "Open on GitHub" links and
-  "Check on GitHub" may be refused by the browser.
+- Host calls from atomic-server pin 007869464 are used when present and
+  feature-detected otherwise: links ("Open on GitHub", "Check on GitHub",
+  links in descriptions) go through `store.openExternal`, which shows the
+  destination first (older hosts: `window.open`, which the sandbox may
+  refuse); light/dark comes from `store.getTheme()`/`onThemeChange()`;
+  `--pl-pos` is the host's `--t-color-success`; "Disconnect GitHub" in the
+  connection menu calls `store.proxy.disconnect` (only this app's
+  delegation goes; the table stays); and rows a query lists are read with
+  `store.getMany` in batches of 100.
 - Search, keyboard and drag were checked in jsdom and the e2e; drag and drop
   was not exercised in an automated test.
 - **Install.** No catalog install flow for drive apps exists yet (#94), so

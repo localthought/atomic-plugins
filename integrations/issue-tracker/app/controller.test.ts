@@ -292,3 +292,41 @@ group('issue-tracker controller: problems', () => {
     });
   });
 });
+
+group('issue-tracker controller: host calls from pin 007869464', () => {
+  it('disconnects this app from GitHub and keeps the table', async () => {
+    const { store, controller } = await bound();
+    const rows = [...store.resources.values()].filter(p => p[PARENT] === TABLE).length;
+    expect((await controller.disconnect()).kind).toBe('not-connected');
+    expect(store.disconnected).toEqual(['github-issues']);
+    expect([...store.resources.values()].filter(p => p[PARENT] === TABLE)).toHaveLength(rows);
+  });
+
+  it('does nothing on a host without proxy.disconnect', async () => {
+    const { controller } = await bound(fakeStore({ hostApis: false }));
+    expect((await controller.disconnect()).kind).toBe('ready');
+  });
+
+  it('reads listed rows in batches with getMany, and one by one without it', async () => {
+    const batched = await bound();
+    const before = { ...batched.store.counts };
+    await batched.controller.sync();
+    const withMany = {
+      getMany: (batched.store.counts.getMany ?? 0) - (before.getMany ?? 0),
+      getResource: batched.store.counts.getResource - before.getResource,
+    };
+
+    const single = await bound(fakeStore({ hostApis: false }));
+    const start = single.store.counts.getResource;
+    await single.controller.sync();
+    const oneByOne = single.store.counts.getResource - start;
+
+    expect(withMany.getMany).toBeGreaterThan(0);
+    expect(withMany.getResource).toBeLessThan(oneByOne);
+    const shape = (c: typeof batched.controller) =>
+      ready(c.state())
+        .last!.result.rows.map(r => [r.number, r.title, r.status, r.comments.map(x => x.body)])
+        .sort();
+    expect(shape(batched.controller)).toEqual(shape(single.controller));
+  });
+});

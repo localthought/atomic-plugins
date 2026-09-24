@@ -117,6 +117,7 @@ describe('the shared kit', () => {
 describe('theme tokens', () => {
   // Formatting-independent: no whitespace around punctuation.
   const css = (KIT_CSS + APP_CSS)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*([:;{},>])\s*/g, '$1');
 
@@ -125,8 +126,8 @@ describe('theme tokens', () => {
       .split(/[;{}]/)
       .filter(decl => /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i.test(decl));
     expect(literals.map(d => d.trim())).toEqual([
-      '--pl-pos:#2f8f5b',
-      '--pl-pos:#5cc48a',
+      '--pl-pos:var(--t-color-success,#2f8f5b)',
+      '--pl-pos:var(--t-color-success,#5cc48a)',
     ]);
   });
 
@@ -153,7 +154,9 @@ describe('theme tokens', () => {
     expect(css).toContain(
       '--pl-hairline:color-mix(in srgb,var(--t-color-bg-2) 55%,var(--t-color-bg))',
     );
-    expect(css).toContain('[data-pl-scheme="dark"]{--pl-pos:#5cc48a;}');
+    expect(css).toContain(
+      '[data-pl-scheme="dark"]{--pl-pos:var(--t-color-success,#5cc48a);}',
+    );
   });
 
   it('follows the host theme for --pl-pos, light and dark', () => {
@@ -175,5 +178,31 @@ describe('theme tokens', () => {
     document.documentElement.style.setProperty('--t-color-bg', '#ffffff');
     watchFrame(root, () => {})();
     expect(root.dataset.plScheme).toBe('light');
+  });
+});
+
+describe('host theme calls', () => {
+  it('uses the host colorScheme over the background, and follows changes', () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+    document.documentElement.style.setProperty('--t-color-bg', '#ffffff');
+    let listener: ((t: { colorScheme?: 'light' | 'dark' }) => void) | undefined;
+    const stop = watchFrame(root, () => {}, {
+      getTheme: () => ({ colorScheme: 'dark' }),
+      onThemeChange: h => {
+        listener = h;
+
+        return () => (listener = undefined);
+      },
+    });
+    expect(root.dataset.plScheme).toBe('dark');
+    listener!({ colorScheme: 'light' });
+    expect(root.dataset.plScheme).toBe('light');
+    stop();
+    expect(listener).toBeUndefined();
+  });
+
+  it('takes the success colour from the host', () => {
+    expect(KIT_CSS).toContain('--pl-pos: var(--t-color-success, #2f8f5b)');
   });
 });

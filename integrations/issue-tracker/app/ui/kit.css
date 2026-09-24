@@ -19,7 +19,8 @@ body {
   --pl-warn: var(--t-color-warning);
   --pl-radius: var(--t-radius, 9px);
   --pl-font: var(--t-font-family, system-ui, sans-serif);
-  --pl-pos: #2f8f5b;
+  /* The host's success colour; a fallback for hosts before pin 007869464. */
+  --pl-pos: var(--t-color-success, #2f8f5b);
   background: var(--pl-bg);
   color: var(--pl-text);
   font: 14px/1.45 var(--pl-font);
@@ -28,7 +29,7 @@ body {
   box-sizing: border-box;
 }
 .pl-app[data-pl-scheme="dark"] {
-  --pl-pos: #5cc48a;
+  --pl-pos: var(--t-color-success, #5cc48a);
 }
 .pl-app *,
 .pl-app *::before,

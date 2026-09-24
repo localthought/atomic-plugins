@@ -2,9 +2,11 @@
 /**
  * Host theme and frame width, as attributes on the app root.
  *
- * - `data-pl-scheme="light|dark"` from the host's `--t-color-bg`: the
- *   user's Atomic setting, not the OS (`prefers-color-scheme` is never
- *   read). Only `--pl-pos`, which has no host variable, needs it.
+ * - `data-pl-scheme="light|dark"`: the host's `colorScheme`
+ *   (`store.getTheme()` / `onThemeChange()`, pin 007869464), or on older
+ *   hosts the luminance of its `--t-color-bg`. The user's Atomic setting,
+ *   not the OS (`prefers-color-scheme` is never read). Only the `--pl-pos`
+ *   fallback needs it.
  * - `data-size="s|m|l|xl"` from the root's own width, the only breakpoint
  *   input a frame has: < 600, 600–719, 720–999, ≥ 1000.
  */
@@ -61,6 +63,14 @@ export function injectStyles(root: HTMLElement, css: string): void {
   doc.head.append(style);
 }
 
+/** What a host tells about its light/dark setting (the store's theme calls). */
+export interface ThemeSource {
+  getTheme?(): { colorScheme?: 'light' | 'dark' };
+  onThemeChange?(
+    handler: (theme: { colorScheme?: 'light' | 'dark' }) => void,
+  ): () => void;
+}
+
 /**
  * Keeps `data-pl-scheme` and `data-size` current. `onSize` runs when the
  * size class changes. Returns a stop function.
@@ -68,10 +78,19 @@ export function injectStyles(root: HTMLElement, css: string): void {
 export function watchFrame(
   root: HTMLElement,
   onSize: (size: Size, width: number) => void,
+  theme: ThemeSource = {},
 ): () => void {
   const win = root.ownerDocument.defaultView;
 
   const scheme = () => {
+    const told = theme.getTheme?.().colorScheme;
+
+    if (told) {
+      root.dataset.plScheme = told;
+
+      return;
+    }
+
     const bg = win
       ?.getComputedStyle(root.ownerDocument.documentElement)
       .getPropertyValue('--t-color-bg');
@@ -102,6 +121,10 @@ export function watchFrame(
   };
 
   win?.addEventListener('message', onMessage);
+  const unsubscribe = theme.onThemeChange?.(({ colorScheme }) => {
+    if (colorScheme) root.dataset.plScheme = colorScheme;
+    else scheme();
+  });
   const RO = (
     win as (Window & { ResizeObserver?: typeof ResizeObserver }) | null
   )?.ResizeObserver;
@@ -111,6 +134,7 @@ export function watchFrame(
 
   return () => {
     win?.removeEventListener('message', onMessage);
+    unsubscribe?.();
     observer?.disconnect();
     win?.removeEventListener('resize', measure);
   };
