@@ -74,19 +74,19 @@ version, actor setup, exact commands and results when it is actually tested.
 ## Implementation checklist
 
 - [ ] Specify the initial activity types, actor/resource mapping, discovery
-  claims and content negotiation; define request byte limits, collection
-  page limits and permitted write targets.
+      claims and content negotiation; define request byte limits, collection
+      page limits and permitted write targets.
 - [ ] Implement bounded inbox validation with host-verified signatures,
-  authorization and persistent activity-ID deduplication.
+      authorization and persistent activity-ID deduplication.
 - [ ] Use host signing and the durable queue for outbound delivery; specify
-  retry/backoff, per-peer concurrency and terminal failure limits.
+      retry/backoff, per-peer concurrency and terminal failure limits.
 - [ ] Test invalid signatures, unauthorized writes, duplicate delivery,
-  blocked peers, retry exhaustion, restart recovery and gate closure.
+      blocked peers, retry exhaustion, restart recovery and gate closure.
 - [ ] Add protocol fixtures and executable tests here before replacing the
-  scaffold contract tier; test gate refusal on an unsupported host.
+      scaffold contract tier; test gate refusal on an unsupported host.
 - [ ] Record independent peer/version interoperability evidence before
-  describing a capability as verified. Keep #137 open until its remaining
-  implementation and evidence requirements are complete.
+      describing a capability as verified. Keep #137 open until its remaining
+      implementation and evidence requirements are complete.
 
 ## CI
 
