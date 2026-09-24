@@ -30,6 +30,15 @@
       "e2e": ["integrations/issue-tracker/e2e/issue-tracker.spec.ts"]
     },
     {
+      "id": "solid",
+      "index": 11,
+      "platforms": [],
+      "tiers": [
+        "contract"
+      ],
+      "note": "QuickJS server-protocol scaffold (#88): contract checks only; host routes and Solid authorization support are pending."
+    },
+    {
       "id": "localthought",
       "index": 2,
       "platforms": ["pets", "github-issues", "google-calendar", "clockify"],

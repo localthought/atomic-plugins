@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "solid",
+  "name": "Solid",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Expose a bounded Atomic resource collection through a Solid-compatible server surface.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
+  "proposedHostCapabilities": [
+    "http-routes",
+    "outbound-http",
+    "persistent-state"
+  ],
+  "firstInteropMilestone": "Authenticate a test client and read one authorized resource while denying another identity."
+}
