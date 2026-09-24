@@ -71,7 +71,7 @@ use tracing_subscriber::EnvFilter;
 
 pub use access::{Access, AccessPolicy, AllowAll, EnvAccessPolicy};
 pub use agent_id::{parse as parse_agent_id, AgentId};
-pub use config::{Config, DEFAULT_CATALOG_PATH};
+pub use config::{Config, DEFAULT_CATALOG_PATH, DEFAULT_OPERATOR_NAME};
 
 #[derive(Clone)]
 struct AppState {
@@ -85,6 +85,8 @@ struct AppState {
     catalog: catalog::Catalog,
     security: Option<security::Security>,
     access: Arc<dyn AccessPolicy>,
+    /// `OPERATOR_NAME`, `OPERATOR_URL` and the `BASE_URL` host, for the pages.
+    operator: templates::Operator,
     #[cfg(test)]
     test_upstream: Option<String>,
 }
@@ -224,6 +226,7 @@ pub async fn build_app_with_access(
         catalog,
         security: Some(security),
         access,
+        operator: templates::Operator::from_config(config),
         #[cfg(test)]
         test_upstream: None,
     };
@@ -362,8 +365,8 @@ async fn logo() -> impl axum::response::IntoResponse {
     )
 }
 
-async fn home() -> Html<String> {
-    Html(templates::render_home())
+async fn home(State(state): State<AppState>) -> Html<String> {
+    Html(templates::render_home(&state.operator))
 }
 
 #[cfg(test)]

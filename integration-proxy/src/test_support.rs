@@ -15,6 +15,11 @@ pub fn state(security: Option<crate::security::Security>) -> AppState {
         catalog: crate::catalog::Catalog::for_test("github-issues"),
         security,
         access: std::sync::Arc::new(crate::access::AllowAll),
+        operator: crate::templates::Operator::new(
+            crate::config::DEFAULT_OPERATOR_NAME,
+            None,
+            &crate::config::public_host(BASE_URL),
+        ),
         test_upstream: None,
     }
 }
