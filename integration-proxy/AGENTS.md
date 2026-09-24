@@ -22,7 +22,7 @@ this repository's production code.** That includes:
   authored and published in [`../overlays/`](../overlays/) (migrated from
   `localthought/overlays`).
 - Consumer `selection` objects (query overrides, OAuth security scheme
-  choice, trusted tenant-identity operation) for a specific catalog entry —
+  choice) for a specific catalog entry —
   those are also authored in `../overlays/catalog.json`.
 
 If you find yourself wanting to add any of the above, stop — the right place

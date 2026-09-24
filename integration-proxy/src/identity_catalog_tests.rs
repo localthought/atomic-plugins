@@ -1,3 +1,9 @@
+//! Composed-catalog fixtures (provenance in `tests/identity-catalog/sources.json`).
+//!
+//! These fixtures were pinned for the tenant-identity login that issue #54
+//! removed. The identity operations they declare are no longer read; the
+//! tests below keep asserting what the proxy still takes from them: the OAuth
+//! provider and its scopes, composed from the real pinned sources.
 use serde_json::json;
 
 use crate::catalog::Catalog;
@@ -7,21 +13,16 @@ fn catalog(platform: &str, source: &str, selection: serde_json::Value) -> Catalo
 }
 
 #[test]
-fn composed_google_identity_keeps_data_scopes_and_legacy_subject() {
+fn composed_google_calendar_keeps_its_data_scopes() {
     let catalog = catalog(
         "google-calendar",
         include_str!("../tests/identity-catalog/google-calendar-composed.yaml"),
+        // A leftover `tenantIdentity` selection is ignored, not an error.
         json!({
-        "oauthSecurityScheme": "googleOffline",
+            "oauthSecurityScheme": "googleOffline",
             "tenantIdentity": {"operationId": "getGoogleAuthenticatedPrincipal", "namespace": "https://accounts.google.com"}
         }),
     );
-    let identity = catalog.tenant_identity("google-calendar").unwrap();
-    assert_eq!(
-        identity.url.as_str(),
-        "https://openidconnect.googleapis.com/v1/userinfo"
-    );
-    assert_eq!(identity.subject, "/sub");
     let provider = catalog.oauth_provider("google-calendar").unwrap();
     assert_eq!(
         provider.scopes,
@@ -33,63 +34,29 @@ fn composed_google_identity_keeps_data_scopes_and_legacy_subject() {
             "profile"
         ]
     );
-    let principal =
-        crate::identity::resolve(&identity, &json!({"sub": "google-sub"}), "client").unwrap();
-    assert_eq!(
-        principal.legacy_subject_if_matches(Some("https://accounts.google.com")),
-        Ok(Some("google-sub".into()))
-    );
 }
 
 #[test]
-fn composed_github_identity_uses_numeric_subject_without_google_legacy_mapping() {
+fn composed_github_issues_requests_the_repo_scope() {
     let catalog = catalog(
         "github-issues",
         include_str!("../tests/identity-catalog/github-issues-composed.yaml"),
-        json!({
-            "oauthSecurityScheme": "githubOAuth",
-            "tenantIdentity": {"operationId": "getGitHubAuthenticatedPrincipal", "namespace": "https://github.com"}
-        }),
+        json!({"oauthSecurityScheme": "githubOAuth"}),
     );
-    let identity = catalog.tenant_identity("github-issues").unwrap();
-    assert_eq!(identity.url.as_str(), "https://api.github.com/user");
     let provider = catalog.oauth_provider("github-issues").unwrap();
     assert_eq!(provider.scopes, vec!["repo"]);
-    let principal = crate::identity::resolve(&identity, &json!({"id": 42}), "client").unwrap();
-    assert_eq!(principal.subject, "42");
-    assert_eq!(
-        principal.legacy_subject_if_matches(Some("https://accounts.google.com")),
-        Ok(None)
-    );
 }
 
 #[tokio::test]
 #[ignore = "downloads the pinned OAD sources the published catalog composes"]
-async fn published_catalog_loads_trusted_google_and_github_identity_operations() {
+async fn published_catalog_still_loads_with_tenant_identity_selections_present() {
     let catalog = Catalog::load_checked_in(&crate::build_http_client())
         .await
         .expect("published catalog must load through the runtime loader");
-
-    let google = catalog.tenant_identity("google-calendar").unwrap();
-    assert_eq!(
-        google.url.as_str(),
-        "https://openidconnect.googleapis.com/v1/userinfo"
-    );
-    assert_eq!(google.namespace, "https://accounts.google.com");
-    assert_eq!(
-        catalog
-            .identity_oauth_provider("google-calendar")
-            .unwrap()
-            .scopes,
-        vec!["openid", "email", "profile"]
-    );
-
-    let github = catalog.tenant_identity("github-issues").unwrap();
-    assert_eq!(github.url.as_str(), "https://api.github.com/user");
-    assert_eq!(github.namespace, "https://github.com");
-    assert!(catalog
-        .identity_oauth_provider("github-issues")
-        .unwrap()
-        .scopes
-        .is_empty());
+    for platform in ["google-calendar", "github-issues"] {
+        assert!(
+            catalog.oauth_provider(platform).is_ok(),
+            "{platform} must still compose an OAuth provider"
+        );
+    }
 }

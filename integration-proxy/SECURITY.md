@@ -1,46 +1,104 @@
 # Connection security
 
-## Browser bootstrap and credential handoff
+## Identity and request signatures (issue #54)
 
-New browser clients request a specific catalog platform at `/connect`, with a return URI, local actor id, S256 PKCE challenge and explicit credential grant. A catalog-selected `tenantIdentity` operation can establish the tenant from the same provider OAuth authorization; an OpenAPI declaration without that trusted catalog selection has no authority. The identity request is a fixed HTTPS authenticated GET, has no redirects, and accepts only a stable, non-reassigned provider or client subject. Email is display data only. A tenant secret is included only for the explicit `connection+tenant_secret` grant and is disclosed during consent. Standalone API login uses the same trusted operation and browser binding, issues no connection credential, and returns only to `/` or an already validated pending connection.
+The proxy's account is an Atomic agent, `atomic:agent:<Ed25519 public key>`.
+Ids are parsed by one function, accept the legacy `did:ad:agent:` prefix and
+both base64 alphabets, and are canonicalized (`atomic:agent:` + unpadded
+base64url) before any comparison or storage. Weak (small-order) keys are
+refused and signatures are checked with `verify_strict`.
 
-The complete request survives configured application login inside a short-lived encrypted cookie. Consent requires a cookie-bound random CSRF token and a single-use database nonce. It requires either an existing session or a catalog-trusted identity bootstrap. Bootstrap rejects a newly appeared session before exchanging the OAuth code; existing-session connections retain their original tenant. Return URIs require HTTPS (HTTP only for loopback development), no embedded user credentials or fragment, and no pre-existing credential/error fields. The hub creates and validates its own return state and binds it to the actor, drive and platform.
+Every request that reads or changes a connection is signed with Atomic's v2
+headers. The message covers the method, the full URL (the configured
+`BASE_URL` plus the path and query as received, never the `Host` header),
+the timestamp and a SHA-256 of the body, under a fixed `atomic-request-v2`
+prefix, so a captured request cannot be replayed with another body, method,
+path or proxy. The proxy accepts v2 only and never falls back to Atomic's v1
+message (`"{URL} {timestamp}"`), whose proofs are reusable for five minutes
+and do not cover the body. Timestamps must be within ±5 minutes; a SHA-256 of
+every accepted message is stored for ten minutes and a second use is
+refused, including across instances (PostgreSQL `used_challenges`).
 
-Provider OAuth state binds the platform, tenant, user, callback, PKCE verifier and an encrypted bootstrap context. A separate Secure/HttpOnly/SameSite=Lax browser cookie and the original browser binding are required at callback for the new flow. Provider cancellation returns only a generic error to the already validated hub URI. Existing signed OAuth flows retain their prior callback format.
+## Connections, delegations and runtimes
 
-A new callback returns only a random five-minute handoff code, never a token envelope or tenant secret. `/connect/redeem` requires the original PKCE verifier and atomically deletes the matching, unexpired handoff before issuing one rotating connection credential. Wrong verifiers do not burn a valid handoff; replays and concurrent second redemptions fail. The encrypted database payload carries platform/tenant/user identity and the exact requested grant. Revocation is checked again at redemption. Handoff codes cannot be used directly as proxy credentials. Redemption and consent responses are non-cacheable and use a no-referrer policy.
+A connection row holds one provider credential sealed with
+XChaCha20-Poly1305 under `ENCRYPTION_KEY`, with associated data binding the
+envelope to its row id, so an envelope copied into another row does not
+open. The row records its platform and owner. Only the owner (the agent that
+signed `/connect/redeem`) may delete it, delegate it, or list it. A delegation
+names an app agent; a runtime registered by the owner names a node's agent
+that acts for a delegated app. Both are read on every proxied request, so
+revocation is immediate. A connection unused for 90 days is deleted with its
+delegations; only an authenticated request counts as use, so knowing a
+connection id does not keep it alive. Connection ids are 256-bit random
+values and are not secret: an unknown id answers `404 unknown_connection`
+before any signature check.
 
-The browser clears callback parameters before further use, retains pending state outside graph resources, and removes its verifier when redeeming. A lost redemption response requires reconnecting rather than blindly retrying. One-use rotation still applies to proxy credentials. A proxy connection code expires after 30 idle days (`CONNECTION_CODE_IDLE_DAYS`), counted from its last use, because each proxied request stores a fresh successor. The handoff code above keeps its own, separate five-minute lifetime. The idle expiry used to be ten minutes. Because the code row is the only server-side copy of the sealed credential, that destroyed a user's refresh token whenever their client stopped syncing for ten minutes (#42). The trade-off: a leaked but unused code now stays redeemable for up to 30 days rather than ten minutes. It is still single-use, so after a leak the first redeemer invalidates the other holder's copy, and that holder's next request fails. A lost proxy response still loses its successor code, and with it the grant.
+Concurrent requests that find an OAuth token about to expire take a
+per-connection refresh lease, so a rotating refresh token is spent once.
 
-The legacy tenant-proof endpoints remain for compatibility. They are not used by the new hub flow. The legacy tenant-secret redirect is deprecated; new callers must request the optional grant through PKCE redemption. No existing tenant or provider secrets are rotated by this deployment.
+## Frame capabilities
 
-## Tenant session
+A capability is signed by the connection owner over a fixed
+`integration-proxy-capability-v2` prefix plus its JSON claims, so it cannot
+be confused with a request signature. It is bound to the proxy (`aud`), a
+connection and platform, an app agent that must hold a live delegation, and
+a frame key (`cnf`); it lasts at most 15 minutes. The request that presents
+it must be signed by `cnf`, so a leaked capability without the frame's
+in-memory key is useless. What it does not prevent: while the frame is open,
+plugin code can make requests of its own choosing within that scope and
+lifetime. The v1 capability of draft PR #72 (a bearer token) is not accepted.
 
-`/session` signs a timestamp and `/connect` checks a tenant response and a
-tenant-vouched user id. This proves possession of the tenant secret, but it is
-a bearer credential: anyone who obtains it can mint proofs for any user id.
-Use a high-entropy `SERVER_SECRET`, give every tenant a distinct identity, and
-rotate the server secret only with a migration plan. Challenges now contain a
-random nonce and are consumed atomically in PostgreSQL when `/connect` is
-confirmed; a second use is rejected. Expired nonce records are cleaned during
-subsequent consumption.
+## Connecting a provider
+
+`/connect` needs no login. Its consent screen names the platform and the
+destination; approval requires a cookie-bound random CSRF token, is single
+use, and checks `Origin` when present. Return addresses must be `https`,
+loopback `http`, or the Atomic app's `atomic://` deep link, with no embedded
+credentials, fragment, or pre-set `connection_code`/`error` parameters. The
+provider callback is bound to the approving browser by a separate
+`Secure`/`HttpOnly`/`SameSite=Lax` cookie and returns only a five-minute,
+single-use handoff code bound to the hub's PKCE challenge, never a token.
+`/connect/redeem` needs the PKCE verifier **and** a v2 signature; the signer
+becomes the owner, so the page that started the flow must also hold the
+user's key. A wrong verifier does not burn the handoff; concurrent second
+redemptions fail. Responses are `no-store`.
+
+For an API-key platform the key is typed into the proxy's own consent page
+and sealed like an OAuth token; it is never returned to the hub.
+
+## Admission
+
+An `AccessPolicy` is asked about the connection owner at redeem and on every
+signed request (delegates and frames are judged as their owner). The default
+allows everyone except `REVOKED_SUBJECTS`, optionally only `ALLOWED_AGENTS`.
+The atomic.place account and tier lookup (ontola/atomic-saas#138) is not
+implemented here.
+
+## Not verified
+
+- No real client has signed against this proxy yet; the wire format is
+  aligned with the atomic-server v2 work in progress, not tested against it.
+- WebCrypto Ed25519 in plugin frames was tested by hand in Chromium only
+  (issue #54); Safari's engine and Firefox are unconfirmed.
+- Other programs on the same machine can reach a loopback proxy; the
+  signature requirement is the control, as decision 12 of #54 expects.
 
 ## OAuth (#9)
 
 The following are the requirements this deployment targets; see "Release
 gate" below for what is still outstanding rather than already implemented.
 
-Register a distinct redirect URI per provider and validate it exactly. Keep
-the OAuth state and PKCE verifier in authenticated, short-lived, `Secure`,
-`HttpOnly`, `SameSite=Lax` cookies. Bind the state to the tenant and user id;
-reject callback requests whose binding does not match. Request narrowly scoped
+Register a distinct redirect URI per provider and validate it exactly. The
+OAuth state and PKCE verifier are single-use PostgreSQL rows; the callback is
+bound to the approving browser by an encrypted, short-lived, `Secure`,
+`HttpOnly`, `SameSite=Lax` cookie. Request narrowly scoped
 tokens, never put access tokens, refresh tokens, or encrypted token bundles in
 URLs, HTML, logs, referrers, or error messages.
 
 An encrypted token bundle needs authenticated encryption (for example,
 XChaCha20-Poly1305 or AES-256-GCM), a fresh random nonce for every encryption,
-key versioning, and associated data binding it to the tenant id, user id,
-provider, and expiry. A server-secret HMAC is not encryption. Prefer an
+key versioning, and associated data binding it to the connection row. A server-secret HMAC is not encryption. Prefer an
 opaque, short-lived reference with server-side storage if revocation and
 replay prevention are required.
 
@@ -56,7 +114,7 @@ and apply request size, timeout, redirect, and response-size limits.
 Refresh tokens only at the provider token endpoint configured for that
 platform. Store rotated tokens atomically before returning a replacement
 credential. Do not forward the upstream's cookies or authorization headers.
-Rate-limit per tenant, audit token use without logging secrets, and return
+Rate-limit per owner, audit token use without logging secrets, and return
 generic authentication errors.
 
 Implemented today: the requested path is rejected if it contains a `.` or

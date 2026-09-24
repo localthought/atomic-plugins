@@ -1,104 +1,200 @@
 # integration-proxy
 
-A Rust web server that lets a user log in with a configured OIDC provider or
-a catalog-trusted authenticated API identity. Sign-in sets an encrypted
-session cookie; there is a logout button to clear it. There is no
-server-side session store — the cookie *is* the session, so any number of
-instances can run behind a load balancer with no shared session state.
-PostgreSQL is required, though: it stores short-lived consumed OAuth states,
-replay nonces, and encrypted one-time credentials.
+A Rust web server that holds OAuth grants and pasted API keys for third-party
+platforms, and forwards catalog-allowlisted requests to them on behalf of
+[Atomic](https://github.com/ontola/atomic-server) agents.
 
-Built with [axum](https://github.com/tokio-rs/axum) and the
-[`oauth2`](https://docs.rs/oauth2) crate, following the OAuth 2.0
-Authorization Code flow with PKCE.
+There are no proxy accounts, logins or tenants (issue
+[#54](https://github.com/ontola/atomic-plugins/issues/54)). The account is
+the caller's Atomic agent, `atomic:agent:<public key>`: every request that
+matters is signed with that key, and the proxy verifies it against the key
+inside the id, so it looks nothing up. A **connection** (one provider grant)
+is owned by the agent that redeemed it; the owner **delegates** it to app
+agents, and may register **runtimes** (a node's app agent) for them. A plugin
+frame, which cannot keep a key, uses a short-lived **capability** signed by
+the owner and bound to a key the frame holds in memory.
+
+PostgreSQL stores connections (provider credentials sealed with
+XChaCha20-Poly1305), delegations, runtimes, five-minute connect handoffs and
+the single-use record of signed requests.
+
+Built with [axum](https://github.com/tokio-rs/axum), following the OAuth 2.0
+Authorization Code flow with PKCE towards providers.
 
 ## How it works
 
-- `GET /` — shows a configurable application-login button, or, if a valid session
-  cookie is present, the signed-in user's name/picture and a "Log out"
-  button.
-- `GET /auth/login` — starts the configured OIDC OAuth flow: generates a PKCE challenge and
-  CSRF token, stores them in a short-lived encrypted cookie, and redirects
-  to the provider's consent screen.
-- `GET /auth/callback` — the configured provider redirects here with an authorization code.
-  The server validates the CSRF token, exchanges the code for an access
-  token, fetches the configured provider's profile endpoint, and
-  sets the session cookie.
-- `GET /auth/login/{platform}` — starts a standalone login through a catalog
-  platform only when its selection explicitly trusts a `tenantIdentity`
-  operation. It requests that identity operation's OAuth scopes, creates no
-  connection credential, and returns only to `/` or an already validated
-  pending `/connect` request.
-- `POST /auth/logout` — clears the session cookie.
-- `GET /catalog` — lists the available integration platform names.
-- `GET /catalog/{platform}.yaml` — returns the OpenAPI document for that
-  platform with its configured overlays applied.
-- `GET /connect?platform=github-issues&redirect_uri=<url>&user_id=<actor>&code_challenge=<S256>&code_challenge_method=S256&credentials=connection` — starts a browser connection without a tenant secret. For a catalog platform that explicitly selects `tenantIdentity`, one provider OAuth authorization establishes the tenant identity and connection credential. Other platforms retain the configured application-login flow.
-- `POST /connect/authorize` — approves the selected platform with a short-lived, cookie-bound CSRF token and starts provider OAuth. The authenticated application account determines the tenant; the caller supplies its local user/agent identifier. The consent page shows the destination hub origin and uses `Referrer-Policy: same-origin`, so its form submission retains a concrete origin without sending a referrer to the external OAuth provider.
-- `POST /connect/redeem` — exchanges `{ "code": "<callback connection_code>", "code_verifier": "<original verifier>" }` for `{ "connection_code": "<rotating proxy credential>", "platform": "github-issues" }`. The handoff expires after five minutes, requires S256 PKCE, and is consumed atomically. Wrong verifiers do not consume a legitimate handoff. Responses have `Cache-Control: no-store`; browser requests omit cookies.
-- Clients that also need the tenant credential explicitly request `credentials=connection+tenant_secret` (URL-encode the `+` as `%2B`). The consent page discloses this extra grant; redemption additionally returns `tenant_secret`. The browser-only Atomic Data Hub requests just `connection` and never needs to paste, receive, or store a tenant secret.
-- The legacy signed `/connect` and `/oauth/{platform}/start` protocol remains available for existing clients. New clients should use the bootstrap flow above; it does not require the circular prerequisite of an already provisioned tenant secret.
-- `/proxy` — called by the third party with `Authorization: Bearer
-  <secret>`. Returns `{"ok": true}` if the tenant secret verifies, or `401` with
-  an error body otherwise. Verification is a pure function of
-  `SERVER_SECRET`, so it works without looking anything up.
-- `GET /session` — returns a timestamp and a challenge signed with
-  `SERVER_SECRET`. A tenant signs that challenge with its tenant secret and
-  supplies that response, a tenant-vouched `user_id`, and its signature when
-  opening `/connect`. The proof expires after ten minutes.
+### Identity
 
-The signed-in home page displays the configured or API-derived identity, without displaying credentials. Tenant secrets are deterministic HMAC credentials derived from the stable tenant identity and `SERVER_SECRET`; existing credentials remain valid. Provider access/refresh tokens are encrypted at rest and never returned to the hub. The hub receives a rotating opaque proxy credential through the protected exchange.
+Agent ids are accepted as `atomic:agent:<key>` or the legacy
+`did:ad:agent:<key>`, with `<key>` in either base64 alphabet, padded or not.
+They are converted to one canonical form, `atomic:agent:` plus the unpadded
+base64url key, before they are stored or compared, and only that form is
+ever returned. Only Ed25519 keys exist today; one function
+(`agent_id::parse`) is where another algorithm would be added.
 
-The new consent, provider-state binding and one-time handoff work alongside the existing OAuth and proxy routes. The database migration adds a nullable OAuth context column and a `connection_handoffs` table without invalidating existing connection codes. Schema initialization runs in a transaction under a PostgreSQL advisory lock, so simultaneous app instances can safely start against an empty database. Google/provider OAuth app registrations and callback URLs do not change.
+### Request signatures (Atomic v2)
 
-All cookies are set with `axum-extra`'s `PrivateCookieJar`, which
-encrypts and authenticates their contents, so the server never needs to
-persist anything to recognize a returning user.
+Every signed request carries Atomic's own headers:
+
+| Header | Value |
+| --- | --- |
+| `x-atomic-agent` | the signer's agent id |
+| `x-atomic-public-key` | the signer's Ed25519 public key, base64 |
+| `x-atomic-timestamp` | Unix milliseconds |
+| `x-atomic-signature` | base64 Ed25519 signature over the message below |
+| `x-atomic-signature-version` | `2` |
+
+The signed message is five lines joined by `\n`, with no trailing newline:
+
+```text
+atomic-request-v2
+{METHOD}
+{full URL, including query}
+{timestamp, exactly as in x-atomic-timestamp}
+{lowercase hex SHA-256 of the body; e3b0c442…b855 when empty}
+```
+
+The proxy accepts version 2 only; a missing or different version header is
+refused, never retried as v1. The agent must be `atomic:agent:` of the public
+key header. The timestamp must be within ±5 minutes of the proxy's clock, and
+each signed message is accepted once (a SHA-256 of it is kept for ten
+minutes).
+
+**Full URL** is `BASE_URL` followed by the request's path and query exactly as
+received, e.g. `https://localthought.io/proxy/<id>/github-issues/user/repos?page=2`.
+It is never rebuilt from the `Host` header: behind TLS termination (Heroku)
+the process sees plain HTTP. Clients sign the URL they fetch (`new URL(u).href`).
+`BASE_URL` must therefore be exactly the public origin clients use.
+
+### Routes
+
+- `GET /` — a static landing page. `GET /catalog` lists the platforms;
+  `GET /catalog/{platform}.yaml` returns a platform's composed OpenAPI
+  document.
+- `GET /connect?platform=<p>&redirect_uri=<url>&code_challenge=<S256>&code_challenge_method=S256`
+  — the consent page, naming the platform and the destination. No login.
+  `redirect_uri` must be `https`, loopback `http`, or the Atomic app's deep
+  link (`atomic://…`); it may not carry `connection_code` or `error`
+  parameters, credentials or a fragment.
+- `POST /connect/authorize` — the consent form (cookie-bound CSRF token,
+  single use). For an OAuth platform it redirects to the provider; for an
+  API-key platform (`type: apiKey` in the composed document) the consent page
+  asks for the key, and this seals it.
+- `GET /oauth/{platform}/callback` — the provider's callback. Only the
+  browser that approved consent can complete it. It redirects to
+  `redirect_uri?connection_code=<handoff>` (or `?error=access_denied`). The
+  handoff is not a credential: it is single-use, valid five minutes, and
+  bound to the PKCE challenge.
+- `POST /connect/redeem` — **signed**; body
+  `{"code": "<handoff>", "code_verifier": "<PKCE verifier>"}`; answers
+  `{"connection_id", "platform", "owner"}`. The signer becomes the owner.
+  A wrong verifier does not burn the handoff.
+- `ANY /proxy/{connection_id}/{platform}/{path}` — **signed** by the owner, a
+  delegated app agent, or a registered runtime of a delegated app; or carrying
+  a frame capability (below). The proxy attaches the provider credential,
+  refreshing an expiring OAuth token (one refresh in flight per connection),
+  and forwards only catalog-allowlisted methods and paths. The caller's
+  `Authorization` and `x-atomic-*` headers are never forwarded. `Link`,
+  `Retry-After`, `ETag`, `X-Total-Count` and `X-Next-Page` come back unchanged.
+- `GET /connections` — **signed**; the signer's connections with their
+  delegations (`agent`, `label`, `created_at`, `last_used_at`), and the
+  signer's runtimes. Never credentials. Shape:
+  `{"owner", "connections": [{"connection_id", "platform", "owner", "created_at", "last_used_at", "delegations": [...]}], "runtimes": [{"agent", "app", "label", "created_at", "last_used_at"}]}`.
+- `DELETE /connections/{id}` — **signed by the owner**; deletes the connection
+  and its delegations. `204`.
+- `POST /connections/{id}/agents` — **signed by the owner**; body
+  `{"agent", "label"?}` delegates the connection to that app agent.
+  `DELETE /connections/{id}/agents/{agent}` removes the delegation. `204`.
+- `POST /runtimes` — **signed**; body `{"app", "agent", "label"?}` registers
+  `agent` (a node's app agent) as a runtime of installation `app` for the
+  signer. `DELETE /runtimes/{agent}` removes it. A runtime can use every
+  connection its app is delegated.
+- `GET /healthz` — `200 ok` when the database answers.
+
+Delegations and runtimes are read on every proxied request, so removing one
+takes effect on the next request. A connection is deleted after 90 days
+without an authenticated request (`CONNECTION_IDLE_DAYS`).
+
+### Frame capabilities
+
+A plugin frame (null origin, no storage) generates a non-extractable key in
+memory; its page, which holds the user's key, signs a capability for it:
+
+```text
+Authorization: Capability <payload>.<sig>
+payload = base64url(JSON), unpadded:
+          {"v":2,"connection_id","platform","aud","app","cnf","exp"}
+sig     = the connection owner's Ed25519 signature, base64, over
+          "integration-proxy-capability-v2\n" + the JSON bytes
+```
+
+`aud` is the proxy origin (`BASE_URL`'s scheme, host and port); `app` is the
+installation's app agent, which must hold a delegation; `cnf` is the frame's
+key as `atomic:agent:<key>`; `exp` is Unix seconds, at most 15 minutes ahead.
+The request itself must also carry v2 headers signed by `cnf`'s key, so a
+copied capability is useless without the frame. The proxy checks, in order:
+the owner's signature, `aud`, `exp`, `connection_id` and `platform`, the
+delegation for `app`, and the request signature by `cnf` (with skew and
+replay). On `401 capability_expired` the frame asks its page for a new one.
+
+### Errors
+
+Signed endpoints answer errors as JSON, `{"error": "<code>", "message": "<text>"}`:
+
+| Status | `error` |
+| --- | --- |
+| 401 | `missing_signature`, `unsupported_signature_version`, `invalid_agent`, `agent_key_mismatch`, `stale_timestamp`, `bad_signature`, `replayed`, `unsupported_authorization` (e.g. a retired `Bearer` connection code), `invalid_capability`, `capability_expired`, `capability_too_long`, `wrong_audience`, `capability_key_mismatch`, `credential_refresh_failed` (connect again) |
+| 403 | `not_owner`, `not_delegated`, `capability_scope`, `platform_mismatch`, `access_denied` |
+| 404 | `unknown_connection` (deleted, idle-expired, or never existed: connect again) |
+| 400 | `bad_request`, `invalid_handoff` |
+
+Catalog refusals and upstream failures from `/proxy/…` keep their plain-text
+bodies (`404 method or path is not in the catalog`, `502 upstream request failed`).
+
+### Who may use the proxy
+
+Every signed request's connection owner (and the redeemer, at
+`/connect/redeem`) is checked against an `AccessPolicy`. Delegated agents and
+frames are checked as their owner, so limits count per owner. The default
+policy admits every agent except those in `REVOKED_SUBJECTS`, and only those
+in `ALLOWED_AGENTS` when that is set. The atomic.place deployment is meant to
+plug in a lookup of the agent's SaaS account and tier
+([`build_app_with_access`](#library-crate)); how an agent is linked to an
+account is decided in ontola/atomic-saas#138 and is **not** implemented here.
+
+### What was removed (flag day)
+
+Issue #54 decision 6 switched these off with no migration: OIDC application
+login (`/auth/login`, `/auth/callback`, `/auth/logout`, `APP_AUTH_*`), API
+identity login (`/auth/login/{platform}`, catalog `tenantIdentity`),
+`tenant:v1:` tenants, tenant secrets and `SERVER_SECRET`, `/session`, the
+legacy signed `/connect` and `/oauth/{platform}/start`, the `/proxy`
+tenant-secret check, the `user_id` and `credentials` parameters of
+`/connect`, and rotating connection codes (`Authorization: Bearer` and
+`X-Connection-Code`). Existing connection codes stop working; users connect
+again. The old `connection_codes` and `oauth_states` tables are no longer
+read or written but are not dropped automatically; once the new version is
+deployed, an operator may drop them with
+`DROP TABLE IF EXISTS connection_codes, oauth_states;`.
 
 ## Setup
 
-### 1. Configure application-login OIDC credentials
+### 1. Configure environment variables
 
-Configure an OIDC authorization-code client and register `<BASE_URL>/auth/callback` as its redirect URI. Supply its client credentials and authorization, token, and userinfo endpoint URLs through the `APP_AUTH_*` variables below. Application login requests the standard `openid`, `email`, and `profile` scopes.
+Nothing in the process reads `.env` files; export the variables, or load a
+`.env` into your shell first (`set -a; source .env; set +a`).
 
-### 2. Configure environment variables
-
-Copy `.env.example` to `.env` and fill it in, then load it into your shell
-before running the server — nothing in the process reads `.env` files on its
-own, only actual process environment variables:
-
-```sh
-set -a
-source .env
-set +a
-```
-
-Or export the variables directly without a `.env` file.
-
-| Variable               | Required | Description                                                                 |
-| ----------------------| -------- | ---------------------------------------------------------------------------- |
-| `APP_AUTH_CLIENT_ID`     | yes      | OIDC application-login client ID. |
-| `APP_AUTH_CLIENT_SECRET` | yes      | OIDC application-login client secret. |
-| `APP_AUTH_AUTHORIZATION_URL` | yes | OIDC authorization endpoint. |
-| `APP_AUTH_TOKEN_URL` | yes | OIDC token endpoint. |
-| `APP_AUTH_USERINFO_URL` | yes | OIDC userinfo endpoint. |
-| `APP_AUTH_LABEL` | no | Login provider label shown in the UI. Defaults to `OIDC`. |
-| `APP_AUTH_IDENTITY_NAMESPACE` | no | Fixed HTTPS namespace for an exact trusted provider-scoped identity that preserves legacy bare APP_AUTH subjects. Blank disables migration. |
-| `BASE_URL`             | no       | Public URL of the server, no trailing slash. Defaults to `http://localhost:8080`. Must match the redirect URI registered with the application-login provider. |
-| `PORT`                 | no       | Port to listen on. Defaults to `8080`.                                      |
-| `SESSION_SECRET`       | no       | Secret used to encrypt session cookies. If unset, a random key is generated at startup and sessions are invalidated whenever the process restarts. Set this to a persistent random value in production. |
-| `SERVER_SECRET`        | yes      | Secret used to deterministically derive each tenant's secret (see above). Must stay constant across restarts and instances. |
-| `CATALOG_PATH`         | no       | Local path or HTTPS URL for the catalog JSON. Defaults to `https://ontola.github.io/atomic-plugins/overlays/catalog.json`, this repository's `overlays/catalog.json` as GitHub Pages publishes it from `main`. |
-| `DATABASE_URL`          | yes      | PostgreSQL connection URL. Stores short-lived, consumed challenge nonces to prevent replay. |
-| `ENCRYPTION_KEY`        | yes      | Base64url-encoded, random 32-byte key for versioned XChaCha20-Poly1305 credential envelopes. |
-| `REVOKED_SUBJECTS`      | no       | Comma-separated tenant and user IDs denied access. |
-
-Provider-neutral tenant identities use the reserved `tenant:v1:` prefix followed
-by a versioned JSON tuple. `APP_AUTH_IDENTITY_NAMESPACE` must be a fixed HTTPS
-namespace and preserves bare historic subjects only for an exact trusted,
-provider-scoped match. Before enabling it, confirm the historic issuer never
-assigned subjects beginning `tenant:v1:`; those values are rejected. Email is
-display data only and never links provider identities.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `BASE_URL` | no | Public URL of the proxy, e.g. `https://localthought.io`. Defaults to `http://localhost:8080`. Used for OAuth callback URLs, as the prefix of every signed URL, and (its origin) as a capability's `aud`. Must be exactly what clients use. |
+| `PORT` | no | Port to listen on. Defaults to `8080`. |
+| `SESSION_SECRET` | no | Secret for the short-lived consent and OAuth-binding cookies. If unset, a random key is generated at startup, and a consent screen open during a restart must be started again. |
+| `CATALOG_PATH` | no | Local path or HTTPS URL for the catalog JSON. Defaults to `https://ontola.github.io/atomic-plugins/overlays/catalog.json`, this repository's `overlays/catalog.json` as GitHub Pages publishes it from `main`. |
+| `DATABASE_URL` | yes | PostgreSQL connection URL. |
+| `ENCRYPTION_KEY` | yes | Base64url-encoded, random 32-byte key for sealed provider credentials. Changing it makes every stored connection unreadable. |
+| `REVOKED_SUBJECTS` | no | Comma-separated agent ids (any accepted spelling) the default access policy refuses. |
+| `ALLOWED_AGENTS` | no | When set, comma-separated agent ids; the default access policy admits only these owners. |
+| `OAUTH_<PLATFORM>_CLIENT_ID`, `OAUTH_<PLATFORM>_CLIENT_SECRET`, `OAUTH_<PLATFORM>_CLIENT_AUTH_METHOD` | per OAuth platform | See below. |
 
 OAuth credentials are provider-specific. For a catalog platform named
 `google-calendar`, configure `OAUTH_GOOGLE_CALENDAR_CLIENT_ID` and
@@ -112,36 +208,9 @@ catalog, reading them from that platform's composed OpenAPI document; a
 request cannot supply a provider URL, token URL, or scope.
 
 The PostgreSQL client validates the database TLS certificate. Heroku assigns
-`DATABASE_URL` automatically when its Postgres add-on is attached.
-
-These two flows hand back a proxy credential differently. In the legacy
-signed `/connect` and `/oauth/{platform}/start` flow, use the
-`connection_code` returned directly by the OAuth redirect as the Bearer token
-for `/proxy/{platform}/{path}`. In the browser bootstrap flow (`POST
-/connect/authorize`), the OAuth callback instead returns a short-lived,
-PKCE-bound handoff code that is **not** a proxy credential; redeem it first
-at `POST /connect/redeem` (see above) to obtain the actual `connection_code`.
-Either way, each successful proxy response includes a new single-use value
-in `X-Connection-Code`; use that value as the Bearer token for the next
-request. The proxy refreshes an expired provider access token when a refresh
-token is available, and rotates the connection code after every request.
-Pagination `Link` headers from the upstream are forwarded to the caller
-unchanged.
-
-## Trusted API identities
-
-A platform can establish or log in a tenant only when its catalog selection
-contains `tenantIdentity` with an `operationId` and HTTPS `namespace`. The
-selected operation must declare `x-authenticated-principal` with a stable,
-non-reassigned user subject and must require the selected OAuth scheme. The
-initial runtime subset accepts a fixed HTTPS `GET` operation without parameters
-or redirects. It supports string and integer subjects, provider- and
-client-scoped identities, and optional display claims. It never uses email to
-identify or link tenants.
-
-Regression coverage includes parser and composed-catalog fixtures, PostgreSQL
-mock OAuth identity/bootstrap/redemption flows, browser binding/replay checks,
-and standalone API login with identity-only scopes.
+`DATABASE_URL` automatically when its Postgres add-on is attached. Schema
+setup runs in a transaction under an advisory lock, so several instances can
+start against an empty database at once.
 
 ## Catalog
 
@@ -209,14 +278,13 @@ bytes; then restart the service. OAD URLs remain pinned to an
 `raw.githubusercontent.com` copy of `catalog.json` still lists Pages URLs, so
 its overlays are whatever `main` serves when the proxy starts.
 
-### 3. Run it
+### 2. Run it
 
 ```sh
 cargo run
 ```
 
-Then open `http://localhost:8080` (or your configured `BASE_URL`) in a
-browser.
+Then open `http://localhost:8080` (or your configured `BASE_URL`).
 
 ## Development
 
@@ -245,7 +313,10 @@ private and may change in any release:
 | --- | --- |
 | `Config`, `Config::from_env()` | All configuration, read from the environment variables described above. |
 | `DEFAULT_CATALOG_PATH` | The pinned catalog URL used when `CATALOG_PATH` is unset. |
-| `build_app(&Config) -> Result<axum::Router, Error>` | Loads the catalog, connects to PostgreSQL, returns the router (CORS and tracing layers included). |
+| `build_app(&Config) -> Result<axum::Router, Error>` | Loads the catalog, connects to PostgreSQL, returns the router (CORS and tracing layers included), with the default `EnvAccessPolicy`. |
+| `build_app_with_access(&Config, Arc<dyn AccessPolicy>)` | The same, admitting connection owners through a custom policy (e.g. a SaaS account and tier lookup). |
+| `AccessPolicy`, `Access`, `AllowAll`, `EnvAccessPolicy` | The admission check asked about every owner; `AllowAll` for a self-hosted proxy. |
+| `AgentId`, `parse_agent_id` | A parsed agent id; `as_str()` is the canonical `atomic:agent:` form. |
 | `serve(Config) -> Result<(), Error>` | `build_app`, then bind `0.0.0.0:{PORT}` and serve. |
 | `run() -> ExitCode` | What the binary does: init `tracing` from `RUST_LOG` (default `info`), `Config::from_env`, `serve`, print any `Error` to stderr. |
 | `Error` | Startup/serve failure; `Display` is the one-line message the binary prints. |
@@ -316,39 +387,51 @@ The synced `Procfile` runs `target/release/integration-proxy` (the binary was
 `atomic_integration_proxy` instead of `auth_proxy`, which matters only if
 `RUST_LOG` names the old target.
 
+#### Deploying 0.2 (issue #54 flag day)
+
+0.2 changes the client protocol; deploy it together with the atomic-server
+release that signs requests (Atomic v2) and uses `/proxy/{connection_id}/…`,
+never before it. Heroku config vars:
+
+| Variable | Change |
+| --- | --- |
+| `BASE_URL` | **Check**: must be exactly the public origin clients use (for production `https://localthought.io`, no trailing path). Every signature covers it; a mismatch makes every signed request fail with `bad_signature`. |
+| `APP_AUTH_CLIENT_ID`, `APP_AUTH_CLIENT_SECRET`, `APP_AUTH_AUTHORIZATION_URL`, `APP_AUTH_TOKEN_URL`, `APP_AUTH_USERINFO_URL`, `APP_AUTH_LABEL`, `APP_AUTH_IDENTITY_NAMESPACE` | No longer read; unset them (`heroku config:unset …`). 0.1 refused to start without the first five; 0.2 ignores them. |
+| `SERVER_SECRET` | No longer read; unset it. |
+| `REVOKED_SUBJECTS` | Now means agent ids; tenant ids and OIDC subjects listed there no longer match anything. Rewrite or unset it. |
+| `ALLOWED_AGENTS` | New, optional: restrict the proxy to these owners. |
+| `SESSION_SECRET`, `DATABASE_URL`, `ENCRYPTION_KEY`, `CATALOG_PATH`, `PORT`, `OAUTH_*` | Unchanged. |
+
+Existing connection codes stop working at deploy; users connect again. After
+the deploy, `DROP TABLE IF EXISTS connection_codes, oauth_states;` removes the
+old sealed credentials (optional, irreversible).
+
 ## Security
 
-The service stores encrypted provider credentials only inside short-lived,
-encrypted connection envelopes and forwards requests only through catalog
-allowlists. [SECURITY.md](SECURITY.md) describes the remaining deployment and
-operational controls.
+Provider credentials are sealed per connection row (the associated data
+binds each envelope to its row) and never returned to a client. Requests go
+only to catalog-allowlisted methods and paths. [SECURITY.md](SECURITY.md)
+describes the controls and what is not yet verified.
 
-## Notes on statelessness
+## Notes on state
 
-- Session data (email, name, picture, expiry) lives entirely inside the
-  encrypted `session` cookie — nothing is written to disk or a database.
-- The configured OIDC login keeps its CSRF token and PKCE verifier in the
-  short-lived encrypted `oauth_state` cookie. Catalog API login and integration
-  authorization use one-use PostgreSQL state plus encrypted browser binding
-  cookies, so callbacks can reach a different instance safely.
+- Nothing identifies a browser session: there are no session cookies. The
+  consent screen and the OAuth callback use two short-lived (10 minute)
+  encrypted `Secure`/`HttpOnly`/`SameSite=Lax` cookies: `platform_consent`
+  (the pending request and CSRF token) and `platform_oauth` (binding the
+  callback to the approving browser). Provider state, handoffs and
+  connections live in PostgreSQL, so any instance can serve any request.
 - Cookies are marked `Secure`, so in production `BASE_URL` must use
   `https://`. `http://localhost` works during local development because
   browsers treat `localhost` as a secure context.
-- The tenant secret is likewise never stored: it's an HMAC of the tenant
-  identity keyed by `SERVER_SECRET`, so any instance that knows
-  `SERVER_SECRET` can derive or verify it on the fly.
-- The pending `/connect` redirect (used to return to `/connect` after a
-  login detour) is held in a short-lived encrypted cookie
-  (`connect_redirect`), the same pattern as `oauth_state`.
 
 ## Browser clients
 
-CORS permits explicit bearer-token requests from browser frontends and answers
-OPTIONS preflights. Responses expose `X-Connection-Code`, `Link`, `Retry-After`,
-`ETag`, `X-Total-Count` and `X-Next-Page`. Clients must persist a rotated code
-before continuing pagination and must never replay a consumed code after an
-uncertain response. Cookie credentials are not enabled for CORS; provider
-login and consent remain top-level browser navigations.
+CORS allows any origin, including a plugin frame's `null` origin, to send
+`Authorization`, `Content-Type`, `If-Match` and the five `x-atomic-*` headers,
+and exposes `Content-Type`, `Link`, `Retry-After`, `ETag`, `X-Total-Count` and
+`X-Next-Page`. Cookie credentials are not enabled for CORS; consent remains a
+top-level browser navigation.
 
 ## Todoist
 
@@ -374,7 +457,7 @@ OAUTH_GITHUB_ISSUES_CLIENT_ID=fixture-client OAUTH_GITHUB_ISSUES_CLIENT_SECRET=f
   cargo test -- --include-ignored
 ```
 
-CI provides PostgreSQL and includes the database tests. Coverage includes concurrent cold-start schema initialization, selected-platform rendering and escaping, credential-free sign-in, return-address validation, PKCE, consent/session requirements, handoff expiry, wrong-verifier refusal, concurrent/replayed redemption, optional tenant-secret grants, revocation and provider-cookie/account binding. Live Google/GitHub authorization and a hub read-only import must be verified against both matching deployed revisions; local fixture checks do not establish live access.
+CI provides PostgreSQL and includes the database tests; [TESTING_COVERAGE.md](TESTING_COVERAGE.md) maps each verification step to its tests. Live Google/GitHub authorization and a hub import must be verified against matching deployed revisions of the proxy and atomic-server; local fixture checks do not establish live access.
 
 ### OAuth client registration
 
@@ -411,4 +494,8 @@ that contains any of those fields is rejected, because discovery or a
 separately described operation could require different token-request
 authentication or wire behavior.
 
-When upgrading the previous deployment, copy its application-login client ID/secret to `APP_AUTH_CLIENT_ID` / `APP_AUTH_CLIENT_SECRET` and configure the same authorization, token, and userinfo endpoints before deploying. Keep the identity issuer stable: tenant identities are derived from its subject identifiers. Set the existing public PKCE client's `_CLIENT_AUTH_METHOD=none`. Existing credential envelopes, completed handoffs, provider credential variable names and browser sessions remain valid. The optional session identity label is backward compatible. In-flight connection authorizations created before this upgrade may require restarting from the hub because their sealed context lacks the new bootstrap mode.
+Upgrading from 0.1 is a flag day (issue #54, decision 6): see
+[What was removed](#what-was-removed-flag-day). Provider callback URLs and
+`OAUTH_*` variables do not change; `APP_AUTH_*` and `SERVER_SECRET` are no
+longer read and can be unset. Clients must move to signed requests at the
+same time.

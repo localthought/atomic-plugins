@@ -10,7 +10,7 @@ cannot silently break.
 
 | File | Purpose |
 | --- | --- |
-| `Cargo.toml` | Package/binary named `auth-proxy`, depending on `atomic-integration-proxy = "0.1"`. |
+| `Cargo.toml` | Package/binary named `auth-proxy`, depending on `atomic-integration-proxy = "0.2"`. |
 | `src/main.rs` | `atomic_integration_proxy::run().await`. |
 | `Procfile` | `web: target/release/auth-proxy` — identical to the current production Procfile. |
 | `rust-toolchain` | `stable`. Read by the `emk/rust` Heroku buildpack (it `cat`s a plain `rust-toolchain` file; it does not read `rust-toolchain.toml`). |
@@ -38,15 +38,21 @@ production app.
    version deployed is whatever the lockfile pins.
 4. Replace its CI with a `cargo build --locked` (the tests now run in
    `ontola/atomic-plugins`).
-5. Deploy. Heroku config vars are unchanged: the crate reads the same
-   environment variables, with the same defaults, as the code it replaces.
-   One visible difference: log lines are now tagged
+5. Deploy. The crate reads the same environment variables as the 0.1 code,
+   except for the issue #54 changes listed in
+   [Deploying 0.2](../../README.md#deploying-02-issue-54-flag-day): `BASE_URL`
+   must be exactly the public origin, `APP_AUTH_*` and `SERVER_SECRET` are no
+   longer read, and `REVOKED_SUBJECTS` now lists agent ids. 0.2 is a flag day
+   for clients too. One more visible difference: log lines are tagged
    `atomic_integration_proxy` instead of `auth_proxy`, so a `RUST_LOG` such as
    `auth_proxy=debug` has to become `atomic_integration_proxy=debug`.
 
 To deploy a later proxy change: publish a new crate version, then in
 `localthought/integration-proxy` run
 `cargo update -p atomic-integration-proxy`, commit `Cargo.lock`, and push.
+A new minor version before 1.0 (0.1 to 0.2) is semver-incompatible: bump the
+requirement in its `Cargo.toml` too (`atomic-integration-proxy = "0.2"`), or
+`cargo update` stays on 0.1.
 
 ## Building this template locally against the in-repo crate
 

@@ -1,221 +1,51 @@
-use crate::session::SessionUser;
-
-/// Minimal, dependency-free HTML rendering. The GUI is intentionally tiny:
-/// a login button when signed out, and the user's identity plus a logout
-/// button when signed in.
-pub fn render_home(
-    user: Option<&SessionUser>,
-    _tenant_secret: Option<&str>,
-    auth_label: &str,
-    api_login_platforms: &[String],
-) -> String {
-    if user.is_none() {
-        let choices = api_login_platforms
-            .iter()
-            .map(|platform| {
-                format!(
-                    r#"<a class="button" href="/auth/login/{platform}">Log in with {}</a>"#,
-                    escape(&platform_label(platform))
-                )
-            })
-            .collect::<String>();
-        let choices = if choices.is_empty() {
-            String::new()
-        } else {
-            format!("<div class=\"card\"><p>Or sign in with:</p>{choices}</div>")
-        };
-        return include_str!("../static/index.html")
-            .replace("{{APP_AUTH_LABEL}}", &escape(auth_label))
-            .replace("</body>", &format!("{choices}</body>"));
-    }
-    let body = match user {
-        Some(user) => signed_in_body(user, auth_label),
-        None => signed_out_body(auth_label),
-    };
-
-    page(&body)
+/// Minimal, dependency-free HTML rendering. The proxy has no accounts and
+/// no login (issue #54): the only pages are the landing page and the
+/// per-platform consent screen.
+pub fn render_home() -> String {
+    include_str!("../static/index.html").to_owned()
 }
 
-/// Renders the browser connection consent screen for one selected platform.
-#[allow(clippy::too_many_arguments)] // rendering inputs remain explicit and escaped at the boundary
+/// Renders the consent screen for one selected platform. `destination` is
+/// where the browser returns to (an origin, or the app's deep link).
 pub fn render_platform_connect(
-    user: Option<&SessionUser>,
     platform: &str,
-    target_origin: &str,
+    destination: &str,
     csrf: &str,
-    include_tenant_secret: bool,
-    auth_label: &str,
-    bootstrap_identity: bool,
-    api_login_platforms: &[String],
     requires_api_key: bool,
 ) -> String {
-    let tenant_consent = if include_tenant_secret {
-        "<p class=\"secret-help\">This also gives this hub your LocalThought account credential, allowing it to authorize future connections on your behalf.</p>"
+    let (api_key_field, button_label) = if requires_api_key {
+        (
+            r#"<p class="secret-help">Find this in your account settings on the platform's own site. It is stored encrypted on this proxy and never sent back to the destination.</p>
+               <input class="button" style="background:white;color:#202124;border:1px solid #ccc" type="password" name="api_key" autocomplete="off" placeholder="API key" required />"#,
+            format!("Connect {}", escape(&platform_label(platform))),
+        )
     } else {
-        ""
-    };
-    let body = match user {
-        None if bootstrap_identity => format!(
-            r#"
-            <div class="card">
-              <h1>Connect {platform}</h1>
-              <p>Continue with your {platform} account to establish your LocalThought identity and connect {platform} to this hub.</p>
-              <p>Destination: <span class="email">{target_origin}</span></p>
-              {tenant_consent}
-              <form method="post" action="/connect/authorize">
-                <input type="hidden" name="csrf" value="{csrf}" />
-                <button class="button" type="submit">Continue with {platform}</button>
-              </form>
-            </div>
-            "#,
-            platform = escape(&platform_label(platform)),
-            target_origin = escape(target_origin),
-            csrf = escape(csrf),
-            tenant_consent = tenant_consent,
-        ),
-        None => format!(
-            r#"
-            <div class="card">
-              <h1>Connect {platform}</h1>
-              <p>Sign in with {auth_label} to continue.</p>
-              <a class="button" href="/auth/login">Log in with {auth_label}</a>
-              {api_logins}
-            </div>
-            "#,
-            platform = escape(&platform_label(platform)),
-            auth_label = escape(auth_label),
-            api_logins = api_login_platforms
-                .iter()
-                .map(|candidate| format!(
-                    r#"<a class="button" href="/auth/login/{candidate}">Log in with {}</a>"#,
-                    escape(&platform_label(candidate))
-                ))
-                .collect::<String>(),
-        ),
-        Some(user) => {
-            let api_key_field = if requires_api_key {
-                r#"<p class="secret-help">Find this in your account settings on the platform's own site.</p>
-                   <input class="button" style="background:white;color:#202124;border:1px solid #ccc" type="password" name="api_key" autocomplete="off" placeholder="API key" required />"#
-            } else {
-                ""
-            };
-            let button_label = if requires_api_key {
-                format!("Connect {}", escape(&platform_label(platform)))
-            } else {
-                format!(
-                    "Use LocalThought to sync {} with this destination",
-                    escape(&platform_label(platform))
-                )
-            };
+        (
+            "",
             format!(
-                r#"
-                <div class="card">
-                  <h1>Connect {platform}</h1>
-                  <p>You are logged in with {auth_label}{identity}</p>
-                  <p>Destination: <span class="email">{target_origin}</span></p>
-                  {tenant_consent}
-                  <form method="post" action="/connect/authorize">
-                    <input type="hidden" name="csrf" value="{csrf}" />
-                    {api_key_field}
-                    <button class="button" type="submit">{button_label}</button>
-                  </form>
-                </div>
-                "#,
-                platform = escape(&platform_label(platform)),
-                identity = if user.email.is_empty() {
-                    String::new()
-                } else {
-                    format!(" as <span class=\"email\">{}</span>", escape(&user.email))
-                },
-                target_origin = escape(target_origin),
-                csrf = escape(csrf),
-                tenant_consent = tenant_consent,
-                api_key_field = api_key_field,
-                button_label = button_label,
-            )
-        }
+                "Use LocalThought to sync {} with this destination",
+                escape(&platform_label(platform))
+            ),
+        )
     };
-    page(&body)
-}
-
-/// Renders the "connect this app" consent screen shown at `/connect` to a
-/// signed-in user, before they approve sharing their tenant secret.
-pub fn render_connect(params: &crate::proxy::ConnectParams, platforms: &[String]) -> String {
-    let buttons = platforms
-        .iter()
-        .map(|platform| {
-            format!(
-                r#"<a class="button" href="{}">Connect {}</a>"#,
-                crate::proxy::oauth_start_url(platform, params),
-                escape(platform)
-            )
-        })
-        .collect::<String>();
     let body = format!(
         r#"
         <div class="card">
-          <h1>Connect this app?</h1>
-          <p>You'll be redirected back to:</p>
-          <p class="email">{redirect_uri}</p>
-          <form method="post" action="/connect">
-            <input type="hidden" name="redirect_uri" value="{redirect_uri}" />
-            <input type="hidden" name="ts" value="{ts}" />
-            <input type="hidden" name="nonce" value="{nonce}" />
-            <input type="hidden" name="challenge" value="{challenge}" />
-            <input type="hidden" name="tenant_id" value="{tenant_id}" />
-            <input type="hidden" name="user_id" value="{user_id}" />
-            <input type="hidden" name="user_id_sig" value="{user_id_sig}" />
-            <input type="hidden" name="response" value="{response}" />
-            <button class="button" type="submit">OK</button>
+          <h1>Connect {platform}</h1>
+          <p>Destination: <span class="email">{destination}</span></p>
+          <p class="secret-help">The destination finishes connecting by signing with your Atomic key; it becomes the connection's owner.</p>
+          <form method="post" action="/connect/authorize">
+            <input type="hidden" name="csrf" value="{csrf}" />
+            {api_key_field}
+            <button class="button" type="submit">{button_label}</button>
           </form>
-          <p>Connect a service:</p>{buttons}
         </div>
         "#,
-        redirect_uri = escape(&params.redirect_uri),
-        ts = params.ts,
-        nonce = escape(&params.nonce),
-        challenge = escape(&params.challenge),
-        tenant_id = escape(&params.tenant_id),
-        user_id = escape(&params.user_id),
-        user_id_sig = escape(&params.user_id_sig),
-        response = escape(&params.response),
-        buttons = buttons,
+        platform = escape(&platform_label(platform)),
+        destination = escape(destination),
+        csrf = escape(csrf),
     );
-
     page(&body)
-}
-
-fn signed_out_body(auth_label: &str) -> String {
-    format!(
-        r#"
-    <div class="card">
-      <h1>auth-proxy</h1>
-      <p>Sign in with your {auth_label} account to continue.</p>
-      <a class="button" href="/auth/login">Log in with {auth_label}</a>
-    </div>
-    "#,
-        auth_label = escape(auth_label),
-    )
-}
-
-fn signed_in_body(user: &SessionUser, auth_label: &str) -> String {
-    let avatar = user
-        .picture
-        .as_deref()
-        .map(|src| format!(r#"<img class="avatar" src="{}" alt="" />"#, escape(src)))
-        .unwrap_or_default();
-
-    format!(
-        r#"
-        <div class="card">
-          {avatar}
-            <h1>You are logged in with {auth_label} as {email}</h1>
-        </div>
-        "#,
-        avatar = avatar,
-        email = escape(&user.email),
-        auth_label = escape(auth_label),
-    )
 }
 
 fn platform_label(platform: &str) -> String {
@@ -313,66 +143,19 @@ fn escape(input: &str) -> String {
 mod tests {
     use super::*;
 
-    fn test_user() -> SessionUser {
-        SessionUser::new(
-            "oidc-sub-123".to_string(),
-            "user@example.com".to_string(),
-            "<script>alert(1)</script>".to_string(),
-            None,
-        )
-    }
-
     #[test]
-    fn signed_out_shows_login_link() {
-        let html = render_home(None, None, "Example Login", &[]);
-        assert!(html.contains("Log in with Example Login"));
-        assert!(html.contains(r#"href="/auth/login""#));
-    }
-
-    #[test]
-    fn signed_in_shows_oidc_identity_without_secrets() {
-        let html = render_home(Some(&test_user()), Some("the-secret"), "Example Login", &[]);
-        assert!(!html.contains("the-secret"));
-        assert!(!html.contains("tenant secret"));
-        assert!(html.contains("You are logged in with Example Login as"));
-    }
-
-    #[test]
-    fn signed_in_escapes_untrusted_fields() {
-        let mut user = test_user();
-        user.email = "<script>alert(1)</script>".to_string();
-        let html = render_home(Some(&user), Some("<b>not-html</b>"), "Example Login", &[]);
-        assert!(!html.contains("<script>"));
-        assert!(!html.contains("<b>not-html</b>"));
-        assert!(html.contains("&lt;script&gt;"));
-        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-    }
-
-    #[test]
-    fn render_home_allows_missing_secret_while_signed_in() {
-        render_home(Some(&test_user()), None, "Example Login", &[]);
-    }
-
-    #[test]
-    fn home_only_shows_api_login_choices_when_eligible() {
-        let empty = render_home(None, None, "OIDC", &[]);
-        assert!(!empty.contains("Or sign in with:"));
-        let choices = render_home(None, None, "OIDC", &["github-issues".into()]);
-        assert!(choices.contains("Or sign in with:"));
-        assert!(choices.contains("/auth/login/github-issues"));
+    fn home_has_no_login() {
+        let html = render_home();
+        assert!(!html.contains("/auth/login"));
+        assert!(!html.contains("{{"));
     }
 
     #[test]
     fn platform_connect_shows_one_selected_platform_and_escapes_fields() {
         let html = render_platform_connect(
-            Some(&test_user()),
             "google-calendar",
             "https://hub.example/\"><script>alert(1)</script>",
             "csrf&<\"",
-            true,
-            "Example Login",
-            false,
-            &[],
             false,
         );
         assert!(html.contains("Google Calendar"));
@@ -380,118 +163,14 @@ mod tests {
         assert_eq!(html.matches(r#"action="/connect/authorize""#).count(), 1);
         assert!(html.contains("name=\"csrf\" value=\"csrf&amp;&lt;&quot;\""));
         assert!(!html.contains("<script>"));
-        assert!(html.contains("account credential"));
-        assert!(!html.contains("the-secret"));
+        assert!(!html.contains("api_key"));
+        assert!(!html.to_lowercase().contains("log in"));
     }
 
     #[test]
-    fn bootstrap_consent_discloses_destination_and_explicit_tenant_grant() {
-        let html = render_platform_connect(
-            None,
-            "github-issues",
-            "https://hub.example",
-            "csrf",
-            true,
-            "OIDC",
-            true,
-            &[],
-            false,
-        );
-        assert!(html.contains("Destination:"));
-        assert!(html.contains("account credential"));
-        assert!(html.contains("Continue with Github Issues"));
-    }
-
-    #[test]
-    fn empty_email_does_not_render_an_empty_identity_suffix() {
-        let mut user = test_user();
-        user.email.clear();
-        let html = render_platform_connect(
-            Some(&user),
-            "github-issues",
-            "https://hub.example",
-            "csrf",
-            false,
-            "Github",
-            false,
-            &[],
-            false,
-        );
-        assert!(html.contains("logged in with Github</p>"));
-        assert!(!html.contains("as <span"));
-    }
-
-    #[test]
-    fn signed_in_api_key_platform_renders_a_key_field_and_generic_button() {
-        let html = render_platform_connect(
-            Some(&test_user()),
-            "clockify",
-            "https://hub.example",
-            "csrf",
-            false,
-            "OIDC",
-            false,
-            &[],
-            true,
-        );
-        assert_eq!(html.matches(r#"name="api_key""#).count(), 1);
-        assert!(html.contains(r#"type="password" name="api_key""#));
+    fn api_key_platforms_ask_for_the_key_on_the_proxy_page() {
+        let html = render_platform_connect("clockify", "https://hub.example", "csrf", true);
+        assert!(html.contains(r#"name="api_key""#));
         assert!(html.contains("Connect Clockify"));
-        assert!(!html.contains("Use LocalThought to sync"));
-    }
-
-    #[test]
-    fn oauth_platform_renders_no_key_field() {
-        let html = render_platform_connect(
-            Some(&test_user()),
-            "google-calendar",
-            "https://hub.example",
-            "csrf",
-            false,
-            "OIDC",
-            false,
-            &[],
-            false,
-        );
-        assert!(!html.contains("name=\"api_key\""));
-    }
-
-    #[test]
-    fn connect_shows_the_redirect_target_and_a_confirm_form() {
-        let html = render_connect(
-            &crate::proxy::ConnectParams {
-                redirect_uri: "https://example.com/callback".into(),
-                ts: 1,
-                nonce: "n".into(),
-                challenge: "c".into(),
-                tenant_id: "t".into(),
-                user_id: "u".into(),
-                user_id_sig: "s".into(),
-                response: "r".into(),
-            },
-            &["google-calendar".into()],
-        );
-        assert!(html.contains("https://example.com/callback"));
-        assert!(html.contains(r#"action="/connect""#));
-        assert!(html.contains(r#"method="post""#));
-    }
-
-    #[test]
-    fn connect_escapes_the_redirect_uri() {
-        let html = render_connect(
-            &crate::proxy::ConnectParams {
-                redirect_uri: "https://example.com/\"><script>alert(1)</script>".into(),
-                ts: 1,
-                nonce: "n".into(),
-                challenge: "c".into(),
-                tenant_id: "t".into(),
-                user_id: "u".into(),
-                user_id_sig: "s".into(),
-                response: "r".into(),
-            },
-            &[],
-        );
-        assert!(!html.contains("<script>"));
-        assert!(html.contains("&lt;script&gt;"));
     }
 }

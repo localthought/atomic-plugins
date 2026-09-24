@@ -1,265 +1,58 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use rand::RngCore;
-use std::time::{SystemTime, UNIX_EPOCH};
-
+//! `ANY /proxy/{connection_id}/{platform}/{path}`: proxied provider calls
+//! (issue #54).
+//!
+//! Every request is authenticated one of two ways, both ending in a v2
+//! request signature (see [`crate::signature`]):
+//!
+//! - **Signed by an agent with standing** on the connection: its owner; an
+//!   app agent holding a delegation for it; or a runtime registered (by the
+//!   owner) for such an app. Delegations and runtimes are read on every
+//!   request, so revoking one takes effect on the next.
+//! - **A frame capability** (`Authorization: Capability …`, see
+//!   [`crate::capability`]) signed by the owner for a delegated app, plus a
+//!   request signature by the capability's `cnf` key.
+//!
+//! Nothing rotates: the connection id is not a secret, and a signature is
+//! accepted once. The connection id is in the path, so the signature covers
+//! it. The owner is then checked against the access policy.
 use axum::{
     body::Bytes,
-    extract::{Form, Path, Query, RawQuery, State},
-    http::{header, HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
-    Json,
+    extract::{OriginalUri, Path, RawQuery, State},
+    http::{header, HeaderMap, Method, StatusCode},
+    response::{IntoResponse, Response},
 };
-use axum_extra::extract::PrivateCookieJar;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use url::Url;
 
-use crate::{session, templates, tenant_secret, AppState};
+use crate::{
+    agent_id,
+    api_error::ApiError,
+    capability,
+    security::{ConnectionRecord, Security, Standing},
+    AppState,
+};
 
-/// Builds the path (with query string) to reopen `/connect` for a given
-/// `redirect_uri`, used to send a user back here after a login detour.
-pub fn connect_url(redirect_uri: &str) -> String {
-    let query: String = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("redirect_uri", redirect_uri)
-        .finish();
-    format!("/connect?{query}")
-}
-
-pub fn oauth_start_url(platform: &str, params: &ConnectParams) -> String {
-    let query = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("redirect_uri", &params.redirect_uri)
-        .append_pair("ts", &params.ts.to_string())
-        .append_pair("nonce", &params.nonce)
-        .append_pair("challenge", &params.challenge)
-        .append_pair("tenant_id", &params.tenant_id)
-        .append_pair("user_id", &params.user_id)
-        .append_pair("user_id_sig", &params.user_id_sig)
-        .append_pair("response", &params.response)
-        .finish();
-    format!("/oauth/{platform}/start?{query}")
-}
-
-fn parse_redirect_uri(raw: &str) -> Result<Url, ConnectError> {
-    let url = Url::parse(raw).map_err(|_| ConnectError::InvalidRedirect)?;
-    if url.scheme() != "http" && url.scheme() != "https" {
-        return Err(ConnectError::InvalidRedirect);
-    }
-    Ok(url)
-}
-
-#[derive(Deserialize)]
-pub struct ConnectParams {
-    pub redirect_uri: String,
-    pub ts: u64,
-    pub nonce: String,
-    pub challenge: String,
-    pub tenant_id: String,
-    pub user_id: String,
-    pub user_id_sig: String,
-    pub response: String,
-}
-
-#[derive(Serialize)]
-pub struct SessionChallenge {
-    ts: u64,
-    challenge: String,
-    nonce: String,
-}
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock before epoch")
-        .as_secs()
-}
-pub fn now_unix() -> u64 {
-    now()
-}
-
-fn challenge(server_secret: &str, ts: u64, nonce: &str) -> String {
-    tenant_secret::sign(server_secret, &format!("{ts}.{nonce}"))
-}
-
-pub async fn session_challenge(State(state): State<AppState>) -> Json<SessionChallenge> {
-    let ts = now();
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let nonce = URL_SAFE_NO_PAD.encode(bytes);
-    Json(SessionChallenge {
-        ts,
-        challenge: challenge(&state.server_secret, ts, &nonce),
-        nonce,
-    })
-}
-
-pub async fn verify_connect(state: &AppState, params: &ConnectParams) -> Result<(), ConnectError> {
-    if params.ts > now() || now().saturating_sub(params.ts) > 600 {
-        return Err(ConnectError::InvalidSession);
-    }
-    if !tenant_secret::verify_signature(
-        &state.server_secret,
-        &format!("{}.{}", params.ts, params.nonce),
-        &params.challenge,
-    ) {
-        return Err(ConnectError::InvalidSession);
-    }
-    let tenant_secret = tenant_secret::derive(&state.server_secret, &params.tenant_id);
-    if !tenant_secret::verify_signature(&tenant_secret, &params.challenge, &params.response)
-        || !tenant_secret::verify_signature(&tenant_secret, &params.user_id, &params.user_id_sig)
-    {
-        return Err(ConnectError::InvalidSession);
-    }
-    if state
-        .security
-        .as_ref()
-        .is_some_and(|security| security.is_revoked(&params.tenant_id, &params.user_id))
-    {
-        return Err(ConnectError::Revoked);
-    }
-    Ok(())
-}
-
-/// Shows the "connect this app" consent screen for a signed-in user, or
-/// sends them to log in first (remembering where to come back to).
-pub async fn connect_page(
-    State(state): State<AppState>,
-    Query(params): Query<ConnectParams>,
-    jar: PrivateCookieJar,
-) -> Result<Response, ConnectError> {
-    parse_redirect_uri(&params.redirect_uri)?;
-    verify_connect(&state, &params).await?;
-
-    match session::read_session(&jar) {
-        Some(_) => {
-            Ok(Html(templates::render_connect(&params, &state.catalog.names())).into_response())
-        }
-        None => {
-            let mut target = url::Url::parse("https://localhost/connect").unwrap();
-            target
-                .query_pairs_mut()
-                .append_pair("redirect_uri", &params.redirect_uri)
-                .append_pair("ts", &params.ts.to_string())
-                .append_pair("nonce", &params.nonce)
-                .append_pair("challenge", &params.challenge)
-                .append_pair("tenant_id", &params.tenant_id)
-                .append_pair("user_id", &params.user_id)
-                .append_pair("user_id_sig", &params.user_id_sig)
-                .append_pair("response", &params.response);
-            let jar = session::set_connect_redirect(
-                jar,
-                &format!("/connect?{}", target.query().unwrap()),
-            );
-            Ok((jar, Redirect::to("/auth/login")).into_response())
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ConnectConfirmForm {
-    pub redirect_uri: String,
-    pub ts: u64,
-    pub nonce: String,
-    pub challenge: String,
-    pub tenant_id: String,
-    pub user_id: String,
-    pub user_id_sig: String,
-    pub response: String,
-}
-
-/// Confirms the connection and redirects back to the caller with the
-/// signed-in user's deterministic tenant secret attached as `?secret=`.
-pub async fn connect_confirm(
-    State(state): State<AppState>,
-    jar: PrivateCookieJar,
-    Form(form): Form<ConnectConfirmForm>,
-) -> Result<Redirect, ConnectError> {
-    let params = ConnectParams {
-        redirect_uri: form.redirect_uri,
-        ts: form.ts,
-        nonce: form.nonce,
-        challenge: form.challenge,
-        tenant_id: form.tenant_id,
-        user_id: form.user_id,
-        user_id_sig: form.user_id_sig,
-        response: form.response,
-    };
-    let mut redirect_uri = parse_redirect_uri(&params.redirect_uri)?;
-    verify_connect(&state, &params).await?;
-    if let Some(security) = &state.security {
-        if !security
-            .consume_nonce(&params.nonce)
-            .await
-            .map_err(|_| ConnectError::InvalidSession)?
-        {
-            return Err(ConnectError::InvalidSession);
-        }
-    }
-    let user = session::read_session(&jar).ok_or(ConnectError::NotLoggedIn)?;
-
-    let secret = tenant_secret::derive(&state.server_secret, &user.subject);
-    redirect_uri
-        .query_pairs_mut()
-        .append_pair("secret", &secret);
-
-    Ok(Redirect::to(redirect_uri.as_str()))
-}
-
-/// Minimal authenticated endpoint other services (e.g. atomic-server) call
-/// to check a tenant secret is legitimate.
-pub async fn proxy(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-
-    match token.and_then(|token| tenant_secret::verify(&state.server_secret, token)) {
-        Some(_identity) => Json(json!({ "ok": true })).into_response(),
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "ok": false, "error": "invalid or missing bearer token" })),
-        )
-            .into_response(),
-    }
-}
-
-/// The credential sealed into a connection code, opaque to the
-/// PKCE/handoff/rotation machinery and only interpreted here and where it's
-/// minted (`oauth.rs`'s callback, `connect.rs`'s apiKey `authorize` branch).
-#[derive(Deserialize, Serialize)]
+/// The provider credential sealed in a connection row, interpreted only here
+/// and where it is minted (`oauth.rs`'s callback, `connect.rs`'s apiKey
+/// branch).
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub(crate) enum StoredCredential {
     #[serde(rename = "oauth")]
     OAuth {
         provider: String,
-        tenant_id: String,
-        user_id: String,
         access_token: String,
         refresh_token: Option<String>,
         expires_at: Option<u64>,
     },
     #[serde(rename = "api_key")]
-    ApiKey {
-        provider: String,
-        tenant_id: String,
-        user_id: String,
-        key: String,
-    },
+    ApiKey { provider: String, key: String },
 }
 
 impl StoredCredential {
     fn provider(&self) -> &str {
         match self {
             Self::OAuth { provider, .. } | Self::ApiKey { provider, .. } => provider,
-        }
-    }
-    fn tenant_id(&self) -> &str {
-        match self {
-            Self::OAuth { tenant_id, .. } | Self::ApiKey { tenant_id, .. } => tenant_id,
-        }
-    }
-    fn user_id(&self) -> &str {
-        match self {
-            Self::OAuth { user_id, .. } | Self::ApiKey { user_id, .. } => user_id,
         }
     }
 }
@@ -273,21 +66,24 @@ struct RefreshToken {
     expires_in: Option<u64>,
 }
 
-async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) -> Result<(), ()> {
+fn needs_refresh(credential: &StoredCredential) -> bool {
+    matches!(
+        credential,
+        StoredCredential::OAuth { expires_at: Some(expires), .. } if *expires <= crate::now_secs() + 30
+    )
+}
+
+async fn refresh_token(state: &AppState, credential: &mut StoredCredential) -> Result<(), ()> {
     let StoredCredential::OAuth {
         provider,
         access_token,
         refresh_token,
         expires_at,
-        ..
     } = credential
     else {
         // A static API key has nothing to refresh.
         return Ok(());
     };
-    if expires_at.is_none_or(|expires| expires > now() + 30) {
-        return Ok(());
-    }
     let refresh_token_value = refresh_token.as_deref().ok_or(())?;
     let configured =
         crate::providers::Provider::configured(&state.catalog, provider).map_err(|_| ())?;
@@ -317,8 +113,144 @@ async fn refresh_if_needed(state: &AppState, credential: &mut StoredCredential) 
     if token.refresh_token.is_some() {
         *refresh_token = token.refresh_token;
     }
-    *expires_at = token.expires_in.map(|seconds| now() + seconds);
+    *expires_at = token.expires_in.map(|seconds| crate::now_secs() + seconds);
     Ok(())
+}
+
+/// Refreshes a connection's OAuth token if it is about to expire, with at
+/// most one refresh in flight per connection (see
+/// `Security::claim_refresh_lease`). A caller that loses the race waits for
+/// the winner's result instead of spending the refresh token again.
+async fn refresh_connection(
+    state: &AppState,
+    security: &Security,
+    connection_id: &str,
+    credential: &mut StoredCredential,
+) -> Result<(), ()> {
+    const ATTEMPTS: usize = 50;
+    const WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+    let reload = |record: Option<ConnectionRecord>| -> Result<StoredCredential, ()> {
+        serde_json::from_slice(&record.ok_or(())?.credential).map_err(|_| ())
+    };
+    for _ in 0..ATTEMPTS {
+        if !needs_refresh(credential) {
+            return Ok(());
+        }
+        if security
+            .claim_refresh_lease(connection_id)
+            .await
+            .map_err(|_| ())?
+        {
+            // Another caller may have finished a refresh between our read
+            // and our claim; start from the row as it is now.
+            if let Ok(current) =
+                reload(security.load_connection(connection_id).await.ok().flatten())
+            {
+                *credential = current;
+            }
+            if !needs_refresh(credential) {
+                let _ = security.release_refresh_lease(connection_id).await;
+                return Ok(());
+            }
+            if refresh_token(state, credential).await.is_err() {
+                let _ = security.release_refresh_lease(connection_id).await;
+                return Err(());
+            }
+            let serialized = serde_json::to_vec(&*credential).map_err(|_| ())?;
+            return security
+                .store_refreshed_connection(connection_id, &serialized)
+                .await
+                .map_err(|_| ());
+        }
+        tokio::time::sleep(WAIT).await;
+        *credential = reload(security.load_connection(connection_id).await.ok().flatten())?;
+    }
+    Err(())
+}
+
+/// How a request was allowed to use a connection.
+#[derive(Debug, PartialEq, Eq)]
+enum Caller {
+    Owner,
+    Delegate(String),
+    Runtime { agent: String, app: String },
+    Frame { app: String },
+}
+
+/// Authenticates a proxied request against the connection it names. See the
+/// module documentation for the two accepted presentations.
+#[allow(clippy::too_many_arguments)]
+async fn authenticate(
+    state: &AppState,
+    security: &Security,
+    record: &ConnectionRecord,
+    platform: &str,
+    method: &Method,
+    uri: &axum::http::Uri,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<Caller, ApiError> {
+    let owner = agent_id::parse(&record.owner).ok_or(ApiError::Internal)?;
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| ApiError::UnsupportedAuthorization)
+        })
+        .transpose()?;
+    let caller = match authorization {
+        Some(value) => {
+            let token = value
+                .strip_prefix("Capability ")
+                .ok_or(ApiError::UnsupportedAuthorization)?;
+            let parsed = capability::parse(token)?;
+            parsed.verify(&owner, &state.public_origin, crate::now_secs())?;
+            if parsed.claims.connection_id != record.connection_id
+                || parsed.claims.platform != platform
+                || record.platform != platform
+            {
+                return Err(ApiError::CapabilityScope);
+            }
+            if !security
+                .is_delegated(&record.connection_id, parsed.app.as_str())
+                .await
+                .map_err(|_| ApiError::Unavailable)?
+            {
+                return Err(ApiError::NotDelegated);
+            }
+            let signer =
+                crate::signature::authenticate(state, security, method, uri, headers, body).await?;
+            if signer != parsed.cnf {
+                return Err(ApiError::CapabilityKeyMismatch);
+            }
+            Caller::Frame {
+                app: parsed.app.as_str().to_owned(),
+            }
+        }
+        None => {
+            let signer =
+                crate::signature::authenticate(state, security, method, uri, headers, body).await?;
+            match security
+                .standing(&record.connection_id, owner.as_str(), signer.as_str())
+                .await
+                .map_err(|_| ApiError::Unavailable)?
+            {
+                Standing::Owner => Caller::Owner,
+                Standing::Delegate => Caller::Delegate(signer.as_str().to_owned()),
+                Standing::Runtime { app } => Caller::Runtime {
+                    agent: signer.as_str().to_owned(),
+                    app,
+                },
+                Standing::None => return Err(ApiError::NotDelegated),
+            }
+        }
+    };
+    if record.platform != platform {
+        return Err(ApiError::PlatformMismatch);
+    }
+    crate::check_access(state, &owner).await?;
+    Ok(caller)
 }
 
 /// How to attach a resolved credential to the outbound upstream request.
@@ -331,86 +263,108 @@ enum CredentialInjection {
 }
 
 pub async fn forward(
-    Path(path): Path<String>,
+    Path((connection_id, platform, path)): Path<(String, String, String)>,
     RawQuery(query): RawQuery,
     State(state): State<AppState>,
-    method: axum::http::Method,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let Some((platform, path)) = path.split_once('/') else {
-        return (
-            StatusCode::NOT_FOUND,
-            "proxy platform and path are required",
-        )
-            .into_response();
-    };
+    match forward_inner(
+        &state,
+        &connection_id,
+        &platform,
+        &path,
+        query,
+        method,
+        &uri,
+        &headers,
+        body,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => error.into_response(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn forward_inner(
+    state: &AppState,
+    connection_id: &str,
+    platform: &str,
+    path: &str,
+    query: Option<String>,
+    method: Method,
+    uri: &axum::http::Uri,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<Response, ApiError> {
     let request_path = format!("/{path}");
     if contains_traversal_segment(&request_path) {
-        return (
-            StatusCode::BAD_REQUEST,
+        return Err(ApiError::BadRequest(
             "path must not contain traversal segments",
-        )
-            .into_response();
+        ));
     }
     if body.len() > 1_048_576 {
-        return (StatusCode::PAYLOAD_TOO_LARGE, "request body is too large").into_response();
+        return Ok((StatusCode::PAYLOAD_TOO_LARGE, "request body is too large").into_response());
     }
-    let Some(code) = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-    else {
-        return (StatusCode::UNAUTHORIZED, "missing connection code").into_response();
+    let security = state.security.as_ref().ok_or(ApiError::Unavailable)?;
+    if connection_id.len() != 43 {
+        return Err(ApiError::UnknownConnection);
+    }
+    let record = security
+        .load_connection(connection_id)
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::UnknownConnection)?;
+    let caller = authenticate(
+        state, security, &record, platform, &method, uri, headers, &body,
+    )
+    .await?;
+    // Only an authenticated use keeps a connection alive.
+    let (delegate, runtime) = match &caller {
+        Caller::Owner => (None, None),
+        Caller::Delegate(agent) => (Some(agent.as_str()), None),
+        Caller::Runtime { agent, app } => (
+            Some(app.as_str()),
+            Some((record.owner.as_str(), agent.as_str())),
+        ),
+        Caller::Frame { app } => (Some(app.as_str()), None),
     };
-    let Some(security) = &state.security else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "security service unavailable",
-        )
-            .into_response();
-    };
-    let Ok(Some(envelope)) = security.take_connection_code(code).await else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            "invalid or expired connection code",
-        )
-            .into_response();
-    };
-    let Some(plaintext) = security.open(&envelope, b"connection-credential-v1") else {
-        return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
-    };
-    let Ok(mut credential) = serde_json::from_slice::<StoredCredential>(&plaintext) else {
-        return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
-    };
-    if credential.provider() != platform
-        || security.is_revoked(credential.tenant_id(), credential.user_id())
+    let _ = security.touch(connection_id, delegate, runtime).await;
+
+    let mut credential = serde_json::from_slice::<StoredCredential>(&record.credential)
+        .map_err(|_| ApiError::Internal)?;
+    if credential.provider() != platform {
+        return Err(ApiError::PlatformMismatch);
+    }
+    if refresh_connection(state, security, connection_id, &mut credential)
+        .await
+        .is_err()
     {
-        return (StatusCode::FORBIDDEN, "credential is not permitted").into_response();
+        return Err(ApiError::CredentialRefreshFailed);
     }
-    if refresh_if_needed(&state, &mut credential).await.is_err() {
-        return (StatusCode::UNAUTHORIZED, "credential refresh failed").into_response();
-    }
+    let not_in_catalog = || {
+        (
+            StatusCode::NOT_FOUND,
+            "method or path is not in the catalog",
+        )
+            .into_response()
+    };
     let Some(required_headers) =
         state
             .catalog
             .required_headers(platform, method.as_str(), &request_path)
     else {
-        return (
-            StatusCode::NOT_FOUND,
-            "method or path is not in the catalog",
-        )
-            .into_response();
+        return Ok(not_in_catalog());
     };
     let Some(mut target) = state
         .catalog
         .allows(platform, method.as_str(), &request_path)
     else {
-        return (
-            StatusCode::NOT_FOUND,
-            "method or path is not in the catalog",
-        )
-            .into_response();
+        return Ok(not_in_catalog());
     };
     if let Err(message) = state.catalog.validate_request(
         platform,
@@ -422,7 +376,7 @@ pub async fn forward(
             .and_then(|v| v.to_str().ok()),
         !body.is_empty(),
     ) {
-        return (StatusCode::BAD_REQUEST, message).into_response();
+        return Ok((StatusCode::BAD_REQUEST, message).into_response());
     }
     target.set_path(&request_path);
     target.set_query(query.as_deref());
@@ -434,7 +388,7 @@ pub async fn forward(
             let Ok(crate::providers::SecurityScheme::ApiKey(scheme)) =
                 state.catalog.security_scheme(platform)
             else {
-                return (StatusCode::UNAUTHORIZED, "invalid connection code").into_response();
+                return Err(ApiError::Internal);
             };
             match scheme.location {
                 crate::providers::ApiKeyLocation::Header => CredentialInjection::Header {
@@ -446,11 +400,11 @@ pub async fn forward(
                     CredentialInjection::None
                 }
                 crate::providers::ApiKeyLocation::Cookie => {
-                    return (
+                    return Ok((
                         StatusCode::NOT_IMPLEMENTED,
                         "cookie-located API keys are not supported",
                     )
-                        .into_response();
+                        .into_response());
                 }
             }
         }
@@ -460,7 +414,7 @@ pub async fn forward(
         method.clone(),
         target.clone(),
         injection,
-        &headers,
+        headers,
         &required_headers,
         body,
     )
@@ -468,52 +422,24 @@ pub async fn forward(
     .await
     {
         Ok(response) => response,
-        Err(_) => return (StatusCode::BAD_GATEWAY, "upstream request failed").into_response(),
+        Err(_) => return Ok((StatusCode::BAD_GATEWAY, "upstream request failed").into_response()),
     };
     let status = upstream.status();
     let forwarded_headers = upstream_response_headers(upstream.headers());
     let bytes = match read_bounded_body(upstream, MAX_RESPONSE_BYTES).await {
         Ok(bytes) => bytes,
         Err(_) => {
-            return (
+            return Ok((
                 StatusCode::BAD_GATEWAY,
                 "upstream response failed or was too large",
             )
-                .into_response()
+                .into_response())
         }
     };
     let mut response = Response::new(bytes.into());
     *response.status_mut() = status;
     *response.headers_mut() = forwarded_headers;
-    let Ok(envelope) = security.seal(
-        &serde_json::to_vec(&credential).unwrap(),
-        b"connection-credential-v1",
-    ) else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "credential rotation failed",
-        )
-            .into_response();
-    };
-    let mut new_code = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut new_code);
-    let new_code = URL_SAFE_NO_PAD.encode(new_code);
-    if security
-        .store_connection_code(&new_code, &envelope)
-        .await
-        .is_err()
-    {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "credential rotation failed",
-        )
-            .into_response();
-    }
-    response.headers_mut().insert(
-        "x-connection-code",
-        axum::http::HeaderValue::from_str(&new_code).unwrap(),
-    );
-    response
+    Ok(response)
 }
 
 // Forward only representation/pagination metadata, never provider cookies or credentials.
@@ -591,71 +517,19 @@ fn upstream_request(
     request.body(body)
 }
 
-#[derive(Debug)]
-pub enum ConnectError {
-    InvalidRedirect,
-    NotLoggedIn,
-    InvalidSession,
-    Revoked,
-}
-
-impl IntoResponse for ConnectError {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            ConnectError::InvalidRedirect => (
-                StatusCode::BAD_REQUEST,
-                "redirect_uri is missing or invalid",
-            ),
-            ConnectError::NotLoggedIn => (StatusCode::UNAUTHORIZED, "please log in first"),
-            ConnectError::InvalidSession => (
-                StatusCode::UNAUTHORIZED,
-                "invalid or expired tenant session",
-            ),
-            ConnectError::Revoked => (StatusCode::FORBIDDEN, "tenant or user is revoked"),
-        };
-        (status, message).into_response()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_id::test_signer::Agent;
+    use crate::capability::{mint, Claims};
+    use crate::test_support::{body_json, security, signed_request, state, PUBLIC_ORIGIN};
     use axum::http::{header::AUTHORIZATION, HeaderValue};
-    use axum_extra::extract::cookie::Key;
+    use axum::Json;
+    use serde_json::json;
     use tower::ServiceExt;
 
-    fn test_state(server_secret: &str) -> AppState {
-        let config = crate::config::Config {
-            app_auth_client_id: "test-client-id".to_string(),
-            app_auth_client_secret: "test-client-secret".to_string(),
-            app_auth_authorization_url: "https://accounts.example/authorize".to_string(),
-            app_auth_token_url: "https://accounts.example/token".to_string(),
-            app_auth_userinfo_url: "https://accounts.example/userinfo".to_string(),
-            app_auth_label: "OIDC".to_string(),
-            app_auth_identity_namespace: None,
-            base_url: "http://localhost:8080".to_string(),
-            port: 8080,
-            session_secret: None,
-            server_secret: server_secret.to_string(),
-            catalog_path: "catalog.yaml".to_string(),
-            database_url: "postgres://unused".to_string(),
-            encryption_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-            revoked_subjects: vec![],
-        };
-        AppState {
-            oauth_client: crate::auth::build_client(&config).unwrap(),
-            app_auth_userinfo_url: config.app_auth_userinfo_url.clone(),
-            app_auth_label: config.app_auth_label.clone(),
-            app_auth_identity_namespace: config.app_auth_identity_namespace.clone(),
-            http_client: crate::build_http_client(),
-            identity_http_client: crate::build_identity_http_client(),
-            key: Key::generate(),
-            server_secret: config.server_secret,
-            base_url: config.base_url,
-            catalog: crate::catalog::Catalog::default(),
-            security: None,
-            test_upstream: None,
-        }
+    fn test_state() -> AppState {
+        state(None)
     }
 
     #[tokio::test]
@@ -762,106 +636,6 @@ mod tests {
         server.abort();
     }
 
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
-    async fn postgres_forward_injects_the_declared_api_key_header_and_rotates_the_code() {
-        let db = std::env::var("TEST_DATABASE_URL")
-            .expect("set TEST_DATABASE_URL to an isolated test database");
-        let security = crate::security::Security::connect(
-            &db,
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            vec![],
-        )
-        .await
-        .unwrap();
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let app = axum::Router::new().route(
-            "/workspaces",
-            axum::routing::get(|headers: HeaderMap| async move {
-                Json(json!({
-                    "authorization": headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()),
-                    "x_api_key": headers.get("x-api-key").and_then(|v| v.to_str().ok()),
-                }))
-            }),
-        );
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-
-        let mut s = test_state("fixture-server-secret");
-        s.security = Some(security.clone());
-        s.catalog = crate::catalog::Catalog::from_test_document(
-            "clockify",
-            serde_json::json!({
-                "servers": [{"url": format!("http://{address}")}],
-                "components": {"securitySchemes": {"clockifyApiKey": {
-                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
-                }}},
-                "security": [{"clockifyApiKey": []}],
-                "paths": {"/workspaces": {"get": {}}}
-            }),
-            serde_json::json!({}),
-        );
-
-        let credential = StoredCredential::ApiKey {
-            provider: "clockify".into(),
-            tenant_id: "tenant".into(),
-            user_id: "did:ad:agent:test".into(),
-            key: "clockify-secret".into(),
-        };
-        let envelope = security
-            .seal(
-                &serde_json::to_vec(&credential).unwrap(),
-                b"connection-credential-v1",
-            )
-            .unwrap();
-        let code = "test-connection-code".to_string();
-        security
-            .store_connection_code(&code, &envelope)
-            .await
-            .unwrap();
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {code}")).unwrap(),
-        );
-        let response = forward(
-            Path("clockify/workspaces".to_string()),
-            RawQuery(None),
-            State(s),
-            axum::http::Method::GET,
-            headers,
-            Bytes::new(),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let new_code = response.headers()["x-connection-code"]
-            .to_str()
-            .unwrap()
-            .to_string();
-        assert_ne!(new_code, code);
-        let body = axum::body::to_bytes(response.into_body(), 16384)
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(body["x_api_key"], "clockify-secret");
-        assert_eq!(body["authorization"], serde_json::Value::Null);
-
-        // The redeemed code is single-use; only the rotated code now works.
-        assert!(security
-            .take_connection_code(&code)
-            .await
-            .unwrap()
-            .is_none());
-        assert!(security
-            .take_connection_code(&new_code)
-            .await
-            .unwrap()
-            .is_some());
-        server.abort();
-    }
-
     #[test]
     fn pagination_headers_survive_without_forwarding_provider_credentials() {
         let mut headers = HeaderMap::new();
@@ -912,7 +686,7 @@ mod tests {
 
     #[tokio::test]
     async fn forward_rejects_a_path_containing_traversal_segments_before_touching_credentials() {
-        let mut state = test_state("server-secret");
+        let mut state = test_state();
         state.catalog = crate::catalog::Catalog::from_test_document(
             "github-issues",
             json!({
@@ -927,7 +701,7 @@ mod tests {
         let response = crate::router(state)
             .oneshot(
                 axum::http::Request::builder()
-                    .uri("/proxy/github-issues/repositories/../issues")
+                    .uri("/proxy/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/github-issues/repositories/../issues")
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -959,20 +733,531 @@ mod tests {
         server.abort();
     }
 
-    /// End-to-end coverage of `forward()` through the real router: an
-    /// expired credential is refreshed at the (mocked) provider token
-    /// endpoint, the resulting access token is used to call the (mocked)
-    /// provider API, the response is forwarded with its pagination/ETag
-    /// headers intact, and the one-time connection code is rotated.
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
-    async fn forward_refreshes_an_expired_credential_and_forwards_the_response() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
+    /// An upstream that echoes the API key it received, and a catalog for it.
+    async fn api_key_upstream() -> (tokio::task::JoinHandle<()>, crate::catalog::Catalog) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/workspaces",
+            axum::routing::any(|headers: HeaderMap| async move {
+                axum::Json(json!({
+                    "x_api_key": headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+                    "signature_forwarded": headers.contains_key("x-atomic-signature"),
+                    "authorization": headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()),
+                }))
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let catalog = crate::catalog::Catalog::from_test_document(
+            "clockify",
+            json!({
+                "servers": [{"url": format!("http://{address}")}],
+                "components": {"securitySchemes": {"clockifyApiKey": {
+                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
+                }}},
+                "security": [{"clockifyApiKey": []}],
+                "paths": {"/workspaces": {"get": {}, "post": {"requestBody": {"content": {"application/json": {}}}}}}
+            }),
+            json!({}),
+        );
+        (server, catalog)
+    }
 
+    fn api_key_credential() -> Vec<u8> {
+        serde_json::to_vec(&StoredCredential::ApiKey {
+            provider: "clockify".into(),
+            key: "clockify-secret".into(),
+        })
+        .unwrap()
+    }
+
+    struct Fixture {
+        state: AppState,
+        security: Security,
+        owner: Agent,
+        id: String,
+        _server: tokio::task::JoinHandle<()>,
+    }
+
+    async fn fixture(owner_seed: u8) -> Fixture {
+        let security = security().await;
+        let (server, catalog) = api_key_upstream().await;
+        let mut s = state(Some(security.clone()));
+        s.catalog = catalog;
+        let owner = Agent::new(owner_seed);
+        let id = security
+            .create_connection("clockify", &owner.id(), &api_key_credential())
+            .await
+            .unwrap();
+        Fixture {
+            state: s,
+            security,
+            owner,
+            id,
+            _server: server,
+        }
+    }
+
+    impl Fixture {
+        fn path(&self) -> String {
+            format!("/proxy/{}/clockify/workspaces", self.id)
+        }
+        async fn send(&self, request: axum::http::Request<axum::body::Body>) -> Response {
+            crate::router(self.state.clone())
+                .oneshot(request)
+                .await
+                .unwrap()
+        }
+        async fn get_as(&self, agent: &Agent) -> Response {
+            self.send(signed_request(
+                &self.state,
+                agent,
+                "GET",
+                &self.path(),
+                vec![],
+            ))
+            .await
+        }
+        fn claims(&self, app: &Agent, frame: &Agent) -> Claims {
+            Claims {
+                v: 2,
+                connection_id: self.id.clone(),
+                platform: "clockify".into(),
+                aud: PUBLIC_ORIGIN.into(),
+                app: app.id(),
+                cnf: frame.id(),
+                exp: crate::now_secs() + 600,
+            }
+        }
+        async fn frame_get(&self, token: &str, signer: &Agent) -> Response {
+            let mut request = signed_request(&self.state, signer, "GET", &self.path(), vec![]);
+            request.headers_mut().insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Capability {token}")).unwrap(),
+            );
+            self.send(request).await
+        }
+    }
+
+    async fn expect_error(response: Response, status: StatusCode, code: &str) {
+        assert_eq!(response.status(), status, "expected {code}");
+        assert_eq!(body_json(response).await["error"], code);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_the_owner_signs_requests_that_reach_the_provider_once_each() {
+        let f = fixture(31).await;
+        let request = signed_request(&f.state, &f.owner, "GET", &f.path(), vec![]);
+        let replay = crate::test_support::clone_request(&request);
+        let response = f.send(request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(!response.headers().contains_key("x-connection-code"));
+        let body = body_json(response).await;
+        assert_eq!(body["x_api_key"], "clockify-secret");
+        // The caller's own signature headers never reach the provider.
+        assert_eq!(body["signature_forwarded"], false);
+        // Nothing rotated: a second, freshly signed request works too.
+        assert_eq!(f.get_as(&f.owner).await.status(), StatusCode::OK);
+        // The exact same signed request is refused.
+        expect_error(f.send(replay).await, StatusCode::UNAUTHORIZED, "replayed").await;
+        // A signed POST covers its body.
+        let post = signed_request(&f.state, &f.owner, "POST", &f.path(), b"{}".to_vec());
+        assert_eq!(f.send(post).await.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_each_verification_step_fails_closed() {
+        let f = fixture(32).await;
+        // No signature at all.
+        let unsigned = axum::http::Request::builder()
+            .uri(f.path())
+            .body(axum::body::Body::empty())
+            .unwrap();
+        expect_error(
+            f.send(unsigned).await,
+            StatusCode::UNAUTHORIZED,
+            "missing_signature",
+        )
+        .await;
+        // A retired connection code.
+        let bearer = axum::http::Request::builder()
+            .uri(f.path())
+            .header(AUTHORIZATION, "Bearer old-connection-code")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        expect_error(
+            f.send(bearer).await,
+            StatusCode::UNAUTHORIZED,
+            "unsupported_authorization",
+        )
+        .await;
+        // Version 1 header.
+        let mut v1 = signed_request(&f.state, &f.owner, "GET", &f.path(), vec![]);
+        v1.headers_mut().insert(
+            crate::signature::VERSION_HEADER,
+            HeaderValue::from_static("1"),
+        );
+        expect_error(
+            f.send(v1).await,
+            StatusCode::UNAUTHORIZED,
+            "unsupported_signature_version",
+        )
+        .await;
+        // Stale timestamp.
+        let stale = crate::test_support::signed_request_at(
+            &f.state,
+            &f.owner,
+            "GET",
+            &f.path(),
+            vec![],
+            crate::now_ms() - crate::signature::MAX_SKEW_MS - 1000,
+        );
+        expect_error(
+            f.send(stale).await,
+            StatusCode::UNAUTHORIZED,
+            "stale_timestamp",
+        )
+        .await;
+        // Tampered body.
+        let mut tampered = signed_request(&f.state, &f.owner, "POST", &f.path(), b"{}".to_vec());
+        *tampered.body_mut() = axum::body::Body::from(r#"{"x":1}"#);
+        expect_error(
+            f.send(tampered).await,
+            StatusCode::UNAUTHORIZED,
+            "bad_signature",
+        )
+        .await;
+        // A signature over the internal (plain-HTTP) URL instead of BASE_URL.
+        let internal = crate::test_support::signed_request_for_url(
+            &f.owner,
+            "GET",
+            &f.path(),
+            &format!("http://localhost:8080{}", f.path()),
+            vec![],
+        );
+        expect_error(
+            f.send(internal).await,
+            StatusCode::UNAUTHORIZED,
+            "bad_signature",
+        )
+        .await;
+        // The Host header does not matter: the signed URL is built from BASE_URL.
+        let mut spoofed_host = signed_request(&f.state, &f.owner, "GET", &f.path(), vec![]);
+        spoofed_host
+            .headers_mut()
+            .insert(header::HOST, HeaderValue::from_static("evil.example"));
+        assert_eq!(f.send(spoofed_host).await.status(), StatusCode::OK);
+        // Claiming to be the owner while signing with another key.
+        let impostor = Agent::new(33);
+        let mut claimed = signed_request(&f.state, &impostor, "GET", &f.path(), vec![]);
+        claimed.headers_mut().insert(
+            crate::signature::AGENT_HEADER,
+            HeaderValue::from_str(&f.owner.id()).unwrap(),
+        );
+        expect_error(
+            f.send(claimed).await,
+            StatusCode::UNAUTHORIZED,
+            "agent_key_mismatch",
+        )
+        .await;
+        // Someone else's key: no standing on this connection.
+        expect_error(
+            f.get_as(&impostor).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+        // Wrong platform in the path.
+        let wrong_platform = signed_request(
+            &f.state,
+            &f.owner,
+            "GET",
+            &format!("/proxy/{}/github-issues/workspaces", f.id),
+            vec![],
+        );
+        expect_error(
+            f.send(wrong_platform).await,
+            StatusCode::FORBIDDEN,
+            "platform_mismatch",
+        )
+        .await;
+        // Unknown connection.
+        let unknown = signed_request(
+            &f.state,
+            &f.owner,
+            "GET",
+            &format!("/proxy/{}/clockify/workspaces", crate::connect::random()),
+            vec![],
+        );
+        expect_error(
+            f.send(unknown).await,
+            StatusCode::NOT_FOUND,
+            "unknown_connection",
+        )
+        .await;
+        // The legacy spelling of the owner's id is the owner.
+        let mut legacy = signed_request(&f.state, &f.owner, "GET", &f.path(), vec![]);
+        legacy.headers_mut().insert(
+            crate::signature::AGENT_HEADER,
+            HeaderValue::from_str(&f.owner.legacy_id()).unwrap(),
+        );
+        assert_eq!(f.send(legacy).await.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_delegates_and_runtimes_lose_access_the_moment_they_are_revoked() {
+        let f = fixture(34).await;
+        let app = Agent::new(35);
+        let node = Agent::new(36);
+        expect_error(f.get_as(&app).await, StatusCode::FORBIDDEN, "not_delegated").await;
+        f.security
+            .put_delegation(&f.id, &app.id(), Some("Plugin"))
+            .await
+            .unwrap();
+        assert_eq!(f.get_as(&app).await.status(), StatusCode::OK);
+        expect_error(
+            f.get_as(&node).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+        f.security
+            .put_runtime(&f.owner.id(), &node.id(), &app.id(), Some("server"))
+            .await
+            .unwrap();
+        assert_eq!(f.get_as(&node).await.status(), StatusCode::OK);
+        // Revoke the app's delegation: the app and its runtime stop at once.
+        f.security
+            .delete_delegation(&f.id, &app.id())
+            .await
+            .unwrap();
+        expect_error(f.get_as(&app).await, StatusCode::FORBIDDEN, "not_delegated").await;
+        expect_error(
+            f.get_as(&node).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+        // Restore, then remove only the runtime.
+        f.security
+            .put_delegation(&f.id, &app.id(), None)
+            .await
+            .unwrap();
+        f.security
+            .delete_runtime(&f.owner.id(), &node.id())
+            .await
+            .unwrap();
+        assert_eq!(f.get_as(&app).await.status(), StatusCode::OK);
+        expect_error(
+            f.get_as(&node).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+        // Deleting the connection ends everyone's access.
+        f.security
+            .delete_connection(&f.id, &f.owner.id())
+            .await
+            .unwrap();
+        expect_error(
+            f.get_as(&f.owner).await,
+            StatusCode::NOT_FOUND,
+            "unknown_connection",
+        )
+        .await;
+        expect_error(
+            f.get_as(&app).await,
+            StatusCode::NOT_FOUND,
+            "unknown_connection",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_the_access_policy_is_asked_about_the_owner_on_every_request() {
+        let mut f = fixture(37).await;
+        let app = Agent::new(38);
+        f.security
+            .put_delegation(&f.id, &app.id(), None)
+            .await
+            .unwrap();
+        assert_eq!(f.get_as(&app).await.status(), StatusCode::OK);
+        f.state.access = std::sync::Arc::new(crate::access::EnvAccessPolicy::new(
+            None,
+            vec![f.owner.id()],
+        ));
+        expect_error(
+            f.get_as(&f.owner).await,
+            StatusCode::FORBIDDEN,
+            "access_denied",
+        )
+        .await;
+        // A delegate is judged by its owner's standing, not its own.
+        expect_error(f.get_as(&app).await, StatusCode::FORBIDDEN, "access_denied").await;
+        f.state.access = std::sync::Arc::new(crate::access::EnvAccessPolicy::new(
+            Some(vec![f.owner.legacy_id()]),
+            vec![],
+        ));
+        assert_eq!(f.get_as(&app).await.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_a_frame_capability_works_only_with_the_frame_key_and_a_live_delegation() {
+        let f = fixture(39).await;
+        let app = Agent::new(40);
+        let frame = Agent::new(41);
+        let token = mint(&f.owner, &f.claims(&app, &frame));
+        // No delegation for the app yet.
+        expect_error(
+            f.frame_get(&token, &frame).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+        f.security
+            .put_delegation(&f.id, &app.id(), None)
+            .await
+            .unwrap();
+        assert_eq!(f.frame_get(&token, &frame).await.status(), StatusCode::OK);
+        // The capability is reusable within its lifetime, each request freshly signed.
+        assert_eq!(f.frame_get(&token, &frame).await.status(), StatusCode::OK);
+        // A copied capability used without the frame's key.
+        let thief = Agent::new(42);
+        expect_error(
+            f.frame_get(&token, &thief).await,
+            StatusCode::UNAUTHORIZED,
+            "capability_key_mismatch",
+        )
+        .await;
+        // ... or with no request signature at all.
+        let bare = axum::http::Request::builder()
+            .uri(f.path())
+            .header(AUTHORIZATION, format!("Capability {token}"))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        expect_error(
+            f.send(bare).await,
+            StatusCode::UNAUTHORIZED,
+            "missing_signature",
+        )
+        .await;
+        // Replaying one of the frame's signed requests.
+        let mut request = signed_request(&f.state, &frame, "GET", &f.path(), vec![]);
+        request.headers_mut().insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Capability {token}")).unwrap(),
+        );
+        let replay = crate::test_support::clone_request(&request);
+        assert_eq!(f.send(request).await.status(), StatusCode::OK);
+        expect_error(f.send(replay).await, StatusCode::UNAUTHORIZED, "replayed").await;
+        // The owner key itself cannot stand in for the frame key.
+        expect_error(
+            f.frame_get(&token, &f.owner).await,
+            StatusCode::UNAUTHORIZED,
+            "capability_key_mismatch",
+        )
+        .await;
+        // Revoking the delegation stops the capability immediately.
+        f.security
+            .delete_delegation(&f.id, &app.id())
+            .await
+            .unwrap();
+        expect_error(
+            f.frame_get(&token, &frame).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_capability_misuse_is_refused_with_a_specific_reason() {
+        let f = fixture(43).await;
+        let app = Agent::new(44);
+        let frame = Agent::new(45);
+        f.security
+            .put_delegation(&f.id, &app.id(), None)
+            .await
+            .unwrap();
+        type Edit = Box<dyn Fn(&mut Claims)>;
+        let cases: Vec<(Edit, StatusCode, &str)> = vec![
+            (
+                Box::new(|c| c.aud = "https://other-proxy.example".into()),
+                StatusCode::UNAUTHORIZED,
+                "wrong_audience",
+            ),
+            (
+                Box::new(|c| c.exp = crate::now_secs() - 1),
+                StatusCode::UNAUTHORIZED,
+                "capability_expired",
+            ),
+            (
+                Box::new(|c| c.exp = crate::now_secs() + crate::capability::MAX_LIFETIME_SECS + 60),
+                StatusCode::UNAUTHORIZED,
+                "capability_too_long",
+            ),
+            (
+                Box::new(|c| c.platform = "github-issues".into()),
+                StatusCode::FORBIDDEN,
+                "capability_scope",
+            ),
+            (
+                Box::new(|c| c.connection_id = crate::connect::random()),
+                StatusCode::FORBIDDEN,
+                "capability_scope",
+            ),
+            (
+                Box::new(|c| c.app = Agent::new(46).id()),
+                StatusCode::FORBIDDEN,
+                "not_delegated",
+            ),
+        ];
+        for (edit, status, code) in cases {
+            let mut claims = f.claims(&app, &frame);
+            edit(&mut claims);
+            let token = mint(&f.owner, &claims);
+            expect_error(f.frame_get(&token, &frame).await, status, code).await;
+        }
+        // Minted by someone other than the connection owner (even by the
+        // delegated app itself).
+        let token = mint(&app, &f.claims(&app, &frame));
+        expect_error(
+            f.frame_get(&token, &frame).await,
+            StatusCode::UNAUTHORIZED,
+            "invalid_capability",
+        )
+        .await;
+        // #72's v1 bearer capability is gone.
+        let v1 = format!(
+            "{}.sig",
+            base64::Engine::encode(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+                format!(
+                    r#"{{"v":1,"connection_id":"{}","platform":"clockify","exp":1}}"#,
+                    f.id
+                )
+            )
+        );
+        expect_error(
+            f.frame_get(&v1, &frame).await,
+            StatusCode::UNAUTHORIZED,
+            "invalid_capability",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials; CI runs it"]
+    async fn postgres_concurrent_requests_refresh_an_expired_token_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let token_requests = std::sync::Arc::new(AtomicUsize::new(0));
-        let item_requests = std::sync::Arc::new(AtomicUsize::new(0));
         let token_counter = token_requests.clone();
-        let item_counter = item_requests.clone();
         let upstream = axum::Router::new()
             .route(
                 "/token",
@@ -983,339 +1268,86 @@ mod tests {
                         assert!(String::from_utf8(body.to_vec())
                             .unwrap()
                             .contains("grant_type=refresh_token"));
-                        Json(json!({"access_token": "refreshed-token", "expires_in": 3600}))
+                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                        axum::Json(json!({"access_token": "refreshed-token", "expires_in": 3600, "refresh_token": "rotated-refresh"}))
                     }
                 }),
             )
             .route(
                 "/items",
-                axum::routing::get(move |headers: HeaderMap| {
-                    let item_counter = item_counter.clone();
-                    async move {
-                        item_counter.fetch_add(1, Ordering::SeqCst);
-                        assert_eq!(
-                            headers.get(AUTHORIZATION).unwrap(),
-                            "Bearer refreshed-token"
-                        );
-                        (
-                            [
-                                (header::ETAG, "\"v1\""),
-                                (header::LINK, "<https://example/items?page=2>; rel=\"next\""),
-                            ],
-                            Json(json!([{"id": 1}])),
-                        )
-                    }
+                axum::routing::get(|headers: HeaderMap| async move {
+                    assert_eq!(headers.get(AUTHORIZATION).unwrap(), "Bearer refreshed-token");
+                    (
+                        [(header::ETAG, "\"v1\""), (header::LINK, "<https://example/items?page=2>; rel=\"next\"")],
+                        axum::Json(json!([{"id": 1}])),
+                    )
                 }),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security = crate::security::Security::connect(
-            &db,
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            vec![],
-        )
-        .await
-        .unwrap();
-
-        let document = json!({
-            "servers": [{"url": upstream_url}],
-            "components": {"securitySchemes": {"oauth": {"type": "oauth2", "flows": {
-                "authorizationCode": {
-                    "authorizationUrl": "https://auth.example/authorize",
-                    "tokenUrl": "https://auth.example/token",
-                    "scopes": {"read": "Read items"}
-                }
-            }}}},
-            "security": [{"oauth": ["read"]}],
-            "paths": {"/items": {"get": {}}}
-        });
-        let mut state = test_state("server-secret");
-        state.catalog =
-            crate::catalog::Catalog::from_test_document("github-issues", document, json!({}));
-        state.security = Some(security.clone());
-        state.test_upstream = Some(upstream_url);
-
-        let credential = StoredCredential::OAuth {
+        let security = security().await;
+        let mut s = state(Some(security.clone()));
+        s.catalog = crate::catalog::Catalog::from_test_document(
+            "github-issues",
+            json!({
+                "servers": [{"url": upstream_url}],
+                "components": {"securitySchemes": {"oauth": {"type": "oauth2", "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://auth.example/authorize",
+                        "tokenUrl": "https://auth.example/token",
+                        "scopes": {"read": "Read items"}
+                    }
+                }}}},
+                "security": [{"oauth": ["read"]}],
+                "paths": {"/items": {"get": {}}}
+            }),
+            json!({}),
+        );
+        s.test_upstream = Some(upstream_url);
+        let owner = Agent::new(47);
+        let credential = serde_json::to_vec(&StoredCredential::OAuth {
             provider: "github-issues".into(),
-            tenant_id: "tenant".into(),
-            user_id: "user".into(),
             access_token: "stale-token".into(),
             refresh_token: Some("a-refresh-token".into()),
             expires_at: Some(0),
-        };
-        let envelope = security
-            .seal(
-                &serde_json::to_vec(&credential).unwrap(),
-                b"connection-credential-v1",
-            )
-            .unwrap();
-        let old_code = "e2e-test-connection-code";
-        security
-            .store_connection_code(old_code, &envelope)
+        })
+        .unwrap();
+        let id = security
+            .create_connection("github-issues", &owner.id(), &credential)
             .await
             .unwrap();
-
-        let response = crate::router(state)
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri("/proxy/github-issues/items")
-                    .header(AUTHORIZATION, format!("Bearer {old_code}"))
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(token_requests.load(Ordering::SeqCst), 1);
-        assert_eq!(item_requests.load(Ordering::SeqCst), 1);
-        let new_code = response
-            .headers()
-            .get("x-connection-code")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert_ne!(new_code, old_code);
-        assert_eq!(response.headers()[header::ETAG], "\"v1\"");
-        assert!(response.headers().get(header::LINK).is_some());
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
-            json!([{"id": 1}])
+        let path = format!("/proxy/{id}/github-issues/items");
+        let (a, b) = tokio::join!(
+            crate::router(s.clone()).oneshot(signed_request(&s, &owner, "GET", &path, vec![])),
+            crate::router(s.clone()).oneshot(signed_request(&s, &owner, "GET", &path, vec![])),
         );
-
-        // The old code is single-use and already consumed.
-        assert!(security
-            .take_connection_code(old_code)
-            .await
-            .unwrap()
-            .is_none());
-        // The rotated code is valid and carries the refreshed credential.
-        let rotated_envelope = security
-            .take_connection_code(&new_code)
-            .await
-            .unwrap()
-            .unwrap();
-        let plaintext = security
-            .open(&rotated_envelope, b"connection-credential-v1")
-            .unwrap();
-        let rotated: StoredCredential = serde_json::from_slice(&plaintext).unwrap();
-        match rotated {
-            StoredCredential::OAuth { access_token, .. } => {
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(a.status(), StatusCode::OK);
+        assert_eq!(b.status(), StatusCode::OK);
+        assert_eq!(a.headers()[header::ETAG], "\"v1\"");
+        assert!(a.headers().get(header::LINK).is_some());
+        assert_eq!(token_requests.load(Ordering::SeqCst), 1);
+        let stored: StoredCredential = serde_json::from_slice(
+            &security
+                .load_connection(&id)
+                .await
+                .unwrap()
+                .unwrap()
+                .credential,
+        )
+        .unwrap();
+        match stored {
+            StoredCredential::OAuth {
+                access_token,
+                refresh_token,
+                ..
+            } => {
                 assert_eq!(access_token, "refreshed-token");
+                assert_eq!(refresh_token.as_deref(), Some("rotated-refresh"));
             }
             StoredCredential::ApiKey { .. } => panic!("expected an OAuth credential"),
         }
-
         server.abort();
-    }
-
-    fn logged_in_jar(key: Key) -> (PrivateCookieJar, crate::session::SessionUser) {
-        let user = crate::session::SessionUser::new(
-            "oidc-sub-123".to_string(),
-            "user@example.com".to_string(),
-            "Test User".to_string(),
-            None,
-        );
-        let jar = session::set_session(PrivateCookieJar::new(key), &user);
-        (jar, user)
-    }
-
-    fn connect_params(state: &AppState, redirect_uri: &str) -> ConnectParams {
-        let ts = now();
-        let nonce = "test-nonce".to_string();
-        let challenge = challenge(&state.server_secret, ts, &nonce);
-        let tenant_id = "tenant-123".to_string();
-        let user_id = "user-123".to_string();
-        let secret = tenant_secret::derive(&state.server_secret, &tenant_id);
-        ConnectParams {
-            redirect_uri: redirect_uri.to_string(),
-            ts,
-            nonce,
-            challenge: challenge.clone(),
-            tenant_id,
-            user_id: user_id.clone(),
-            user_id_sig: tenant_secret::sign(&secret, &user_id),
-            response: tenant_secret::sign(&secret, &challenge),
-        }
-    }
-
-    #[test]
-    fn connect_url_encodes_the_redirect_uri() {
-        let url = connect_url("https://example.com/cb?x=1&y=2");
-        assert_eq!(
-            url,
-            "/connect?redirect_uri=https%3A%2F%2Fexample.com%2Fcb%3Fx%3D1%26y%3D2"
-        );
-    }
-
-    #[tokio::test]
-    async fn connect_page_rejects_invalid_redirect_uri() {
-        let state = test_state("server-secret");
-        let jar = PrivateCookieJar::new(Key::generate());
-        let err = connect_page(
-            State(state),
-            Query(connect_params(&test_state("server-secret"), "not a url")),
-            jar,
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, ConnectError::InvalidRedirect));
-    }
-
-    #[tokio::test]
-    async fn connect_page_sends_signed_out_visitor_to_login() {
-        let state = test_state("server-secret");
-        let jar = PrivateCookieJar::new(Key::generate());
-        let response = connect_page(
-            State(state.clone()),
-            Query(connect_params(&state, "https://example.com/cb")),
-            jar,
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        assert_eq!(
-            response.headers().get(header::LOCATION).unwrap(),
-            "/auth/login"
-        );
-    }
-
-    #[tokio::test]
-    async fn connect_page_shows_consent_screen_when_signed_in() {
-        let state = test_state("server-secret");
-        let (jar, _) = logged_in_jar(Key::generate());
-        let response = connect_page(
-            State(state.clone()),
-            Query(connect_params(&state, "https://example.com/cb")),
-            jar,
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn connect_confirm_rejects_an_invalid_tenant_session() {
-        let jar = PrivateCookieJar::new(Key::generate());
-        let state = test_state("server-secret");
-        let err = connect_confirm(
-            State(state),
-            jar,
-            Form(ConnectConfirmForm {
-                redirect_uri: "https://example.com/cb".to_string(),
-                ts: 0,
-                nonce: "x".into(),
-                challenge: "x".into(),
-                tenant_id: "x".into(),
-                user_id: "x".into(),
-                user_id_sig: "x".into(),
-                response: "x".into(),
-            }),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, ConnectError::InvalidSession));
-    }
-
-    #[tokio::test]
-    async fn connect_confirm_redirects_with_the_tenant_secret() {
-        let key = Key::generate();
-        let (jar, user) = logged_in_jar(key);
-        let state = test_state("server-secret");
-        let expected_secret = tenant_secret::derive(&state.server_secret, &user.subject);
-
-        let redirect = connect_confirm(
-            State(state),
-            jar,
-            Form(ConnectConfirmForm {
-                redirect_uri: "https://example.com/cb?existing=1".to_string(),
-                ts: now(),
-                nonce: "test-nonce".into(),
-                challenge: challenge("server-secret", now(), "test-nonce"),
-                tenant_id: "tenant".into(),
-                user_id: "user".into(),
-                user_id_sig: tenant_secret::sign(
-                    &tenant_secret::derive("server-secret", "tenant"),
-                    "user",
-                ),
-                response: tenant_secret::sign(
-                    &tenant_secret::derive("server-secret", "tenant"),
-                    &challenge("server-secret", now(), "test-nonce"),
-                ),
-            }),
-        )
-        .await
-        .unwrap();
-
-        let location = redirect
-            .into_response()
-            .headers()
-            .get(header::LOCATION)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        let url = Url::parse(&location).unwrap();
-        assert_eq!(url.origin().ascii_serialization(), "https://example.com");
-        assert_eq!(url.path(), "/cb");
-        let pairs: Vec<_> = url.query_pairs().collect();
-        assert!(pairs.iter().any(|(k, v)| k == "existing" && v == "1"));
-        assert!(pairs
-            .iter()
-            .any(|(k, v)| k == "secret" && v == expected_secret.as_str()));
-    }
-
-    #[tokio::test]
-    async fn proxy_accepts_a_valid_bearer_secret() {
-        let state = test_state("server-secret");
-        let secret = tenant_secret::derive(&state.server_secret, "oidc-sub-123");
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {secret}")).unwrap(),
-        );
-
-        let response = proxy(State(state), headers).await;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn proxy_rejects_a_missing_bearer_header() {
-        let state = test_state("server-secret");
-        let response = proxy(State(state), HeaderMap::new()).await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn proxy_rejects_an_invalid_bearer_secret() {
-        let state = test_state("server-secret");
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer garbage"));
-
-        let response = proxy(State(state), headers).await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn proxy_rejects_a_secret_signed_with_a_different_server_secret() {
-        let state = test_state("server-secret");
-        let secret = tenant_secret::derive("a-different-secret", "oidc-sub-123");
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {secret}")).unwrap(),
-        );
-
-        let response = proxy(State(state), headers).await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }
