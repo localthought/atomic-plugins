@@ -1,5 +1,11 @@
-//! Stateless OAuth/catalog integration proxy for LocalThought and Atomic
-//! Server clients.
+//! OAuth/catalog integration proxy for Atomic Server and LocalThought
+//! clients.
+//!
+//! Clients authenticate with their Atomic agent key (issue #54): every
+//! request that matters carries an Atomic v2 request signature, a connection
+//! is owned by the agent that redeemed it, and apps use it through
+//! owner-signed delegations. There are no accounts, logins, tenants or
+//! rotating codes.
 //!
 //! This crate is the whole service; the `integration-proxy` binary in this
 //! package, and any deployment wrapper (e.g. the Heroku app that serves
@@ -11,7 +17,8 @@
 //!   README.
 //! - [`build_app`] — loads the catalog, connects to PostgreSQL and returns the
 //!   ready-to-serve [`axum::Router`], for callers that bind or wrap it
-//!   themselves.
+//!   themselves. [`build_app_with_access`] does the same with a custom
+//!   [`AccessPolicy`] (e.g. a SaaS account and tier lookup).
 //! - [`serve`] — [`build_app`] plus binding `0.0.0.0:{config.port}` and
 //!   serving until the listener fails.
 //! - [`run`] — what the bundled binary does: initialise `tracing` from
@@ -30,54 +37,54 @@
 //! Everything else (route handlers, catalog composition, the security
 //! store) is private and may change in any release.
 
-mod api_login;
-#[cfg(test)]
-mod api_login_flow_tests;
-mod auth;
+mod access;
+mod agent_id;
+mod api_error;
+mod capability;
 mod catalog;
 mod config;
 mod connect;
-mod identity;
+mod connections;
 #[cfg(test)]
 mod identity_catalog_tests;
-#[cfg(test)]
-mod identity_policy_tests;
 mod oauth;
-#[allow(dead_code)] // used by the provider OAuth routes introduced with issue #9
 mod providers;
 mod proxy;
 mod security;
-mod session;
+mod signature;
 mod templates;
-mod tenant_secret;
+#[cfg(test)]
+mod test_support;
+
+use std::sync::Arc;
 
 use axum::{
     extract::{FromRef, State},
     response::Html,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
-use axum_extra::extract::{cookie::Key, PrivateCookieJar};
-use oauth2::basic::BasicClient;
+use axum_extra::extract::cookie::Key;
 use sha2::{Digest, Sha512};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+pub use access::{Access, AccessPolicy, AllowAll, EnvAccessPolicy};
+pub use agent_id::{parse as parse_agent_id, AgentId};
 pub use config::{Config, DEFAULT_CATALOG_PATH};
 
 #[derive(Clone)]
 struct AppState {
-    oauth_client: BasicClient,
-    app_auth_userinfo_url: String,
-    app_auth_label: String,
-    app_auth_identity_namespace: Option<String>,
     http_client: reqwest::Client,
-    identity_http_client: reqwest::Client,
     key: Key,
-    server_secret: String,
+    /// `Config::base_url`, trailing `/` trimmed: the signed URL's prefix.
     base_url: String,
+    /// `Config::public_origin`: a capability's `aud`, and the only `Origin`
+    /// accepted on the consent form.
+    public_origin: String,
     catalog: catalog::Catalog,
     security: Option<security::Security>,
+    access: Arc<dyn AccessPolicy>,
     #[cfg(test)]
     test_upstream: Option<String>,
 }
@@ -85,6 +92,31 @@ struct AppState {
 impl FromRef<AppState> for Key {
     fn from_ref(state: &AppState) -> Self {
         state.key.clone()
+    }
+}
+
+pub(crate) fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock before epoch")
+        .as_secs()
+}
+
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock before epoch")
+        .as_millis() as u64
+}
+
+/// Asks the access policy about `owner`.
+pub(crate) async fn check_access(
+    state: &AppState,
+    owner: &AgentId,
+) -> Result<(), api_error::ApiError> {
+    match state.access.check(owner).await {
+        Access::Allowed => Ok(()),
+        Access::Denied(reason) => Err(api_error::ApiError::AccessDenied(reason)),
     }
 }
 
@@ -103,22 +135,12 @@ fn build_http_client() -> reqwest::Client {
         .expect("failed to build HTTP client")
 }
 
-fn build_identity_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent("LocalThought-integration-proxy")
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .expect("failed to build identity HTTP client")
-}
-
 /// A failure while starting or running the proxy. The [`std::fmt::Display`]
 /// form is the one-line message the binary prints before exiting.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// Missing or invalid environment configuration, or an OIDC client that
-    /// cannot be built from it.
+    /// Missing or invalid environment configuration.
     Config(String),
     /// The catalog at `CATALOG_PATH` could not be loaded or composed.
     Catalog(String),
@@ -156,49 +178,52 @@ impl std::error::Error for Error {
     }
 }
 
-/// Builds the complete application router from `config`: the application
-/// OIDC client, the session-cookie key, the composed catalog (fetched from
-/// `config.catalog_path`, which may be an HTTPS URL) and the PostgreSQL-backed
-/// security store. The returned router already carries CORS and request
-/// tracing layers.
+/// Builds the complete application router from `config`, with the default
+/// [`EnvAccessPolicy`] (`REVOKED_SUBJECTS`, `ALLOWED_AGENTS`).
 pub async fn build_app(config: &Config) -> Result<Router, Error> {
-    let oauth_client = auth::build_client(config).map_err(Error::Config)?;
+    let access = EnvAccessPolicy::new(
+        config.allowed_agents.clone(),
+        config.revoked_subjects.clone(),
+    );
+    build_app_with_access(config, Arc::new(access)).await
+}
 
+/// Builds the complete application router from `config`: the cookie key, the
+/// composed catalog (fetched from `config.catalog_path`, which may be an
+/// HTTPS URL) and the PostgreSQL-backed store, admitting connection owners
+/// through `access`. The returned router already carries CORS and request
+/// tracing layers.
+pub async fn build_app_with_access(
+    config: &Config,
+    access: Arc<dyn AccessPolicy>,
+) -> Result<Router, Error> {
+    let base_url = config::validate_base_url(&config.base_url).map_err(Error::Config)?;
     let key = match &config.session_secret {
         Some(secret) => Key::from(&Sha512::digest(secret.as_bytes())),
         None => {
             tracing::warn!(
-                "SESSION_SECRET is not set; using a random key. Sessions will not survive a restart."
+                "SESSION_SECRET is not set; using a random key. A consent screen open during a restart must be started again."
             );
             Key::generate()
         }
     };
 
     let http_client = build_http_client();
-    let identity_http_client = build_identity_http_client();
     let catalog = catalog::Catalog::load(&config.catalog_path, &http_client)
         .await
         .map_err(Error::Catalog)?;
-    let security = security::Security::connect(
-        &config.database_url,
-        &config.encryption_key,
-        config.revoked_subjects.clone(),
-    )
-    .await
-    .map_err(Error::Security)?;
+    let security = security::Security::connect(&config.database_url, &config.encryption_key)
+        .await
+        .map_err(Error::Security)?;
 
     let state = AppState {
-        oauth_client,
-        app_auth_userinfo_url: config.app_auth_userinfo_url.clone(),
-        app_auth_label: config.app_auth_label.clone(),
-        app_auth_identity_namespace: config.app_auth_identity_namespace.clone(),
         http_client,
-        identity_http_client,
         key,
-        server_secret: config.server_secret.clone(),
-        base_url: config.base_url.clone(),
+        base_url,
+        public_origin: config.public_origin(),
         catalog,
         security: Some(security),
+        access,
         #[cfg(test)]
         test_upstream: None,
     };
@@ -212,7 +237,7 @@ pub async fn serve(config: Config) -> Result<(), Error> {
     let app = build_app(&config).await?;
 
     let addr = format!("0.0.0.0:{}", config.port);
-    tracing::info!("auth-proxy listening on http://{addr}");
+    tracing::info!("integration-proxy listening on http://{addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -245,8 +270,10 @@ pub async fn run() -> std::process::ExitCode {
     }
 }
 
-// Bearer credentials are explicitly supplied by the browser. Never enable
-// cookie credentials: login/consent remain top-level navigations.
+// Signatures and capabilities are supplied explicitly by the caller, never
+// as cookies, so any origin may call, including a plugin's null-origin
+// frame. Never enable cookie credentials: consent remains a top-level
+// navigation.
 fn browser_cors() -> tower_http::cors::CorsLayer {
     use axum::http::{header, HeaderName, Method};
     use tower_http::cors::{Any, CorsLayer};
@@ -264,9 +291,14 @@ fn browser_cors() -> tower_http::cors::CorsLayer {
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::IF_MATCH,
+            HeaderName::from_static(signature::AGENT_HEADER),
+            HeaderName::from_static(signature::PUBLIC_KEY_HEADER),
+            HeaderName::from_static(signature::TIMESTAMP_HEADER),
+            HeaderName::from_static(signature::SIGNATURE_HEADER),
+            HeaderName::from_static(signature::VERSION_HEADER),
         ])
         .expose_headers([
-            HeaderName::from_static("x-connection-code"),
+            header::CONTENT_TYPE,
             header::LINK,
             header::RETRY_AFTER,
             header::ETAG,
@@ -280,17 +312,25 @@ fn router(state: AppState) -> Router {
         .route("/", get(home))
         .route("/healthz", get(healthz))
         .route("/logo.png", get(logo))
-        .route("/auth/login", get(auth::login))
-        .route("/auth/login/:platform", get(api_login::start))
-        .route("/auth/callback", get(auth::callback))
-        .route("/auth/logout", post(auth::logout))
-        .route("/connect", get(connect::page).post(proxy::connect_confirm))
+        .route("/connect", get(connect::page))
         .route("/connect/authorize", post(connect::authorize))
         .route("/connect/redeem", post(connect::redeem))
-        .route("/proxy", axum::routing::any(proxy::proxy))
-        .route("/proxy/*path", axum::routing::any(proxy::forward))
-        .route("/session", get(proxy::session_challenge))
-        .route("/oauth/:provider/start", get(oauth::start))
+        .route("/connections", get(connections::list))
+        .route("/connections/:connection_id", delete(connections::delete))
+        .route(
+            "/connections/:connection_id/agents",
+            post(connections::add_agent),
+        )
+        .route(
+            "/connections/:connection_id/agents/:agent",
+            delete(connections::remove_agent),
+        )
+        .route("/runtimes", post(connections::add_runtime))
+        .route("/runtimes/:agent", delete(connections::remove_runtime))
+        .route(
+            "/proxy/:connection_id/:platform/*path",
+            axum::routing::any(proxy::forward),
+        )
         .route("/oauth/:provider/callback", get(oauth::callback))
         .route("/catalog", get(catalog::list))
         .route("/catalog/:file", get(catalog::document))
@@ -322,24 +362,8 @@ async fn logo() -> impl axum::response::IntoResponse {
     )
 }
 
-async fn home(State(state): State<AppState>, jar: PrivateCookieJar) -> Html<String> {
-    let user = session::read_session(&jar);
-    let tenant_secret = user
-        .as_ref()
-        .map(|u| tenant_secret::derive(&state.server_secret, &u.subject));
-    Html(templates::render_home(
-        user.as_ref(),
-        tenant_secret.as_deref(),
-        user.as_ref()
-            .and_then(|user| user.identity_label.as_deref())
-            .unwrap_or(&state.app_auth_label),
-        &state
-            .catalog
-            .names()
-            .into_iter()
-            .filter(|platform| state.catalog.tenant_identity(platform).is_ok())
-            .collect::<Vec<_>>(),
-    ))
+async fn home() -> Html<String> {
+    Html(templates::render_home())
 }
 
 #[cfg(test)]
@@ -352,32 +376,19 @@ mod browser_tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn browser_preflight_and_rotation_headers() {
-        let app = Router::new()
-            .route(
-                "/proxy/pets",
-                get(|| async {
-                    (
-                        [
-                            ("x-connection-code", "rotated"),
-                            ("link", "</next>; rel=next"),
-                        ],
-                        "[]",
-                    )
-                }),
-            )
-            .layer(browser_cors());
+    async fn a_null_origin_frame_may_preflight_signed_proxy_requests() {
+        let app = test_support::router_without_database();
         let response = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("OPTIONS")
-                    .uri("/proxy/pets")
-                    .header("origin", "https://atomic.example")
+                    .uri("/proxy/conn/pets/pets")
+                    .header("origin", "null")
                     .header("access-control-request-method", "PATCH")
                     .header(
                         "access-control-request-headers",
-                        "authorization,content-type,if-match",
+                        "authorization,content-type,if-match,x-atomic-agent,x-atomic-public-key,x-atomic-timestamp,x-atomic-signature,x-atomic-signature-version",
                     )
                     .body(Body::empty())
                     .unwrap(),
@@ -386,22 +397,30 @@ mod browser_tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["access-control-allow-origin"], "*");
-        assert!(response.headers()["access-control-allow-headers"]
+        let allowed = response.headers()["access-control-allow-headers"]
             .to_str()
             .unwrap()
-            .contains("authorization"));
-        assert!(response.headers()["access-control-allow-headers"]
-            .to_str()
-            .unwrap()
-            .contains("if-match"));
+            .to_owned();
+        for name in [
+            "authorization",
+            "content-type",
+            "if-match",
+            "x-atomic-agent",
+            "x-atomic-public-key",
+            "x-atomic-timestamp",
+            "x-atomic-signature",
+            "x-atomic-signature-version",
+        ] {
+            assert!(allowed.contains(name), "{name} not in {allowed}");
+        }
         assert!(!response
             .headers()
             .contains_key("access-control-allow-credentials"));
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/proxy/pets")
-                    .header("origin", "https://atomic.example")
+                    .uri("/catalog")
+                    .header("origin", "null")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -410,7 +429,9 @@ mod browser_tests {
         let exposed = response.headers()["access-control-expose-headers"]
             .to_str()
             .unwrap();
-        assert!(exposed.contains("x-connection-code"));
-        assert!(exposed.contains("link"));
+        for name in ["link", "retry-after", "etag", "content-type"] {
+            assert!(exposed.contains(name), "{name} not in {exposed}");
+        }
+        assert!(!exposed.contains("x-connection-code"));
     }
 }

@@ -1,8 +1,24 @@
-//! Browser bootstrap: application identity, explicit platform consent, and a PKCE handoff.
-use crate::{oauth, providers::Provider, security::Security, session, templates, AppState};
+//! Connecting a provider (issue #54, section 4).
+//!
+//! 1. The data browser opens `/connect?platform&redirect_uri&code_challenge&code_challenge_method=S256`.
+//!    There is no proxy login and no `user_id`: this page is a consent
+//!    screen naming the platform and where the browser will return to.
+//! 2. `POST /connect/authorize` sends the browser to the provider's OAuth,
+//!    or, for an API-key platform, seals the key pasted on the consent page.
+//! 3. The provider callback (`oauth.rs`) sends the browser back to
+//!    `redirect_uri?connection_code=<handoff>`; the handoff is single-use,
+//!    valid five minutes, and bound to the PKCE challenge.
+//! 4. `POST /connect/redeem`, signed with the user's key (Atomic v2), carries
+//!    the handoff and the PKCE verifier. The signer becomes the connection's
+//!    owner. Only the page that started the flow holds the verifier, so only
+//!    it can redeem, and it must also prove possession of the owner's key.
+use crate::{
+    api_error::ApiError, oauth, providers::Provider, security::Security, templates, AppState,
+};
 use axum::{
+    body::Bytes,
     extract::{Form, OriginalUri, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, Method, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     Json,
 };
@@ -18,24 +34,16 @@ use url::Url;
 
 const CONSENT_COOKIE: &str = "platform_consent";
 const PROVIDER_COOKIE: &str = "platform_oauth";
-const HANDOFF_AAD: &[u8] = b"platform-handoff-v1";
+const HANDOFF_AAD: &[u8] = b"platform-handoff-v2";
+pub(crate) const OAUTH_CONTEXT_AAD: &[u8] = b"platform-oauth-v2";
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum Credentials {
-    #[serde(rename = "connection")]
-    Connection,
-    #[serde(rename = "connection+tenant_secret")]
-    ConnectionAndTenantSecret,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
+/// A validated `/connect` request.
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Request {
     pub platform: String,
     pub redirect_uri: String,
-    pub user_id: String,
     pub code_challenge: String,
     pub code_challenge_method: String,
-    pub credentials: Credentials,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -45,26 +53,20 @@ struct Consent {
     expires: u64,
 }
 
+/// What travels (sealed) through the provider's authorization.
 #[derive(Deserialize, Serialize)]
 pub struct OAuthContext {
     pub request: Request,
+    /// Random value also stored in a cookie, binding the callback to the
+    /// browser that approved the consent screen.
     pub binding: String,
-    pub mode: BootstrapMode,
 }
 
-#[derive(Deserialize, Serialize, Clone, PartialEq, Eq)]
-pub enum BootstrapMode {
-    Bootstrap,
-    ExistingTenant { tenant_id: String },
-}
-
+/// What a handoff code redeems to.
 #[derive(Deserialize, Serialize)]
 struct Handoff {
     platform: String,
-    tenant_id: String,
-    user_id: String,
-    credential: String,
-    include_tenant_secret: bool,
+    credential: crate::proxy::StoredCredential,
 }
 
 pub fn random() -> String {
@@ -84,25 +86,30 @@ pub fn pkce_challenge(verifier: &str) -> Option<String> {
     Some(URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())))
 }
 
+/// The Tauri app's deep-link scheme (decision 4). The OS hands such a URL to
+/// the app; the provider itself only ever sees the proxy's `https` callback.
+const DEEP_LINK_SCHEME: &str = "atomic";
+
 impl Request {
     fn validate(&self) -> Result<Url, &'static str> {
         let url = Url::parse(&self.redirect_uri).map_err(|_| "Invalid return address")?;
         let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        let scheme_ok = url.scheme() == "https"
+            || (url.scheme() == "http" && loopback)
+            || url.scheme() == DEEP_LINK_SCHEME;
         if self.redirect_uri.len() > 1500
-            || url.host_str().is_none()
-            || !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
+            || url.host_str().is_none_or(str::is_empty)
+            || !scheme_ok
             || !url.username().is_empty()
             || url.password().is_some()
             || url.fragment().is_some()
             || url
                 .query_pairs()
-                .any(|(name, _)| matches!(name.as_ref(), "connection_code" | "error" | "secret"))
+                .any(|(name, _)| matches!(name.as_ref(), "connection_code" | "error"))
         {
             return Err("Invalid return address");
         }
-        if self.user_id.is_empty()
-            || self.user_id.len() > 512
-            || self.code_challenge_method != "S256"
+        if self.code_challenge_method != "S256"
             || self.code_challenge.len() != 43
             || URL_SAFE_NO_PAD
                 .decode(&self.code_challenge)
@@ -113,52 +120,29 @@ impl Request {
         }
         Ok(url)
     }
+}
 
-    fn local_url(&self) -> String {
-        let mut query = url::form_urlencoded::Serializer::new(String::new());
-        query
-            .append_pair("platform", &self.platform)
-            .append_pair("redirect_uri", &self.redirect_uri)
-            .append_pair("user_id", &self.user_id)
-            .append_pair("code_challenge", &self.code_challenge)
-            .append_pair("code_challenge_method", &self.code_challenge_method)
-            .append_pair(
-                "credentials",
-                match self.credentials {
-                    Credentials::Connection => "connection",
-                    Credentials::ConnectionAndTenantSecret => "connection+tenant_secret",
-                },
-            );
-        format!("/connect?{}", query.finish())
+/// How the consent page names where the browser returns to: the origin for
+/// a web address, the scheme and host for the app's deep link.
+fn destination_label(url: &Url) -> String {
+    if url.scheme() == DEEP_LINK_SCHEME {
+        format!(
+            "the Atomic app ({}://{})",
+            url.scheme(),
+            url.host_str().unwrap_or("")
+        )
+    } else {
+        url.origin().ascii_serialization()
     }
 }
 
-/// Only a previously validated, cookie-stored bootstrap request can redirect a login cancellation.
-pub fn cancel_login_target(target: &str) -> Option<String> {
-    if !target.starts_with("/connect?") {
-        return None;
+/// The CSP source that lets the consent form's redirect chain end at `url`.
+fn form_action_source(url: &Url) -> String {
+    if url.scheme() == DEEP_LINK_SCHEME {
+        format!("{DEEP_LINK_SCHEME}:")
+    } else {
+        url.origin().ascii_serialization()
     }
-    let uri: axum::http::Uri = target.parse().ok()?;
-    let Query(request) = Query::<Request>::try_from_uri(&uri).ok()?;
-    let mut destination = request.validate().ok()?;
-    destination
-        .query_pairs_mut()
-        .append_pair("error", "access_denied");
-    Some(destination.into())
-}
-
-/// The only return target a standalone API login can inherit is the complete,
-/// encrypted browser bootstrap request already validated by this module.
-pub(crate) fn validated_login_return(jar: &PrivateCookieJar) -> Option<String> {
-    let target = session::read_connect_redirect(jar)?;
-    let uri: axum::http::Uri = target.parse().ok()?;
-    let Query(request) = Query::<Request>::try_from_uri(&uri).ok()?;
-    request.validate().ok()?;
-    Some(request.local_url())
-}
-
-pub fn clear_consent(jar: PrivateCookieJar) -> PrivateCookieJar {
-    jar.remove(Cookie::build(CONSENT_COOKIE).path("/").build())
 }
 
 pub(crate) fn protected(response: impl IntoResponse) -> Response {
@@ -187,32 +171,15 @@ fn private_cookie(name: &'static str, value: String) -> Cookie<'static> {
         .build()
 }
 
+/// `GET /connect`: the consent screen.
 pub async fn page(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
     jar: PrivateCookieJar,
 ) -> Response {
-    let is_browser =
-        url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).any(|(key, _)| {
-            matches!(
-                key.as_ref(),
-                "code_challenge" | "code_challenge_method" | "credentials"
-            )
-        });
-    let request = if is_browser {
-        match Query::<Request>::try_from_uri(&uri) {
-            Ok(Query(request)) => request,
-            Err(_) => return error("Invalid connection request"),
-        }
-    } else {
-        let params = match Query::<crate::proxy::ConnectParams>::try_from_uri(&uri) {
-            Ok(params) => params,
-            Err(_) => return error("Invalid connection request; start again from your hub"),
-        };
-        return match crate::proxy::connect_page(State(state), params, jar).await {
-            Ok(response) => protected(response),
-            Err(err) => protected(err),
-        };
+    let request = match Query::<Request>::try_from_uri(&uri) {
+        Ok(Query(request)) => request,
+        Err(_) => return error("Invalid connection request; start again from your hub"),
     };
     let target = match request.validate() {
         Ok(target) => target,
@@ -233,74 +200,46 @@ pub async fn page(
     let consent = Consent {
         request: request.clone(),
         csrf: random(),
-        expires: crate::proxy::now_unix() + 600,
+        expires: crate::now_secs() + 600,
     };
-    let user = session::read_session(&jar);
-    let bootstrap_identity =
-        user.is_none() && state.catalog.tenant_identity(&request.platform).is_ok();
-    let api_login_platforms = state
-        .catalog
-        .names()
-        .into_iter()
-        .filter(|platform| state.catalog.tenant_identity(platform).is_ok())
-        .collect::<Vec<_>>();
     let jar = jar.add(private_cookie(
         CONSENT_COOKIE,
         serde_json::to_string(&consent).unwrap(),
     ));
-    // Preserve the entire selected-platform request through application authentication.
-    let jar = if user.is_none() {
-        session::set_connect_redirect(jar, &request.local_url())
-    } else {
-        jar
-    };
     let mut response = protected((
         jar,
         Html(templates::render_platform_connect(
-            user.as_ref(),
             &request.platform,
-            &target.origin().ascii_serialization(),
+            &destination_label(&target),
             &consent.csrf,
-            request.credentials == Credentials::ConnectionAndTenantSecret,
-            user.as_ref()
-                .and_then(|user| user.identity_label.as_deref())
-                .unwrap_or(&state.app_auth_label),
-            bootstrap_identity,
-            &api_login_platforms,
             matches!(scheme, crate::providers::SecurityScheme::ApiKey(_)),
         )),
     ));
     // Keep the consent form's same-origin POST attributable while sending no
-    // referrer to the configured identity provider or selected provider.
+    // referrer to the selected provider.
     response
         .headers_mut()
         .insert(header::REFERRER_POLICY, "same-origin".parse().unwrap());
-    // Chrome applies form-action to redirects too, including an already-authorized
-    // provider returning straight through its callback to the hub. An apiKey
-    // platform never redirects to a third party, so only the caller's own
-    // redirect_uri origin needs allowing.
+    // Chrome applies form-action to redirects too, including an
+    // already-authorized provider returning straight through its callback to
+    // the hub. An apiKey platform never redirects to a third party, so only
+    // the caller's own redirect_uri needs allowing.
+    let base = response.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .to_owned();
     let policy = match &scheme {
-        crate::providers::SecurityScheme::OAuth(provider) => {
-            let provider_origin = Url::parse(&provider.authorization_url)
+        crate::providers::SecurityScheme::OAuth(provider) => format!(
+            "{base}; form-action 'self' {} {}",
+            Url::parse(&provider.authorization_url)
                 .unwrap()
                 .origin()
-                .ascii_serialization();
-            format!(
-                "{}; form-action 'self' {} {}",
-                response.headers()["content-security-policy"]
-                    .to_str()
-                    .unwrap(),
-                provider_origin,
-                target.origin().ascii_serialization()
-            )
-        }
-        crate::providers::SecurityScheme::ApiKey(_) => format!(
-            "{}; form-action 'self' {}",
-            response.headers()["content-security-policy"]
-                .to_str()
-                .unwrap(),
-            target.origin().ascii_serialization()
+                .ascii_serialization(),
+            form_action_source(&target)
         ),
+        crate::providers::SecurityScheme::ApiKey(_) => {
+            format!("{base}; form-action 'self' {}", form_action_source(&target))
+        }
     };
     response
         .headers_mut()
@@ -315,6 +254,7 @@ pub struct Approval {
     api_key: Option<String>,
 }
 
+/// `POST /connect/authorize`: the consent form's submission.
 pub async fn authorize(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
@@ -324,7 +264,7 @@ pub async fn authorize(
     // Browser form origin is an extra defense; the encrypted cookie and random CSRF token are required.
     if headers
         .get(header::ORIGIN)
-        .is_some_and(|origin| origin.to_str().ok() != Some(state.base_url.trim_end_matches('/')))
+        .is_some_and(|origin| origin.to_str().ok() != Some(state.public_origin.as_str()))
     {
         return error("Invalid connection approval");
     }
@@ -334,47 +274,29 @@ pub async fn authorize(
     let Ok(consent) = serde_json::from_str::<Consent>(cookie.value()) else {
         return error("Invalid connection approval");
     };
-    if consent.expires <= crate::proxy::now_unix()
+    if consent.expires <= crate::now_secs()
         || consent.csrf != approval.csrf
         || consent.request.validate().is_err()
     {
         return error("Connection request expired or invalid; start again from your hub");
     }
-    let user = session::read_session(&jar);
-    if user.is_none()
-        && state
-            .catalog
-            .tenant_identity(&consent.request.platform)
-            .is_err()
-    {
-        return error("This platform cannot establish a tenant identity; log in before connecting");
-    }
     let Some(security) = &state.security else {
         return error("Connections are unavailable");
     };
-    if user
-        .as_ref()
-        .is_some_and(|user| security.is_revoked(&user.subject, &consent.request.user_id))
-        || !matches!(
-            security
-                .consume_nonce(&format!("consent:{}", consent.csrf))
-                .await,
-            Ok(true)
-        )
-    {
+    if !matches!(
+        security
+            .consume_nonce(&format!("consent:{}", consent.csrf))
+            .await,
+        Ok(true)
+    ) {
         return error("Connection approval expired or already used");
     }
+    let jar = jar.remove(Cookie::build(CONSENT_COOKIE).path("/").build());
     // Only an OAuth platform redirects to a third party from here; an apiKey
     // platform already has everything it needs (the submitted key) and
-    // completes the handoff directly, generically, without ever involving
-    // `oauth::begin`/`oauth::callback`.
+    // completes the handoff directly (decision 11).
     match state.catalog.security_scheme(&consent.request.platform) {
         Ok(crate::providers::SecurityScheme::ApiKey(_)) => {
-            let Some(tenant_id) = user.as_ref().map(|user| user.subject.clone()) else {
-                return error(
-                    "This platform cannot establish a tenant identity; log in before connecting",
-                );
-            };
             let Some(key) = approval
                 .api_key
                 .as_deref()
@@ -385,79 +307,45 @@ pub async fn authorize(
             };
             let credential = crate::proxy::StoredCredential::ApiKey {
                 provider: consent.request.platform.clone(),
-                tenant_id: tenant_id.clone(),
-                user_id: consent.request.user_id.clone(),
                 key: key.to_owned(),
             };
-            let Ok(envelope) = security.seal(
-                &serde_json::to_vec(&credential).unwrap(),
-                b"connection-credential-v1",
-            ) else {
-                return error("Could not complete connection");
-            };
-            let context = OAuthContext {
-                request: consent.request.clone(),
-                binding: random(),
-                mode: BootstrapMode::ExistingTenant {
-                    tenant_id: tenant_id.clone(),
-                },
-            };
-            let redirect_uri = context.request.redirect_uri.clone();
-            let code = match handoff(security, &context, &tenant_id, &envelope).await {
+            let code = match handoff(security, &consent.request, credential).await {
                 Ok(code) => code,
                 Err(()) => return error("Could not complete connection"),
             };
-            return finish_with_connection_code(clear_consent(jar), &redirect_uri, &code);
+            finish_with_connection_code(jar, &consent.request.redirect_uri, &code)
         }
-        Ok(crate::providers::SecurityScheme::OAuth(_)) => {}
-        Err(_) => return error("This platform is not available for connection"),
+        Ok(crate::providers::SecurityScheme::OAuth(_)) => {
+            let context = OAuthContext {
+                request: consent.request.clone(),
+                binding: random(),
+            };
+            let Ok(sealed_context) =
+                security.seal(&serde_json::to_vec(&context).unwrap(), OAUTH_CONTEXT_AAD)
+            else {
+                return error("Could not start connection");
+            };
+            let url = match oauth::begin(&state, &consent.request.platform, sealed_context).await {
+                Ok(url) => url,
+                Err(()) => return error("Could not start platform authorization"),
+            };
+            protected((
+                jar.add(private_cookie(PROVIDER_COOKIE, context.binding)),
+                Redirect::to(&url),
+            ))
+        }
+        Err(_) => error("This platform is not available for connection"),
     }
-    let context = OAuthContext {
-        request: consent.request.clone(),
-        binding: random(),
-        mode: match user {
-            Some(user) => BootstrapMode::ExistingTenant {
-                tenant_id: user.subject,
-            },
-            None => BootstrapMode::Bootstrap,
-        },
-    };
-    let Ok(sealed_context) =
-        security.seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
-    else {
-        return error("Could not start connection");
-    };
-    let binding = context.binding;
-    let request = consent.request;
-    let result = oauth::begin(
-        &state,
-        &request.platform,
-        &request.redirect_uri,
-        match &context.mode {
-            BootstrapMode::ExistingTenant { tenant_id } => tenant_id,
-            BootstrapMode::Bootstrap => "",
-        },
-        &request.user_id,
-        Some(sealed_context),
-    )
-    .await;
-    let url = match result {
-        Ok(url) => url,
-        Err(()) => return error("Could not start platform authorization"),
-    };
-    let jar = jar
-        .remove(Cookie::build(CONSENT_COOKIE).path("/").build())
-        .add(private_cookie(PROVIDER_COOKIE, binding));
-    protected((jar, Redirect::to(&url)))
 }
 
+/// Opens a sealed OAuth context and checks it belongs to this browser.
 pub fn oauth_context(
     security: &Security,
     value: &str,
     jar: &PrivateCookieJar,
 ) -> Option<OAuthContext> {
     let context: OAuthContext =
-        serde_json::from_slice(&security.open(value, b"platform-oauth-v1")?).ok()?;
+        serde_json::from_slice(&security.open(value, OAUTH_CONTEXT_AAD)?).ok()?;
     if jar.get(PROVIDER_COOKIE)?.value() != context.binding {
         return None;
     }
@@ -468,10 +356,9 @@ pub fn clear_provider_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
     jar.remove(Cookie::build(PROVIDER_COOKIE).path("/").build())
 }
 
-/// Redirects the browser back to `redirect_uri` with a rotating handoff
+/// Redirects the browser back to `redirect_uri` with the handoff
 /// `connection_code` appended. Shared by the OAuth callback and the apiKey
-/// `authorize` branch below; clearing the OAuth provider-binding cookie is a
-/// no-op for a flow (like apiKey) that never set it.
+/// branch of `authorize`.
 pub(crate) fn finish_with_connection_code(
     jar: PrivateCookieJar,
     redirect_uri: &str,
@@ -483,123 +370,148 @@ pub(crate) fn finish_with_connection_code(
     redirect
         .query_pairs_mut()
         .append_pair("connection_code", code);
-    (clear_provider_cookie(jar), Redirect::to(redirect.as_str())).into_response()
+    protected((clear_provider_cookie(jar), Redirect::to(redirect.as_str())))
 }
 
-pub async fn handoff(
+/// Seals `credential` into a single-use, five-minute handoff bound to the
+/// request's PKCE challenge, and returns its code.
+pub(crate) async fn handoff(
     security: &Security,
-    context: &OAuthContext,
-    tenant_id: &str,
-    credential: &str,
+    request: &Request,
+    credential: crate::proxy::StoredCredential,
 ) -> Result<String, ()> {
     let handoff = Handoff {
-        platform: context.request.platform.clone(),
-        tenant_id: tenant_id.into(),
-        user_id: context.request.user_id.clone(),
-        credential: credential.into(),
-        include_tenant_secret: context.request.credentials
-            == Credentials::ConnectionAndTenantSecret,
+        platform: request.platform.clone(),
+        credential,
     };
     let envelope = security
         .seal(&serde_json::to_vec(&handoff).map_err(|_| ())?, HANDOFF_AAD)
         .map_err(|_| ())?;
     let code = random();
     security
-        .store_handoff(&code, &context.request.code_challenge, &envelope)
+        .store_handoff(&code, &request.code_challenge, &envelope)
         .await
         .map_err(|_| ())?;
     Ok(code)
 }
 
 #[derive(Deserialize)]
-pub struct Redemption {
+#[serde(deny_unknown_fields)]
+struct Redemption {
     code: String,
     code_verifier: String,
 }
 
-pub async fn redeem(State(state): State<AppState>, Json(request): Json<Redemption>) -> Response {
-    let Some(challenge) = pkce_challenge(&request.code_verifier) else {
-        return error("Invalid or expired connection code");
-    };
+/// `POST /connect/redeem`, signed (Atomic v2) by the key that will own the
+/// connection. Body `{"code", "code_verifier"}`; answers
+/// `{"connection_id", "platform", "owner"}`.
+pub async fn redeem(
+    State(state): State<AppState>,
+    method: Method,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    match redeem_inner(&state, &method, &uri, &headers, &body).await {
+        Ok(response) => protected(response),
+        Err(error) => error.into_response(),
+    }
+}
+
+async fn redeem_inner(
+    state: &AppState,
+    method: &Method,
+    uri: &axum::http::Uri,
+    headers: &HeaderMap,
+    body: &Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let security = state.security.as_ref().ok_or(ApiError::Unavailable)?;
+    let owner = crate::signature::authenticate(state, security, method, uri, headers, body).await?;
+    crate::check_access(state, &owner).await?;
+    let request: Redemption = serde_json::from_slice(body)
+        .map_err(|_| ApiError::BadRequest("body must be {\"code\", \"code_verifier\"}"))?;
+    let challenge = pkce_challenge(&request.code_verifier).ok_or(ApiError::InvalidHandoff)?;
     if request.code.len() != 43 {
-        return error("Invalid or expired connection code");
+        return Err(ApiError::InvalidHandoff);
     }
-    let Some(security) = &state.security else {
-        return error("Connections are unavailable");
-    };
-    let Ok(Some(envelope)) = security.take_handoff(&request.code, &challenge).await else {
-        return error("Invalid or expired connection code");
-    };
-    let Some(plaintext) = security.open(&envelope, HANDOFF_AAD) else {
-        return error("Invalid connection code");
-    };
-    let Ok(handoff) = serde_json::from_slice::<Handoff>(&plaintext) else {
-        return error("Invalid connection code");
-    };
-    if security.is_revoked(&handoff.tenant_id, &handoff.user_id) {
-        return error("Connection is revoked");
-    }
-    let code = random();
-    if security
-        .store_connection_code(&code, &handoff.credential)
+    let envelope = security
+        .take_handoff(&request.code, &challenge)
         .await
-        .is_err()
-    {
-        return error("Could not finish connecting; reconnect from your hub");
-    }
-    let mut body = serde_json::json!({"connection_code": code, "platform": handoff.platform});
-    if handoff.include_tenant_secret {
-        body["tenant_secret"] =
-            crate::tenant_secret::derive(&state.server_secret, &handoff.tenant_id).into();
-    }
-    protected(Json(body))
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::InvalidHandoff)?;
+    let handoff: Handoff = security
+        .open(&envelope, HANDOFF_AAD)
+        .and_then(|plaintext| serde_json::from_slice(&plaintext).ok())
+        .ok_or(ApiError::InvalidHandoff)?;
+    let credential = serde_json::to_vec(&handoff.credential).map_err(|_| ApiError::Internal)?;
+    let connection_id = security
+        .create_connection(&handoff.platform, owner.as_str(), &credential)
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(serde_json::json!({
+        "connection_id": connection_id,
+        "platform": handoff.platform,
+        "owner": owner.as_str(),
+    })))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    };
+    use crate::agent_id::test_signer::Agent;
+    use crate::test_support::{body_json, signed_request, state};
+    use tower::ServiceExt;
+
     fn request() -> Request {
-        Request { platform: "github-issues".into(), redirect_uri: "https://hub.example/app/integrations?integration_state=state&platform=github-issues".into(), user_id: "did:ad:agent:test".into(), code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(), code_challenge_method: "S256".into(), credentials: Credentials::Connection }
+        Request {
+            platform: "github-issues".into(),
+            redirect_uri:
+                "https://hub.example/app/integrations?integration_state=state&platform=github-issues"
+                    .into(),
+            code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(),
+            code_challenge_method: "S256".into(),
+        }
     }
-    #[test]
-    fn bootstrap_requires_no_tenant_proof_and_preserves_all_login_context() {
-        let request = request();
-        assert!(request.validate().is_ok());
-        let query = request.local_url();
-        let parsed: std::collections::HashMap<_, _> =
-            Url::parse(&format!("https://localthought.io{query}"))
-                .unwrap()
-                .query_pairs()
-                .into_owned()
-                .collect();
-        assert_eq!(parsed["platform"], "github-issues");
-        assert_eq!(parsed["redirect_uri"], request.redirect_uri);
-        assert_eq!(parsed["code_challenge"], request.code_challenge);
-        assert_eq!(parsed["credentials"], "connection");
-        assert!(!parsed.contains_key("tenant_id"));
+
+    fn connect_uri(request: &Request) -> String {
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("platform", &request.platform)
+            .append_pair("redirect_uri", &request.redirect_uri)
+            .append_pair("code_challenge", &request.code_challenge)
+            .append_pair("code_challenge_method", &request.code_challenge_method)
+            .finish();
+        format!("/connect?{query}")
     }
+
     #[test]
-    fn return_address_rejects_insecure_or_ambiguous_credentials() {
+    fn return_address_rejects_insecure_or_ambiguous_targets() {
         for value in [
             "http://hub.example/cb",
             "javascript:alert(1)",
             "https://user:pass@hub.example/cb",
             "https://hub.example/cb#fragment",
             "https://hub.example/cb?connection_code=evil",
-            "https://hub.example/cb?secret=evil",
+            "https://hub.example/cb?error=evil",
+            "tauri://localhost/app/integrations",
+            "atomic:integrations",
+            "atomic://user@integrations/return",
         ] {
             let mut request = request();
             request.redirect_uri = value.into();
             assert!(request.validate().is_err(), "{value}");
         }
-        let mut request = request();
-        request.redirect_uri = "http://localhost:6747/app/integrations".into();
-        assert!(request.validate().is_ok());
+        for value in [
+            "http://localhost:6747/app/integrations",
+            "http://127.0.0.1:9883/app/integrations",
+            "atomic://integrations/return",
+            "atomic://integrations/return?integration_state=abc",
+        ] {
+            let mut request = request();
+            request.redirect_uri = value.into();
+            assert!(request.validate().is_ok(), "{value}");
+        }
     }
+
     #[test]
     fn pkce_uses_rfc7636_s256_and_rejects_weak_input() {
         assert_eq!(
@@ -612,564 +524,97 @@ mod tests {
         request.code_challenge_method = "plain".into();
         assert!(request.validate().is_err());
     }
-    fn state(security: Option<Security>) -> AppState {
-        AppState {
-            oauth_client: oauth2::basic::BasicClient::new(
-                oauth2::ClientId::new("fixture-google".into()),
-                None,
-                oauth2::AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".into())
-                    .unwrap(),
-                None,
-            ),
-            app_auth_userinfo_url: "https://accounts.example/userinfo".into(),
-            app_auth_label: "OIDC".into(),
-            app_auth_identity_namespace: None,
-            http_client: crate::build_http_client(),
-            identity_http_client: crate::build_identity_http_client(),
-            key: axum_extra::extract::cookie::Key::generate(),
-            server_secret: "fixture-server-secret".into(),
-            base_url: "https://localthought.io".into(),
-            catalog: crate::catalog::Catalog::for_test("github-issues"),
-            security,
-            test_upstream: None,
-        }
-    }
-
-    fn identity_catalog() -> crate::catalog::Catalog {
-        crate::catalog::Catalog::from_test_document(
-            "github-issues",
-            serde_json::json!({
-                "servers": [{"url": "https://api.example/v1"}],
-                "components": {"securitySchemes": {"auth": {"type":"oauth2", "flows":{"authorizationCode":{"authorizationUrl":"https://auth.example/authorize","tokenUrl":"https://auth.example/token","scopes":{"read":"Read"}}}}}},
-                "paths": {"/me":{"get":{"operationId":"me","security":[{"auth":[]}],"x-authenticated-principal":{"kind":"user","namespace":"https://github.example","subject":"$response.body#/id","identifier":{"scope":"provider","stable":true,"reassigned":false}}}}}
-            }),
-            serde_json::json!({"oauthSecurityScheme":"auth","tenantIdentity":{"operationId":"me","namespace":"https://github.example"}}),
-        )
-    }
 
     #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
-    async fn postgres_anonymous_callback_resolves_identity_once_and_mints_bound_handoff() {
-        use axum::{routing::post, Json};
-        use tower::ServiceExt;
-        let token_hits = Arc::new(AtomicUsize::new(0));
-        let identity_hits = Arc::new(AtomicUsize::new(0));
-        let token_counter = token_hits.clone();
-        let identity_counter = identity_hits.clone();
-        let upstream = axum::Router::new()
-            .route(
-                "/token",
-                post(move || {
-                    let token_counter = token_counter.clone();
-                    async move {
-                        token_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"access_token":"provider-token"}))
-                    }
-                }),
-            )
-            .route(
-                "/identity",
-                axum::routing::get(move |headers: HeaderMap| {
-                    let identity_counter = identity_counter.clone();
-                    async move {
-                        assert_eq!(
-                            headers.get(header::AUTHORIZATION).unwrap(),
-                            "Bearer provider-token"
-                        );
-                        identity_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"id":42,"email":"display@example.test"}))
-                    }
-                }),
-            );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            axum::serve(listener, upstream).await.unwrap();
-        });
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
-        let mut s = state(Some(security.clone()));
-        s.catalog = identity_catalog();
-        s.test_upstream = Some(upstream_url);
-        let consent = Consent {
-            request: request(),
-            csrf: random(),
-            expires: crate::proxy::now_unix() + 600,
-        };
-        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
-            CONSENT_COOKIE,
-            serde_json::to_string(&consent).unwrap(),
-        ));
-        let authorization = authorize(
-            State(s.clone()),
-            jar.clone(),
-            HeaderMap::new(),
-            Form(Approval {
-                csrf: consent.csrf.clone(),
-                api_key: None,
-            }),
-        )
-        .await;
-        assert_eq!(authorization.status(), StatusCode::SEE_OTHER);
-        let state_value = Url::parse(authorization.headers()[header::LOCATION].to_str().unwrap())
-            .unwrap()
-            .query_pairs()
-            .find(|(key, _)| key == "state")
-            .unwrap()
-            .1
-            .into_owned();
-        let mut cookies = jar
-            .into_response()
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
-        cookies.extend(
-            authorization
-                .headers()
-                .get_all(header::SET_COOKIE)
-                .iter()
-                .map(|value| {
-                    value
-                        .to_str()
-                        .unwrap()
-                        .split(';')
-                        .next()
-                        .unwrap()
-                        .to_owned()
-                }),
-        );
-        let callback = crate::router(s.clone())
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri(format!(
-                        "/oauth/github-issues/callback?state={state_value}&code=code"
-                    ))
-                    .header(header::COOKIE, cookies.join("; "))
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
-        assert_eq!(token_hits.load(Ordering::SeqCst), 1);
-        assert_eq!(identity_hits.load(Ordering::SeqCst), 1);
-        let handoff = Url::parse(callback.headers()[header::LOCATION].to_str().unwrap())
-            .unwrap()
-            .query_pairs()
-            .find(|(key, _)| key == "connection_code")
-            .unwrap()
-            .1
-            .into_owned();
-        let redemption = redeem(
-            State(s.clone()),
-            Json(Redemption {
-                code: handoff,
-                code_verifier: "a".repeat(43),
-            }),
-        )
-        .await;
-        assert_eq!(redemption.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(redemption.into_body(), 16_384)
-            .await
-            .unwrap();
-        let redeemed: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let connection_code = redeemed["connection_code"].as_str().unwrap().to_owned();
-        let credential_envelope = security
-            .take_connection_code(&connection_code)
-            .await
-            .unwrap()
-            .unwrap();
-        let plain = security
-            .open(&credential_envelope, b"connection-credential-v1")
-            .unwrap();
-        let credential: serde_json::Value = serde_json::from_slice(&plain).unwrap();
-        let mut session_headers = HeaderMap::new();
-        let session_cookie = callback
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .find(|value| value.to_str().unwrap().starts_with("session="))
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .split(';')
-            .next()
-            .unwrap()
-            .to_owned();
-        session_headers.insert(header::COOKIE, session_cookie.parse().unwrap());
-        let session = session::read_session(&PrivateCookieJar::from_headers(
-            &session_headers,
-            s.key.clone(),
-        ))
-        .unwrap();
-        assert_eq!(session.subject, "tenant:v1:{\"client\":null,\"namespace\":\"https://github.example\",\"scope\":\"provider\",\"subject\":42}");
-        assert_eq!(credential["tenant_id"], session.subject);
-    }
-
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL"]
-    async fn postgres_callback_rejects_session_appearing_during_bootstrap_before_exchange() {
-        use tower::ServiceExt;
-        let exchanges = Arc::new(AtomicUsize::new(0));
-        let counter = exchanges.clone();
-        let upstream = axum::Router::new().route(
-            "/token",
-            axum::routing::post(move || {
-                let counter = counter.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    Json(serde_json::json!({"access_token":"unexpected"}))
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
-        let mut s = state(Some(security.clone()));
-        s.catalog = identity_catalog();
-        s.test_upstream = Some(upstream_url);
-        let context = OAuthContext {
-            request: request(),
-            binding: random(),
-            mode: BootstrapMode::Bootstrap,
-        };
-        let envelope = security
-            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
-            .unwrap();
-        let state_value = random();
-        security
-            .store_oauth_state(
-                &state_value,
-                &crate::security::OAuthState {
-                    provider: "github-issues".into(),
-                    redirect_uri: context.request.redirect_uri.clone(),
-                    tenant_id: "".into(),
-                    user_id: context.request.user_id.clone(),
-                    verifier: random(),
-                    context: Some(envelope),
-                },
-            )
-            .await
-            .unwrap();
-        let session_user =
-            session::SessionUser::new("other-tenant".into(), "".into(), "Other".into(), None);
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &session_user)
-            .add(private_cookie(PROVIDER_COOKIE, context.binding));
-        let cookies = jar
-            .into_response()
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
+    async fn the_consent_page_needs_no_login_and_names_the_destination() {
+        let mut s = state(None);
+        s.catalog = crate::catalog::Catalog::for_test("github-issues");
         let response = crate::router(s)
             .oneshot(
                 axum::http::Request::builder()
-                    .uri(format!(
-                        "/oauth/github-issues/callback?state={state_value}&code=code"
-                    ))
-                    .header(header::COOKIE, cookies.join("; "))
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(exchanges.load(Ordering::SeqCst), 0);
-        assert!(security
-            .take_oauth_state(&state_value)
-            .await
-            .unwrap()
-            .is_none());
-    }
-
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
-    async fn postgres_existing_tenant_callback_never_rebinds_or_resolves_provider_identity() {
-        use tower::ServiceExt;
-        let tokens = Arc::new(AtomicUsize::new(0));
-        let identities = Arc::new(AtomicUsize::new(0));
-        let token_counter = tokens.clone();
-        let identity_counter = identities.clone();
-        let upstream = axum::Router::new()
-            .route(
-                "/token",
-                axum::routing::post(move || {
-                    let token_counter = token_counter.clone();
-                    async move {
-                        token_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"access_token":"token"}))
-                    }
-                }),
-            )
-            .route(
-                "/identity",
-                axum::routing::get(move || {
-                    let identity_counter = identity_counter.clone();
-                    async move {
-                        identity_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"id":999}))
-                    }
-                }),
-            );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
-        let mut s = state(Some(security.clone()));
-        s.catalog = identity_catalog();
-        s.test_upstream = Some(upstream_url);
-        let tenant = "existing-tenant".to_owned();
-        let context = OAuthContext {
-            request: request(),
-            binding: random(),
-            mode: BootstrapMode::ExistingTenant {
-                tenant_id: tenant.clone(),
-            },
-        };
-        let envelope = security
-            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
-            .unwrap();
-        let state_value = random();
-        security
-            .store_oauth_state(
-                &state_value,
-                &crate::security::OAuthState {
-                    provider: "github-issues".into(),
-                    redirect_uri: context.request.redirect_uri.clone(),
-                    tenant_id: tenant.clone(),
-                    user_id: context.request.user_id.clone(),
-                    verifier: random(),
-                    context: Some(envelope),
-                },
-            )
-            .await
-            .unwrap();
-        let user = session::SessionUser::new(tenant.clone(), "".into(), "Existing".into(), None);
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user)
-            .add(private_cookie(PROVIDER_COOKIE, context.binding));
-        let cookies = jar
-            .into_response()
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
-        let callback = crate::router(s.clone())
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri(format!(
-                        "/oauth/github-issues/callback?state={state_value}&code=code"
-                    ))
-                    .header(header::COOKIE, cookies.join("; "))
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
-        assert_eq!(tokens.load(Ordering::SeqCst), 1);
-        assert_eq!(identities.load(Ordering::SeqCst), 0);
-        let handoff = Url::parse(callback.headers()[header::LOCATION].to_str().unwrap())
-            .unwrap()
-            .query_pairs()
-            .find(|(key, _)| key == "connection_code")
-            .unwrap()
-            .1
-            .into_owned();
-        let handoff = security
-            .take_handoff(&handoff, &context.request.code_challenge)
-            .await
-            .unwrap()
-            .unwrap();
-        let handoff: Handoff =
-            serde_json::from_slice(&security.open(&handoff, HANDOFF_AAD).unwrap()).unwrap();
-        assert_eq!(handoff.tenant_id, tenant);
-    }
-
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials"]
-    async fn postgres_bootstrap_rejects_revoked_resolved_identity_before_session_or_handoff() {
-        use tower::ServiceExt;
-        let tokens = Arc::new(AtomicUsize::new(0));
-        let identities = Arc::new(AtomicUsize::new(0));
-        let token_counter = tokens.clone();
-        let identity_counter = identities.clone();
-        let upstream = axum::Router::new()
-            .route(
-                "/token",
-                axum::routing::post(move || {
-                    let token_counter = token_counter.clone();
-                    async move {
-                        token_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"access_token":"token"}))
-                    }
-                }),
-            )
-            .route(
-                "/identity",
-                axum::routing::get(move || {
-                    let identity_counter = identity_counter.clone();
-                    async move {
-                        identity_counter.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({"id":42}))
-                    }
-                }),
-            );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-        let revoked = "tenant:v1:{\"client\":null,\"namespace\":\"https://github.example\",\"scope\":\"provider\",\"subject\":42}".to_owned();
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security = Security::connect(
-            &db,
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            vec![revoked],
-        )
-        .await
-        .unwrap();
-        let mut s = state(Some(security.clone()));
-        s.catalog = identity_catalog();
-        s.test_upstream = Some(upstream_url);
-        let context = OAuthContext {
-            request: request(),
-            binding: random(),
-            mode: BootstrapMode::Bootstrap,
-        };
-        let sealed = security
-            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
-            .unwrap();
-        let state_value = random();
-        security
-            .store_oauth_state(
-                &state_value,
-                &crate::security::OAuthState {
-                    provider: "github-issues".into(),
-                    redirect_uri: context.request.redirect_uri.clone(),
-                    tenant_id: "".into(),
-                    user_id: context.request.user_id.clone(),
-                    verifier: random(),
-                    context: Some(sealed),
-                },
-            )
-            .await
-            .unwrap();
-        let jar = PrivateCookieJar::new(s.key.clone())
-            .add(private_cookie(PROVIDER_COOKIE, context.binding));
-        let cookies = jar
-            .into_response()
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .map(|value| {
-                value
-                    .to_str()
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
-        let callback = crate::router(s)
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri(format!(
-                        "/oauth/github-issues/callback?state={state_value}&code=code"
-                    ))
-                    .header(header::COOKIE, cookies.join("; "))
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(callback.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(tokens.load(Ordering::SeqCst), 1);
-        assert_eq!(identities.load(Ordering::SeqCst), 1);
-        assert!(!callback
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .any(|value| value.to_str().unwrap().starts_with("session=")));
-        assert!(security
-            .take_handoff("missing", &context.request.code_challenge)
-            .await
-            .unwrap()
-            .is_none());
-    }
-
-    #[tokio::test]
-    async fn router_accepts_bootstrap_without_tenant_fields() {
-        use tower::ServiceExt;
-        // An unconfigured provider is a product error, not a missing-tenant query rejection.
-        let app = crate::router(state(None));
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri(request().local_url())
+                    .uri(connect_uri(&request()))
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         let status = response.status();
+        let body = String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 65_536)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        // The fixture provider is only "configured" when CI's fixture OAuth
+        // env vars are present; otherwise the page says so, without asking
+        // anyone to log in either way.
+        assert!(!body.to_lowercase().contains("log in"), "{body}");
         if status == StatusCode::OK {
-            let policy = response.headers()["content-security-policy"]
-                .to_str()
-                .unwrap();
-            assert!(policy.contains("form-action 'self' https://auth.example https://hub.example"));
-            assert!(!policy.contains("spotify"));
-            assert_eq!(response.headers()[header::REFERRER_POLICY], "same-origin");
+            assert!(body.contains("https://hub.example"));
+        } else {
+            assert!(body.contains("not available"));
         }
-        let body = axum::body::to_bytes(response.into_body(), 16384)
-            .await
-            .unwrap();
-        assert!(!String::from_utf8_lossy(&body).contains("deserialize"));
-        assert!(
-            status == StatusCode::OK || String::from_utf8_lossy(&body).contains("not available")
-        );
     }
 
     #[tokio::test]
-    async fn consent_rejects_missing_cookie_and_google_session() {
+    async fn legacy_connect_parameters_are_refused() {
+        let s = state(None);
+        for query in [
+            // The tenant-secret bootstrap (flag day, decision 6).
+            "/connect?redirect_uri=https%3A%2F%2Fhub.example%2Fcb&ts=1&nonce=n&challenge=c&tenant_id=t&user_id=u&user_id_sig=s&response=r",
+            // No platform.
+            "/connect?redirect_uri=https%3A%2F%2Fhub.example%2Fcb",
+        ] {
+            let response = crate::router(s.clone())
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(query)
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
+        }
+    }
+
+    #[tokio::test]
+    async fn removed_tenant_routes_are_gone() {
+        let s = state(None);
+        for (method, path) in [
+            ("GET", "/session"),
+            ("GET", "/auth/login"),
+            ("GET", "/auth/callback"),
+            ("POST", "/auth/logout"),
+            ("GET", "/auth/login/github-issues"),
+            ("POST", "/connect"),
+            ("GET", "/proxy"),
+            ("GET", "/oauth/github-issues/start"),
+        ] {
+            let response = crate::router(s.clone())
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(
+                matches!(
+                    response.status(),
+                    StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+                ),
+                "{method} {path}: {}",
+                response.status()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn consent_rejects_a_missing_cookie_or_wrong_csrf() {
         let s = state(None);
         let jar = PrivateCookieJar::new(s.key.clone());
         let result = authorize(
@@ -1186,26 +631,37 @@ mod tests {
         let consent = Consent {
             request: request(),
             csrf: "valid".into(),
-            expires: crate::proxy::now_unix() + 600,
+            expires: crate::now_secs() + 600,
         };
         let jar = jar.add(private_cookie(
             CONSENT_COOKIE,
             serde_json::to_string(&consent).unwrap(),
         ));
-        let result = authorize(
-            State(s),
-            jar,
-            HeaderMap::new(),
-            Form(Approval {
-                csrf: "valid".into(),
-                api_key: None,
-            }),
-        )
-        .await;
-        let body = axum::body::to_bytes(result.into_body(), 16384)
-            .await
-            .unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("cannot establish a tenant identity"));
+        for (csrf, origin) in [
+            ("wrong", None),
+            ("valid", Some("https://foreign.example")),
+            ("valid", Some("null")),
+        ] {
+            let mut headers = HeaderMap::new();
+            if let Some(origin) = origin {
+                headers.insert(header::ORIGIN, origin.parse().unwrap());
+            }
+            let result = authorize(
+                State(s.clone()),
+                jar.clone(),
+                headers,
+                Form(Approval {
+                    csrf: csrf.into(),
+                    api_key: None,
+                }),
+            )
+            .await;
+            assert_eq!(
+                result.status(),
+                StatusCode::BAD_REQUEST,
+                "{csrf} {origin:?}"
+            );
+        }
     }
 
     fn api_key_catalog() -> crate::catalog::Catalog {
@@ -1229,409 +685,240 @@ mod tests {
             redirect_uri:
                 "https://hub.example/app/integrations?integration_state=state&platform=clockify"
                     .into(),
-            user_id: "did:ad:agent:test".into(),
             code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(),
             code_challenge_method: "S256".into(),
-            credentials: Credentials::Connection,
         }
+    }
+
+    async fn redeem_as(
+        s: &AppState,
+        agent: &Agent,
+        code: &str,
+        verifier: &str,
+    ) -> axum::response::Response {
+        let body = serde_json::json!({"code": code, "code_verifier": verifier}).to_string();
+        crate::router(s.clone())
+            .oneshot(signed_request(
+                s,
+                agent,
+                "POST",
+                "/connect/redeem",
+                body.into_bytes(),
+            ))
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
-    async fn postgres_api_key_authorize_seals_the_submitted_key_without_a_provider_redirect() {
-        let db = std::env::var("TEST_DATABASE_URL")
-            .expect("set TEST_DATABASE_URL to an isolated test database");
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
+    async fn postgres_api_key_connect_makes_the_redeem_signer_the_owner() {
+        let security = crate::test_support::security().await;
         let mut s = state(Some(security.clone()));
         s.catalog = api_key_catalog();
-        let user = session::SessionUser::new(
-            "fixture-clockify-tenant".into(),
-            "fixture@example.com".into(),
-            "Fixture".into(),
-            None,
-        );
-        let session_jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user);
-
-        // A wrong CSRF is rejected before the nonce (and thus the key) is ever consulted.
-        let consent_a = Consent {
+        let consent = Consent {
             request: api_key_request(),
             csrf: random(),
-            expires: crate::proxy::now_unix() + 600,
+            expires: crate::now_secs() + 600,
         };
-        let jar_a = session_jar.clone().add(private_cookie(
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
             CONSENT_COOKIE,
-            serde_json::to_string(&consent_a).unwrap(),
+            serde_json::to_string(&consent).unwrap(),
         ));
-        assert_eq!(
-            authorize(
-                State(s.clone()),
-                jar_a.clone(),
-                HeaderMap::new(),
-                Form(Approval {
-                    csrf: "wrong".into(),
-                    api_key: Some("clockify-secret".into()),
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
-
-        // A correct CSRF with a blank key is rejected (and burns that consent's nonce).
-        let blank_key_result = authorize(
+        // A blank key is refused (and burns this consent).
+        let blank = authorize(
             State(s.clone()),
-            jar_a.clone(),
+            jar.clone(),
             HeaderMap::new(),
             Form(Approval {
-                csrf: consent_a.csrf.clone(),
-                api_key: Some("   ".into()),
+                csrf: consent.csrf.clone(),
+                api_key: Some("  ".into()),
             }),
         )
         .await;
-        assert_eq!(blank_key_result.status(), StatusCode::BAD_REQUEST);
-        let body = axum::body::to_bytes(blank_key_result.into_body(), 16384)
-            .await
-            .unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("valid API key"));
-
-        // A fresh consent, correct CSRF and a real key completes without ever
-        // touching `oauth::begin`/`oauth::callback` or a provider redirect.
-        let consent_b = Consent {
+        assert_eq!(blank.status(), StatusCode::BAD_REQUEST);
+        let consent = Consent {
             request: api_key_request(),
             csrf: random(),
-            expires: crate::proxy::now_unix() + 600,
+            expires: crate::now_secs() + 600,
         };
-        let jar_b = session_jar.add(private_cookie(
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
             CONSENT_COOKIE,
-            serde_json::to_string(&consent_b).unwrap(),
+            serde_json::to_string(&consent).unwrap(),
         ));
         let response = authorize(
             State(s.clone()),
-            jar_b,
+            jar.clone(),
             HeaderMap::new(),
             Form(Approval {
-                csrf: consent_b.csrf.clone(),
+                csrf: consent.csrf.clone(),
                 api_key: Some("clockify-secret".into()),
             }),
         )
         .await;
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let location = response.headers()[header::LOCATION].to_str().unwrap();
-        assert!(location.starts_with(
-            "https://hub.example/app/integrations?integration_state=state&platform=clockify"
-        ));
-        let redirect = Url::parse(location).unwrap();
-        let handoff_code = redirect
+        let location = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert_eq!(
+            location.origin().ascii_serialization(),
+            "https://hub.example"
+        );
+        let code = location
             .query_pairs()
-            .find(|(name, _)| name == "connection_code")
-            .map(|(_, value)| value.into_owned())
-            .unwrap();
-
-        let redeemed = redeem(
+            .find(|(k, _)| k == "connection_code")
+            .unwrap()
+            .1
+            .into_owned();
+        // The consent cannot be approved twice.
+        let again = authorize(
             State(s.clone()),
-            Json(Redemption {
-                code: handoff_code,
-                code_verifier: "a".repeat(43),
+            jar,
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent.csrf.clone(),
+                api_key: Some("clockify-secret".into()),
             }),
         )
         .await;
-        assert_eq!(redeemed.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(redeemed.into_body(), 16384)
-            .await
-            .unwrap();
-        assert!(!String::from_utf8_lossy(&body).contains("clockify-secret"));
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(again.status(), StatusCode::BAD_REQUEST);
+
+        let owner = Agent::new(21);
+        // Wrong verifier: refused, and the handoff survives.
+        let wrong = redeem_as(&s, &owner, &code, &"b".repeat(43)).await;
+        assert_eq!(wrong.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(body_json(wrong).await["error"], "invalid_handoff");
+        let ok = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(ok.status(), StatusCode::OK);
+        assert_eq!(ok.headers()[header::CACHE_CONTROL], "no-store");
+        let body = body_json(ok).await;
         assert_eq!(body["platform"], "clockify");
-        let connection_code = body["connection_code"].as_str().unwrap();
-        let envelope = security
-            .take_connection_code(connection_code)
+        assert_eq!(body["owner"], owner.id());
+        assert!(!body.to_string().contains("clockify-secret"));
+        let connection_id = body["connection_id"].as_str().unwrap();
+        let record = security
+            .load_connection(connection_id)
             .await
             .unwrap()
             .unwrap();
-        let plaintext = security
-            .open(&envelope, b"connection-credential-v1")
-            .unwrap();
+        assert_eq!(record.owner, owner.id());
         let credential: crate::proxy::StoredCredential =
-            serde_json::from_slice(&plaintext).unwrap();
-        match credential {
-            crate::proxy::StoredCredential::ApiKey {
-                provider,
-                tenant_id,
-                user_id,
-                key,
-            } => {
-                assert_eq!(provider, "clockify");
-                assert_eq!(tenant_id, "fixture-clockify-tenant");
-                assert_eq!(user_id, "did:ad:agent:test");
-                assert_eq!(key, "clockify-secret");
-            }
-            crate::proxy::StoredCredential::OAuth { .. } => {
-                panic!("expected an apiKey credential")
-            }
-        }
+            serde_json::from_slice(&record.credential).unwrap();
+        assert!(matches!(
+            credential,
+            crate::proxy::StoredCredential::ApiKey { ref key, .. } if key == "clockify-secret"
+        ));
+        // Single use.
+        let reused = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(reused.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
-    async fn postgres_handoff_is_pkce_bound_single_use_expiring_and_grant_scoped() {
-        let db = std::env::var("TEST_DATABASE_URL")
-            .expect("set TEST_DATABASE_URL to an isolated test database");
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
+    async fn postgres_redeem_canonicalizes_a_legacy_signer_and_refuses_unsigned_or_denied() {
+        let security = crate::test_support::security().await;
         let s = state(Some(security.clone()));
-        let verifier = "a".repeat(43);
-        let mut context = OAuthContext {
-            request: request(),
-            binding: random(),
-            mode: BootstrapMode::ExistingTenant {
-                tenant_id: "tenant".into(),
-            },
+        let credential = crate::proxy::StoredCredential::ApiKey {
+            provider: "github-issues".into(),
+            key: "k".into(),
         };
-        let credential = security.seal(br#"{"provider":"github-issues","tenant_id":"tenant","user_id":"did:ad:agent:test","access_token":"fixture-token","refresh_token":null,"expires_at":null}"#, b"connection-credential-v1").unwrap();
-        let handoff_code = handoff(&security, &context, "tenant", &credential)
-            .await
-            .unwrap();
-        let wrong = redeem(
-            State(s.clone()),
-            Json(Redemption {
-                code: handoff_code.clone(),
-                code_verifier: "b".repeat(43),
-            }),
-        )
-        .await;
-        assert_eq!(wrong.status(), StatusCode::BAD_REQUEST);
-        let response = redeem(
-            State(s.clone()),
-            Json(Redemption {
-                code: handoff_code.clone(),
-                code_verifier: verifier.clone(),
-            }),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
-        let body = axum::body::to_bytes(response.into_body(), 16384)
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(body["platform"], "github-issues");
-        assert!(body.get("tenant_secret").is_none());
-        assert!(!body.to_string().contains("fixture-token"));
-        let rotating = body["connection_code"].as_str().unwrap();
-        assert_eq!(
-            security.take_connection_code(rotating).await.unwrap(),
-            Some(credential.clone())
-        );
-        assert!(security
-            .take_connection_code(rotating)
-            .await
-            .unwrap()
-            .is_none());
-        assert_eq!(
-            redeem(
-                State(s.clone()),
-                Json(Redemption {
-                    code: handoff_code,
-                    code_verifier: verifier.clone()
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
+        let owner = Agent::new(22);
 
-        context.request.credentials = Credentials::ConnectionAndTenantSecret;
-        let code = handoff(&security, &context, "tenant", &credential)
+        // Unsigned.
+        let code = handoff(&security, &request(), credential.clone())
             .await
             .unwrap();
-        let response = redeem(
-            State(s.clone()),
-            Json(Redemption {
-                code,
-                code_verifier: verifier.clone(),
-            }),
-        )
-        .await;
-        let bytes = axum::body::to_bytes(response.into_body(), 16384)
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(
-            body["tenant_secret"],
-            crate::tenant_secret::derive(&s.server_secret, "tenant")
-        );
-
-        // Two simultaneous valid exchanges cannot mint two rotating credentials.
-        let code = handoff(&security, &context, "tenant", &credential)
-            .await
-            .unwrap();
-        let challenge = pkce_challenge(&verifier).unwrap();
-        let (first, second) = tokio::join!(
-            security.take_handoff(&code, &challenge),
-            security.take_handoff(&code, &challenge)
-        );
-        assert_ne!(first.unwrap().is_some(), second.unwrap().is_some());
-
-        let code = handoff(&security, &context, "tenant", &credential)
-            .await
-            .unwrap();
-        let (client, connection) = tokio_postgres::connect(&db, tokio_postgres::NoTls)
-            .await
-            .unwrap();
-        tokio::spawn(async move {
-            connection.await.unwrap();
-        });
-        client.execute("UPDATE connection_handoffs SET expires_at = NOW() - INTERVAL '1 second' WHERE code = $1", &[&code]).await.unwrap();
-        assert!(security
-            .take_handoff(&code, &challenge)
-            .await
-            .unwrap()
-            .is_none());
-
-        let user = session::SessionUser::new(
-            "tenant".into(),
-            "fixture@example.com".into(),
-            "Fixture".into(),
-            None,
-        );
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user)
-            .add(private_cookie(PROVIDER_COOKIE, context.binding.clone()));
-        let envelope = security
-            .seal(&serde_json::to_vec(&context).unwrap(), b"platform-oauth-v1")
-            .unwrap();
-        assert!(oauth_context(&security, &envelope, &jar).is_some());
-        assert!(
-            oauth_context(&security, &envelope, &PrivateCookieJar::new(s.key.clone())).is_none()
-        );
-
-        let code = handoff(&security, &context, "tenant", &credential)
-            .await
-            .unwrap();
-        let revoked = Security::connect(
-            &db,
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            vec!["tenant".into()],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            redeem(
-                State(state(Some(revoked))),
-                Json(Redemption {
-                    code,
-                    code_verifier: verifier
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
-    }
-    #[tokio::test]
-    async fn router_preserves_legacy_numeric_query_parsing() {
-        use tower::ServiceExt;
-        let s = state(None);
-        let ts = crate::proxy::now_unix();
-        let nonce = random();
-        let challenge = crate::tenant_secret::sign(&s.server_secret, &format!("{ts}.{nonce}"));
-        let secret = crate::tenant_secret::derive(&s.server_secret, "tenant");
-        let mut query = Url::parse("https://localthought.io/connect").unwrap();
-        query
-            .query_pairs_mut()
-            .append_pair("redirect_uri", "https://hub.example/cb")
-            .append_pair("ts", &ts.to_string())
-            .append_pair("nonce", &nonce)
-            .append_pair("challenge", &challenge)
-            .append_pair("tenant_id", "tenant")
-            .append_pair("user_id", "actor")
-            .append_pair("user_id_sig", &crate::tenant_secret::sign(&secret, "actor"))
-            .append_pair("response", &crate::tenant_secret::sign(&secret, &challenge));
-        let response = crate::router(s)
+        let unsigned = crate::router(s.clone())
             .oneshot(
                 axum::http::Request::builder()
-                    .uri(format!("/connect?{}", query.query().unwrap()))
-                    .body(axum::body::Body::empty())
+                    .method("POST")
+                    .uri("/connect/redeem")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({"code": code, "code_verifier": "a".repeat(43)})
+                            .to_string(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    }
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth configuration; CI runs it"]
-    async fn postgres_consent_binds_google_identity_and_provider_callback_to_browser() {
-        use tower::ServiceExt;
-        let db = std::env::var("TEST_DATABASE_URL").unwrap();
-        let security =
-            Security::connect(&db, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", vec![])
-                .await
-                .unwrap();
-        let s = state(Some(security.clone()));
-        let user = session::SessionUser::new(
-            "fixture-google-tenant".into(),
-            "fixture@example.com".into(),
-            "Fixture".into(),
-            None,
+        assert_eq!(unsigned.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(body_json(unsigned).await["error"], "missing_signature");
+
+        // Signed with the legacy did:ad:agent spelling: owner is canonical.
+        let body = serde_json::json!({"code": code, "code_verifier": "a".repeat(43)}).to_string();
+        let mut legacy = signed_request(&s, &owner, "POST", "/connect/redeem", body.into_bytes());
+        legacy.headers_mut().insert(
+            crate::signature::AGENT_HEADER,
+            owner.legacy_id().parse().unwrap(),
         );
-        let mut consent = Consent {
+        let response = crate::router(s.clone()).oneshot(legacy).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_json(response).await["owner"], owner.id());
+
+        // The access policy refuses a denied owner before the handoff is spent.
+        let mut denied = state(Some(security.clone()));
+        denied.access =
+            std::sync::Arc::new(crate::access::EnvAccessPolicy::new(None, vec![owner.id()]));
+        let code = handoff(&security, &request(), credential.clone())
+            .await
+            .unwrap();
+        let response = redeem_as(&denied, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_json(response).await["error"], "access_denied");
+        let response = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // An expired handoff.
+        let code = handoff(&security, &request(), credential).await.unwrap();
+        crate::security::tests::admin()
+            .await
+            .execute(
+                "UPDATE connection_handoffs SET expires_at = NOW() - INTERVAL '1 second' WHERE code = $1",
+                &[&code],
+            )
+            .await
+            .unwrap();
+        let response = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_two_simultaneous_redemptions_create_one_connection() {
+        let security = crate::test_support::security().await;
+        let s = state(Some(security.clone()));
+        let code = handoff(
+            &security,
+            &request(),
+            crate::proxy::StoredCredential::ApiKey {
+                provider: "github-issues".into(),
+                key: "k".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let (a, b) = (Agent::new(23), Agent::new(24));
+        let verifier = "a".repeat(43);
+        let (first, second) = tokio::join!(
+            redeem_as(&s, &a, &code, &verifier),
+            redeem_as(&s, &b, &code, &verifier)
+        );
+        let statuses = [first.status(), second.status()];
+        assert!(statuses.contains(&StatusCode::OK));
+        assert!(statuses.contains(&StatusCode::BAD_REQUEST));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials; CI runs it"]
+    async fn postgres_oauth_consent_is_bound_to_the_browser_and_cancellation_returns_home() {
+        let security = crate::test_support::security().await;
+        let s = state(Some(security.clone()));
+        let consent = Consent {
             request: request(),
             csrf: random(),
-            expires: crate::proxy::now_unix() + 600,
+            expires: crate::now_secs() + 600,
         };
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user).add(
-            private_cookie(CONSENT_COOKIE, serde_json::to_string(&consent).unwrap()),
-        );
-        assert_eq!(
-            authorize(
-                State(s.clone()),
-                jar.clone(),
-                HeaderMap::new(),
-                Form(Approval {
-                    csrf: "wrong".into(),
-                    api_key: None,
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
-        let mut foreign = HeaderMap::new();
-        foreign.insert(header::ORIGIN, "https://foreign.example".parse().unwrap());
-        assert_eq!(
-            authorize(
-                State(s.clone()),
-                jar.clone(),
-                foreign,
-                Form(Approval {
-                    csrf: consent.csrf.clone(),
-                    api_key: None,
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
-        let mut opaque = HeaderMap::new();
-        opaque.insert(header::ORIGIN, "null".parse().unwrap());
-        assert_eq!(
-            authorize(
-                State(s.clone()),
-                jar.clone(),
-                opaque,
-                Form(Approval {
-                    csrf: consent.csrf.clone(),
-                    api_key: None,
-                })
-            )
-            .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent).unwrap(),
+        ));
         let response = authorize(
             State(s.clone()),
             jar.clone(),
@@ -1656,109 +943,276 @@ mod tests {
             .unwrap()
             .1
             .into_owned();
-        let stored = security
-            .take_oauth_state(&provider_state)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(stored.tenant_id, user.subject);
-        assert_eq!(stored.user_id, consent.request.user_id);
-        assert_eq!(stored.provider, "github-issues");
-        assert_eq!(stored.redirect_uri, consent.request.redirect_uri);
-        assert!(security
-            .take_oauth_state(&provider_state)
-            .await
-            .unwrap()
-            .is_none());
-        security
-            .store_oauth_state(&provider_state, &stored)
-            .await
-            .unwrap();
-        // Keep both the authenticated Google session and the newly set provider binding cookie.
-        let original_cookies = jar
-            .into_response()
+        let binding_cookie = response
             .headers()
             .get_all(header::SET_COOKIE)
             .iter()
             .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_string())
-            .collect::<Vec<_>>();
-        let mut cookies = original_cookies;
-        cookies.extend(
-            response
-                .headers()
-                .get_all(header::SET_COOKIE)
-                .iter()
-                .filter_map(|v| {
-                    let value = v.to_str().unwrap();
-                    value
-                        .starts_with("platform_oauth=")
-                        .then(|| value.split(';').next().unwrap().to_string())
-                }),
-        );
-        let response = crate::router(s.clone())
+            .find(|v| v.starts_with("platform_oauth="))
+            .unwrap();
+        // Another browser (no binding cookie) cannot complete the callback.
+        let foreign = crate::router(s.clone())
             .oneshot(
                 axum::http::Request::builder()
                     .uri(format!(
                         "/oauth/github-issues/callback?state={provider_state}&error=access_denied"
                     ))
-                    .header(header::COOKIE, cookies.join("; "))
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let target = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
-        assert_eq!(target.origin().ascii_serialization(), "https://hub.example");
-        assert!(target
+        assert_eq!(foreign.status(), StatusCode::BAD_REQUEST);
+        // The state was spent by that attempt; start again for the real browser.
+        let consent = Consent {
+            request: request(),
+            csrf: random(),
+            expires: crate::now_secs() + 600,
+        };
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent).unwrap(),
+        ));
+        let response = authorize(
+            State(s.clone()),
+            jar,
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent.csrf.clone(),
+                api_key: None,
+            }),
+        )
+        .await;
+        let destination =
+            Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        let provider_state = destination
             .query_pairs()
-            .any(|(k, v)| k == "integration_state" && v == "state"));
+            .find(|(k, _)| k == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let binding_cookie_2 = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_string())
+            .find(|v| v.starts_with("platform_oauth="))
+            .unwrap();
+        assert_ne!(binding_cookie, binding_cookie_2);
+        let cancelled = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={provider_state}&error=access_denied"
+                    ))
+                    .header(header::COOKIE, binding_cookie_2)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancelled.status(), StatusCode::SEE_OTHER);
+        let target = Url::parse(cancelled.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert_eq!(target.origin().ascii_serialization(), "https://hub.example");
         assert!(target
             .query_pairs()
             .any(|(k, v)| k == "error" && v == "access_denied"));
         assert!(!target.query_pairs().any(|(k, _)| k == "connection_code"));
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
-        assert!(security
-            .take_oauth_state(&provider_state)
+        assert_eq!(cancelled.headers()[header::CACHE_CONTROL], "no-store");
+    }
+
+    /// The whole flow a data browser runs, against a mocked provider:
+    /// consent, provider authorization, callback, signed redeem, a
+    /// delegation, and proxied calls by the owner and the delegated app.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL and fixture OAuth credentials; CI runs it"]
+    async fn postgres_oauth_connect_redeem_delegate_and_proxy_end_to_end() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let tokens = Arc::new(AtomicUsize::new(0));
+        let token_counter = tokens.clone();
+        let upstream = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(move |body: Bytes| {
+                    let token_counter = token_counter.clone();
+                    async move {
+                        token_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let body = String::from_utf8(body.to_vec()).unwrap();
+                        assert!(body.contains("grant_type=authorization_code"));
+                        assert!(body.contains("code=provider-code"));
+                        assert!(body.contains(
+                            "redirect_uri=https%3A%2F%2Fproxy.example%2Foauth%2Fgithub-issues%2Fcallback"
+                        ));
+                        Json(serde_json::json!({"access_token": "provider-token", "refresh_token": "r", "expires_in": 3600}))
+                    }
+                }),
+            )
+            .route(
+                "/records",
+                axum::routing::get(|headers: HeaderMap| async move {
+                    Json(serde_json::json!({
+                        "authorization": headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()),
+                    }))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+
+        let security = crate::test_support::security().await;
+        let mut s = state(Some(security.clone()));
+        s.catalog = crate::catalog::Catalog::from_test_document(
+            "github-issues",
+            serde_json::json!({
+                "servers": [{"url": upstream_url}],
+                "components": {"securitySchemes": {"oauth": {"type": "oauth2", "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://auth.example/authorize",
+                        "tokenUrl": "https://auth.example/token",
+                        "scopes": {"read": "Read records"}
+                    }
+                }}}},
+                "security": [{"oauth": ["read"]}],
+                "paths": {"/records": {"get": {}}}
+            }),
+            serde_json::json!({}),
+        );
+        s.test_upstream = Some(upstream_url);
+
+        // 1. The consent page, with no login, then approval.
+        let page = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(connect_uri(&request()))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
             .await
+            .unwrap();
+        assert_eq!(page.status(), StatusCode::OK);
+        let consent_cookie = page
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_string())
+            .find(|v| v.starts_with("platform_consent="))
+            .unwrap();
+        let html = String::from_utf8(
+            axum::body::to_bytes(page.into_body(), 65_536)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        let csrf = html
+            .split("name=\"csrf\" value=\"")
+            .nth(1)
             .unwrap()
-            .is_none());
-        // Approval cannot be replayed even if a browser retains its original consent cookie.
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user).add(
-            private_cookie(CONSENT_COOKIE, serde_json::to_string(&consent).unwrap()),
-        );
-        assert_eq!(
-            authorize(
-                State(s.clone()),
-                jar,
-                HeaderMap::new(),
-                Form(Approval {
-                    csrf: consent.csrf.clone(),
-                    api_key: None,
-                })
+            .split('"')
+            .next()
+            .unwrap()
+            .to_owned();
+        let approval = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/connect/authorize")
+                    .header(header::COOKIE, &consent_cookie)
+                    .header(header::ORIGIN, crate::test_support::PUBLIC_ORIGIN)
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(axum::body::Body::from(format!("csrf={csrf}")))
+                    .unwrap(),
             )
             .await
-            .status(),
-            StatusCode::BAD_REQUEST
-        );
-        consent.csrf = random();
-        consent.expires = 0;
-        let jar = session::set_session(PrivateCookieJar::new(s.key.clone()), &user).add(
-            private_cookie(CONSENT_COOKIE, serde_json::to_string(&consent).unwrap()),
-        );
-        assert_eq!(
-            authorize(
-                State(s),
-                jar,
-                HeaderMap::new(),
-                Form(Approval {
-                    csrf: consent.csrf,
-                    api_key: None
-                })
+            .unwrap();
+        assert_eq!(approval.status(), StatusCode::SEE_OTHER);
+        let provider = Url::parse(approval.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert_eq!(provider.host_str(), Some("auth.example"));
+        let provider_state = provider
+            .query_pairs()
+            .find(|(k, _)| k == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let binding = approval
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_string())
+            .find(|v| v.starts_with("platform_oauth="))
+            .unwrap();
+
+        // 2. The provider calls back; the browser returns home with a handoff.
+        let callback = crate::router(s.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!(
+                        "/oauth/github-issues/callback?state={provider_state}&code=provider-code"
+                    ))
+                    .header(header::COOKIE, binding)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
             )
             .await
-            .status(),
-            StatusCode::BAD_REQUEST
+            .unwrap();
+        assert_eq!(callback.status(), StatusCode::SEE_OTHER);
+        assert_eq!(tokens.load(Ordering::SeqCst), 1);
+        let home = Url::parse(callback.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert_eq!(home.origin().ascii_serialization(), "https://hub.example");
+        assert!(home
+            .query_pairs()
+            .any(|(k, v)| k == "integration_state" && v == "state"));
+        let handoff = home
+            .query_pairs()
+            .find(|(k, _)| k == "connection_code")
+            .unwrap()
+            .1
+            .into_owned();
+        assert!(!home.as_str().contains("provider-token"));
+
+        // 3. The page redeems, signed with the user's key: the owner.
+        let owner = Agent::new(61);
+        let redeemed = redeem_as(&s, &owner, &handoff, &"a".repeat(43)).await;
+        assert_eq!(redeemed.status(), StatusCode::OK);
+        let redeemed = body_json(redeemed).await;
+        let connection_id = redeemed["connection_id"].as_str().unwrap().to_owned();
+        assert_eq!(redeemed["owner"], owner.id());
+
+        // 4. The owner calls the provider through the proxy.
+        let path = format!("/proxy/{connection_id}/github-issues/records");
+        let call = crate::router(s.clone())
+            .oneshot(signed_request(&s, &owner, "GET", &path, vec![]))
+            .await
+            .unwrap();
+        assert_eq!(call.status(), StatusCode::OK);
+        assert_eq!(
+            body_json(call).await["authorization"],
+            "Bearer provider-token"
         );
+
+        // 5. The owner delegates to an app agent, which may then call too.
+        let app = Agent::new(62);
+        let delegation = crate::router(s.clone())
+            .oneshot(signed_request(
+                &s,
+                &owner,
+                "POST",
+                &format!("/connections/{connection_id}/agents"),
+                serde_json::json!({"agent": app.id(), "label": "Issue tracker"})
+                    .to_string()
+                    .into_bytes(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(delegation.status(), StatusCode::OK);
+        let call = crate::router(s.clone())
+            .oneshot(signed_request(&s, &app, "GET", &path, vec![]))
+            .await
+            .unwrap();
+        assert_eq!(call.status(), StatusCode::OK);
+        server.abort();
     }
 }

@@ -1,58 +1,38 @@
 use std::env;
 use url::Url;
 
-fn identity_namespace(value: Option<String>) -> Result<Option<String>, String> {
-    let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
-        return Ok(None);
-    };
-    let url = Url::parse(&value)
-        .map_err(|_| "APP_AUTH_IDENTITY_NAMESPACE must be an HTTPS URI".to_string())?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || value.contains('{')
-    {
-        return Err("APP_AUTH_IDENTITY_NAMESPACE must be a fixed credential-free HTTPS URI".into());
-    }
-    Ok(Some(value))
-}
-
 /// Runtime configuration, loaded entirely from environment variables so the
-/// server itself stays stateless and container-friendly.
+/// server itself stays container-friendly.
+///
+/// Issue #54 removed the tenant concept. `APP_AUTH_*`, `SERVER_SECRET` and
+/// the other tenant-era variables are no longer read; leaving them set is
+/// harmless.
 #[derive(Clone)]
 pub struct Config {
-    pub app_auth_client_id: String,
-    pub app_auth_client_secret: String,
-    pub app_auth_authorization_url: String,
-    pub app_auth_token_url: String,
-    pub app_auth_userinfo_url: String,
-    pub app_auth_label: String,
-    /// Optional namespace which makes a legacy APP_AUTH OIDC subject compatible
-    /// with an explicitly trusted provider-scoped catalog identity.
-    pub app_auth_identity_namespace: Option<String>,
-    /// Public URL the server is reachable at, used to build the OAuth
-    /// redirect URL (e.g. `https://auth.example.com`).
+    /// Public URL the proxy is reachable at, e.g. `https://auth.example.com`.
+    /// Used for OAuth redirect URLs, and as the origin of the URL covered by
+    /// every Atomic v2 request signature and of a capability's `aud`. It must
+    /// be exactly what clients use: behind TLS termination the proxy cannot
+    /// tell its public scheme or host from the request.
     pub base_url: String,
     pub port: u16,
-    /// 64-byte secret used to sign/encrypt session cookies. If unset, a
-    /// random key is generated at startup: sessions stay valid for the life
-    /// of the process but are invalidated on restart.
+    /// Secret used to encrypt the short-lived consent and OAuth-binding
+    /// cookies. If unset, a random key is generated at startup, so a consent
+    /// screen open during a restart has to be started again.
     pub session_secret: Option<String>,
-    /// Secret used to deterministically derive each tenant's secret (see
-    /// `tenant_secret`). Must stay constant across restarts and instances,
-    /// or previously issued tenant secrets stop verifying.
-    pub server_secret: String,
     /// Local file or immutable HTTPS URL listing the pinned OADs and overlays.
     pub catalog_path: String,
-    /// PostgreSQL connection used for one-time challenge consumption.
+    /// PostgreSQL: connections, delegations, runtimes, handoffs and the
+    /// single-use record of signed requests.
     pub database_url: String,
-    /// Base64url-encoded 32-byte key for OAuth credential envelopes.
+    /// Base64url-encoded 32-byte key for sealed provider credentials.
     pub encryption_key: String,
-    /// Comma-separated tenant or user identifiers denied access.
+    /// `REVOKED_SUBJECTS`: comma-separated agent ids (any accepted spelling)
+    /// refused by the default access policy.
     pub revoked_subjects: Vec<String>,
+    /// `ALLOWED_AGENTS`: when set, comma-separated agent ids; the default
+    /// access policy admits only these owners.
+    pub allowed_agents: Option<Vec<String>>,
 }
 
 /// Where GitHub Pages serves this repository's `overlays/` folder. Every
@@ -78,17 +58,39 @@ fn require_env(name: &str) -> Result<String, String> {
     }
 }
 
+fn list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `BASE_URL` must be an absolute http(s) URL without credentials, query or
+/// fragment: it is the signed origin, so anything ambiguous is refused at
+/// startup rather than failing every signature later.
+pub(crate) fn validate_base_url(value: &str) -> Result<String, String> {
+    let url = Url::parse(value).map_err(|_| "BASE_URL must be an absolute URL".to_string())?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(
+            "BASE_URL must be an http(s) URL without credentials, query or fragment".into(),
+        );
+    }
+    Ok(value.trim_end_matches('/').to_owned())
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let app_auth_client_id = require_env("APP_AUTH_CLIENT_ID")?;
-        let app_auth_client_secret = require_env("APP_AUTH_CLIENT_SECRET")?;
-        let app_auth_authorization_url = require_env("APP_AUTH_AUTHORIZATION_URL")?;
-        let app_auth_token_url = require_env("APP_AUTH_TOKEN_URL")?;
-        let app_auth_userinfo_url = require_env("APP_AUTH_USERINFO_URL")?;
-        let app_auth_label = env::var("APP_AUTH_LABEL").unwrap_or_else(|_| "OIDC".to_string());
-        let app_auth_identity_namespace =
-            identity_namespace(env::var("APP_AUTH_IDENTITY_NAMESPACE").ok())?;
-        let base_url = env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let base_url = validate_base_url(
+            &env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        )?;
         let port = env::var("PORT")
             .ok()
             .and_then(|p| p.parse().ok())
@@ -99,54 +101,41 @@ impl Config {
         let session_secret = env::var("SESSION_SECRET")
             .ok()
             .filter(|value| !value.is_empty());
-        let server_secret = require_env("SERVER_SECRET")?;
         let catalog_path =
             env::var("CATALOG_PATH").unwrap_or_else(|_| DEFAULT_CATALOG_PATH.to_string());
-        let database_url = require_env("DATABASE_URL")
-            .map_err(|_| "DATABASE_URL must be set for replay protection".to_string())?;
+        let database_url = require_env("DATABASE_URL").map_err(|_| {
+            "DATABASE_URL must be set for connections and replay protection".to_string()
+        })?;
         let encryption_key = require_env("ENCRYPTION_KEY")?;
-        let revoked_subjects = env::var("REVOKED_SUBJECTS")
-            .unwrap_or_default()
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .collect();
+        let revoked_subjects = list(&env::var("REVOKED_SUBJECTS").unwrap_or_default());
+        let allowed_agents = env::var("ALLOWED_AGENTS")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| list(&value));
 
         Ok(Self {
-            app_auth_client_id,
-            app_auth_client_secret,
-            app_auth_authorization_url,
-            app_auth_token_url,
-            app_auth_userinfo_url,
-            app_auth_label,
-            app_auth_identity_namespace,
             base_url,
             port,
             session_secret,
-            server_secret,
             catalog_path,
             database_url,
             encryption_key,
             revoked_subjects,
+            allowed_agents,
         })
     }
 
-    pub fn redirect_url(&self) -> String {
-        format!("{}/auth/callback", self.base_url.trim_end_matches('/'))
+    /// The origin (`scheme://host[:port]`) of [`Config::base_url`]: a
+    /// capability's required `aud`.
+    pub fn public_origin(&self) -> String {
+        Url::parse(&self.base_url)
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_else(|_| self.base_url.clone())
     }
 
     /// OAuth callback and credential variable names are deterministic from the
     /// catalog platform name, e.g. `google-calendar` becomes
     /// `OAUTH_GOOGLE_CALENDAR_CLIENT_ID` and `/oauth/google-calendar/callback`.
-    #[allow(dead_code)] // used by provider OAuth routes as they are enabled
-    pub fn provider_redirect_url(&self, provider: &str) -> String {
-        format!(
-            "{}/oauth/{provider}/callback",
-            self.base_url.trim_end_matches('/')
-        )
-    }
-
-    #[allow(dead_code)] // used by provider OAuth routes as they are enabled
     pub fn provider_env_prefix(provider: &str) -> Result<String, String> {
         if provider.is_empty()
             || !provider
@@ -191,20 +180,40 @@ mod tests {
     }
 
     #[test]
-    fn legacy_identity_namespace_is_blank_or_fixed_https_only() {
-        assert_eq!(identity_namespace(Some("  ".into())).unwrap(), None);
+    fn base_url_is_the_signed_origin_and_must_be_unambiguous() {
         assert_eq!(
-            identity_namespace(Some("https://accounts.example".into())).unwrap(),
-            Some("https://accounts.example".into())
+            validate_base_url("https://proxy.example/").unwrap(),
+            "https://proxy.example"
+        );
+        assert_eq!(
+            validate_base_url("http://localhost:8080").unwrap(),
+            "http://localhost:8080"
         );
         for invalid in [
-            "http://accounts.example",
-            "https://u@accounts.example",
-            "https://accounts.example?x=1",
-            "https://accounts.example#x",
-            "https://accounts.example/{tenant}",
+            "proxy.example",
+            "ftp://proxy.example",
+            "https://u:p@proxy.example",
+            "https://proxy.example?x=1",
+            "https://proxy.example#x",
         ] {
-            assert!(identity_namespace(Some(invalid.into())).is_err());
+            assert!(validate_base_url(invalid).is_err(), "{invalid}");
         }
+        let config = Config {
+            base_url: "https://proxy.example:8443/prefix".into(),
+            port: 0,
+            session_secret: None,
+            catalog_path: String::new(),
+            database_url: String::new(),
+            encryption_key: String::new(),
+            revoked_subjects: vec![],
+            allowed_agents: None,
+        };
+        assert_eq!(config.public_origin(), "https://proxy.example:8443");
+    }
+
+    #[test]
+    fn lists_are_comma_separated_and_trimmed() {
+        assert_eq!(list(" a, b ,,c "), vec!["a", "b", "c"]);
+        assert!(list("").is_empty());
     }
 }

@@ -370,8 +370,7 @@ impl Catalog {
     }
     /// Resolves whichever kind of security scheme (OAuth or static apiKey)
     /// the platform's composed document declares, generically. Callers that
-    /// only work with one kind (e.g. tenant identity, which is OAuth-only)
-    /// keep using `oauth_provider` directly.
+    /// only work with one kind keep using `oauth_provider` directly.
     pub fn security_scheme(
         &self,
         platform: &str,
@@ -389,122 +388,6 @@ impl Catalog {
         let oauth_scheme = read_selected("oauthSecurityScheme")?;
         let api_key_scheme = read_selected("apiKeySecurityScheme")?;
         crate::providers::SecurityScheme::from_document(&document, oauth_scheme, api_key_scheme)
-    }
-    /// Returns an explicitly catalog-trusted identity operation. The OpenAPI
-    /// extension alone is descriptive and is never sufficient for tenancy.
-    pub fn tenant_identity(
-        &self,
-        platform: &str,
-    ) -> Result<crate::identity::IdentityOperation, String> {
-        let source = self.get(platform).ok_or("unknown catalog platform")?;
-        let document: Value =
-            serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
-        let selection = self
-            .selections
-            .get(platform)
-            .ok_or("tenantIdentity selection is required")?;
-        let scheme = selection
-            .get("oauthSecurityScheme")
-            .and_then(Value::as_str)
-            .ok_or("tenant identity requires oauthSecurityScheme selection")?;
-        let operation = crate::identity::parse(&document, selection)?;
-        // A credential for another OAuth scheme must never be sent to the
-        // identity endpoint. Require the selected scheme in the operation's
-        // effective security requirement (or an unambiguous global one).
-        let required = document
-            .get("paths")
-            .and_then(Value::as_object)
-            .and_then(|paths| {
-                paths.values().find_map(|item| {
-                    item.get("get").filter(|op| {
-                        op.get("operationId").and_then(Value::as_str)
-                            == selection
-                                .pointer("/tenantIdentity/operationId")
-                                .and_then(Value::as_str)
-                    })
-                })
-            })
-            .and_then(|op| op.get("security"))
-            .or_else(|| document.get("security"));
-        let allowed = required
-            .and_then(Value::as_array)
-            .is_some_and(|alternatives| {
-                !alternatives.is_empty()
-                    && alternatives.iter().all(|alternative| {
-                        alternative
-                            .as_object()
-                            .is_some_and(|requirement| !requirement.is_empty())
-                    })
-                    && alternatives.iter().any(|alternative| {
-                        alternative.as_object().is_some_and(|requirement| {
-                            requirement.len() == 1 && requirement.contains_key(scheme)
-                        })
-                    })
-            });
-        if !allowed {
-            return Err(
-                "tenant identity operation must require the selected OAuth security scheme".into(),
-            );
-        }
-        Ok(operation)
-    }
-    /// OAuth client configuration narrowed to the scope alternative selected
-    /// by the trusted identity operation, used for login-only authorization.
-    pub fn identity_oauth_provider(
-        &self,
-        platform: &str,
-    ) -> Result<crate::providers::Provider, String> {
-        let source = self.get(platform).ok_or("unknown catalog platform")?;
-        let document: Value =
-            serde_yaml::from_str(source).map_err(|_| "invalid catalog document")?;
-        let selection = self
-            .selections
-            .get(platform)
-            .ok_or("tenantIdentity selection is required")?;
-        let scheme = selection
-            .get("oauthSecurityScheme")
-            .and_then(Value::as_str)
-            .ok_or("tenant identity requires oauthSecurityScheme selection")?;
-        let operation_id = selection
-            .pointer("/tenantIdentity/operationId")
-            .and_then(Value::as_str)
-            .ok_or("tenantIdentity.operationId must be a string")?;
-        self.tenant_identity(platform)?;
-        let operation = document
-            .get("paths")
-            .and_then(Value::as_object)
-            .and_then(|paths| {
-                paths.values().find_map(|item| {
-                    item.get("get").filter(|operation| {
-                        operation.get("operationId").and_then(Value::as_str) == Some(operation_id)
-                    })
-                })
-            })
-            .ok_or("tenantIdentity.operationId does not resolve")?;
-        let alternatives = operation
-            .get("security")
-            .or_else(|| document.get("security"))
-            .and_then(Value::as_array)
-            .ok_or("tenant identity operation requires security")?;
-        let scopes = alternatives
-            .iter()
-            .find_map(|alternative| {
-                alternative
-                    .as_object()
-                    .filter(|requirement| requirement.len() == 1)
-                    .and_then(|requirement| requirement.get(scheme))
-                    .and_then(Value::as_array)
-            })
-            .ok_or("tenant identity operation must require the selected OAuth security scheme")?
-            .iter()
-            .map(|scope| {
-                scope
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or("identity scope must be a string")
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.oauth_provider(platform)?.with_scopes(scopes))
     }
     fn get(&self, platform: &str) -> Option<&str> {
         self.documents.get(platform).map(String::as_str)
@@ -1240,25 +1123,10 @@ mod tests {
                 )
             })
             .collect();
-        crate::router(AppState {
-            oauth_client: oauth2::basic::BasicClient::new(
-                oauth2::ClientId::new("test".into()),
-                None,
-                oauth2::AuthUrl::new("https://example.com/auth".into()).unwrap(),
-                None,
-            ),
-            app_auth_userinfo_url: "https://accounts.example/userinfo".into(),
-            app_auth_label: "OIDC".into(),
-            app_auth_identity_namespace: None,
-            http_client: crate::build_http_client(),
-            identity_http_client: crate::build_identity_http_client(),
-            key: axum_extra::extract::cookie::Key::generate(),
-            server_secret: "test".into(),
-            base_url: "http://localhost".into(),
-            catalog: Catalog { documents, selections: [("moneybird".into(), serde_json::json!({"query_overrides": [{"path":"/records", "values":{"include_archived":true}}]}))].into() },
-            security: None,
-            test_upstream: None,
-        })
+        let mut state = crate::test_support::state(None);
+        state.base_url = "http://localhost".into();
+        state.catalog = Catalog { documents, selections: [("moneybird".into(), serde_json::json!({"query_overrides": [{"path":"/records", "values":{"include_archived":true}}]}))].into() };
+        crate::router(state)
     }
 
     #[tokio::test]
@@ -1382,12 +1250,22 @@ mod tests {
     async fn router_reaches_parameterized_oauth_handlers() {
         let app = test_router();
         for provider in ["github-issues", "google-calendar", "moneybird", "discord"] {
-            for (action, query) in [
-                ("start", "redirect_uri=https%3A%2F%2Fexample.com&ts=0&nonce=test&challenge=test&tenant_id=test&user_id=test&user_id_sig=test&response=test"),
-                ("callback", "code=test&state=test"),
-            ] {
-                let response = app.clone().oneshot(Request::builder().uri(format!("/oauth/{provider}/{action}?{query}")).body(Body::empty()).unwrap()).await.unwrap();
-                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{provider}/{action}");
+            for (action, query) in [("callback", "code=test&state=test")] {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri(format!("/oauth/{provider}/{action}?{query}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::BAD_REQUEST,
+                    "{provider}/{action}"
+                );
                 let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
                 assert_eq!(&body[..], b"OAuth request could not be completed");
             }
