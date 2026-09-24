@@ -1,0 +1,5 @@
+{
+  "//": "Only so Playwright loads clockify.spec.ts as an ES module and can import ../app/build.mjs, as it does for the pets and notion specs, whose plugin folders are \"type\": \"module\". Not a package: timesheets has no root package.json on purpose (certify.mjs would then require sandbox certification metadata it does not have).",
+  "private": true,
+  "type": "module"
+}

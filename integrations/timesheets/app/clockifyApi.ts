@@ -74,6 +74,44 @@ export function fetchTimeEntries(
   );
 }
 
+export interface ClockifyUser {
+  id: string;
+  name?: string;
+  email?: string;
+  activeWorkspace?: string;
+}
+
+export interface SetupOptions {
+  user: ClockifyUser;
+  workspaces: RawNamed[];
+}
+
+/**
+ * What setup offers: the connected account (`/api/v1/user`; a Clockify API
+ * key belongs to exactly one user) and the workspaces it can see
+ * (`/api/v1/workspaces`, one unpaged list). Only ids are stored afterwards.
+ */
+export async function fetchSetupOptions(
+  transport: ProxyTransport,
+): Promise<SetupOptions> {
+  const user = await requestJson<ClockifyUser>(transport, '/api/v1/user');
+  if (!user || typeof user.id !== 'string' || !user.id)
+    throw new Error('Clockify did not say which account is connected');
+  const workspaces = await requestJson<RawNamed[]>(
+    transport,
+    '/api/v1/workspaces',
+  );
+  if (!Array.isArray(workspaces))
+    throw new Error('Clockify /api/v1/workspaces did not return a list');
+
+  return {
+    user,
+    workspaces: workspaces.filter(
+      w => w && typeof w.id === 'string' && typeof w.name === 'string',
+    ),
+  };
+}
+
 /**
  * Projects or members, for naming references. A 403/404 here is not fatal —
  * the lens treats an unresolved id as a dangling reference, not an error —

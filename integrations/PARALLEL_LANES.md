@@ -388,11 +388,11 @@ Rules that keep parallel worktrees from fighting:
   `feat/plugin-debug` after #1657 and #1658 (the Notion code removal) were
   merged there, no longer a PR head. The `e2e-plugin-system` job is required
   again since #71.
-- **`timesheets` has no e2e tier, and nothing is left to move.** The
-  upstream Clockify tests were deleted in atomic-server `4bab16ee6` (in the
-  pin), together with the UI they drove (#44). A new timesheets e2e needs a
-  new entry point, most likely #20's timesheets drive app once
-  atomic-server#1624 and an install flow exist. See
+- **`timesheets`' e2e is new, not moved.** The upstream Clockify tests were
+  deleted in atomic-server `4bab16ee6` (in the pin), together with the UI
+  they drove (#44). `integrations/timesheets/e2e/clockify.spec.ts` (#96)
+  drives the timesheets drive app through the host relay instead, with a
+  test-side install until #94. See
   [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has a lane entry with no tiers, so it produces no job.
   That is deliberate (#45): `certify.mjs --layer js` in `shared-checks` runs on

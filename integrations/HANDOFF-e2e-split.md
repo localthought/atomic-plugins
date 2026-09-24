@@ -49,10 +49,10 @@ UI they drove, including the `[data-integration=clockify]` card.
 left to move (#44), and `plugins.spec.ts` now holds only generic tests. The
 `e2e-plugin-system` job runs them.
 
-The `timesheets` lane stays at `typecheck` and `unit`. A new timesheets e2e
-tier needs a new entry point. The most likely one is #20's timesheets drive
-app, once atomic-server#1624 (a capability for the app frame) and an install
-flow exist.
+The `timesheets` lane now has a new e2e instead (#96):
+`integrations/timesheets/e2e/clockify.spec.ts` drives the timesheets drive
+app through the host proxy relay (atomic-server#1657), with a test-side
+install until #94.
 
 `integrations/tooling/lanes.test.mjs` checks that every declared e2e spec
 exists. Nothing checks that a lane spec is not also still running upstream.

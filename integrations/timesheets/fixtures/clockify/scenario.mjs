@@ -379,14 +379,76 @@ export function clockifyEntries(now = Date.now()) {
   ];
 }
 
-export function clockifyFixture() {
-  const state = { entries: clockifyEntries(), requests: [] };
+export const PROJECT = {
+  id: 'cccccccccccccccccccccccc',
+  name: 'Atomic plugins',
+};
+
+/**
+ * `withNames: false` keeps the original behaviour of answering the projects
+ * and users lists with 404, so a client's "names unavailable" path stays
+ * testable.
+ */
+export function clockifyFixture({ withNames = true } = {}) {
+  const state = {
+    entries: clockifyEntries(),
+    requests: [],
+    /** Status to answer the next `failures.count` time-entry requests with. */
+    failures: { count: 0, status: 500 },
+  };
 
   return {
     state,
+    /**
+     * Test-side driver, reached through mock-proxy.mjs's local-only
+     * `POST /__fixture/clockify` (never through the proxy's own routes):
+     *   { action: 'requests' }                  -> the request log
+     *   { action: 'update', id, patch }         -> merge `patch` into an entry
+     *   { action: 'fail', status?, count? }     -> fail time-entry reads
+     *   { action: 'reset' }                     -> fresh entries, no failures
+     */
+    control(command) {
+      switch (command?.action) {
+        case 'requests':
+          return { requests: state.requests };
+        case 'update': {
+          const entry = state.entries.find(e => e.id === command.id);
+          if (!entry) return { error: `no entry ${command.id}` };
+          Object.assign(entry, command.patch ?? {});
+
+          return { entry };
+        }
+        case 'fail':
+          state.failures = {
+            count: Number(command.count ?? 1),
+            status: Number(command.status ?? 500),
+          };
+
+          return { failures: state.failures };
+        case 'reset':
+          state.entries = clockifyEntries();
+          state.requests = [];
+          state.failures = { count: 0, status: 500 };
+
+          return {};
+        default:
+          return { error: 'unknown action' };
+      }
+    },
     request(method, url) {
       state.requests.push(`${method} ${url.pathname}${url.search}`);
       if (method !== 'GET') return { status: 403, body: {} };
+      const named = url.pathname.match(
+        /^\/proxy\/clockify\/api\/v1\/workspaces\/([^/]+)\/(projects|users)$/,
+      );
+      if (named && withNames) {
+        if (named[1] !== WORKSPACE.id)
+          return { status: 403, body: { message: 'Forbidden' } };
+        const page = Number(url.searchParams.get('page') ?? 1);
+        const all = named[2] === 'projects' ? [PROJECT] : [USER];
+
+        return { status: 200, body: page === 1 ? all : [] };
+      }
       if (url.pathname === '/proxy/clockify/api/v1/user')
         return {
           status: 200,
@@ -406,6 +468,14 @@ export function clockifyFixture() {
       if (!list) return { status: 404, body: { message: 'Not found' } };
       if (list[1] !== WORKSPACE.id || list[2] !== USER.id)
         return { status: 403, body: { message: 'Forbidden' } };
+      if (state.failures.count > 0) {
+        state.failures.count--;
+
+        return {
+          status: state.failures.status,
+          body: { message: 'Simulated Clockify failure' },
+        };
+      }
       const start =
         Date.parse(url.searchParams.get('start') ?? '') || -Infinity;
       const end = Date.parse(url.searchParams.get('end') ?? '') || Infinity;
