@@ -4,7 +4,7 @@
  * end in a real host: the app runs in its null-origin iframe, connects
  * Clockify through the host's consent bar and the (mock) integration proxy,
  * is set up in the frame (workspace, account, 7/30-day look-back), and
- * imports through the host's proxy relay into its own table, with the
+ * imports through the integration proxy into its own table, with the
  * Properties it creates under its own ontology. Then: reload (no
  * duplicates), a changed entry, a wider window, and a proxy failure that
  * leaves the rows readable and recovers.
@@ -90,15 +90,15 @@ test.describe('timesheets drive app', () => {
     await expect(
       page.getByRole('heading', { name: 'Mock integration proxy' }),
     ).toBeVisible();
+    // An API-key platform: the key is pasted on the proxy's own page and
+    // stays there, sealed in the connection; the drive never sees it.
+    await page.getByLabel('API key').fill('synthetic-clockify-key');
     await page
-      .getByRole('button', {
-        name: 'Use LocalThought to sync Clockify with your Atomic Data Hub',
-        exact: true,
-      })
+      .getByRole('button', { name: 'Connect Clockify', exact: true })
       .click();
     await expect(page).not.toHaveURL(/connection_code=|integration_state=/);
 
-    // Setup, in the frame: the account and its workspaces come through the relay.
+    // Setup, in the frame: the account and its workspaces come through the proxy.
     await expect(status).toContainText('Choose the workspace', {
       timeout: 30_000,
     });
@@ -120,14 +120,18 @@ test.describe('timesheets drive app', () => {
     );
     const table = await tableOf(page);
 
-    // The drive holds settings, never the connection: the page keeps the
-    // rotating code in its own storage, bound to this app.
-    const stored = await page.evaluate(() =>
-      Object.keys(localStorage).filter(k =>
-        k.startsWith('atomic-proxy-connection-v1:'),
-      ),
+    // The drive holds settings, never the connection or the key.
+    // The connection lives at the proxy, owned by the signed-in user and
+    // delegated to this app; the page keeps nothing credential-like.
+    const connections = await proxyConnections('clockify');
+    expect(connections).toHaveLength(1);
+    expect(connections[0].owner).toBe(await signedInAgent(page));
+    expect(connections[0].delegations).toHaveLength(1);
+    expect(await page.evaluate(() => Object.keys(localStorage))).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^atomic-proxy-connect|connection-v1/),
+      ]),
     );
-    expect(stored).toHaveLength(1);
     const appValues = await page.evaluate(async () => {
       const store = window.store!;
       const subject = new URL(location.href).searchParams.get('subject')!;
@@ -135,7 +139,9 @@ test.describe('timesheets drive app', () => {
       return JSON.stringify((await store.getResource(subject)).getPropVals());
     });
     expect(appValues).toContain('aaaaaaaaaaaaaaaaaaaaaaaa');
-    expect(appValues).not.toMatch(/connection[-_]?code|bearer/i);
+    expect(appValues).not.toMatch(
+      /connection[-_]?code|bearer|capabilit|synthetic-clockify-key/i,
+    );
 
     // Columns are Properties the app created, with Atomic datatypes.
     expect(await columnDatatypes(page, table)).toMatchObject({
@@ -250,6 +256,34 @@ async function columnDatatypes(
       ]),
     );
   }, table);
+}
+
+interface MockConnection {
+  connection_id: string;
+  platform: string;
+  owner: string;
+  delegations: { agent: string; label: string | null }[];
+}
+
+/** The mock proxy's connections for `platform` (test-side introspection). */
+async function proxyConnections(platform: string): Promise<MockConnection[]> {
+  const response = await fetch(
+    `${process.env.INTEGRATION_PROXY_URL}/__mock/connections`,
+  );
+  const { connections } = (await response.json()) as {
+    connections: MockConnection[];
+  };
+
+  return connections.filter(c => c.platform === platform);
+}
+
+/** The signed-in agent as the proxy names it: `atomic:agent:<base64url>`. */
+async function signedInAgent(page: Page): Promise<string> {
+  const key = await page.evaluate(() =>
+    window.store!.getAgent()!.getPublicKey(),
+  );
+
+  return `atomic:agent:${Buffer.from(key, 'base64').toString('base64url')}`;
 }
 
 /** The app's table: the value on the app that is a Table (`app-data`). */

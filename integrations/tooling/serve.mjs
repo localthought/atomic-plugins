@@ -51,16 +51,27 @@ export function serverEnv(ports, store) {
     ATOMIC_PORT: String(ports.atomicServer),
     ATOMIC_DOMAIN: 'localhost',
     ATOMIC_REPOPULATE_DEFAULTS: 'true',
-    // Mirrors what atomic-server's own dagger e2e pipeline sets for parity;
-    // nothing in server/src reads these today, so they are a no-op kept only
-    // so this matches upstream if a future commit does. (In a container,
-    // 127.0.0.1 would be the container itself. Revisit that if one starts
-    // being read. Plugin ctx.http refuses loopback addresses anyway.)
-    ATOMIC_INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
+    // `--integration-proxy-url` (atomic-server#1702): the proxy origin whose
+    // `ctx.http` requests the host signs with the installation's node agent,
+    // and the one loopback origin let through the public-address check. It
+    // must equal the mock's MOCK_PROXY_BASE_URL, which every signature
+    // covers. No plugin in this repo reaches the proxy with `ctx.http` yet
+    // (README, "Sandbox plugins and the proxy"), so no lane exercises it.
+    // In a container (ATOMIC_SERVER_IMAGE), 127.0.0.1 is the container
+    // itself; revisit when a lane needs server-side proxy calls.
+    ATOMIC_INTEGRATION_PROXY_URL: mockProxyOrigin(ports),
+    // Mirrors atomic-server's own dagger e2e pipeline; nothing in server/src
+    // reads it today.
     ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
-    TENANT_SECRET: 'bW9jay10ZW5hbnQ.mock-signature',
   };
 }
+
+/**
+ * The mock proxy's public origin (its BASE_URL): what the browser is told
+ * (INTEGRATION_PROXY_URL in run-lane.mjs), what the server is told, and what
+ * every v2 signature and capability `aud` must name, byte for byte.
+ */
+export const mockProxyOrigin = ports => `http://127.0.0.1:${ports.mockProxy}`;
 
 /** Where the image keeps its store (the Dockerfile's VOLUME). */
 export const IMAGE_STORE = '/data';
@@ -268,6 +279,7 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
   // SPA from — atomic-server directly (FRONTEND_URL in run-lane.mjs and
   // ci.yml), not the dev-server, which only hosts the catalog. The mock proxy
   // rejects any /connect whose redirect_uri has another origin.
+  // MOCK_PROXY_BASE_URL is the origin clients sign for (mockProxyOrigin).
   const mock = platforms === undefined || platforms.length > 0;
   if (mock)
     start(
@@ -276,6 +288,7 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
       ['integrations/localthought/mock-proxy.mjs'],
       {
         MOCK_PROXY_PORT: String(ports.mockProxy),
+        MOCK_PROXY_BASE_URL: mockProxyOrigin(ports),
         MOCK_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
         MOCK_PROXY_PLATFORMS: (platforms ?? []).join(','),
       },

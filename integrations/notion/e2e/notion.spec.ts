@@ -1,14 +1,14 @@
 // @wc-ignore-file
 /**
  * The Notion drive plugin (`../app/`) end to end: an app in the drive runs
- * `dist/ui.js` in its null-origin frame, connects through the host's
- * integration-proxy relay (#52), and imports the mock proxy's notion fixture
- * through syncables/browser, cursor in the POST body included.
+ * `dist/ui.js` in its null-origin frame, connects through the host's consent
+ * bar and the mock integration proxy, and imports the mock proxy's notion
+ * fixture through syncables/browser, cursor in the POST body included.
  *
- * It needs an atomic-server with #52's relay (`store.proxy`, the host consent
- * bar and the connect return): ontola/atomic-server#1657, merged into
- * `feat/plugin-debug` together with the Notion code removal (#1658). The pin,
- * `bae5cdbe3`, has both. This spec
+ * The connect flow is the proxy's 0.2 one (#54 phase 2): the page redeems the
+ * handoff signed with the user's key and delegates the connection to the
+ * app's agent; the frame calls the proxy itself with a capability and its
+ * own key (atomic-server#1697, in the pin). This spec
  * replaces the old one, which drove the `[data-integration=notion]` card that
  * atomic-server 4bab16ee6 removed (#68). Its two-way, PATCH and
  * revoked-access checks have no read-only counterpart, so they are gone.
@@ -35,7 +35,7 @@ test.describe('notion drive plugin', () => {
   // No integration-discovery settings: a drive app needs none, and that
   // helper's signature differs between the pinned and newer atomic-server.
 
-  test('imports every shared Notion page through the proxy relay', async ({
+  test('imports every shared Notion page through the integration proxy', async ({
     page,
   }) => {
     test.skip(
@@ -64,11 +64,11 @@ test.describe('notion drive plugin', () => {
     ).toBeVisible();
     await page
       .getByRole('button', {
-        name: 'Use LocalThought to sync Notion with your Atomic Data Hub',
+        name: 'Use LocalThought to sync Notion with this destination',
         exact: true,
       })
       .click();
-    await expect(page).not.toHaveURL(/connection_code=/);
+    await expect(page).not.toHaveURL(/connection_code=|integration_state=/);
 
     // Back on the app, which finds its connection and imports on open.
     await expect(

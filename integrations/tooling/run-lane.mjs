@@ -22,7 +22,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, symlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
-import { bringUp } from './serve.mjs';
+import { bringUp, mockProxyOrigin } from './serve.mjs';
 import { layoutProblems } from './link-atomic-server.mjs';
 
 // A warning, not a failure: testing against another atomic-server commit on
@@ -196,7 +196,7 @@ for (const tier of order.filter(t => tiers.includes(t))) {
         SERVER_URL: `http://localhost:${ports.atomicServer}`,
         FRONTEND_URL: `http://localhost:${ports.atomicServer}`,
         PLUGIN_CATALOG_URL: `http://localhost:${ports.devServer}/integrations/catalog.json`,
-        INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
+        INTEGRATION_PROXY_URL: mockProxyOrigin(ports),
         ATOMIC_MOCK_INTEGRATION_PROXY: '1',
       },
     );
