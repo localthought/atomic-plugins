@@ -91,13 +91,13 @@ from its registered claim. This plugin does not implement a separate host-meta.
   "origin": "https://social.example",
   "username": "news",
   "profile": "https://atomic.example/public-profile",
-  "objects": [
+  "publication": { "objects": [
     {
       "id": "announcement-1",
       "subject": "https://atomic.example/public-announcement",
       "published": "2026-09-24T12:00:00.000Z"
     }
-  ]
+  ] }
 }
 ```
 

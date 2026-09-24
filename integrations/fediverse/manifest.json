@@ -23,17 +23,12 @@
         "type": "string",
         "description": "Public Atomic profile subject; only name and description are projected."
       },
-      "objects": {
-        "type": "array",
-        "description": "At most 50 explicit {id, subject, published} mappings; published is UTC ISO with .000Z. Publication order is timestamp descending then id."
+      "publication": {
+        "type": "object",
+        "description": "Object with objects array of at most 50 explicit {id, subject, published} mappings; UTC ISO timestamps with .000Z."
       }
     },
-    "required": [
-      "origin",
-      "username",
-      "profile",
-      "objects"
-    ]
+    "required": ["origin", "username", "profile", "publication"]
   },
   "http": {
     "mount": "drive-host",
@@ -41,49 +36,35 @@
       {
         "id": "actor",
         "path": "/ap/actor",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "objects",
         "path": "/ap/objects/{id}",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "activities",
         "path": "/ap/activities/{id}",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "outbox",
         "path": "/ap/outbox",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "outbox-unavailable",
         "path": "/ap/outbox",
-        "methods": [
-          "POST"
-        ],
+        "methods": ["POST"],
         "principal": "anonymous",
         "auth": "none",
         "body": "json",
@@ -92,19 +73,14 @@
       {
         "id": "inbox-read-unavailable",
         "path": "/ap/inbox",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "inbox-unavailable",
         "path": "/ap/inbox",
-        "methods": [
-          "POST"
-        ],
+        "methods": ["POST"],
         "principal": "anonymous",
         "auth": "none",
         "body": "json",
@@ -113,10 +89,7 @@
       {
         "id": "webfinger",
         "path": "/webfinger",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none",
         "cors": "any-origin-no-credentials"
@@ -124,20 +97,14 @@
       {
         "id": "nodeinfo-links",
         "path": "/nodeinfo",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       },
       {
         "id": "nodeinfo",
         "path": "/nodeinfo/2.1",
-        "methods": [
-          "GET",
-          "HEAD"
-        ],
+        "methods": ["GET", "HEAD"],
         "principal": "anonymous",
         "auth": "none"
       }
