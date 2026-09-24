@@ -28,9 +28,15 @@
  * A lane that declares `pluginRoutes` in lanes.json (see server-build.mjs)
  * gets a different binary: one built with the `plugin-routes` feature,
  * started with `--plugin-routes <level>` and `--routes-origin
- * http://routes.localhost:<port>`. ATOMIC_SERVER_IMAGE names the default
- * build, so such a lane never runs it; the `:<sha>-plugin-routes` image
- * variant is what CI's build-server-plugin-routes pulls (AGENTS.md).
+ * http://routes.localhost:<port>`. It comes from, first match wins:
+ *
+ *   - ATOMIC_SERVER_ROUTES_BINARY (CI sets it);
+ *   - an image: ATOMIC_SERVER_ROUTES_IMAGE, or, with ATOMIC_SERVER_IMAGE
+ *     set, its `:<sha>-plugin-routes` variant (routesImageFor), which the e2e
+ *     image workflow publishes for every SHA that has the feature. The flags
+ *     go to the container as its arguments. If that image can't be pulled or
+ *     lacks the feature, the lane falls back to:
+ *   - the local source build (server-build.mjs).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -139,7 +145,14 @@ export const IMAGE_STORE = '/data';
  *   can't block the next one by name. It can't hold the port either, because
  *   assertFree() would name the clash before anything starts.
  */
-export function dockerRunArgs({ image, name, ports, label, env }) {
+export function dockerRunArgs({
+  image,
+  name,
+  ports,
+  label,
+  env,
+  command = [],
+}) {
   const args = [
     'run',
     '--rm',
@@ -157,7 +170,8 @@ export function dockerRunArgs({ image, name, ports, label, env }) {
   for (const [key, value] of Object.entries(env))
     args.push('--env', `${key}=${value}`);
 
-  args.push(image);
+  // Arguments after the image go to its entrypoint, atomic-server.
+  args.push(image, ...command);
 
   return args;
 }
@@ -176,10 +190,88 @@ export const storeVolume = label => `atomic-plugins-lane-store-${label}`;
  * shouldn't go unnoticed.
  */
 export function imagePinProblem(image, pinned) {
-  const tag = /:([0-9a-f]{40})$/.exec(image)?.[1];
+  const tag = /:([0-9a-f]{40})(?:-plugin-routes)?$/.exec(image)?.[1];
   if (tag === undefined || tag === pinned) return undefined;
 
   return `${image} is atomic-server ${tag}, but .atomic-server-ref pins ${pinned}`;
+}
+
+/**
+ * The plugin-routes image for a lane that declares `pluginRoutes`, or
+ * undefined: ATOMIC_SERVER_ROUTES_IMAGE, else the `-plugin-routes` variant of
+ * ATOMIC_SERVER_IMAGE's tag. A tag that isn't a full SHA (`latest-pin`) has
+ * no variant, so the pinned SHA's is used.
+ */
+export function routesImageFor(env, pinned) {
+  if (env.ATOMIC_SERVER_ROUTES_IMAGE) return env.ATOMIC_SERVER_ROUTES_IMAGE;
+  const image = env.ATOMIC_SERVER_IMAGE;
+  if (!image) return undefined;
+  const match = /^(.+?):([^:/]+)$/.exec(image);
+  const repository = match ? match[1] : image;
+  const tag = match?.[2];
+  const sha = tag && /^[0-9a-f]{40}$/.test(tag) ? tag : pinned;
+
+  return `${repository}:${sha}-plugin-routes`;
+}
+
+/**
+ * Makes sure `image` is local, pulling it in the foreground: a first pull (a
+ * few hundred MB) would otherwise eat the readiness timeout. Throws with the
+ * cause when it can't.
+ */
+function pullImage(image) {
+  if (
+    spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' })
+      .status === 0
+  )
+    return;
+  const pull = spawnSync('docker', ['pull', image], { stdio: 'inherit' });
+
+  if (pull.error || pull.status !== 0)
+    throw new Error(
+      `could not pull ${image}${pull.error ? ` (${pull.error.message})` : ''}. Is Docker running, and does a tag exist for this commit? See AGENTS.md, "Shared pinned atomic-server build".`,
+    );
+}
+
+/** The features an image says it was built with (the Dockerfile's label). */
+function imageFeatures(image) {
+  const r = spawnSync(
+    'docker',
+    [
+      'image',
+      'inspect',
+      '--format',
+      '{{ index .Config.Labels "dev.atomicdata.atomic-server.features" }}',
+      image,
+    ],
+    { encoding: 'utf8' },
+  );
+
+  return r.status === 0 ? r.stdout.trim().split(',') : [];
+}
+
+/**
+ * The plugin-routes image if it is usable here, else undefined after saying
+ * why, so the caller falls back to the source build.
+ */
+function usableRoutesImage(image) {
+  try {
+    pullImage(image);
+  } catch (error) {
+    console.warn(`warning: ${error.message} Falling back to the local build.`);
+
+    return undefined;
+  }
+
+  if (!imageFeatures(image).includes('plugin-routes')) {
+    console.warn(
+      `warning: ${image} was not built with the plugin-routes feature. Falling back to the local build.`,
+    );
+
+    return undefined;
+  }
+
+  return image;
 }
 
 const free = port =>
@@ -264,34 +356,23 @@ export async function bringUp({
   let binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
 
   if (pluginRoutes !== undefined) {
-    if (image)
-      console.warn(
-        `warning: ${image} is the default build; lane ${label} needs the plugin-routes feature, so it runs the local plugin-routes build instead`,
-      );
-    image = undefined;
-    binary = await ensureRoutesBinary({
-      checkout: serverCheckout(),
-      pin: readPin(),
-    });
-  }
-
-  if (image) {
+    // The default image can't open the gates; its variant can.
+    const routesImage = process.env.ATOMIC_SERVER_ROUTES_BINARY
+      ? undefined
+      : routesImageFor(process.env, readPin());
+    image = routesImage && usableRoutesImage(routesImage);
+    if (image) {
+      const problem = imagePinProblem(image, readPin());
+      if (problem) console.warn(`warning: ${problem}`);
+    } else
+      binary = await ensureRoutesBinary({
+        checkout: serverCheckout(),
+        pin: readPin(),
+      });
+  } else if (image) {
     const problem = imagePinProblem(image, readPin());
     if (problem) console.warn(`warning: ${problem}`);
-
-    // Pulled up front, in the foreground: a first pull (a few hundred MB)
-    // would otherwise eat the readiness timeout below.
-    if (
-      spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' })
-        .status !== 0
-    ) {
-      const pull = spawnSync('docker', ['pull', image], { stdio: 'inherit' });
-
-      if (pull.error || pull.status !== 0)
-        throw new Error(
-          `could not pull ${image}${pull.error ? ` (${pull.error.message})` : ''}. Is Docker running, and does a tag exist for this commit? See AGENTS.md, "Shared pinned atomic-server build".`,
-        );
-    }
+    pullImage(image);
   } else if (!existsSync(binary)) {
     // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
     // the caller waits out the full readiness timeout before seeing the cause.
@@ -329,6 +410,7 @@ export async function bringUp({
         ports,
         label,
         env: serverEnv(ports, IMAGE_STORE),
+        command: pluginRoutesArgs(pluginRoutes, ports),
       }),
     );
   } else {

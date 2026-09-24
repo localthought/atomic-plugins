@@ -121,9 +121,12 @@ Two optional fields came later ([#134](https://github.com/ontola/atomic-plugins/
   run once per level, each on a fresh server started with
   `--plugin-routes <level> --routes-origin http://routes.localhost:<port>`,
   and the tests read `PLUGIN_ROUTES_LEVEL` and `PLUGIN_ROUTES_ORIGIN`. The
-  binary comes from `tooling/server-build.mjs`: `ATOMIC_SERVER_ROUTES_BINARY`
-  in CI, locally `~/.cache/atomic-plugins/atomic-server/<sha>-plugin-routes`,
-  built on first use under a `<dir>.lock` lock. In CI only a run whose matrix
+  server comes from `ATOMIC_SERVER_ROUTES_BINARY` in CI; locally from the
+  `:<sha>-plugin-routes` image when `ATOMIC_SERVER_IMAGE` (or
+  `ATOMIC_SERVER_ROUTES_IMAGE`) is set, with the flags as container
+  arguments; otherwise, or when that image is missing or lacks the feature,
+  from `~/.cache/atomic-plugins/atomic-server/<sha>-plugin-routes`, which
+  `tooling/server-build.mjs` builds on first use under a `<dir>.lock` lock. In CI only a run whose matrix
   holds such a lane starts `build-server-plugin-routes`, which pulls
   `ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes` (the e2e image
   workflow's second variant) and builds from source only without it.

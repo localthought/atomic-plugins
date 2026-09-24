@@ -331,10 +331,12 @@ as long as the default build), from `~/gh/ontola/atomic-server` or
 - CI also publishes this build as
   `ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes` (for a SHA that has
   the feature) and `build-server-plugin-routes` pulls it before building
-  from source. Locally, `ATOMIC_SERVER_IMAGE` does not apply to these
-  lanes; to use that image, copy its binary out (`docker create`, `docker
-  cp .../usr/local/bin/atomic-server`, a linux binary) and point
-  `ATOMIC_SERVER_ROUTES_BINARY` at it on linux.
+  from source. Locally, with `ATOMIC_SERVER_IMAGE` set, `serve.mjs` runs
+  that variant for these lanes (its `:<sha>-plugin-routes` tag, or
+  `ATOMIC_SERVER_ROUTES_IMAGE` to name one), passing `--plugin-routes` and
+  `--routes-origin` as container arguments, so a Mac needs no source build.
+  Only when that image can't be pulled, or lacks the feature, does it fall
+  back to building `<sha>-plugin-routes` from source.
 
 #### Or run the published image instead of building
 
