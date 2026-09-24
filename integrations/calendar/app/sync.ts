@@ -816,6 +816,7 @@ export async function readEvents(
       ...card.value,
       subject,
       ...(card.id ? { id: card.id } : {}),
+      ...(baseline ? { baseline } : {}),
       pending:
         !!card.id &&
         !!baseline &&

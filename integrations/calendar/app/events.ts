@@ -18,6 +18,8 @@ export interface CalEvent extends Projection {
   id?: string;
   /** Edited here and not sent yet: the row differs from its sync baseline. */
   pending: boolean;
+  /** What both sides last agreed on, when the row is bound. */
+  baseline?: Projection;
   /** Listed as a conflict by the last preview. */
   conflict: boolean;
   /** The calendar is read-only for this person: never offer Edit. */
@@ -166,6 +168,8 @@ export interface Block {
   /** Lane within its overlap cluster, 0-based, and how many lanes the cluster has. */
   lane: number;
   lanes: number;
+  /** Index of its overlap cluster within the column. */
+  cluster: number;
 }
 
 export interface WeekLayout {
@@ -251,10 +255,12 @@ function packColumn(sorted: Segment[]): Block[] {
   let cluster: Block[] = [];
   let laneEnds: number[] = [];
   let clusterEnd = -1;
+  let clusters = 0;
 
   const close = () => {
     for (const block of cluster) block.lanes = laneEnds.length;
     out.push(...cluster);
+    clusters++;
     cluster = [];
     laneEnds = [];
   };
@@ -268,7 +274,7 @@ function packColumn(sorted: Segment[]): Block[] {
     let lane = laneEnds.findIndex(end => end <= segment.startMin);
     if (lane < 0) lane = laneEnds.push(0) - 1;
     laneEnds[lane] = segment.endMin;
-    cluster.push({ segment, lane, lanes: 0 });
+    cluster.push({ segment, lane, lanes: 0, cluster: clusters });
     clusterEnd = Math.max(clusterEnd, segment.endMin);
   }
 

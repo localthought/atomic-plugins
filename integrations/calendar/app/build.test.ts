@@ -18,7 +18,9 @@ describe('calendar drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    expect(bytes).toBeLessThan(160 * 1024);
+    // The designed UI (#89) is about 170 KB unminified, most of it the
+    // stylesheet and view code; build.mjs does not minify.
+    expect(bytes).toBeLessThan(224 * 1024);
   });
 
   it('carries no credential handling or network access of its own', () => {

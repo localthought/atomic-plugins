@@ -212,6 +212,15 @@ export function rangeTitle(from: string, to: string): string {
   return `${f} – ${t} ${monthName(to)} ${ty}`;
 }
 
+/** `24 – 26 Sep`, `29 Sep – 1 Oct`: for narrow toolbars. */
+export function shortRange(from: string, to: string): string {
+  const month = (d: string) => monthName(d).slice(0, 3);
+  if (from.slice(0, 7) === to.slice(0, 7))
+    return `${dayNum(from)} – ${dayNum(to)} ${month(to)}`;
+
+  return `${dayNum(from)} ${month(from)} – ${dayNum(to)} ${month(to)}`;
+}
+
 /** `GMT+2`, the short label of the zone's offset at an instant. */
 export function offsetLabel(ms: number, zone: string): string {
   const off = offsetAt(ms, zone);
