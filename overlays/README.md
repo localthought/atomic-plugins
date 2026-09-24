@@ -38,6 +38,19 @@ for the timesheets app's two-way sync (ontola/atomic-plugins#123). Its
 request shapes follow Clockify's published reference and are not verified
 against a live account.
 
+GitHub Issues' `repositories-read-overlay.yaml` comes right after its
+pagination overlay, whose `nextLink` scheme it names, and carries its own
+`security`: it adds `GET /user/repos`, the issue-tracker drive app's
+repository picker (ontola/atomic-plugins#147), as a plain read, not a
+`crudResources` collection. The same app's two label writes, adding one
+label to an issue (`POST .../issues/{issue_number}/labels`) and removing one
+(`DELETE .../labels/{name}`), are in `crud-causality-overlay.yaml` as partial
+updates of `issue`; there is no endpoint that replaces or lists an issue's
+labels. All three use the `repo` scope the GitHub OAuth app already asks
+for, which covers issue labels and private repositories, so the requested
+scope is unchanged. Their shapes follow GitHub's REST reference and are not
+verified against a live account.
+
 Checks:
 
 - `.github/workflows/overlays-ci.yml` (PRs): every catalog overlay URL maps
