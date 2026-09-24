@@ -1,4 +1,4 @@
-import { DocHandle } from '@automerge/automerge-repo';
+import type { DocHandle } from '@automerge/automerge-repo';
 import { DevonianModel } from '../DevonianModel.js';
 import { CoreStorage } from './IndexedStorage.js';
 

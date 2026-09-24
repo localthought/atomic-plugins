@@ -63,4 +63,15 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Smoke drivers bundled by __tests__/browser/bundle.test.ts and run in a
+    // browser-like vm context: browser globals only.
+    files: ['__tests__/browser/fixtures/**'],
+
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+    },
+  },
 );

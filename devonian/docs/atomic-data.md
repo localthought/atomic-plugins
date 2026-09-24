@@ -1,6 +1,6 @@
 # Native Atomic Data API
 
-Devonian's resource API stores Atomic Data directly: named resources have an `@id` subject URL, property keys are URLs, and values are checked against a local property catalog. Platform objects exist at connector boundaries. The original `DevonianTable`, `DevonianLens`, and numeric row storage APIs remain compatible and are not automatically migrated.
+Devonian's resource API stores Atomic Data directly: named resources have an `@id` subject URL, property keys are URLs, and values are checked against a local property catalog. Platform objects exist at connector boundaries. Every name in this guide is exported from both the package root (`devonian`) and, from 0.7.0, the `devonian/atomic` subpath, which carries only this API (no row API, no `effect`) for small browser bundles. The original `DevonianTable`, `DevonianLens`, and numeric row storage APIs remain compatible and are not automatically migrated.
 
 ## Resource storage
 

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { DevonianEventEmitter } from './events.js';
 import { DevonianClient } from './DevonianClient.js';
 import { DevonianModel } from './DevonianModel.js';
 import { Storage } from './storage/interface.js';
@@ -15,7 +15,7 @@ export type DevonianTableOptions<ModelWithoutId, Model> = {
 export class DevonianTable<
   ModelWithoutId extends DevonianModel,
   Model extends ModelWithoutId,
-> extends EventEmitter {
+> extends DevonianEventEmitter {
   private storage: Storage<ModelWithoutId>;
   private client: DevonianClient<ModelWithoutId, Model>;
   private idFieldName: string;

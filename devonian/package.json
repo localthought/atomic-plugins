@@ -1,6 +1,6 @@
 {
   "name": "devonian",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ontola/atomic-plugins.git",
@@ -12,12 +12,26 @@
     "node": ">= 22.11 < 23"
   },
   "exports": {
-    ".": "./src/main.ts",
+    ".": {
+      "types": "./build/src/main.d.ts",
+      "default": "./build/src/main.js"
+    },
+    "./atomic": {
+      "types": "./build/src/atomic/index.d.ts",
+      "default": "./build/src/atomic/index.js"
+    },
+    "./background": {
+      "types": "./build/src/background/index.d.ts",
+      "default": "./build/src/background/index.js"
+    },
     "./reflect": {
       "types": "./build/src/reflect/index.d.ts",
+      "browser": "./build/src/reflect/browser.js",
       "default": "./build/src/reflect/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
+  "sideEffects": false,
   "files": [
     "docs",
     "build",
@@ -34,6 +48,7 @@
     "@typescript-eslint/parser": "~8.19",
     "@vitest/coverage-v8": "^3.0.8",
     "@vitest/eslint-plugin": "~1.1",
+    "esbuild": "^0.25.4",
     "eslint": "~9.17",
     "eslint-config-prettier": "~9.1",
     "globals": "~15.14",
@@ -58,6 +73,7 @@
     "test": "vitest run --config __tests__/vitest.config.ts",
     "test:unit": "vitest run unit --config __tests__/vitest.config.ts",
     "test:examples": "vitest run examples --config __tests__/vitest.config.ts",
+    "test:browser-build": "DEVONIAN_TEST_BUILD=1 vitest run browser --config __tests__/vitest.config.ts",
     "test:coverage": "vitest run --config __tests__/vitest.config.ts --coverage.enabled --coverage.all",
     "prettier": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --write",
     "prettier:check": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --check",

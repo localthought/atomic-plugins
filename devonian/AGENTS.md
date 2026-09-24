@@ -12,3 +12,4 @@ Devonian is a TypeScript library for bidirectional data portability. Its native 
 - Do not claim distributed convergence, Atomic Server transport, or signed Commit support without implementing and testing those protocols.
 - Keep network access out of unit tests; use deterministic connector fakes.
 - Avoid editing generated HTML docs directly. Regenerate them with TypeDoc when changing that documentation surface.
+- Keep every `exports` entry point browser-safe: no Node built-ins or Node globals outside `src/reflect/file.ts` (excluded by the `browser` condition). `__tests__/browser/bundle.test.ts` enforces this; add a driver there for any new subpath.
