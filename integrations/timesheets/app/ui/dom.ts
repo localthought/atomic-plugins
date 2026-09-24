@@ -10,16 +10,23 @@ export interface Attrs {
   [name: string]: string | number | boolean | undefined | null;
 }
 
-export type H = <K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs?: Attrs | null,
-  ...children: (Child | Child[])[]
-) => HTMLElementTagNameMap[K];
+export interface H {
+  <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    attrs?: Attrs | null,
+    ...children: (Child | Child[])[]
+  ): HTMLElementTagNameMap[K];
+  readonly doc: Document;
+}
 
 /** `h('button', { class: 'btn', disabled: true }, 'Sync now')`. Attributes
  * whose value is `false`, `null` or `undefined` are left off. */
 export function builder(doc: Document): H {
-  return (tag, attrs, ...children) => {
+  const h = <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    attrs?: Attrs | null,
+    ...children: (Child | Child[])[]
+  ) => {
     const node = doc.createElement(tag);
 
     for (const [name, value] of Object.entries(attrs ?? {})) {
@@ -31,6 +38,8 @@ export function builder(doc: Document): H {
 
     return node;
   };
+
+  return Object.assign(h, { doc });
 }
 
 export function append(node: Node, children: (Child | Child[])[]) {
