@@ -5,7 +5,7 @@
 This needs an atomic-server with the generic file entry point
 (atomic-server#1653: manifest `accepts` and `destination`, and the Import tab
 on a plugin's page; merged as atomic-server#1691). The pinned
-`.atomic-server-ref`, `11264e83e`, includes it; see [Verified](#verified).
+`.atomic-server-ref`, `007869464`, includes it; see [Verified](#verified).
 
 1. **Publish** (once per server, by whoever maintains it): create a Plugin,
    replace its source with this folder's `plugin.js`, name it "Bank
@@ -158,7 +158,7 @@ view; the table's own Table tab stays next to it.
 
 Evidence: unit tests with a fake store (`app/*.test.ts`), screenshots and
 axe from `app/harness/screenshots.mjs`, and a host E2E test in
-`e2e/money.spec.ts` (passed 2026-09-24 against `11264e83e`): it sets up the
+`e2e/money.spec.ts` (passed 2026-09-24 against `007869464`): it sets up the
 importer, imports the synthetic MT940, installs the built app test-side as
 a new App that renders bank transactions, adds it as a view of the Bank
 transactions table through Add view, and checks the ledger, the detail,
@@ -187,13 +187,12 @@ minified, one module). Screenshots, axe and the render budget:
 ## Verified
 
 `e2e/money.spec.ts` passed on 2026-09-24 against the pinned atomic-server
-`11264e83e` (earlier the same day against `2f403624e`, which includes #1691,
+`007869464` (earlier the same day against `11264e83e` and `2f403624e`, which includes #1691,
 the change for atomic-server#1653), with this package at version 0.2.0
 (`plugin.js` sha256 `01e419cd3246e4c573904f018404f3cccb663e42104d7bbd42bfb3d514f826d9`,
 the bundle with the category/note annotations and structured errors). The
-spec publishes a new release on every run, so it needs a fresh lane store
-(`<checkout>/.lane-store/money`): against a store kept from an earlier run
-it fails on two "Unverified" Bank statements releases. It covers these
+spec picks the release it just published by its id, so it also passes on a
+lane store kept from earlier runs (checked twice in a row). It covers these
 steps, all with the synthetic files in `fixtures/` and generated variants:
 
 - publish, then discover under Community plugins, then create a draft;
