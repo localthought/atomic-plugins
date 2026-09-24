@@ -48,9 +48,13 @@ globalThis.__result = (async () => {
   const subject = await lens.ingest({ id: 't1', name: 'Anvil' });
   store.patch(subject, { set: { [NAME]: 'Rocket' } });
   const published = await lens.publish(subject);
+  const scope = { scope: 'https://example.com/accounts/acme', entity: 'thing' };
+  const unbound = identities.unbind(scope, subject);
   return {
     published,
     name: records.get('t1').name,
     count: store.all(THING).length,
+    unbound,
+    bound: identities.externalId(scope, subject) ?? null,
   };
 })();

@@ -192,6 +192,21 @@ reason).
 See [the platform lens boundaries](docs/atomic-data.md#passive-platform-lenses)
 for the forward and reverse mappings and their scope.
 
+## 0.8.0
+
+Added: `AtomicIdentityMap.unbind(scope, subject)` (in `devonian` and
+`devonian/atomic`) forgets which external record a native resource
+corresponds to in one scope, and returns that external ID, or `undefined`
+when none was bound. It removes only the identity mapping resource: the
+native resource, the external record and the resource's mappings in other
+scopes stay, and no connector is called. It is for a record that is gone
+from the external system while its native copy should stay local-only (the
+GitHub issues drive app's "Keep here only"). Afterwards, publishing the
+resource through an `AtomicLens` creates a new external record, and
+ingesting the same external record again binds it back to the subject
+`subjectFor` allocates for it; keeping the two apart is the caller's
+decision. See [External identities](docs/atomic-data.md#external-identities).
+
 ## 0.7.0
 
 Added: browser support for every entry point (see

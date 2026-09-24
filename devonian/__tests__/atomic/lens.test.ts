@@ -65,6 +65,50 @@ const input: FlatOrder = {
   platformNote: 'keep me',
 };
 
+describe('unbinding a record a lens imported', () => {
+  const orders = { scope: 'https://example.com/accounts/acme', entity: 'order' };
+
+  it('keeps the native resource, calls no connector, and publishes it as a new record afterwards', async () => {
+    const { store, ids, connector, records, lens } = setup();
+    records.set(input.id, input);
+    const subject = await lens.ingest(input);
+    const before = store.get(subject);
+    // The external record disappeared; keep the native copy only.
+    records.delete(input.id);
+
+    expect(ids.unbind(orders, subject)).toBe('order-37');
+    expect(store.get(subject)).toEqual(before);
+    expect(ids.lookup(orders, 'order-37')).toBeUndefined();
+    // The linked customer's identity is another scope: still bound.
+    const customer = store.get(subject)![v.customerLink] as string;
+    expect(
+      ids.externalId(
+        { scope: 'https://example.com/accounts/acme', entity: 'customer' },
+        customer,
+      ),
+    ).toBe('customer-90');
+    for (const call of ['get', 'create', 'update', 'delete'] as const)
+      expect(connector[call]).not.toHaveBeenCalled();
+
+    // Publishing now has no external ID to update, so it creates one.
+    const created = await lens.publish(subject);
+    expect(created).toBe('server-0');
+    expect(connector.create).toHaveBeenCalledTimes(1);
+    expect(ids.externalId(orders, subject)).toBe('server-0');
+  });
+
+  it('binds the same subject again if the same external record is ingested again', async () => {
+    const { store, ids, lens } = setup();
+    const subject = await lens.ingest(input);
+    ids.unbind(orders, subject);
+    // subjectFor allocates by external ID, so the record comes back to the
+    // subject it was imported as; the caller decides whether to ingest it.
+    expect(await lens.ingest(input)).toBe(subject);
+    expect(ids.externalId(orders, subject)).toBe('order-37');
+    expect(store.all(v.order)).toHaveLength(1);
+  });
+});
+
 describe('Atomic Extract Entity lens', () => {
   it('rejects mismatched stores and invalid scopes before performing connector I/O', () => {
     const { store, ids, connector } = setup();
