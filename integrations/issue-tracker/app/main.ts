@@ -24,6 +24,7 @@ import type { ViewArgs } from './store.js';
 
 export async function view({ root, store }: ViewArgs): Promise<void> {
   const doc = root.ownerDocument;
+
   const el = <K extends keyof HTMLElementTagNameMap>(
     tag: K,
     text?: string,
@@ -33,6 +34,7 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
     return node;
   };
+
   const button = (label: string) => {
     const b = el('button', label);
     b.type = 'button';
@@ -96,9 +98,9 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
   const render = (state: ViewState) => {
     status.textContent = describe(state);
-    const label = action(state);
-    primary.hidden = !label;
-    primary.textContent = label ?? '';
+    const primaryLabel = action(state);
+    primary.hidden = !primaryLabel;
+    primary.textContent = primaryLabel ?? '';
     const busy = state.kind === 'ready' && !!state.busy;
     primary.disabled = busy;
     form.hidden = state.kind !== 'choose-repository';

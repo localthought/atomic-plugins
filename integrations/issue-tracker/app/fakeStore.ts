@@ -112,6 +112,7 @@ export function fakeStore({
     async request(request) {
       calls.push(request);
       const write = (request.method ?? 'GET') !== 'GET';
+
       if (fake.fail && (write || !fake.failWritesOnly)) {
         // A lost response: the host sent it, then heard nothing back.
         if (write && fake.lostWriteLands)
@@ -125,6 +126,7 @@ export function fakeStore({
           );
         throw new Error(fake.fail);
       }
+
       if (fake.status)
         return {
           status: fake.status,

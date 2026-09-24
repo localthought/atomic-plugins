@@ -88,8 +88,10 @@ export function proxyTransport({
               delete journal[id];
               await save();
             }
+
             throw error;
           }
+
           throw new Error(
             `Proxy request failed (${error?.message ?? error}). Check CORS and reconnect; an uncertain write will not be resent.`,
           );

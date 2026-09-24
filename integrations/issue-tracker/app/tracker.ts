@@ -22,6 +22,7 @@
 import type { JSONValue, PluginResource, PluginStore } from './store.js';
 
 const A = 'https://atomicdata.dev';
+
 export const PARENT = `${A}/properties/parent`;
 export const IS_A = `${A}/properties/isA`;
 export const NAME = `${A}/properties/name`;

@@ -272,6 +272,7 @@ async function summary(
 /** One pass. Throws a `PassError`; the state is flushed either way. */
 export async function runPass(options: PassOptions): Promise<PassResult> {
   const { bridge, atomicStore, sent, local } = bridgeFor(options);
+
   // Always written at the end: `known` subjects change on every pass.
   try {
     await bridge.sync();

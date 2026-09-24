@@ -24,6 +24,7 @@ import {
 import { relayDispatch } from './transport.js';
 
 type Ready = Extract<ViewState, { kind: 'ready' }>;
+
 const ready = (state: ViewState): Ready => {
   if (state.kind !== 'ready')
     throw new Error(`Expected ready, got ${JSON.stringify(state)}`);
@@ -132,6 +133,7 @@ group('GitHub issues drive app', () => {
 
       return typeof parent === 'string' && inApp(parent);
     };
+
     for (const { subject } of store.writes) expect(inApp(subject)).toBe(true);
     expect(store.github.snapshot(SEEDED_REPOSITORY)).toEqual(before);
     expect(state.last?.result.rows.map(r => [r.number, r.status])).toEqual(
@@ -333,6 +335,7 @@ group('GitHub issues drive app', () => {
         await controller.send();
         expect(patches()).toBe(sent + 1);
       }
+
       expect(store.github.snapshot(SEEDED_REPOSITORY).issues[0].title).toBe(
         'Maybe sent',
       );

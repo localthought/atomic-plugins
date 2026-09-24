@@ -333,12 +333,14 @@ export function describe(state: ViewState): string {
         state.error ??
         'Connected. Choose the repository to sync with this table.'
       );
+
     case 'ready': {
       if (state.busy === 'syncing') return `Syncing with ${state.repository}…`;
       if (state.busy === 'sending')
         return `Sending approved changes to ${state.repository}…`;
       if (state.busy === 'resolving')
         return 'Settling the conflict, then syncing…';
+
       if (state.problem) {
         const { kind, message } = state.problem;
         if (kind === 'conflict')
@@ -350,6 +352,7 @@ export function describe(state: ViewState): string {
 
         return `Sync failed: ${message}`;
       }
+
       if (!state.last)
         return `Bound to ${state.repository}. Sync imports its issues and comments into this table. Nothing is sent to GitHub without your review.`;
       const r = state.last.result;
@@ -391,6 +394,7 @@ function describeChange(held: Held): string {
   if (before?.title !== held.after.title)
     changes.push(`title “${before?.title ?? ''}” → “${held.after.title}”`);
   if (before?.body !== held.after.body) changes.push('description');
+
   if (before?.status !== held.after.status) {
     const verb =
       held.after.status === 'Done'

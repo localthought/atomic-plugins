@@ -50,6 +50,7 @@ export function relayDispatch(
 ): Dispatch {
   return async (path, { method, body }) => {
     const url = new URL(path, 'https://api.github.com');
+
     if (
       url.origin !== 'https://api.github.com' ||
       !url.pathname.startsWith('/repos/') ||

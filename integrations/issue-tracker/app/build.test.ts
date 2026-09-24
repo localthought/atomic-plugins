@@ -58,6 +58,7 @@ describe('GitHub issues drive-app bundle', async () => {
 
   it("validates like the real library's validateDatatype", () => {
     const samples = ['text', '', 0, 1.5, 3, true, false, ['a'], {}];
+
     const outcome = (fn: () => void) => {
       try {
         fn();

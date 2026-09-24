@@ -172,22 +172,22 @@ async function subjectOf(app: FrameLocator, prefix: string): Promise<string> {
 /** A person renaming a row in the table: the host page's own store. */
 async function setName(page: Page, subject: string, name: string) {
   await page.evaluate(
-    async ({ subject, name, NAME }) => {
-      const row = await window.store!.getResource(subject);
-      await row.set(NAME, name);
+    async ({ row: target, title, property }) => {
+      const row = await window.store!.getResource(target);
+      await row.set(property, title);
       await row.save();
     },
-    { subject, name, NAME },
+    { row: subject, title: name, property: NAME },
   );
 }
 
 /** A person changing a row's Status select to the tag with this shortname. */
 async function setStatus(page: Page, subject: string, shortname: string) {
   await page.evaluate(
-    async ({ subject, shortname }) => {
+    async ({ target, wanted }) => {
       const A = 'https://atomicdata.dev/properties';
       const store = window.store!;
-      const row = await store.getResource(subject);
+      const row = await store.getResource(target);
       const klass = await store.getResource(
         (row.get(`${A}/isA`) as string[])[0],
       );
@@ -198,7 +198,7 @@ async function setStatus(page: Page, subject: string, shortname: string) {
 
         for (const tag of p.get(`${A}/allowsOnly`) as string[]) {
           const t = await store.getResource(tag);
-          if (t.get(`${A}/shortname`) !== shortname) continue;
+          if (t.get(`${A}/shortname`) !== wanted) continue;
           await row.set(property, [tag]);
           await row.save();
 
@@ -206,9 +206,9 @@ async function setStatus(page: Page, subject: string, shortname: string) {
         }
       }
 
-      throw new Error(`No ${shortname} status`);
+      throw new Error(`No ${wanted} status`);
     },
-    { subject, shortname },
+    { target: subject, wanted: shortname },
   );
 }
 
@@ -224,7 +224,7 @@ async function github(
   body?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   return page.evaluate(
-    async ({ method, path, body, repository }) => {
+    async ({ verb, route, payload, repository }) => {
       const key = Object.keys(localStorage).find(k => {
         if (!k.startsWith('atomic-proxy-connection-v1:')) return false;
         const c = JSON.parse(localStorage.getItem(k)!);
@@ -236,14 +236,14 @@ async function github(
       return navigator.locks.request(key, async () => {
         const c = JSON.parse(localStorage.getItem(key)!);
         const response = await fetch(
-          `${c.origin}/proxy/github-issues/repos/${repository}${path}`,
+          `${c.origin}/proxy/github-issues/repos/${repository}${route}`,
           {
-            method,
+            method: verb,
             headers: {
               Authorization: `Bearer ${c.code}`,
-              ...(body ? { 'Content-Type': 'application/json' } : {}),
+              ...(payload ? { 'Content-Type': 'application/json' } : {}),
             },
-            ...(body ? { body: JSON.stringify(body) } : {}),
+            ...(payload ? { body: JSON.stringify(payload) } : {}),
           },
         );
         const next = response.headers.get('x-connection-code');
@@ -253,7 +253,7 @@ async function github(
         return response.json();
       });
     },
-    { method, path, body, repository: REPOSITORY },
+    { verb: method, route: path, payload: body, repository: REPOSITORY },
   );
 }
 

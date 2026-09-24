@@ -97,6 +97,7 @@ export class Bridge {
 
   async sync() {
     this.held.clear();
+
     // Resume saved operations BEFORE discovering their newly-created counterparts.
     for (const [subject, record] of Object.entries(this.records)) {
       // A held write never sent anything (the gate throws before any
@@ -247,12 +248,14 @@ export class Bridge {
         rows.local?.value,
         rows.remote?.value,
       );
+
       if (decision.conflicts.length) {
         const fields = decision.conflicts.map(c => c.property);
         const error = new Error(`Conflict on ${subject}: ${fields.join(', ')}`);
         Object.assign(error, { subject, entity, fields });
         throw error;
       }
+
       const desired = {
         ...(rows.remote?.value ?? rows.local?.value),
         ...decision.remote,
