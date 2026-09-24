@@ -47,6 +47,15 @@ No network operations or secrets are declared. File contents are runtime input,
 not plugin source. Proposals and approved transactions contain financial data
 and are handled by the user's AtomicServer; they are not sent to an LLM.
 
+`app/` is a separate drive app (shape 1 in AGENTS.md), the Money view of the
+same Bank transactions table ([design](design/DESIGN.md), #89). It never runs
+in the QuickJS sandbox and never writes imported bank fields: the importer
+above stays their only writer. `app/build.mjs` bundles it to one ES module
+exporting `view({ root, store })`, with no stylesheet file and no network
+code. It reads the table the host points it at (`store.getData()`), finds the
+banking properties through the table's row class, and subscribes to the table
+so rows from a new import appear without a reload.
+
 Amounts are exact signed decimal **strings**, not floating point numbers.
 Opening/closing balances are reconciled with integer arithmetic (up to five
 fractional digits). Dates have no inferred time zone. Original :86: descriptions
