@@ -91,6 +91,18 @@ in [`integrations/READINESS.md`](integrations/READINESS.md).
 Do not mix the shapes: a drive app never runs in the QuickJS sandbox, and a
 sandbox plugin never reaches a LocalThought-flow provider itself.
 
+These shapes are placements A (iframe view) and B (sandbox job) of the
+accepted #88 design. Before starting a package, apply its decision rules in
+[Choosing a placement](integrations/README.md#choosing-a-placement): they
+say when a part must instead be a sandbox route (C), a server extension (D)
+or a sidecar (E). C, D listeners and E are **planned, not built**
+(ontola/atomic-server#1711–#1723). Any public endpoint will need all three
+gates: an AtomicServer built with the Cargo feature `plugin-routes`, the
+operator's `--plugin-routes`/`ATOMIC_PLUGIN_ROUTES` switch, and per-plugin
+install consent. atomic.place builds without the feature, so a package
+meant to be useful there must not depend on one; see
+[Public endpoints need a gated server](integrations/README.md#public-endpoints-need-a-gated-server).
+
 ## devonian/
 
 Unlike `integrations/`, `devonian/` is a self-contained, independently

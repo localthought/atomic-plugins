@@ -245,6 +245,128 @@ committed `apps/<id>/<version>/ui.js` files at `/apps/...` and points the
 served catalog's `app-module` there, leaving the integrity as committed. The
 host's check therefore still applies.
 
+## Choosing a placement
+
+Before writing code, decide where each part of a package runs. The full
+rationale, the proposed manifest additions and the per-protocol assessment
+are in the accepted design
+[`docs/design/server-plugin-routes.md`](../docs/design/server-plugin-routes.md)
+(sections 0 and 1, from [#88](https://github.com/ontola/atomic-plugins/issues/88)).
+This section summarises it for plugin authors. Only placements A and B, and
+the class-extender hooks of D, exist at the current pin; everything else
+below is **planned**, with the atomic-server issue that would build it.
+
+- **A. Iframe view.** A drive app (shape 1 in
+  [Plugin runtimes](../AGENTS.md#plugin-runtimes)), run in the user's
+  browser in a null-origin iframe when a person opens it. Exists.
+- **B. Sandbox job.** A sandbox plugin (shape 2), run in AtomicServer in
+  QuickJS inside wasmtime on a `manual`, `cron` or `query` trigger. The
+  runtime exists. At the pin, a file importer can be created as a draft
+  from a published release and run from its plugin page's Import tab
+  (atomic-server#1653), as `money/` is; publishing the bundle to a server
+  is still manual ([#94](https://github.com/ontola/atomic-plugins/issues/94)).
+  [READINESS.md](READINESS.md) has the per-plugin state.
+- **C. Sandbox route.** The same sandbox as B, invoked fresh for each
+  inbound HTTP request from anyone. Planned and gated:
+  ontola/atomic-server#1711–#1716 (phase 1: gates, manifest v3, catalog and
+  install review, route registry, `http` trigger, well-known dispatcher),
+  #1717–#1721 (phase 2: writes, keys and tokens, deliveries, blob bodies,
+  endpoint health), #1722 (phase 3: WebSockets, design first).
+- **D. Server extension** (`world: server-extension`). Runs in AtomicServer,
+  installed by the operator. Class-extender hooks on reads and commits
+  exist; raw listeners are planned, gated and design-first in
+  ontola/atomic-server#1723.
+- **E. Sidecar.** A separate daemon the operator runs next to AtomicServer,
+  speaking its own protocol. It is outside AtomicServer; letting a plugin
+  reach it through declared operations to a loopback address is planned,
+  gated and design-first in ontola/atomic-server#1723.
+
+A package may use several placements (a view **and** a job **and** routes);
+decide each part separately. Answer these in order; the first "yes" sets the
+minimum placement:
+
+1. **Does it answer requests from another server or a remote client while
+   no user of this drive is present?** Then C, or D/E if rule 4 also
+   applies. A browser tab has no address and is not always on, so it cannot
+   be a federation endpoint.
+2. **Must it run when no browser tab is open** (a schedule, a trigger on
+   data changes, retries of outbound deliveries)? Then B.
+3. **Does it hold a credential that must not reach a browser** (a provider
+   API key, a server signing key, an OAuth client secret)? Then B or C, with
+   the credential in host secrets. Exception: a LocalThought connection's
+   rotating code stays in the top page, so a view (A) may use it through the
+   host's proxy relay.
+4. **Does it need a long-lived connection it terminates itself** (a
+   WebSocket firehose, a raw TCP/UDP/QUIC listener), memory that persists
+   across requests, a non-HTTP port, or more sustained CPU than the route
+   limits allow? Then D (native Rust, installed by the operator) or E. The
+   sandbox starts fresh for every invocation and is meant to stay that way.
+5. **Must it take part in reading or committing Atomic resources**
+   (validation, derived properties)? Then D, a class extender. Never C.
+6. **Otherwise** use A: interactive UI, reading the user's own connected
+   accounts, local-first two-way sync through Devonian. A is the only
+   placement that works on sessions without a server runtime.
+
+Examples from the design: the Pets and Notion drive apps are A; Notion
+scheduled sync and a bank-statement upload (`money/`) are B; a WebFinger
+responder or a remoteStorage server is C; an ActivityPub actor is C (inbox)
+plus B (delivery retries); an atproto PDS or Willow live sync (WGPS) is D or
+E; a Willow drop-file import is B.
+
+The design also proposes that the host **derives** a release's `requires`
+list (ontola/atomic-server#1535) from these declarations instead of the
+author writing it: a cron/query trigger implies `persistent-host`, non-empty
+`secrets` imply `host-credentials`, and any route or well-known claim
+implies `public-origin` and `plugin-routes:<level>`. That derivation is
+planned in ontola/atomic-server#1712; this repo's catalog and certification
+support for it is [#134](https://github.com/ontola/atomic-plugins/issues/134).
+Neither exists yet.
+
+### Public endpoints need a gated server
+
+**None of this is implemented.** It is the accepted design (section 0), and
+it applies to every surface that lets strangers reach a plugin: sandbox
+routes (C), `/.well-known/` claims, inbound writes, host-held keys and
+tokens, route-enqueued deliveries and wildcard-host egress, host-mediated
+WebSockets, listeners and sidecar access. Such a surface needs **all three**
+of these:
+
+1. **Build gate.** AtomicServer compiled with the Cargo feature
+   `plugin-routes`. It is not in `default` or `light`, and the release and
+   atomic.place feature sets are meant to exclude it (a CI check for that is
+   part of ontola/atomic-server#1711).
+2. **Runtime gate.** The operator starts that build with
+   `--plugin-routes <level>` or `ATOMIC_PLUGIN_ROUTES=<level>`, where
+   `<level>` is `off` (the default), `read-only` (anonymous `GET`/`HEAD`
+   routes and well-known claims; no inbound request can cause a write or an
+   outbound request) or `read-write` (everything above). Listeners and
+   sidecars additionally need `ATOMIC_PLUGIN_LISTENERS` /
+   `ATOMIC_PLUGIN_SIDECARS` entries, and only at `read-write`. Setting the
+   option on a build without the feature is meant to make the server refuse
+   to start. Planned in ontola/atomic-server#1711.
+3. **Install consent.** A person allowed to install plugins on that node
+   approves the specific Installation after a review that lists every public
+   endpoint. Bundled templates, auto-install and drive imports never carry
+   that consent. Planned in ontola/atomic-server#1712 (refusal at install,
+   upgrade and release pin) and #1713 (catalog marking and the review's
+   "Public endpoints" section).
+
+**atomic.place builds without `plugin-routes`**, so on atomic.place no
+plugin can open a public endpoint, whatever its manifest or the install
+review says; the design has its catalog hide such plugins there. Only a
+self-hoster who builds with the feature, starts the server with the switch
+and then approves the install gets one. A node whose gate closes after
+install is meant to keep the Installation in a degraded state: routes answer
+404, deliveries pause, and its views and ungated jobs keep working.
+
+Nothing else is gated: views (A), jobs (B), class-extender hooks (D),
+secrets, and outbound operations to fixed hosts work the same on every
+build. A package that needs a gated surface should keep its ungated parts
+(a view, a job) useful on their own, so it still does something on
+atomic.place. Until ontola/atomic-server#1711 and #1712 are merged and
+pinned, no manifest in this repo can declare a route, and no gated package
+here can be tested against a real host.
+
 ## Building an uploader plugin
 
 A file-upload importer — like **Bank statements** (`integrations/money/`,
