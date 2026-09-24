@@ -48,6 +48,7 @@ connection bar, and the `pl-banner` / `pl-empty` building blocks.
   `640–959px`, `≥ 960px`), not viewport media queries.
 
 Acceptance:
+
 - Each S1/S2/S3 state renders with the shell, verified by a unit test on the
   DOM output (role, labels, button text).
 - `node integrations/notion/app/build.mjs` still produces one `dist/ui.js`;
@@ -84,6 +85,7 @@ On open, show cached state immediately and sync only when the last sync is
 older than 15 minutes or unknown.
 
 Acceptance:
+
 - Unit tests in `app/sync.test.ts`/a new `controller.test.ts` for each
   state, driven by the fake store and a fake transport returning 401, 403,
   429 (both `retry-after` forms), 502, and an empty search.
@@ -177,7 +179,7 @@ as a JSON property on the data table resource next to N2's sync record.
 
 UI: header chips "All N" + one per database with its row count (N1 slot).
 A database chip shows exactly its columns; "All" shows Name, Database,
-Last edited plus columns whose name *and* type every database shares.
+Last edited plus columns whose name _and_ type every database shares.
 Chip selection is remembered in `localStorage` (try/catch).
 
 Acceptance: unit test with two data sources whose "Status" properties have
@@ -266,7 +268,7 @@ kept, datatype clashes from `ensureColumns`). "Technical details"
 disclosure with raw lens errors for bug reports. Pill reads
 "Synced · N notes" when there are warnings.
 
-Needs the sync to report *which* properties were skipped and why; today the
+Needs the sync to report _which_ properties were skipped and why; today the
 lens silently drops unsupported types. Add that to the sync result
 (not to the lens).
 

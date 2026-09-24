@@ -66,11 +66,11 @@ Ranked jobs:
    scan a status, open the original in Notion. (Not supported: no rows are
    shown.)
 3. **Trust the copy**: know how fresh it is, which databases it covers, and
-   what did *not* come across (skipped property types, formatted text,
+   what did _not_ come across (skipped property types, formatted text,
    archived pages). (Partly: one sentence with warnings joined by `;`.)
 4. **Fix access** when Notion revokes it or a database is not shared.
    (Not supported: every failure is "Import failed: <message>".)
-5. *Later:* **edit a row in Atomic and send it to Notion**, and resolve the
+5. _Later:_ **edit a row in Atomic and send it to Notion**, and resolve the
    case where both sides changed. (Only the sandbox pilot can write.)
 
 ## 3. What competitors do, and what we take
@@ -79,22 +79,22 @@ Studied from public help pages (September 2026), not hands-on.
 
 - **Notion itself** (databases): table, board, list, gallery, calendar,
   timeline views over one database. Column headers carry a property-type
-  glyph; select/status values are coloured pills; opening a row uses *side
-  peek* by default in table, board and list, keeping the view interactive on
-  the left. *We take:* type glyphs, coloured pills in Notion's ten colour
+  glyph; select/status values are coloured pills; opening a row uses _side
+  peek_ by default in table, board and list, keeping the view interactive on
+  the left. _We take:_ type glyphs, coloured pills in Notion's ten colour
   names, side peek, and table/board/list as the first three views.
 - **Coda Pack sync tables**: the synced table carries its own refresh
   control with a settings menu next to it (auto-refresh, which account,
   "Enable edits"). Two-way edits are held locally and sent with an explicit
   "Update rows" action; a row that fails to update shows an error attached
-  to that row. *We take:* sync controls live on the view's own bar, not on a
+  to that row. _We take:_ sync controls live on the view's own bar, not on a
   separate settings page; for two-way (later), edits are pending until sent,
   and a failed row carries its own error.
 - **Airtable Sync** (incl. multi-source): several sources merge into one
   table with a "Sync source" field and an "Open source record" button; a
   warning icon on the table for "Unable to sync this source" with a
   re-authenticate action; "Synced table hasn't updated in a while" with
-  "Sync now". Sync from external apps is one-way. *We take:* the source
+  "Sync now". Sync from external apps is one-way. _We take:_ the source
   column plus per-source scoping; one warning marker and one recovery action
   per failure kind; an explicit staleness hint.
 
@@ -114,7 +114,7 @@ The Calendar, Money and Timesheets designs for #89 were written in parallel.
 This design adopts the shell proposed in the Money design, which Timesheets
 also adopted, so the plugins look like one family:
 
-- **Header row**: plugin mark + name | *source chips* | *status pill* |
+- **Header row**: plugin mark + name | _source chips_ | _status pill_ |
   one primary action. For Notion the source chips are the shared databases.
 - **Connection bar** under the header: what we are connected to, the access
   model in one phrase ("Read-only"), a details disclosure and a menu.
@@ -149,7 +149,7 @@ in its own folder. Extracting a shared `pl-` kit is a maintainer decision
 ```
 
 - **Scope** = the source chip. "All" shows the columns every database has
-  (Name, Database, Last edited) plus any column whose *name and type* all
+  (Name, Database, Last edited) plus any column whose _name and type_ all
   databases share. A single-database chip shows exactly that database's
   columns, in Notion's property order. This fixes "two columns called
   Status" at the presentation layer; it needs a per-database column list
@@ -167,27 +167,27 @@ in its own folder. Extracting a shared `pl-` kit is a maintainer decision
 
 ## 6. Screens and states
 
-Each maps to a controller state; states marked *new* do not exist in
+Each maps to a controller state; states marked _new_ do not exist in
 `ViewState` today. The mockup id is in the first column.
 
-| # | State | Trigger | What the user sees | Primary action |
-|---|-------|---------|--------------------|----------------|
-| S1 | `no-proxy` | host lacks `store.proxy` | Empty card: "This Atomic Server can't connect apps to other services yet." plus what to ask an administrator | none |
-| S2 | `not-connected` (first run) | no connection for `notion` | Empty card with Notion mark, one sentence, three facts (what is copied; read-only; you pick the pages in Notion) | Connect Notion |
-| S3 | `connecting` | after Connect, until the host navigates | Same card, button busy "Waiting for confirmation…"; hint that the bar above asks first, then Notion asks which pages to share | Cancel (in host bar) |
-| S4 | `importing` *new* (first import, table empty) | ready, no rows yet | Per-database progress list (name, "Reading… 48 pages", check when done) above skeleton rows | none |
-| S5 | `no-databases` *new* | search returns 0 data sources | Empty card: "Notion didn't share any databases with Atomic." plus three steps to share one | Choose pages in Notion |
-| S6 | `ready`, populated | rows exist | Header, bar, toolbar, table | Sync now |
-| S7 | side peek | click or Enter on a row | 400px panel: title, database, property list with type glyphs, last edited, "Open in Notion", read-only note, skipped properties for this page | Open in Notion |
-| S8 | board | View = Board on one database | One column per status/select option in Notion's order; card = title + two properties; count per column; read-only (no drag) | — |
-| S9 | `syncing` over data | Sync now, or on open when stale | Content stays usable; pill "Syncing… Reading list"; rows that changed get a short highlight | (disabled) |
-| S10 | `ready` + warnings | last sync had warnings | Pill "Synced · 3 notes" (warning); Sync details lists them grouped | Sync details |
-| S11 | `reauth` *new* | proxy answers 401/403, or the connection is gone | Alert banner: "Notion no longer gives Atomic access. Your 45 rows are kept." | Reconnect Notion |
-| S12 | `rate-limited` *new* | 429 with `retry-after` | Warning banner: "Notion asked Atomic to slow down. Trying again at 14:32." | Try now |
-| S13 | `failed` | any other error | Alert banner with the cause in plain words and a "Technical details" disclosure | Try again |
-| S14 | narrow (< 640px) | frame width | Chips become a `<select>`; List view; side peek becomes a full-frame sheet | — |
-| S15 | *later*: two-way edit | Devonian write bridge (#8 item 2) | Editable cells; pending bar "2 changes not sent to Notion · Review · Send" | Send to Notion |
-| S16 | *later*: conflict | Notion page changed since our baseline | Row marked; conflict panel with Atomic vs Notion value per property | Keep Atomic / Keep Notion |
+| #   | State                                         | Trigger                                          | What the user sees                                                                                                                            | Primary action            |
+| --- | --------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| S1  | `no-proxy`                                    | host lacks `store.proxy`                         | Empty card: "This Atomic Server can't connect apps to other services yet." plus what to ask an administrator                                  | none                      |
+| S2  | `not-connected` (first run)                   | no connection for `notion`                       | Empty card with Notion mark, one sentence, three facts (what is copied; read-only; you pick the pages in Notion)                              | Connect Notion            |
+| S3  | `connecting`                                  | after Connect, until the host navigates          | Same card, button busy "Waiting for confirmation…"; hint that the bar above asks first, then Notion asks which pages to share                 | Cancel (in host bar)      |
+| S4  | `importing` _new_ (first import, table empty) | ready, no rows yet                               | Per-database progress list (name, "Reading… 48 pages", check when done) above skeleton rows                                                   | none                      |
+| S5  | `no-databases` _new_                          | search returns 0 data sources                    | Empty card: "Notion didn't share any databases with Atomic." plus three steps to share one                                                    | Choose pages in Notion    |
+| S6  | `ready`, populated                            | rows exist                                       | Header, bar, toolbar, table                                                                                                                   | Sync now                  |
+| S7  | side peek                                     | click or Enter on a row                          | 400px panel: title, database, property list with type glyphs, last edited, "Open in Notion", read-only note, skipped properties for this page | Open in Notion            |
+| S8  | board                                         | View = Board on one database                     | One column per status/select option in Notion's order; card = title + two properties; count per column; read-only (no drag)                   | —                         |
+| S9  | `syncing` over data                           | Sync now, or on open when stale                  | Content stays usable; pill "Syncing… Reading list"; rows that changed get a short highlight                                                   | (disabled)                |
+| S10 | `ready` + warnings                            | last sync had warnings                           | Pill "Synced · 3 notes" (warning); Sync details lists them grouped                                                                            | Sync details              |
+| S11 | `reauth` _new_                                | proxy answers 401/403, or the connection is gone | Alert banner: "Notion no longer gives Atomic access. Your 45 rows are kept."                                                                  | Reconnect Notion          |
+| S12 | `rate-limited` _new_                          | 429 with `retry-after`                           | Warning banner: "Notion asked Atomic to slow down. Trying again at 14:32."                                                                    | Try now                   |
+| S13 | `failed`                                      | any other error                                  | Alert banner with the cause in plain words and a "Technical details" disclosure                                                               | Try again                 |
+| S14 | narrow (< 640px)                              | frame width                                      | Chips become a `<select>`; List view; side peek becomes a full-frame sheet                                                                    | —                         |
+| S15 | _later_: two-way edit                         | Devonian write bridge (#8 item 2)                | Editable cells; pending bar "2 changes not sent to Notion · Review · Send"                                                                    | Send to Notion            |
+| S16 | _later_: conflict                             | Notion page changed since our baseline           | Row marked; conflict panel with Atomic vs Notion value per property                                                                           | Keep Atomic / Keep Notion |
 
 Copy rules: use words the user recognises ("database", "page", "row"), never
 "data source", "connection id", "projection" or "lens" in primary text.
@@ -226,20 +226,20 @@ HTTP status and request path go behind "Technical details", for bug reports.
 All colours come from host variables through `--pl-*`, so light/dark and the
 user's main colour follow the host:
 
-| `--pl-*` | host variable | role |
-|---|---|---|
-| `--pl-bg` | `--t-color-bg-body` | frame ground |
-| `--pl-surface` | `--t-color-bg` | table, cards, peek |
-| `--pl-subtle` | `--t-color-bg-1` | header row, hover, chips |
-| `--pl-border` | `--t-color-bg-2` | hairlines |
-| `--pl-text` | `--t-color-text` | primary text |
-| `--pl-muted` | `--t-color-text-light` | secondary text |
-| `--pl-accent` | `--t-color-main` | primary button, focus ring, selection |
-| `--pl-accent-soft` | `--t-color-main-selected-bg` | selected row and chip |
-| `--pl-neg` | `--t-color-alert` | error, reauth |
-| `--pl-warn` | `--t-color-warning` | warnings, rate limit |
-| `--pl-pos` | none; literal `#2f8f5b` | synced dot, check marks |
-| `--pl-radius` | `--t-radius` | 9px |
+| `--pl-*`           | host variable                | role                                  |
+| ------------------ | ---------------------------- | ------------------------------------- |
+| `--pl-bg`          | `--t-color-bg-body`          | frame ground                          |
+| `--pl-surface`     | `--t-color-bg`               | table, cards, peek                    |
+| `--pl-subtle`      | `--t-color-bg-1`             | header row, hover, chips              |
+| `--pl-border`      | `--t-color-bg-2`             | hairlines                             |
+| `--pl-text`        | `--t-color-text`             | primary text                          |
+| `--pl-muted`       | `--t-color-text-light`       | secondary text                        |
+| `--pl-accent`      | `--t-color-main`             | primary button, focus ring, selection |
+| `--pl-accent-soft` | `--t-color-main-selected-bg` | selected row and chip                 |
+| `--pl-neg`         | `--t-color-alert`            | error, reauth                         |
+| `--pl-warn`        | `--t-color-warning`          | warnings, rate limit                  |
+| `--pl-pos`         | none; literal `#2f8f5b`      | synced dot, check marks               |
+| `--pl-radius`      | `--t-radius`                 | 9px                                   |
 
 Each is declared with a fallback (`var(--t-color-bg, #fff)`), so the app is
 legible before the host's style message arrives. `--pl-pos` has no host
@@ -302,7 +302,7 @@ accessible behaviour; mock-proxy e2e for each state.
 pending changes and conflict review (S15, S16; blocked on the Devonian write
 bridge, #8 item 2); date, people, relation and formula columns (lens
 coverage); calendar and timeline views (need dates); choosing inside Atomic
-*which* shared databases to import (today: all shared ones); disconnect from
+_which_ shared databases to import (today: all shared ones); disconnect from
 inside the app; background sync (#10).
 
 ## 12. Gaps vs today, and decisions needed
