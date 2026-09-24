@@ -18,8 +18,11 @@ describe('Notion drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: it bundles syncables'
-    // read path and the catalog document, so keep an eye on the size.
-    expect(bytes).toBeLessThan(160 * 1024);
+    // read path, the catalog document and (since #89) the UI with its
+    // stylesheet, unminified (build.mjs does not minify), so keep an eye on
+    // the size. About 190 KB at #89; the host's websocket frame limit is
+    // 16 MiB.
+    expect(bytes).toBeLessThan(256 * 1024);
   });
 
   it('carries no credential handling or network access of its own', () => {

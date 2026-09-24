@@ -1,34 +1,98 @@
 // @wc-ignore-file
 import type { OpenApiDocument } from 'syncables/browser';
+import { classifyFailure, type ProviderFailure } from './errors.js';
+import {
+  loadRecord,
+  loadSchema,
+  saveRecord,
+  toRecord,
+  type Schema,
+  type SyncRecord,
+} from './record.js';
+import { loadRows, type Row } from './rows.js';
 import type { PluginStore } from './store.js';
-import { NOTION_DOCUMENT, syncNotion, type SyncResult } from './sync.js';
+import {
+  NOTION_DOCUMENT,
+  syncNotion,
+  type SyncProgress,
+  type SyncResult,
+} from './sync.js';
 import { PLATFORM, syncablesTransport } from './transport.js';
+
+/** A sync older than this is repeated when the app opens (DESIGN.md §7). */
+export const STALE_AFTER_MS = 15 * 60 * 1000;
+
+/** What every state after a connection was found carries. */
+export interface Connected {
+  /** Absent when the connection is gone (`reauth` found on load). */
+  connectionId?: string;
+  /** The table's rows, as last read back from the drive. */
+  rows: Row[];
+  /** The last sync record that was saved, from this or an earlier open. */
+  last?: SyncRecord;
+  /** Rows the latest sync created or changed, for a short highlight. */
+  changed?: string[];
+}
 
 /**
  * Everything the view shows, as data, so it is testable without a DOM.
- * `main.ts` only renders a `ViewState` and wires the button.
+ * `main.ts` renders a `ViewState` and wires the actions.
  */
 export type ViewState =
   | { kind: 'loading' }
   | { kind: 'no-proxy' }
   | { kind: 'not-connected' }
   | { kind: 'connecting' }
-  | { kind: 'ready'; connectionId: string; last?: SyncOutcome }
-  | { kind: 'syncing'; connectionId: string };
+  | ({ kind: 'ready' } & Connected)
+  /** A sync over rows that stay usable. */
+  | ({ kind: 'syncing'; progress: SyncProgress[] } & Connected)
+  /** The first import: the table has no rows yet. */
+  | ({ kind: 'importing'; progress: SyncProgress[] } & Connected)
+  /** Connected, but Notion shares no database with the integration. */
+  | ({ kind: 'no-databases' } & Connected)
+  | ({ kind: 'reauth'; technical?: string } & Connected)
+  | ({
+      kind: 'rate-limited';
+      retryAt: number;
+      pagesRead: number;
+      technical: string;
+    } & Connected)
+  | ({
+      kind: 'failed';
+      title: string;
+      message: string;
+      technical: string;
+    } & Connected);
 
-export type SyncOutcome =
-  | { ok: true; result: SyncResult; at: number }
-  | { ok: false; error: string; at: number };
+export type ConnectedState = Extract<ViewState, Connected>;
+
+export const isConnected = (state: ViewState): state is ConnectedState =>
+  'rows' in state;
+
+export const isRunning = (state: ViewState): boolean =>
+  state.kind === 'syncing' || state.kind === 'importing';
 
 export interface Controller {
   state(): ViewState;
+  /** Reads the connection, the stored record and the rows. Fetches nothing from Notion. */
   load(): Promise<ViewState>;
+  /** Whether the last sync is unknown or older than `STALE_AFTER_MS`. */
+  isStale(): boolean;
+  /**
+   * Asks the host to connect (or reconnect, or re-open Notion's page
+   * picker). A new account navigates the page away; an existing connection
+   * picked in the host's bar reloads the state; a cancel restores it.
+   */
   connect(): Promise<ViewState>;
   sync(): Promise<ViewState>;
+  /** Re-reads the rows (after the table changed elsewhere). */
+  refreshRows(): Promise<ViewState>;
 }
 
 const upstream = (doc: OpenApiDocument) =>
   new URL((doc as { servers?: { url: string }[] }).servers?.[0]?.url ?? '');
+
+const fingerprint = (row: Row) => JSON.stringify(row.values);
 
 export function createController(
   store: PluginStore,
@@ -37,6 +101,7 @@ export function createController(
   sync: typeof syncNotion = syncNotion,
 ): Controller {
   let current: ViewState = { kind: 'loading' };
+  let schema: Schema | undefined;
   let running = false;
 
   const set = (next: ViewState) => {
@@ -46,112 +111,201 @@ export function createController(
     return next;
   };
 
+  const base = (): Connected =>
+    isConnected(current)
+      ? {
+          ...(current.connectionId
+            ? { connectionId: current.connectionId }
+            : {}),
+          rows: current.rows,
+          ...(current.last ? { last: current.last } : {}),
+        }
+      : { rows: [] };
+
+  const readDrive = async () => {
+    schema = await loadSchema(store);
+    if (!schema) return { rows: [] as Row[], last: undefined };
+    const [rows, last] = await Promise.all([
+      loadRows(store, schema),
+      loadRecord(store, schema).catch(() => undefined),
+    ]);
+
+    return { rows, last };
+  };
+
   return {
     state: () => current,
+
+    isStale() {
+      if (!isConnected(current) || !current.last) return true;
+
+      return now() - current.last.at > STALE_AFTER_MS;
+    },
 
     async load() {
       const proxy = store.proxy;
       if (!proxy || typeof proxy.connections !== 'function')
         return set({ kind: 'no-proxy' });
-      const [connection] = await proxy.connections({ platform: PLATFORM });
-      if (!connection) return set({ kind: 'not-connected' });
-      const last =
-        current.kind === 'ready' &&
-        current.connectionId === connection.connectionId
-          ? current.last
-          : undefined;
+      const [connections, drive] = await Promise.all([
+        proxy.connections({ platform: PLATFORM }),
+        readDrive(),
+      ]);
+      const [connection] = connections;
+      const kept: Connected = {
+        rows: drive.rows,
+        ...(drive.last ? { last: drive.last } : {}),
+      };
 
-      return set({
-        kind: 'ready',
-        connectionId: connection.connectionId,
-        ...(last ? { last } : {}),
-      });
+      if (!connection)
+        return set(
+          drive.rows.length || drive.last
+            ? {
+                kind: 'reauth',
+                ...kept,
+                technical:
+                  'The host lists no Notion connection for this app in this browser.',
+              }
+            : { kind: 'not-connected' },
+        );
+
+      const connected = { ...kept, connectionId: connection.connectionId };
+
+      return set(
+        drive.last && drive.last.dataSources.length === 0
+          ? { kind: 'no-databases', ...connected }
+          : { kind: 'ready', ...connected },
+      );
     },
 
     async connect() {
-      if (current.kind !== 'not-connected' || !store.proxy) return current;
-      set({ kind: 'connecting' });
+      const proxy = store.proxy;
+      if (!proxy || running) return current;
+      const before = current;
+      if (current.kind === 'not-connected') set({ kind: 'connecting' });
+      else if (!isConnected(current)) return current;
       // Connecting a new account navigates away and comes back to a fresh
-      // view; picking an existing one resolves `connected`, with no reload.
-      const result = await store.proxy.connect({ platform: PLATFORM });
+      // view; picking an existing one resolves `connected`, with no reload
+      // (#54 phase 2). Cancelling returns to the state it started from.
+      const result = await proxy.connect({ platform: PLATFORM });
 
-      return result?.status === 'connected'
-        ? this.load()
-        : set({ kind: 'not-connected' });
+      return result?.status === 'connected' ? this.load() : set(before);
+    },
+
+    async refreshRows() {
+      if (!isConnected(current) || running || !schema) return current;
+      const rows = await loadRows(store, schema);
+
+      return set({ ...current, rows });
     },
 
     async sync() {
-      if (current.kind !== 'ready' || !store.proxy || running) return current;
-      running = true;
+      const proxy = store.proxy;
+      if (!proxy || running || !isConnected(current)) return current;
       const { connectionId } = current;
-      set({ kind: 'syncing', connectionId });
+      if (!connectionId) return current;
+      running = true;
+      const before = base();
+      const kind = before.rows.length ? 'syncing' : 'importing';
+      const progress: SyncProgress[] = [];
+      const failures: ProviderFailure[] = [];
+      const startedAt = now();
+      set({ kind, ...before, progress: [] });
+
+      const transport = syncablesTransport(
+        proxy,
+        connectionId,
+        upstream(NOTION_DOCUMENT),
+        ({ method, path, status, headers }) => {
+          if (status >= 200 && status < 300) return;
+          failures.push({
+            status,
+            method,
+            path,
+            ...(headers['retry-after']
+              ? { retryAfter: headers['retry-after'] }
+              : {}),
+            at: now(),
+          });
+        },
+      );
+
+      let result: SyncResult | undefined;
+      let error: unknown;
 
       try {
-        const transport = syncablesTransport(
-          store.proxy,
-          connectionId,
-          upstream(NOTION_DOCUMENT),
-        );
-        const result = await sync(store, transport);
-
-        return set({
-          kind: 'ready',
-          connectionId,
-          last: { ok: true, result, at: now() },
-        });
-      } catch (error) {
-        return set({
-          kind: 'ready',
-          connectionId,
-          last: {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-            at: now(),
+        result = await sync(store, transport, undefined, {
+          onProgress: event => {
+            const at = progress.findIndex(
+              p => p.dataSource === event.dataSource,
+            );
+            if (at < 0) progress.push(event);
+            else progress[at] = event;
+            if (current.kind === kind)
+              set({ ...current, progress: [...progress] });
           },
         });
+      } catch (caught) {
+        error = caught;
+      }
+
+      try {
+        let last = before.last;
+
+        if (result) {
+          last = toRecord(result, startedAt, now());
+
+          try {
+            schema ??= await loadSchema(store);
+            if (schema) schema = await saveRecord(store, schema, last);
+          } catch (saving) {
+            last.general.push(
+              `The sync record could not be saved in the drive, so it is lost on reload: ${
+                saving instanceof Error ? saving.message : String(saving)
+              }`,
+            );
+          }
+        }
+
+        // Rows written before a failure are kept, so read them back either way.
+        schema = (await loadSchema(store)) ?? schema;
+        const rows = schema ? await loadRows(store, schema) : before.rows;
+        const previous = new Map(
+          before.rows.map(r => [r.subject, fingerprint(r)]),
+        );
+        const changed = before.rows.length
+          ? rows
+              .filter(r => previous.get(r.subject) !== fingerprint(r))
+              .map(r => r.subject)
+          : [];
+        const after: Connected = {
+          connectionId,
+          rows,
+          ...(last ? { last } : {}),
+          ...(changed.length ? { changed } : {}),
+        };
+        const failure = classifyFailure(
+          failures,
+          error ??
+            (result?.readErrors.length
+              ? new Error(result.readErrors.join('; '))
+              : undefined),
+          now(),
+        );
+
+        if (failure?.kind === 'rate-limited')
+          return set({
+            ...after,
+            ...failure,
+            pagesRead: progress.reduce((n, p) => n + p.pages, 0),
+          });
+        if (failure) return set({ ...after, ...failure });
+        if (result && result.dataSources === 0)
+          return set({ kind: 'no-databases', ...after });
+
+        return set({ kind: 'ready', ...after });
       } finally {
         running = false;
       }
     },
   };
-}
-
-export function describe(state: ViewState): string {
-  switch (state.kind) {
-    case 'loading':
-      return 'Loading…';
-    case 'no-proxy':
-      return 'This host cannot reach the integration proxy on behalf of an app, so this app cannot import. Nothing was fetched.';
-    case 'not-connected':
-      return 'Not connected. Connect a Notion account to import the pages of the databases you share with it.';
-    case 'connecting':
-      return 'Waiting for you to confirm the connection…';
-    case 'syncing':
-      return 'Importing from Notion…';
-
-    case 'ready': {
-      if (!state.last)
-        return 'Connected. Import copies the pages of every shared Notion database into this table. Nothing is written to Notion.';
-      if (!state.last.ok) return `Import failed: ${state.last.error}`;
-      const { created, updated, unchanged, dataSources, warnings } =
-        state.last.result;
-
-      return (
-        `Last synced ${new Date(state.last.at).toLocaleString()}: ` +
-        `${created} created, ${updated} updated, ${unchanged} unchanged, from ${dataSources} ` +
-        `${dataSources === 1 ? 'database' : 'databases'}.` +
-        (warnings.length ? ` Warnings: ${warnings.join('; ')}` : '')
-      );
-    }
-  }
-}
-
-/** The one button's label for a state, or `undefined` for no button. */
-export function action(
-  state: ViewState,
-): 'Connect Notion' | 'Sync now' | undefined {
-  if (state.kind === 'not-connected') return 'Connect Notion';
-  if (state.kind === 'ready' || state.kind === 'syncing') return 'Sync now';
-
-  return undefined;
 }
