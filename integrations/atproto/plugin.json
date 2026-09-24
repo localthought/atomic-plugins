@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "atproto",
+  "name": "AT Protocol",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Serve a configured DID at `/.well-known/atproto-did` for one explicitly configured handle.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
+  "proposedHostCapabilities": ["http-routes"],
+  "firstInteropMilestone": "An independent AT Protocol identity resolver resolves one configured handle through its HTTPS well-known endpoint to the configured DID."
+}
