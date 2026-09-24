@@ -890,3 +890,20 @@ consent and schedule activation belong to installation, never the distributed
 document. Imported packages are not yet exposed in the store UI or installable
 through a generic sandbox setup. Schema bindings currently refer to external
 resources; bundled schema/template graphs remain future work.
+
+## Executable Node test lanes
+
+Portable QuickJS-compatible modules can use the `node` lane tier for executable
+unit and adapter tests. Declare an explicit non-empty `nodeTests` list of
+`integrations/<lane>/*.test.mjs` paths in `lanes.json`. The runner checks the files
+exist and invokes Node's built-in test runner; a failing suite fails that lane.
+No browser workspace or package install is required for dependency-free suites.
+
+```sh
+node integrations/tooling/run-lane.mjs <lane> --tier node
+```
+
+This tier tests JavaScript behavior; it does not certify execution in the actual
+QuickJS host, route authorization or storage persistence. Keep host integration
+evidence separate and replace the `contract` scaffold tier when executable
+implementation tests are present.
