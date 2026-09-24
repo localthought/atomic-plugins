@@ -188,6 +188,8 @@ export async function listRepositories(
       method: 'GET',
       query: { per_page: '100', page: String(page), sort: 'updated' },
     });
+    const refused = proxyRefusal(response);
+    if (refused) throw refused;
     if (response.status < 200 || response.status >= 300)
       throw new Error(`GitHub list_repositories returned ${response.status}`);
     const body =

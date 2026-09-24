@@ -148,6 +148,9 @@ const PAUSED: [RegExp, PausedReason][] = [
   [/^Invalid Atomic issue/, 'other'],
   [/^Atomic write (rejected|not acknowledged)/, 'rejected'],
   [/may only write its own data/, 'rejected'],
+  // Signature, capability or access refusals: retrying on a timer would
+  // only repeat them, so they pause with the proxy's code in Details.
+  [/^The integration proxy refused the request/, 'other'],
 ];
 
 export function classify(error: unknown): Problem {
