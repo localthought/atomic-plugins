@@ -83,7 +83,18 @@
       "platforms": [],
       "tiers": ["e2e"],
       "pluginRoutes": ["off", "read-only"],
-      "note": "A tooling lane (#134), not a plugin: it owns integrations/tooling/ (`dir`), and tests the gates of docs/design/server-plugin-routes.md section 0 against atomic-server built with the `plugin-routes` feature (atomic-server#1726, #1732). pluginRoutes runs the e2e twice, at `--plugin-routes off` and `read-only`, on a fresh server each time. The spec publishes the gated fixture plugin (integrations/tooling/fixtures/gated-plugin/), checks the `requires` and `hostFeatures` /plugin-catalog reports, and that pinning it is refused with host-feature-unavailable at off and allowed at read-only. It does not request a route: no host serves routes yet (AS-04/AS-05). Needs an .atomic-server-ref that includes #1726 and #1732; an older pin can't build the feature.",
+      "paths": [
+        "integrations/tooling/e2e/plugin-routes.spec.ts",
+        "integrations/tooling/fixtures/gated-plugin/**",
+        "integrations/tooling/fixtures/plugin-manifest/**",
+        "integrations/tooling/manifest-http.mjs",
+        "integrations/tooling/catalog-requires.mjs",
+        "integrations/tooling/server-build.mjs",
+        "integrations/tooling/serve.mjs",
+        "integrations/tooling/run-lane.mjs",
+        ".atomic-server-ref"
+      ],
+      "note": "A tooling lane (#134), not a plugin: it lives in integrations/tooling/ (`dir`) and runs only when one of its `paths` changes, not on every tooling or shared change, because each run builds atomic-server with the feature (or pulls its image). Its node tests run in shared-checks like every tooling test. It tests the gates of docs/design/server-plugin-routes.md section 0 against atomic-server built with the `plugin-routes` feature (atomic-server#1726, #1732). pluginRoutes runs the e2e twice, at `--plugin-routes off` and `read-only`, on a fresh server each time. The spec publishes the gated fixture plugin (integrations/tooling/fixtures/gated-plugin/), checks the `requires` and `hostFeatures` /plugin-catalog reports, and that pinning it is refused with host-feature-unavailable at off and allowed at read-only. It does not request a route: no host serves routes yet (AS-04/AS-05). Needs an .atomic-server-ref that includes #1726 and #1732; an older pin can't build the feature.",
       "e2e": ["integrations/tooling/e2e/plugin-routes.spec.ts"]
     }
   ]

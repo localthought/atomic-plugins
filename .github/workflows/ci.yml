@@ -148,7 +148,8 @@ jobs:
         id: decide
         env:
           # `changes` is dorny's JSON array of the filter names that matched.
-          CHANGED: ${{ github.event_name != 'pull_request' && '["shared"]' || steps.filter.outputs.changes }}
+          # `all` also selects tooling lanes, which `shared` alone does not.
+          CHANGED: ${{ github.event_name != 'pull_request' && '["shared","all"]' || steps.filter.outputs.changes }}
           ANY: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.any }}
         run: |
           set -eu

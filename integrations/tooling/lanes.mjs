@@ -112,11 +112,21 @@ export function validateConfig(config) {
       if (!Array.isArray(lane.paths))
         throw new Error(`lane ${lane.id}: paths must be an array`);
       for (const path of lane.paths)
-        if (!SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)))
+        if (
+          !SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)) &&
+          !(lane.dir !== undefined && toolingLanePath(path))
+        )
           throw new Error(
             `lane ${lane.id}: path ${path} is not in a shared package (${SHARED_PACKAGES.join(', ')}); a lane owns only integrations/${lane.id}/`,
           );
     }
+
+    // A tooling lane's directory is shared tooling, so its whole tree would
+    // run it on every tooling change; it names the files it depends on.
+    if (lane.dir !== undefined && !lane.paths?.length)
+      throw new Error(
+        `lane ${lane.id}: a tooling lane (dir) must list the paths it depends on`,
+      );
   }
 
   return config;
@@ -157,10 +167,19 @@ export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
  * The paths a lane runs on, for dorny/paths-filter: its own directory, plus
  * any shared-package `paths` it declares.
  */
-export const laneFilter = lane => [
-  `${laneDir(lane)}/**`,
-  ...(lane.paths ?? []),
-];
+export const laneFilter = lane =>
+  lane.dir !== undefined
+    ? lane.paths
+    : [`${laneDir(lane)}/**`, ...(lane.paths ?? [])];
+
+/**
+ * What a tooling lane's `paths` may name besides shared packages: files
+ * under integrations/tooling/, and the pin (a new atomic-server can change
+ * what a tooling lane tests).
+ */
+const toolingLanePath = path =>
+  path === '.atomic-server-ref' ||
+  (path.startsWith(`${TOOLING_LANE_ROOT}/`) && !path.includes('..'));
 
 /** Lanes that produce an actual matrix job; a tier-less lane is covered elsewhere. */
 export const activeLanes = lanes => lanes.filter(l => l.tiers.length > 0);
@@ -226,12 +245,18 @@ export function filtersYaml(config) {
 
 /**
  * The matrix for a run, from dorny/paths-filter's `changes` output (a JSON
- * array of the filter names that matched). `shared` selects every lane.
+ * array of the filter names that matched). `shared` selects every plugin
+ * lane, but not a tooling lane (`dir`): those run only when their own
+ * `paths` changed, so a tooling edit doesn't pay for, say, the plugin-routes
+ * feature build. `all` (a merge-queue or manual run) selects every lane.
  */
 export function matrixFor(config, changed) {
   const names = new Set(changed);
   const lanes = activeLanes(config.lanes).filter(
-    l => names.has('shared') || names.has(l.id),
+    l =>
+      names.has('all') ||
+      names.has(l.id) ||
+      (names.has('shared') && l.dir === undefined),
   );
 
   return lanes.map(l => ({

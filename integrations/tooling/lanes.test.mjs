@@ -88,11 +88,20 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
 
 test('a lane filter covers its own directory and no other plugin', () => {
   for (const lane of config.lanes) {
+    // A tooling lane names its files; none of them is a plugin's.
+    if (lane.dir) {
+      for (const path of laneFilter(lane))
+        assert.ok(
+          path === '.atomic-server-ref' ||
+            (path.startsWith('integrations/tooling/') &&
+              path !== 'integrations/tooling/**'),
+          `${lane.id} claims ${path}`,
+        );
+      continue;
+    }
+
     const [own, ...extra] = laneFilter(lane);
-    assert.equal(own, `${laneDir(lane)}/**`);
-    // A tooling lane's own directory is shared tooling, never a plugin's.
-    if (lane.dir) assert.match(own, /^integrations\/tooling(\/|\*)/);
-    else assert.equal(own, `integrations/${lane.id}/**`);
+    assert.equal(own, `integrations/${lane.id}/**`);
     for (const path of extra)
       assert.ok(!path.startsWith('integrations/'), `${lane.id} claims ${path}`);
   }
@@ -180,8 +189,9 @@ test('a tooling lane owns integrations/tooling or a directory under it', () => {
     laneDir(lane({ dir: 'integrations/tooling' })),
     'integrations/tooling',
   );
+  const paths = ['integrations/tooling/x.mjs'];
   for (const dir of ['integrations/tooling', 'integrations/tooling/fixtures/x'])
-    assert.doesNotThrow(() => validateConfig(cfg(lane({ dir }))));
+    assert.doesNotThrow(() => validateConfig(cfg(lane({ dir, paths }))));
   for (const dir of [
     'integrations/pets',
     'integrations/toolingx',
@@ -189,9 +199,65 @@ test('a tooling lane owns integrations/tooling or a directory under it', () => {
     7,
   ])
     assert.throws(
-      () => validateConfig(cfg(lane({ dir }))),
+      () => validateConfig(cfg(lane({ dir, paths }))),
       /dir must be integrations\/tooling or a directory under it/,
     );
+});
+
+test('a tooling lane lists its own paths, and only tooling files, the pin and shared packages', () => {
+  const dir = 'integrations/tooling';
+  assert.throws(
+    () => validateConfig(cfg(lane({ dir }))),
+    /must list the paths it depends on/,
+  );
+  assert.doesNotThrow(() =>
+    validateConfig(
+      cfg(
+        lane({
+          dir,
+          paths: [
+            'integrations/tooling/serve.mjs',
+            '.atomic-server-ref',
+            'devonian/src/**',
+          ],
+        }),
+      ),
+    ),
+  );
+  for (const path of ['integrations/pets/**', 'integrations/tooling/../pets/x'])
+    assert.throws(
+      () => validateConfig(cfg(lane({ dir, paths: [path] }))),
+      /not in a shared package/,
+    );
+  // A plugin lane still may not name tooling files.
+  assert.throws(
+    () =>
+      validateConfig(cfg(lane({ paths: ['integrations/tooling/serve.mjs'] }))),
+    /not in a shared package/,
+  );
+  assert.deepEqual(
+    laneFilter(lane({ dir, paths: ['integrations/tooling/serve.mjs'] })),
+    ['integrations/tooling/serve.mjs'],
+  );
+});
+
+test('shared changes select plugin lanes only; a tooling lane needs its own paths or `all`', () => {
+  const tooling = lane({
+    id: 'tool',
+    index: 1,
+    dir: 'integrations/tooling',
+    paths: ['integrations/tooling/serve.mjs'],
+    tiers: ['e2e'],
+    e2e: ['x.spec.ts'],
+  });
+  const plugin = lane({ id: 'plain', tiers: ['unit'] });
+  const both = cfg(plugin, tooling);
+  const ids = changed => matrixFor(both, changed).map(l => l.lane);
+
+  assert.deepEqual(ids(['shared']), ['plain']);
+  assert.deepEqual(ids(['shared', 'tool']), ['plain', 'tool']);
+  assert.deepEqual(ids(['shared', 'all']), ['plain', 'tool']);
+  assert.deepEqual(ids(['tool']), ['tool']);
 });
 
 test('pluginRoutes takes one level or a list of distinct levels, for live or e2e tiers', () => {
@@ -240,6 +306,7 @@ test('only a run with a pluginRoutes lane asks for the plugin-routes build', () 
   assert.equal(needsPluginRoutesBuild(both, ['plain']), false);
   assert.equal(needsPluginRoutesBuild(both, ['routes']), true);
   assert.equal(needsPluginRoutesBuild(both, ['shared']), true);
+  assert.equal(needsPluginRoutesBuild(both, ['all']), true);
   assert.equal(needsPluginRoutesBuild(both, []), false);
 });
 
@@ -248,4 +315,14 @@ test('the plugin-routes lane runs its e2e at off and read-only', () => {
   assert.deepEqual(pluginRoutesLevels(routes), ['off', 'read-only']);
   assert.equal(laneDir(routes), 'integrations/tooling');
   assert.deepEqual(routes.platforms, []);
+  // Not every tooling change: only what the lane depends on.
+  assert.ok(!laneFilter(routes).includes('integrations/tooling/**'));
+  for (const path of [
+    'integrations/tooling/e2e/plugin-routes.spec.ts',
+    'integrations/tooling/server-build.mjs',
+    '.atomic-server-ref',
+  ])
+    assert.ok(laneFilter(routes).includes(path), path);
+  assert.equal(needsPluginRoutesBuild(config, ['shared']), false);
+  assert.equal(needsPluginRoutesBuild(config, ['shared', 'all']), true);
 });

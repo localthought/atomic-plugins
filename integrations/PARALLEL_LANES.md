@@ -127,10 +127,17 @@ Two optional fields came later ([#134](https://github.com/ontola/atomic-plugins/
   holds such a lane starts `build-server-plugin-routes`; `build-server` and
   the published e2e image stay the default build. Lanes without the field
   are unchanged.
-- `dir`: a tooling lane (not a plugin) owns `integrations/tooling` or a
-  directory under it instead of `integrations/<id>`. The `plugin-routes`
-  lane is one; its filter is `integrations/tooling/**`, which is already
-  shared, so it runs whenever the tooling changes.
+- `dir`: a tooling lane (not a plugin) lives in `integrations/tooling` or a
+  directory under it instead of `integrations/<id>`. Its filter is only its
+  `paths`, which must be listed and may name files under
+  `integrations/tooling/`, `.atomic-server-ref` and shared packages. The
+  `shared` filter does not select it, so a tooling change that it doesn't
+  depend on doesn't run it; a merge-queue or manual run (`all`) does. The
+  `plugin-routes` lane is one: it names its spec, its fixtures,
+  `manifest-http.mjs`, `catalog-requires.mjs`, `server-build.mjs`,
+  `serve.mjs`, `run-lane.mjs` and the pin, because each run costs a
+  feature build or image pull. The node tests of those files run in
+  shared-checks with every other tooling test.
 
 ## 2. Job graph: build once, fan out
 
