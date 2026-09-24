@@ -411,6 +411,7 @@ export function clockifyFixture({ withNames = true } = {}) {
       switch (command?.action) {
         case 'requests':
           return { requests: state.requests };
+
         case 'update': {
           const entry = state.entries.find(e => e.id === command.id);
           if (!entry) return { error: `no entry ${command.id}` };
@@ -418,6 +419,7 @@ export function clockifyFixture({ withNames = true } = {}) {
 
           return { entry };
         }
+
         case 'fail':
           state.failures = {
             count: Number(command.count ?? 1),
@@ -441,6 +443,7 @@ export function clockifyFixture({ withNames = true } = {}) {
       const named = url.pathname.match(
         /^\/proxy\/clockify\/api\/v1\/workspaces\/([^/]+)\/(projects|users)$/,
       );
+
       if (named && withNames) {
         if (named[1] !== WORKSPACE.id)
           return { status: 403, body: { message: 'Forbidden' } };
@@ -449,6 +452,7 @@ export function clockifyFixture({ withNames = true } = {}) {
 
         return { status: 200, body: page === 1 ? all : [] };
       }
+
       if (url.pathname === '/proxy/clockify/api/v1/user')
         return {
           status: 200,
@@ -468,6 +472,7 @@ export function clockifyFixture({ withNames = true } = {}) {
       if (!list) return { status: 404, body: { message: 'Not found' } };
       if (list[1] !== WORKSPACE.id || list[2] !== USER.id)
         return { status: 403, body: { message: 'Forbidden' } };
+
       if (state.failures.count > 0) {
         state.failures.count--;
 
@@ -476,6 +481,7 @@ export function clockifyFixture({ withNames = true } = {}) {
           body: { message: 'Simulated Clockify failure' },
         };
       }
+
       const start =
         Date.parse(url.searchParams.get('start') ?? '') || -Infinity;
       const end = Date.parse(url.searchParams.get('end') ?? '') || Infinity;

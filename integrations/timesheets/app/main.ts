@@ -16,6 +16,7 @@ import type { ViewArgs } from './store.js';
 
 export async function view({ root, store }: ViewArgs): Promise<void> {
   const doc = root.ownerDocument;
+
   const el = <K extends keyof HTMLElementTagNameMap>(
     tag: K,
     text?: string,
@@ -25,6 +26,7 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
     return node;
   };
+
   const button = (text: string) => {
     const node = el('button', text);
     node.type = 'button';
@@ -50,20 +52,24 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
   workspaceLabel.append(workspace);
   const lookbackLabel = el('label', 'Look-back ');
   const lookback = el('select');
+
   for (const days of LOOKBACK_OPTIONS) {
     const option = el('option', `the last ${days} days`);
     option.value = String(days);
     lookback.append(option);
   }
+
   lookback.setAttribute('aria-label', 'Look-back');
   lookbackLabel.append(lookback);
   const save = button('Save and import');
+
   const row = (...nodes: HTMLElement[]) => {
     const p = el('p');
     p.append(...nodes);
 
     return p;
   };
+
   form.append(account, row(workspaceLabel), row(lookbackLabel), row(save));
 
   root.style.fontFamily = 'system-ui, sans-serif';
