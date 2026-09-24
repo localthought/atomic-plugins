@@ -49,7 +49,7 @@
       "platforms": [],
       "tiers": ["node"],
       "nodeTests": ["integrations/fediverse/plugin.test.mjs"],
-      "note": "Single-actor ActivityPub scaffold (#137, named activitypub in the assessment). Planning contract only; no protocol implementation or interoperability evidence."
+      "note": "Executable public Atomic ActivityStreams actor, object/outbox and discovery checks. Signed federation and inbox receipt remain unavailable; no live interoperability claim."
     },
     {
       "id": "notion",
