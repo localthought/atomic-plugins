@@ -2,8 +2,8 @@
 
 Status: **experimental implementation slice**, not a working federated receiver.
 This package now contains executable QuickJS JavaScript, a v3 host manifest,
-a reproducible bundle, and protocol/Atomic mapping tests. `plugin.json` is
-repository metadata; `manifest.json` and `plugin.js` are the host release inputs.
+a reproducible bundle, and protocol/Atomic mapping tests. `manifest.json` and
+`plugin.js` are the host release inputs.
 
 ## Implemented behavior
 
