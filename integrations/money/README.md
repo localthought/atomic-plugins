@@ -5,7 +5,7 @@
 This needs an atomic-server with the generic file entry point
 (atomic-server#1653: manifest `accepts` and `destination`, and the Import tab
 on a plugin's page; merged as atomic-server#1691). The pinned
-`.atomic-server-ref`, `2f403624e`, includes it; see [Verified](#verified).
+`.atomic-server-ref`, `11264e83e`, includes it; see [Verified](#verified).
 
 1. **Publish** (once per server, by whoever maintains it): create a Plugin,
    replace its source with this folder's `plugin.js`, name it "Bank
@@ -131,11 +131,59 @@ Bundle: `./browser/node_modules/.bin/esbuild integrations/money/plugin.ts --pres
 Browser: `node integrations/tooling/run-lane.mjs money --tier e2e` runs
 `e2e/money.spec.ts` against `ATOMIC_SERVER_CHECKOUT`'s `target/e2e` build.
 
+## Money app (`app/`)
+
+A drive app (DESIGN.md in [`design/`](design/DESIGN.md), #89) that shows the
+Bank transactions table as a ledger. It is a view of the table it is opened
+on (`store.getData()`), so it belongs on the importer's table as an app
+view; the table's own Table tab stays next to it.
+
+- **Transactions**: account switcher (account + currency), a strip with
+  money in, out and net per account + currency for the filtered rows (never
+  summed across currencies, and no balance: statements are not stored),
+  search over description and reference, period, direction and
+  Uncategorised filters, a day-grouped ledger (a table at 560 px and wider,
+  a list of buttons below), 200 rows at a time. Amounts are formatted from
+  their exact strings (`app/amounts.ts`); sums use `parser.ts`'s `units()`.
+- **Detail**: the bank's fields read-only with the verbatim narrative;
+  category and note (`money-category`, `money-note`) saved on change.
+- **Import statement**: checks a chosen or dropped file in the browser
+  with the importer's own readers and identity rules (`app/check.ts`,
+  `identity.ts`), then shows the reconciliation per statement and what is
+  new, already imported or blocked, or a designed error. It does not import
+  (see below).
+- **Imports**: one row per statement the rows came from.
+- **Sources**: statement files; Moneybird and QuickBooks shown as not
+  available yet.
+
+What the pinned host does not let the app do yet (not verified in a host;
+the app has unit tests with a fake store and screenshots from
+`app/harness/screenshots.mjs`, but no host E2E):
+
+- **Apply an import.** There is no app bridge op that runs a sandbox
+  importer (issues.md M-8). The preview says to choose the same file on the
+  importer's Import tab, which proposes the same rows; new rows then appear
+  in the app through its table subscription.
+- **Save a category or note on the importer's table.** `hostStore.ts`
+  refuses writes outside the app's own subtree, and the importer's table
+  lives under the importer. The detail keeps the typed text and says so.
+- **Install from the catalog.** There is no catalog entry for this app.
+
+Build: `node integrations/money/app/build.mjs` (writes `app/dist/ui.js`,
+minified, one module). Screenshots, axe and the render budget:
+`node integrations/money/app/harness/screenshots.mjs --axe` (writes to
+`app/dist/screenshots/`).
+
 ## Verified
 
 `e2e/money.spec.ts` passed on 2026-09-24 against the pinned atomic-server
-`2f403624e` (which includes #1691, the change for atomic-server#1653), with this
-package at version 0.2.0 (`plugin.js` sha256 `e189564805c807ffc60177b62e50eca8a39b6d2701cc26f7a63e204daae91f8c`). It covers these
+`11264e83e` (earlier the same day against `2f403624e`, which includes #1691,
+the change for atomic-server#1653), with this package at version 0.2.0
+(`plugin.js` sha256 `01e419cd3246e4c573904f018404f3cccb663e42104d7bbd42bfb3d514f826d9`,
+the bundle with the category/note annotations and structured errors). The
+spec publishes a new release on every run, so it needs a fresh lane store
+(`<checkout>/.lane-store/money`): against a store kept from an earlier run
+it fails on two "Unverified" Bank statements releases. It covers these
 steps, all with the synthetic files in `fixtures/` and generated variants:
 
 - publish, then discover under Community plugins, then create a draft;
