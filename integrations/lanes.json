@@ -56,8 +56,10 @@
       "id": "willow",
       "index": 14,
       "platforms": [],
-      "tiers": ["contract"],
-      "note": "Planning contract for a bounded QuickJS bridge to a Willow live engine; no WGPS or bridge implementation. Full live sync belongs in a server extension or sidecar. Existing willow-drop file import has its own lane."
+      "tiers": ["node"],
+      "nodeTests": ["integrations/willow/codec.test.mjs", "integrations/willow/plugin.test.mjs"],
+      "paths": ["integrations/willow-drop/william3.ts"],
+      "note": "Willow25 unsigned Entry codecs and Atomic signing-candidate export, verified against official encoding vectors. No Meadowcap signing, transport, WGPS or live interoperability."
     },
     {
       "id": "pets",

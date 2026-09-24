@@ -84,7 +84,10 @@ export function validateConfig(config) {
       if (!Array.isArray(lane.paths))
         throw new Error(`lane ${lane.id}: paths must be an array`);
       for (const path of lane.paths)
-        if (!SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)))
+        if (
+          !SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)) &&
+          !PLUGIN_BUILD_DEPENDENCIES[lane.id]?.includes(path)
+        )
           throw new Error(
             `lane ${lane.id}: path ${path} is not in a shared package (${SHARED_PACKAGES.join(', ')}); a lane owns only integrations/${lane.id}/`,
           );
@@ -125,9 +128,15 @@ export const sharedPorts = config =>
  */
 export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
 
+// Reviewed exact build dependency: reuse the existing WILLIAM3 primitive without
+// duplicating cryptographic source or granting arbitrary sibling-folder globs.
+export const PLUGIN_BUILD_DEPENDENCIES = Object.freeze({
+  willow: ['integrations/willow-drop/william3.ts'],
+});
+
 /**
  * The paths a lane runs on, for dorny/paths-filter: its own directory, plus
- * any shared-package `paths` it declares.
+ * any shared-package or explicitly approved build-dependency `paths`.
  */
 export const laneFilter = lane => [
   `integrations/${lane.id}/**`,

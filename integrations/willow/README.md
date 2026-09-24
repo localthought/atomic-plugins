@@ -1,77 +1,145 @@
-# Willow live sync
+# Willow Atomic export adapter
 
-Status: **scaffold**. No WGPS engine, peer transport or installable bundle is
-implemented here. CI checks a planning contract, not protocol conformance or
-live interoperability.
+Status: **experimental partial implementation** in QuickJS JavaScript.
+This package implements real Willow Entry encodings and creates reviewed
+unsigned export candidates from Atomic resources. It does **not** implement
+WGPS, Willow Confidential Sync, a peer listener, Meadowcap signing or live sync.
+The existing [Willow drop importer](../willow-drop/README.md) remains unchanged
+and handles the separate signed file-import workflow.
 
-## Scope
+## Implemented protocol slice
 
-Evaluate a bounded QuickJS adapter to a host-owned Willow live-sync engine.
+`codec.mjs` implements canonical `encode_entry` and `encode_path`, their general
+encoding-relation decoders, compact U64 integers, and relative Entry
+encoding/decoding. These are the actual byte layouts defined by the
+[Willow encoding specification](https://willowprotocol.org/specs/encodings/index.html),
+using the [Willow’25 parameter choices](https://willowprotocol.org/specs/willow25/).
+Paths retain binary components, including empty and non-UTF8 components, with
+the 4096 limits. Timestamps and payload lengths stay unsigned 64-bit BigInts.
+The decoder rejects truncation, trailing data, impossible paths and timestamp
+overflow/underflow. Canonical decoding additionally rejects nonminimal tags.
 
-This folder covers the live-sync assessment in the accepted
-[server plugin design](../../docs/design/server-plugin-routes.md#3-per-protocol-feasibility).
-The existing [Willow drop importer](../willow-drop/README.md) already provides
-the supported file workflow, with its own `willow-drop` CI lane. It is a
-separate sandbox job and does not establish live-sync support.
+Absolute Entry/path decoding passes all **827 upstream vectors**, including
+rejected encodings, and matches upstream canonical reencodings. The provenance
+and exact revision are in [fixtures/README.md](fixtures/README.md). Relative
+Entry tests use a hand-calculated normative example and boundary/roundtrip
+checks; no independent live peer has exercised them.
 
-## Host requirements
+An Entry contains metadata and a payload digest; decoding it does not verify
+an authorisation token or establish that the bytes represent an authorised
+write. These APIs intentionally make no such claim.
 
-The `runtime: quickjs` planning metadata applies only to a proposed bounded
-JavaScript/TypeScript adapter. QuickJS cannot load native Rust crates or open
-sockets. WGPS needs a reliable bidirectional stream and long-lived session
-state; its full live engine cannot run in the current stateless QuickJS
-invocation model. The accepted design places that engine in **D (server
-extension) or E (sidecar)**, phase 4. This scaffold adds neither a native
-service nor an engine.
+## Actual Atomic adapter
 
-Proposed capabilities: `peer-transport`, `persistent-state`, `background-jobs`.
-These describe dependencies, not available manifest declarations. A
-host-mediated WebSocket with one fresh invocation per message remains an
-**unverified** alternative; implementation selection must first prove that
-state, resource limits and authorization can survive that model. Host transport
-ownership and bridge APIs remain design work in
-[atomic-server#1722](https://github.com/ontola/atomic-server/issues/1722) and
-[atomic-server#1723](https://github.com/ontola/atomic-server/issues/1723).
+`exportCandidate(ctx, config, subject)` reads the selected resource through the
+host's existing scoped `ctx.read`, copies only explicitly selected property
+values, and serializes a deterministic JSON-AD payload with its source `@id`.
+It computes the real WILLIAM3 payload digest and canonical Willow Entry signing
+bytes. The path is the configured binary prefix followed by one UTF-8 component
+containing the full Atomic subject; it is never inferred from a display name.
 
-The host must hold credentials, bind Meadowcap authority to approved datasets,
-limit sessions and transfer budgets, persist only authorized state, and own
-cancellation and cleanup. Any future listener or exposed route must follow the
-accepted design's build feature `plugin-routes`, operator switch
-`--plugin-routes` / `ATOMIC_PLUGIN_ROUTES`, and per-plugin install consent.
-These proposed gated surfaces are not available on atomic.place.
+`run(ctx)` uses that adapter and the existing `ctx.query`/`ctx.read` APIs to
+return real Atomic `create`/`set` intents. After the host previews, approves and
+applies those intents, ordinary resources under `outputParent` hold the unsigned
+candidate in `description` and `importBaseline`, with a stable `localId`. No
+candidate is sent to a peer. Returning an intent is not evidence it was durably
+stored.
 
-## First interoperability milestone
+The candidate envelope is an **application-specific JSON container**, named
+`atomic-willow-signing-candidate-v1`, not a Willow interchange format. It carries:
 
-Prove a bounded adapter bridge to a selected Willow engine with authorized dataset access and denied unauthorized access before attempting live synchronization.
+- `entryHex`: exact canonical `encode_entry` bytes, ready for a future authorised
+  signer to inspect and sign;
+- `payloadHex`: the exact raw payload bytes;
+- `source`, `mediaType` and an explicit `status: unsigned`.
 
-Record the implementation and version, chosen placement, required host APIs,
-and evidence that the bridge can resume safely across fresh invocations. If
-that cannot be demonstrated, retain D/E engine ownership and record the blocker;
-do not claim WGPS support. After feasibility, a separate milestone can test one
-bounded dataset between two independent peers.
+`checkCandidate` verifies byte shape, canonical encoding, payload length and
+WILLIAM3 digest. It performs no signature or Meadowcap validation. The selected
+JSON-AD serialization is an application payload choice; Willow permits arbitrary
+payloads. No native/Rust library, key material, network or invented host API is
+used in this adapter.
 
-## Implementation checklist
+The build reuses `../willow-drop/william3.ts`, without changing it or copying
+its source into a second implementation. It strips TypeScript and combines the
+primitive, codec and adapter into a standalone `plugin.js`. An explicitly
+allowlisted CI dependency causes Willow tests to run when that one shared
+primitive changes; arbitrary sibling-folder dependencies remain rejected.
 
-- [ ] Select an engine and document its placement, transport and bridge boundary.
-- [ ] Prove invocation/state feasibility, session limits and safe cancellation.
-- [ ] Define namespace, Meadowcap capability and Atomic resource mappings;
-      reject unauthorized reads and writes before transferring data.
-- [ ] Add fixtures for revoked access, reconnects, interrupted transfers and
-      conflicting updates once the bridge exists.
-- [ ] Replace the planning tier with executable adapter and authorization tests
-      before changing status to `implemented`.
-- [ ] Record peer/version, command, scope and results only after actual live
-      interoperability has been verified.
+## Configuration and use
 
-## CI
+Install the generated `plugin.js` as a sandbox job and supply configuration:
 
-From the repository root:
-
-```sh
-node integrations/tooling/run-lane.mjs willow
+```json
+{
+  "subjects": ["https://atomic.example/notes/hello"],
+  "properties": [
+    "https://atomicdata.dev/properties/name",
+    "https://atomicdata.dev/properties/description"
+  ],
+  "outputParent": "https://atomic.example/willow-candidates",
+  "namespace": "934e6021339e1f013ba94900edc25d8d74c0b4e573768910ae0f507d8c817318",
+  "subspace": "934e6021339e1f013ba94900edc25d8d74c0b4e573768910ae0f507d8c817318",
+  "pathPrefix": ["61746f6d6963"],
+  "timestamp": "1"
+}
 ```
 
-The `Lane: willow (contract)` lane validates `plugin.json` and this README.
-It requires no provider fixture and does not test the engine, host bridge or
-existing drop importer. The file workflow remains covered separately by the
-`willow-drop` lane's typecheck, unit and e2e tiers.
+The namespace/subspace above are the published Willow’25 example identifiers,
+not a provisioned private namespace or proof of write permission. Replace them
+with the intended public identifiers. `pathPrefix` is an array of hexadecimal
+binary components (`61746f6d6963` is `atomic`). `timestamp` is explicitly supplied
+as a logical clock value, not a fabricated conversion from Unix milliseconds.
+Increase it whenever replacing an existing candidate. Unchanged exports reuse
+the stored identity; lower/equal timestamps with changed bytes are refused.
+Local edits to a stored candidate also require manual reconciliation.
+
+Run the job, review the proposed resources and apply through the host. Choose
+an output parent with the intended access policy: staging copies of selected
+source properties into another parent can change who can read those copies,
+so the ordinary host preview/write review remains essential. The host enforces
+the installing actor and installation permissions on all reads and writes.
+Config does not grant permission. Unselected properties are never serialized,
+and an out-of-list subject is rejected before reading it.
+
+Limits are 32 selected resources, 32 selected properties and 64 KiB payloads.
+An invalid or denied record fails the whole proposal without partial intents.
+This is a bounded reviewed export, not continuous sync, a source snapshot
+transaction, or an atomic batch apply. Loro editor state, blob bytes and linked
+resources are not recursively exported: only the selected JSON-AD atoms are.
+
+## Required host bridge for live sync
+
+A host-owned signer must validate Meadowcap authority against the actual
+namespace, subspace, path and timestamp, then sign these exact bytes and produce
+an AuthorisedEntry. It must bind the selected source revision and output target
+to the actor/installation approval, enforce quotas and revocation, and reject
+stale approvals. A configured public key or an unsigned candidate is insufficient.
+
+The live engine still requires durable peer/session state, authorised blob
+storage, stream transport, confidentiality, cancellation and reconnect handling.
+QuickJS cannot open sockets or maintain a session across fresh invocations.
+The accepted design places the full engine in a host extension or sidecar;
+[atomic-server#1722](https://github.com/ontola/atomic-server/issues/1722) and
+[#1723](https://github.com/ontola/atomic-server/issues/1723) track those host
+boundaries. This package installs no route and opens no listener.
+
+## Validation
+
+Requires Node 22.13+ for the build-time TypeScript stripping API:
+
+```sh
+node integrations/willow/build.mjs
+node integrations/tooling/run-lane.mjs willow --tier node
+node --experimental-strip-types integrations/willow/verify-host.mjs /path/to/pinned/atomic-server
+```
+
+The node lane runs 19 tests, including the 827 independent encoding vectors,
+export field confinement, unsigned intent generation, monotonic timestamps,
+local-edit/denial handling, payload integrity and bundle reproducibility.
+Fixtures simulate applying intent-shaped objects; this is unit evidence, not
+real Atomic persistence or QuickJS runtime evidence.
+
+The explicit host contract check invokes the pinned host's actual
+`validateManifest` and `parseVerdict` source functions. It passed at
+`35504494261f59e922e79d536fd437954451e6a3`. A real host apply/reload roundtrip,
+Meadowcap signer and independent peer transfer remain unverified.

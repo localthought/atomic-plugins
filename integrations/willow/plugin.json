@@ -1,15 +1,66 @@
 {
-  "schemaVersion": 1,
-  "id": "willow",
-  "name": "Willow live sync",
-  "status": "scaffold",
-  "runtime": "quickjs",
-  "scope": "Evaluate a bounded QuickJS adapter to a host-owned Willow live-sync engine.",
-  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
-  "proposedHostCapabilities": [
-    "peer-transport",
-    "persistent-state",
-    "background-jobs"
+  "schemaVersion": 2,
+  "name": "willow",
+  "namespace": "atomic-plugins",
+  "version": "0.2.0",
+  "description": "Prepare exact unsigned Willow Entry signing bytes from explicitly selected Atomic properties.",
+  "operations": [],
+  "secrets": [],
+  "capabilities": [
+    {
+      "name": "storage",
+      "reason": "Read approved Atomic resources and propose reviewed unsigned export records."
+    }
   ],
-  "firstInteropMilestone": "Prove a bounded adapter bridge to a selected Willow engine with authorized dataset access and denied unauthorized access before attempting live synchronization."
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "subjects": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Explicit Atomic resource subjects to export"
+      },
+      "properties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Explicit property subjects included in each JSON-AD payload"
+      },
+      "outputParent": {
+        "type": "string",
+        "description": "Atomic parent for reviewed unsigned export candidates"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Willow namespace public key, 64 hex characters"
+      },
+      "subspace": {
+        "type": "string",
+        "description": "Willow subspace public key, 64 hex characters"
+      },
+      "pathPrefix": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Willow binary path components as hexadecimal strings"
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "Explicit logical Willow U64 timestamp as decimal text; increase after source changes"
+      }
+    },
+    "required": [
+      "subjects",
+      "properties",
+      "outputParent",
+      "namespace",
+      "subspace",
+      "pathPrefix",
+      "timestamp"
+    ]
+  }
 }
