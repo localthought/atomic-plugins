@@ -42,6 +42,7 @@ view-client.js is ground truth), `controller.ts`, `build.mjs` producing
 and `action()` are pure and unit-tested, as in Notion's controller.
 
 Acceptance:
+
 - `node integrations/tooling/run-lane.mjs calendar` passes, including new
   controller tests for every state transition.
 - Every `.ts` file starts with `// @wc-ignore-file`.
@@ -65,6 +66,7 @@ the same chrome; extracting it into a shared module is a separate decision
 for the maintainer (containment rule).
 
 Acceptance:
+
 - Screens 5.1–5.3 of `mockups.html` reproduced with real DOM.
 - Switching the host theme (re-sent `__atomic_style`) restyles without
   reload.
@@ -92,6 +94,7 @@ plus the matching integration-proxy change (duplicated to
 refuse to send rather than PATCH without a precondition.
 
 Acceptance:
+
 - Unit tests with a fake proxy for list pagination (250/page), 401, 403,
   404, 412, 429 with `retry-after`, network failure.
 - No credential or `secret:` header appears in any request from the iframe.
@@ -109,6 +112,7 @@ without changing the five-field write mapping. Show per-calendar progress
 (screen 5.5) and the "Not shown: N recurring, M cancelled" counts.
 
 Acceptance:
+
 - Importing two calendars writes rows to the table with
   `atomic-calendar-day`/`-end-day`/`-all-day` set as the lens does today.
 - Read-only calendars' rows are marked so C8 never offers Edit.
@@ -125,6 +129,7 @@ grouping function (`agendaDays(events, from, days, zone)`) unit-tested for
 exclusive all-day ends and events crossing midnight.
 
 Acceptance:
+
 - Matches mockup 5.8 at 360px in both themes.
 - Rows ≥ 48px; every row is a button with a complete accessible name.
 
@@ -139,6 +144,7 @@ edited (dashed) and conflict ("!") markers, 3/5/7-day widths by iframe width
 (`packWeek(events, days, zone)`) unit-tested.
 
 Acceptance:
+
 - Matches mockup 5.7 at 1120px in both themes and degrades per §8 at 720,
   560 and 360px without horizontal scroll.
 - Each day column is a labelled `<section>` with a list of event buttons.
@@ -164,6 +170,7 @@ validation messages mirroring `adapter.ts` `validate()`; local save that
 marks the row pending and shows the "Saved here · not sent" strip.
 
 Acceptance:
+
 - Offsets are attached from the viewer's zone; stored values stay
   offset-qualified strings (never floats or Date objects in storage).
 - Focus moves to the drawer heading and returns to the invoking event.
@@ -180,6 +187,7 @@ status; 412 marks only that row "Changed in Google" with "Review again".
 Header primary action and status pill open this sheet.
 
 Acceptance:
+
 - Nothing is written to Google except from this sheet.
 - A 412 on one event does not stop the others; the baseline advances only
   for events that were sent.
@@ -199,6 +207,7 @@ confirmation — `confirm()` is not available in the frame); rebound/missing
 local row card with "Open row in table".
 
 Acceptance:
+
 - No path deletes a local row without the explicit Remove action.
 - Choosing "Keep mine" queues the field for C9's review sheet rather than
   sending directly.
@@ -213,6 +222,7 @@ Details disclosure; `role="alert"` for 401/403 only; 429 counts down from
 `retry-after`; status pill shows "Reconnect needed" on 401.
 
 Acceptance:
+
 - Unit tests map each status to the exact copy in DESIGN.md.
 - Existing rows stay visible under every banner.
 
@@ -226,6 +236,7 @@ check on each screen; contrast check of event tints against `--pl-text` for
 Google's 24 default calendar colours in both themes.
 
 Acceptance:
+
 - Zero axe violations at 360px and 1120px, light and dark.
 - Any Google default colour whose tint fails 4.5:1 is listed with the
   adjusted tint percentage used for it.
@@ -258,23 +269,27 @@ two-way plugin that writes with ETags.
 ## Later (file when scheduled)
 
 ### C14. Calendar: create event (local, sent via review)
+
 Depends on C8, C9. The manifest declares `create_event`, but `adapter.ts`
 has no create path in `preview()`/`applyEdit()`; add `planCreate` +
 `applyCreate` (POST, then bind the returned id/ETag) and a "New event"
 button / click-empty-slot interaction.
 
 ### C15. Calendar: recurring events, read-only
+
 Depends on C4, C6. Use `calendarRecurrenceProjection` to display series
 occurrences with a lock icon and "Edit in Google Calendar"; replace the
 "Not shown" count. Reverse sync of recurrence stays out of scope.
 
 ### C16. Calendar: Outlook Calendar via Microsoft Graph
+
 Needs a Graph OpenAPI overlay in `localthought/overlays`, a proxy OAuth app
 (and the Heroku `localthought/integration-proxy` deploy), and a second
 adapter with the same `Projection`. The UI needs only a provider tile and a
 provider mark in the connection bar.
 
 ### C17. Calendar: Apple Calendar spike
+
 Blocked on DESIGN.md §11 decision 4 (app-specific password in the proxy vs
 read-only `.ics` URL vs drop). Output: a short written recommendation, no
 UI code.
