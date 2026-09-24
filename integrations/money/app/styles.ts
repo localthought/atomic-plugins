@@ -464,10 +464,11 @@ textarea.m-input { min-height: 64px; resize: vertical; }
   font-weight: 650;
   background: var(--pl-subtle);
 }
-.m-compare .m-k { color: var(--pl-muted); }
+.m-compare .m-k { color: var(--pl-muted); overflow-wrap: normal; }
 .m-compare .m-chg { background: var(--pl-warn-soft); font-weight: 600; }
 @container pl-app (max-width: 559px) {
-  .m-compare-row { grid-template-columns: 84px 1fr 1fr; }
+  .m-compare-row { grid-template-columns: 92px 1fr 1fr; }
+  .m-compare-row > div { padding: 7px 8px; }
 }
 .m-hint { margin: 0; font-size: 13px; }
 @media (prefers-reduced-motion: reduce) {
