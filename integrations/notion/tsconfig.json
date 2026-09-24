@@ -4,11 +4,10 @@
     "baseUrl": ".",
     "resolveJsonModule": true,
     "paths": {
-      "@tomic/lib": ["../../browser/lib/src/index.ts"],
-      // This repo's syncables source until the release with the
-      // `syncables/browser` entry point is on npm. Mirrored in
-      // vitest.config.ts and app/build.mjs.
-      "syncables/browser": ["../../syncables/src/browser.ts"]
+      // Also what devonian's optional @tomic/lib peer resolves to: it is not
+      // installed in node_modules/. `syncables` and `devonian` come from npm
+      // (package.json, pnpm-lock.yaml; `pnpm install` in this folder).
+      "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },
   "include": [

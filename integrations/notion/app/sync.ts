@@ -8,13 +8,17 @@ import {
 } from 'syncables/browser';
 import document from '../catalog/notion.json' with { type: 'json' };
 import {
-  notionPlainText,
+  NotionRowLenses,
+  notionColumns,
+  notionDataSourceTitles,
   notionProjection,
+  notionPropertyNames,
   type FetchedPlatform,
   type FetchedRecord,
+  type NotionColumn,
   type Term,
 } from '../devonian/notion/index.js';
-import type { JSONValue, PluginResource, PluginStore } from './store.js';
+import type { PluginResource, PluginStore } from './store.js';
 import { PLATFORM } from './transport.js';
 
 /** The composed catalog document (catalog/notion.json), bundled. */
@@ -29,37 +33,7 @@ export const atomic = {
   properties: 'https://atomicdata.dev/properties/properties',
   recommends: 'https://atomicdata.dev/properties/recommends',
   propertyClass: 'https://atomicdata.dev/classes/Property',
-  string: 'https://atomicdata.dev/datatypes/string',
-  timestamp: 'https://atomicdata.dev/datatypes/timestamp',
 } as const;
-
-/** Columns every row gets, besides the lens's one per Notion property. */
-const FIXED = [
-  {
-    shortname: 'notion-page-id',
-    name: 'Notion page id',
-    datatype: atomic.string,
-    description: 'The Notion page this row was imported from. Row identity.',
-  },
-  {
-    shortname: 'notion-data-source',
-    name: 'Data source',
-    datatype: atomic.string,
-    description: 'Title of the Notion data source (database) the page is in.',
-  },
-  {
-    shortname: 'notion-url',
-    name: 'Notion URL',
-    datatype: atomic.string,
-    description: 'Link to the page in Notion.',
-  },
-  {
-    shortname: 'notion-last-edited',
-    name: 'Last edited in Notion',
-    datatype: atomic.timestamp,
-    description: "The page's last_edited_time in Notion.",
-  },
-] as const;
 
 export interface SyncResult {
   created: number;
@@ -75,86 +49,72 @@ type Read = (
   options: ReadOptions,
 ) => Promise<ReadResult>;
 
-const record = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+/** One data source's pages, projected by the Notion lens. */
+export interface NotionSource {
+  dataSource: string;
+  title: string;
+  pages: FetchedRecord[];
+}
 
 /**
- * One read of every data source shared with the connection, projected by the
- * read-only Notion lens per data source (a page whose parent is another data
- * source fails the lens rather than landing in the wrong place).
+ * One read of every data source shared with the connection. Pages are
+ * projected by the Notion lens one data source at a time (a page whose parent
+ * is another data source fails the lens rather than landing in the wrong
+ * place), and the lens derives the columns from what was read.
  */
 export async function readNotion(
   transport: Transport,
   read: Read = readPlatform,
 ): Promise<{
-  projected: FetchedPlatform;
-  titles: Map<string, string>;
-  names: Map<string, string>;
+  sources: NotionSource[];
+  columns: NotionColumn[];
+  dataSources: number;
+  warnings: string[];
 }> {
-  const fetched = await read(NOTION_DOCUMENT, {
+  const fetched = (await read(NOTION_DOCUMENT, {
     platform: PLATFORM,
     constants: {},
     transport,
-  });
-  const titles = new Map<string, string>();
+  })) as unknown as FetchedPlatform;
+  const titles = notionDataSourceTitles(fetched.records);
+  const byDataSource = new Map<string, FetchedRecord[]>();
 
-  for (const source of fetched.records.filter(
-    r => r.resource === 'data-source',
-  ))
-    titles.set(
-      source.id,
-      notionPlainText(source.values.title) || source.name || source.id,
-    );
-
-  const byNamespace = new Map<string, FetchedRecord[]>();
-
-  for (const row of fetched.records as unknown as FetchedRecord[])
+  for (const row of fetched.records)
     if (row.resource === 'page')
-      byNamespace.set(row.namespace, [
-        ...(byNamespace.get(row.namespace) ?? []),
+      byDataSource.set(row.namespace, [
+        ...(byDataSource.get(row.namespace) ?? []),
         row,
       ]);
 
-  const records: FetchedRecord[] = [];
+  const sources: NotionSource[] = [];
   const terms = new Map<string, Term>();
-  const warnings = [...fetched.errors];
+  const warnings = [...(fetched.errors ?? [])];
 
-  for (const [dataSource, rows] of byNamespace) {
+  for (const [dataSource, rows] of byDataSource) {
     const projected = notionProjection(
-      { ...(fetched as unknown as FetchedPlatform), records: rows, errors: [] },
+      { ...fetched, records: rows, errors: [] },
       { dataSource },
     );
-    records.push(...projected.records);
+    sources.push({
+      dataSource,
+      title: titles.get(dataSource) ?? dataSource,
+      pages: projected.records,
+    });
     warnings.push(...(projected.errors ?? []));
     for (const term of projected.ontology.terms)
       if (term.kind === 'property') terms.set(term.shortname, term);
   }
 
-  // Display names by stable property id, from the pages' own `properties`.
-  const names = new Map<string, string>();
-
-  for (const row of records)
-    for (const [name, value] of Object.entries(record(row.values.properties)))
-      if (typeof record(value).id === 'string')
-        names.set(String(record(value).id), name);
-
   return {
-    projected: {
-      platform: PLATFORM,
-      ontology: { description: '', terms: [...terms.values()] },
-      records,
-      errors: warnings,
-    },
-    titles,
-    names,
+    sources,
+    columns: notionColumns(
+      [...terms.values()],
+      notionPropertyNames(sources.flatMap(s => s.pages)),
+    ),
+    dataSources: titles.size,
+    warnings,
   };
 }
-
-/** The lens term's Notion property id, from its `urn:...:property:<id>` path. */
-const propertyId = (term: Term) =>
-  decodeURIComponent(term.path.slice(term.path.lastIndexOf(':') + 1));
 
 const values = (resource: PluginResource, property: string): string[] => {
   const raw = resource.get(property);
@@ -171,12 +131,7 @@ const values = (resource: PluginResource, property: string): string[] => {
 async function ensureColumns(
   store: PluginStore,
   rowClass: string,
-  columns: {
-    shortname: string;
-    name: string;
-    datatype: string;
-    description: string;
-  }[],
+  columns: readonly NotionColumn[],
   warnings: string[],
 ): Promise<Map<string, string>> {
   const klass = await store.getResource(rowClass);
@@ -244,10 +199,12 @@ async function ensureColumns(
 }
 
 /**
- * Read every shared data source's pages through the proxy, project them with
- * the Notion lens, and reconcile them into the app's data table by Notion
- * page id. Import only: nothing is written to Notion, and a page that is gone
- * from Notion (or archived) is left in place, never deleted.
+ * Read every shared data source's pages through the proxy, run them through
+ * the Notion row lens (Devonian `AtomicLens.ingest`), and reconcile the lens's
+ * rows into the app's data table by Notion page id. Import only: nothing is
+ * written to Notion, and a page that is gone from Notion (or archived) is
+ * left in place, never deleted. A value cleared in Notion is removed from its
+ * row; one the lens cannot read losslessly is left as it was.
  */
 export async function syncNotion(
   store: PluginStore,
@@ -257,84 +214,71 @@ export async function syncNotion(
   const data = await store.getData();
   if (!data?.table || !data.rowClass)
     throw new Error('This app has no data table with a row class to fill');
-  const { projected, titles, names } = await readNotion(transport, read);
-  const warnings = [...(projected.errors ?? [])];
-
-  const lensColumns = projected.ontology.terms.map(term => {
-    const id = propertyId(term);
-    const name = names.get(id) ?? id;
-
-    return {
-      shortname: term.shortname,
-      name,
-      datatype: String(term.datatype),
-      description: term.description,
-    };
-  });
-  const columns = await ensureColumns(
-    store,
-    data.rowClass,
-    [...FIXED, ...lensColumns],
-    warnings,
+  const { sources, columns, dataSources, warnings } = await readNotion(
+    transport,
+    read,
   );
-  const pageId = columns.get('notion-page-id');
+  const bound = await ensureColumns(store, data.rowClass, columns, warnings);
+  const pageId = bound.get('notion-page-id');
   if (!pageId) throw new Error('No column to key rows by Notion page id');
 
+  const lenses = new NotionRowLenses({ columns, bound });
+  const managed = lenses.managed();
   const result: SyncResult = {
     created: 0,
     updated: 0,
     unchanged: 0,
-    dataSources: titles.size,
+    dataSources,
     warnings,
   };
   const own = new Set(
     await store.query({ property: atomic.parent, value: data.table }),
   );
 
-  for (const page of projected.records) {
-    const row: Record<string, JSONValue> = { [atomic.name]: page.name };
+  for (const source of sources) {
+    const lens = lenses.lens(source.dataSource, source.title, source.pages);
 
-    const set = (shortname: string, value: JSONValue) => {
-      const property = columns.get(shortname);
-      if (property && value !== undefined && value !== null)
-        row[property] = value;
-    };
+    for (const page of source.pages) {
+      const matches = await store.query({ property: pageId, value: page.id });
+      const subject = matches.find(s => own.has(s));
+      const existing = subject ? await store.getResource(subject) : undefined;
 
-    set('notion-page-id', page.id);
-    set('notion-data-source', titles.get(page.namespace) ?? page.namespace);
-    set('notion-url', page.values.url as JSONValue);
-    set('notion-last-edited', page.values['last-edited-time'] as JSONValue);
-    for (const { shortname } of lensColumns)
-      set(shortname, page.values[shortname] as JSONValue);
+      // The row's current values go into the lens store first, so the read's
+      // `unset` has something to remove.
+      if (existing) lenses.seed(source.dataSource, page.id, existing.props);
 
-    const matches = await store.query({ property: pageId, value: page.id });
-    const subject = matches.find(s => own.has(s));
+      const row = lenses.store.get(await lens.ingest(page));
+      if (!row) throw new Error(`The lens produced no row for ${page.id}`);
+      const propVals = lenses.toHost(row);
 
-    if (!subject) {
-      const created = await store.newResource({
-        parent: data.table,
-        isA: [data.rowClass],
-        propVals: row,
-      });
-      own.add(created.subject);
-      result.created++;
-      continue;
+      if (!existing) {
+        const created = await store.newResource({
+          parent: data.table,
+          isA: [data.rowClass],
+          propVals,
+        });
+        own.add(created.subject);
+        result.created++;
+        continue;
+      }
+
+      const changed = managed.filter(
+        property =>
+          JSON.stringify(existing.get(property)) !==
+          JSON.stringify(propVals[property]),
+      );
+
+      if (!changed.length) {
+        result.unchanged++;
+        continue;
+      }
+
+      for (const property of changed)
+        if (propVals[property] === undefined) existing.remove(property);
+        else existing.set(property, propVals[property]);
+      await existing.save();
+      result.updated++;
     }
-
-    const existing = await store.getResource(subject);
-    const changed = Object.entries(row).filter(
-      ([property, value]) =>
-        JSON.stringify(existing.get(property)) !== JSON.stringify(value),
-    );
-
-    if (!changed.length) {
-      result.unchanged++;
-      continue;
-    }
-
-    for (const [property, value] of changed) existing.set(property, value);
-    await existing.save();
-    result.updated++;
   }
 
   return result;

@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Sandboxed two-way Notion data-source pilot",
+  "dependencies": {
+    "devonian": "0.6.1",
+    "syncables": "0.18.0"
+  },
   "atomicCertification": {
     "owner": "Ontola",
     "support": "experimental",

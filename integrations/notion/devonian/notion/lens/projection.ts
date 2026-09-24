@@ -47,7 +47,8 @@ const datatypes: Record<NotionFieldType, Datatype> = {
   multi_select: JSON_DATATYPE,
 };
 
-const supported = (type: unknown): type is NotionFieldType =>
+/** Whether this lens projects a Notion property type. */
+export const isNotionFieldType = (type: unknown): type is NotionFieldType =>
   typeof type === 'string' &&
   (notionFieldTypes as readonly string[]).includes(type);
 
@@ -146,6 +147,80 @@ export function notionFieldValue(
   }
 }
 
+/** Notion's limits on one text object and on a rich-text array. */
+export const NOTION_TEXT_CHUNK = 2000;
+export const NOTION_RICH_TEXT_PARTS = 100;
+
+/**
+ * The reverse of `notionFieldValue`: the Notion page property value for an
+ * Atomic value, as a page `PATCH` body carries it (`{ [type]: value }`'s
+ * inner value). `undefined` means "no value": Notion's empty for that type.
+ * Text is split into 2000-character text objects without truncation (never
+ * inside a surrogate pair); more than 100 of them throws. Options are sent
+ * by id. A value of the wrong shape throws rather than being coerced.
+ */
+export function notionPropertyValue(
+  type: NotionFieldType,
+  value: JSONValue | undefined,
+): unknown {
+  const fail = () => {
+    throw new Error(`Cannot write ${JSON.stringify(value)} as Notion ${type}`);
+  };
+
+  switch (type) {
+    case 'title':
+
+    case 'rich_text': {
+      if (value === undefined) return [];
+      if (typeof value !== 'string') return fail();
+      const parts = [];
+
+      for (let i = 0; i < value.length; ) {
+        let end = Math.min(i + NOTION_TEXT_CHUNK, value.length);
+        if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1]!))
+          end--;
+        parts.push({ type: 'text', text: { content: value.slice(i, end) } });
+        i = end;
+      }
+
+      if (parts.length > NOTION_RICH_TEXT_PARTS)
+        throw new Error("Text exceeds Notion's rich-text array limit");
+
+      return parts;
+    }
+
+    case 'number':
+      if (value === undefined) return null;
+
+      return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : fail();
+    case 'checkbox':
+      // Notion has no empty checkbox: absent is unchecked.
+      if (value === undefined) return false;
+
+      return typeof value === 'boolean' ? value : fail();
+    case 'url':
+    case 'email':
+    case 'phone_number':
+      if (value === undefined) return null;
+
+      return typeof value === 'string' ? value : fail();
+    case 'select':
+    case 'status':
+      if (value === undefined) return null;
+
+      return typeof value === 'string' && value ? { id: value } : fail();
+    case 'multi_select':
+      if (value === undefined) return [];
+
+      return Array.isArray(value) &&
+        value.every(id => typeof id === 'string' && id)
+        ? (value as string[]).map(id => ({ id }))
+        : fail();
+  }
+}
+
 interface FieldDefinition {
   id: string;
   name: string;
@@ -234,7 +309,7 @@ export function notionProjection(
     )) {
       const p = object(property);
       const id = p.id;
-      if (typeof id !== 'string' || !supported(p.type)) continue;
+      if (typeof id !== 'string' || !isNotionFieldType(p.type)) continue;
       const known = fields.get(id);
       if (known && known.type !== p.type)
         throw new Error(

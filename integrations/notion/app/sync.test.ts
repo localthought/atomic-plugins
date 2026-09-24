@@ -1,4 +1,5 @@
 // @wc-ignore-file
+import { readPlatform } from 'syncables/browser';
 import { describe, expect, it } from 'vitest';
 import { notionFieldShortname } from '../devonian/notion/index.js';
 import { DATA_SOURCE, pages } from '../fixtures/notion/scenario.mjs';
@@ -154,6 +155,46 @@ describe('syncNotion', () => {
     const again = await syncNotion(store, transport);
     expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 3 });
     expect(store.writes.length).toBe(writes);
+  });
+
+  it('removes a value cleared in Notion and keeps one the lens cannot read', async () => {
+    const { store, transport } = await run();
+    const points = [...store.resources].find(
+      ([, p]) => p[atomic.shortname] === notionFieldShortname('n%3D1'),
+    )![0];
+    const notes = [...store.resources].find(
+      ([, p]) => p[atomic.shortname] === notionFieldShortname('Nt0s'),
+    )![0];
+    const row = (name: string) =>
+      [...store.resources.values()].find(
+        p => p[PARENT] === TABLE && p[atomic.name] === name,
+      )!;
+    // A person's earlier plain Notes on the formatted page stay put.
+    const retro = [...store.resources].find(
+      ([, p]) => p[PARENT] === TABLE && p[atomic.name] === 'Retrospective',
+    )!;
+    retro[1][notes] = 'Written in Atomic';
+
+    // Next read: Points cleared on "Launch plan".
+    const cleared: typeof readPlatform = async (doc, options) => {
+      const result = await readPlatform(doc, options);
+
+      for (const record of result.records)
+        if (record.id === pages[0]!.id) {
+          const values = structuredClone(record.values) as {
+            properties: Record<string, Record<string, unknown>>;
+          };
+          values.properties.Points!.number = null;
+          record.values = values as typeof record.values;
+        }
+
+      return result;
+    };
+
+    const again = await syncNotion(store, transport, cleared);
+    expect(again).toMatchObject({ created: 0, updated: 1, unchanged: 2 });
+    expect(row('Launch plan')).not.toHaveProperty(points);
+    expect(row('Retrospective')[notes]).toBe('Written in Atomic');
   });
 
   it('only ever reads: every relayed request is a POST list', async () => {
