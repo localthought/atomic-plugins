@@ -37,8 +37,11 @@
       "index": 3,
       "platforms": ["moneybird"],
       "tiers": ["e2e"],
-      "note": "e2e drives the Bank statements importer through the host's generic file entry point (atomic-server#1653: manifest accepts/destination, PluginPage Import tab): publish, discover, set up, MT940 and camt.053 import, reload, reimport, local edit, conflict and refused files. The pin includes that change (atomic-server#1691); against an older host, publishing the bundle fails on the unknown manifest field. No typecheck/unit tier: money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility. moneybird is listed for a future Moneybird fixture in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/money/ has no Moneybird runtime code.",
-      "e2e": ["integrations/money/e2e/money.spec.ts"]
+      "note": "e2e drives the Bank statements importer through the host's generic file entry point (atomic-server#1653: manifest accepts/destination, PluginPage Import tab): publish, discover, set up, MT940 and camt.053 import, reload, reimport, local edit, conflict and refused files. The pin includes that change (atomic-server#1691); against an older host, publishing the bundle fails on the unknown manifest field. No typecheck/unit tier: money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility. moneybird.spec.ts drives the read-only Moneybird contacts drive app (integrations/money/moneybird/, #102) through the host relay against the SYNTHETIC moneybird fixture in integrations/money/fixtures/moneybird/ (hand-written from the public OpenAPI document; not a recording, which needs a Moneybird account).",
+      "e2e": [
+        "integrations/money/e2e/money.spec.ts",
+        "integrations/money/e2e/moneybird.spec.ts"
+      ]
     },
     {
       "id": "notion",

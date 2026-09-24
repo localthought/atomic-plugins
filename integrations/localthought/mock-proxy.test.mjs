@@ -16,6 +16,7 @@ test('catalog, selected-platform PKCE consent, redemption and single-use rotatio
       'clockify',
       'github-issues',
       'google-calendar',
+      'moneybird',
       'notion',
       'pets',
     ]);
@@ -143,10 +144,17 @@ test('an empty platform list serves every fixture', async () => {
       'clockify',
       'github-issues',
       'google-calendar',
+      'moneybird',
       'notion',
       'pets',
     ]);
-    for (const id of ['clockify', 'google-calendar', 'notion', 'pets'])
+    for (const id of [
+      'clockify',
+      'google-calendar',
+      'moneybird',
+      'notion',
+      'pets',
+    ])
       assert.equal((await fetch(`${base}/catalog/${id}.yaml`)).status, 200);
     assert.ok(server.github.createIssue);
     assert.ok(server.calendar.events);

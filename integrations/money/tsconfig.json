@@ -8,5 +8,12 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["parser.ts", "camt053.ts", "statement.ts", "plugin.ts"]
+  "include": [
+    "parser.ts",
+    "camt053.ts",
+    "statement.ts",
+    "plugin.ts",
+    "moneybird/*.ts"
+  ],
+  "exclude": ["moneybird/*.test.ts", "moneybird/fakeStore.ts"]
 }

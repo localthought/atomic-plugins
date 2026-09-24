@@ -144,3 +144,70 @@ Not verified: other banks' dialects beyond the fixtures (the 2026-09-11 bunq
 check above was on the old host path), an Installation (as opposed to a
 draft), and the host's server-side size refusal through the browser (it has
 a Rust unit test in atomic-server, `uploads_need_a_declaration_and_respect_its_size`).
+
+## Moneybird: read-only contacts (`moneybird/`)
+
+A second, independent thing in this folder (#102): a browser-only drive app,
+the same shape as `integrations/pets/app/`. It is not part of the sandbox
+bundle above and does not touch the Bank transactions table.
+
+- **Scope.** One collection, contacts, of one administration the person
+  chooses. Every call is a GET through the host's proxy relay
+  (`store.proxy.request`); the frame holds no credential and makes no network
+  call of its own (`moneybird/build.test.ts` checks the bundle). Nothing is
+  written to Moneybird.
+- **Deferred.** The catalog card used to advertise contacts, sales invoices,
+  purchase invoices, financial mutations "and the other collections". None of
+  those but contacts is imported. `financial_mutations.json` has no
+  pagination overlay (`overlays/moneybird.com/api/v2/pagination-overlay.yaml`)
+  and needs a period `filter`, so it is the likely next collection, but it is
+  not attempted here.
+- **Flow.** Connect Moneybird (host consent bar, LocalThought proxy), then
+  choose an administration (`GET /administrations.json`; the choice is
+  stored on the App resource as `moneybird-administration`), then import. It
+  reads `GET /{administration_id}/contacts.json?per_page=100&include_archived=true`
+  and follows `Link: <…>; rel="next"` only within that collection, for at
+  most 200 pages. It reads every page before writing, so a refresh that fails
+  part-way writes nothing and the rows imported earlier stay. The view syncs
+  once each time it opens, and on Sync now.
+- **Identity.** Each row carries `moneybird-source-id` =
+  `moneybird:<administration>:contact:<id>`. A repeated import with no change
+  writes nothing, and two administrations do not collide. A contact changed on
+  Moneybird overwrites the imported columns; local edits to them are not
+  preserved yet (the policy is #97's question). A contact that disappears is
+  kept.
+- **Columns.** `moneybird-id`, `-administration-id`, `-company-name`,
+  `-firstname`, `-lastname`, `-email`, `-city`, `-country`, `-customer-id`,
+  `-updated-at` (the exact ISO string Moneybird sent) as strings;
+  `moneybird-archived` as a boolean; `moneybird-version` as an integer. The
+  row name is the company, else the person, else the id. Null or absent
+  values are left unset.
+
+| What                                                  | Fixture (synthetic)                                | Real Moneybird                                                             |
+| ----------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------- |
+| `administrations.json` list and choice                | verified (unit, host E2E)                          | not verified                                                               |
+| contacts, the fields above, their datatypes           | verified (unit, host E2E)                          | not verified                                                               |
+| `Link` rel="next" pagination, `include_archived`      | verified against the fixture's own pages of 2      | not verified; the page size and headers are as documented, not as observed |
+| repeat import without duplicates, two administrations | verified (unit, host E2E)                          | not verified                                                               |
+| failed refresh keeps rows                             | verified (fixture's synthetic 503; unit, host E2E) | not verified                                                               |
+| 401/403 handling ("reconnect Moneybird")              | unit only                                          | not verified                                                               |
+
+**The fixture is synthetic, not recorded.**
+`fixtures/moneybird/synthetic.mjs` is hand-written from the pinned read-only
+OpenAPI document (localthought/openapi-directory@85a61052) and its examples.
+It has invented names and identifiers. `scenario.mjs` serves it to the mock
+proxy (registered as `moneybird` in `localthought/fixtures/index.mjs`). It
+pages by 2 whatever `per_page` asks, and fails every second read of an
+administration on page 2 with 503; both are test behaviour, not claims about
+Moneybird. **A real recording needs someone with a Moneybird test
+administration and API token**; the steps are in `scenario.mjs`'s header.
+
+**Install.** Test-side only, like Pets: `e2e/moneybird.spec.ts` creates a
+`New app` and replaces its entry point with `node
+integrations/money/moneybird/build.mjs`'s bundle. The generic catalog install
+for drive apps is #94.
+
+Tests: the money vitest command above includes `moneybird/*.test.ts`. The
+host E2E is `e2e/moneybird.spec.ts` in the money lane's e2e tier. It passed on
+2026-09-24 against the pinned atomic-server `2f403624e` (it needs only the
+host proxy relay, atomic-server#1657).
