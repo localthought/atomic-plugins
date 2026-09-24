@@ -73,3 +73,6 @@ jobs:
       - run: pnpm run prettier:check
       - run: pnpm test
       - run: pnpm build
+      # Re-runs __tests__/browser/bundle.test.ts against the compiled build/
+      # that npm consumers get (`pnpm test` above bundles src/).
+      - run: pnpm run test:browser-build
