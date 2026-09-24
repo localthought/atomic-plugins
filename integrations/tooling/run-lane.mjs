@@ -60,8 +60,8 @@ if (!tiers.length) {
   process.exit(0);
 }
 
-// Contract-only planning checks need only Node, without browser setup or installs.
-if (tiers.some(tier => tier !== 'contract')) {
+// Contract and native Node test tiers need no browser workspace.
+if (tiers.some(tier => !['contract', 'node'].includes(tier))) {
   // Warn on an accidental stale pin while allowing deliberate host experiments.
   for (const problem of layoutProblems()) console.warn(`warning: ${problem}`);
 
@@ -171,6 +171,21 @@ for (const tier of order.filter(t => tiers.includes(t))) {
       'integrations/tooling/server-contract.mjs',
       lane.id,
     ]);
+  } else if (tier === 'node') {
+    // Require explicit existing files: a missing suite must not pass with zero tests.
+    if (!lane.nodeTests?.length) {
+      console.error(`${lane.id}: no nodeTests declared`);
+      process.exit(1);
+    }
+
+    for (const file of lane.nodeTests) {
+      if (!existsSync(resolve(root, file))) {
+        console.error(`${lane.id}: missing test file ${file}`);
+        process.exit(1);
+      }
+    }
+
+    status = run(process.execPath, ['--test', ...lane.nodeTests]);
   } else if (tier === 'typecheck') {
     status = run(requireTool(`${bin}/tsc`, 'run pnpm install in browser/'), [
       '-p',

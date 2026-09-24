@@ -16,7 +16,7 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 /** Directories under integrations/ that are not a plugin lane. */
 export const NON_LANE_DIRECTORIES = ['tooling'];
 
-export const TIERS = ['contract', 'typecheck', 'unit', 'live', 'e2e'];
+export const TIERS = ['contract', 'node', 'typecheck', 'unit', 'live', 'e2e'];
 
 export function validateConfig(config) {
   const { lanes } = config;
@@ -53,6 +53,28 @@ export function validateConfig(config) {
     for (const tier of lane.tiers)
       if (!TIERS.includes(tier))
         throw new Error(`lane ${lane.id}: unknown tier ${tier}`);
+
+    if (lane.tiers.includes('node')) {
+      if (!Array.isArray(lane.nodeTests) || !lane.nodeTests.length)
+        throw new Error(
+          `lane ${lane.id}: a node tier needs a non-empty nodeTests list`,
+        );
+
+      for (const path of lane.nodeTests) {
+        if (
+          typeof path !== 'string' ||
+          !path.startsWith(`integrations/${lane.id}/`) ||
+          !path.endsWith('.test.mjs') ||
+          path.split('/').some(part => part === '..' || part === '.') ||
+          path.includes('\\') ||
+          path.includes('*')
+        )
+          throw new Error(
+            `lane ${lane.id}: nodeTests must name explicit .test.mjs files inside its plugin folder`,
+          );
+      }
+    }
+
     if (lane.tiers.includes('e2e') && !lane.e2e?.length)
       throw new Error(`lane ${lane.id}: an e2e tier needs an e2e spec list`);
     if (lane.tiers.includes('live') && !lane.liveEnv)
