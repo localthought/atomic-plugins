@@ -198,7 +198,8 @@ export const MONEY_CSS = `
 .m-more { padding: 14px 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
 /* Ledger list (<560px) */
-.m-list { list-style: none; margin: 0; padding: 0; }
+.m-list, .m-list ul { list-style: none; margin: 0; padding: 0; }
+.m-list h3 { margin: 0; }
 .m-list .m-dayh {
   display: flex;
   justify-content: space-between;
@@ -443,7 +444,8 @@ textarea.m-input { min-height: 64px; resize: vertical; }
 .m-figs td { padding: 3px 0; }
 .m-figs td:last-child { text-align: right; padding-left: 28px; white-space: nowrap; }
 .m-figs tr.m-total td { border-top: 1px solid var(--pl-border); padding-top: 6px; font-weight: 650; }
-.m-figs tr.m-bad td { color: var(--pl-neg); font-weight: 700; }
+/* The alert colour alone is under 4.5:1 on the banner's tint; mixed toward the text it passes. */
+.m-figs tr.m-bad td { color: color-mix(in oklab, var(--pl-neg) 60%, var(--pl-text)); font-weight: 700; }
 .m-compare {
   display: grid;
   border: 1px solid var(--pl-border);
@@ -474,6 +476,32 @@ textarea.m-input { min-height: 64px; resize: vertical; }
 
 .m-imports caption { padding-top: 12px; }
 .m-line { display: block; white-space: nowrap; }
+
+.m-popover {
+  position: fixed;
+  z-index: 35;
+  top: 60px;
+  right: 16px;
+  width: min(320px, calc(100% - 32px));
+  padding: 12px;
+  border-radius: var(--pl-radius);
+  border: 1px solid var(--pl-border);
+  background: var(--pl-surface);
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 8px;
+}
+.m-popover-head { display: flex; align-items: center; gap: 8px; }
+.m-popover h2 { margin: 0; font-size: 14px; flex: 1; }
+.m-keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+.m-keys dd { margin: 0; }
+.m-keys kbd, .m-search kbd {
+  font: 11px ui-monospace, monospace;
+  border: 1px solid var(--pl-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--pl-muted);
+}
 
 /* First run */
 .m-drop {

@@ -108,6 +108,8 @@ export interface State {
   importing?: ImportSheet;
   /** Whether the host can apply an import from the app (M-8). */
   canApply: boolean;
+  /** The keyboard shortcuts popover (`?`). */
+  help?: boolean;
 }
 
 export const NOT_A_BANK_TABLE =
@@ -131,6 +133,7 @@ export interface Controller {
   applyImport(): Promise<void>;
   /** Closes the import sheet; during a check, abandons it. */
   closeImport(): void;
+  toggleHelp(open?: boolean): void;
   /** ISO date the period filters are relative to. */
   today(): string;
   dispose(): void;
@@ -470,6 +473,9 @@ export function createController(
       run++;
       pendingText = undefined;
       if (state.importing) update({ importing: undefined });
+    },
+    toggleHelp(open = !state.help) {
+      update({ help: open });
     },
     today,
     dispose() {

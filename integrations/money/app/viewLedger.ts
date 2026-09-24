@@ -581,52 +581,60 @@ function listView(ctx: Ctx, derived: Derived, actions: LedgerActions) {
     derived.visible[0]?.subject;
 
   return h(
-    'ul',
-    { class: 'm-list', 'aria-label': caption(ctx, derived) },
-    groupByDay(derived.visible).map(day => [
-      h(
-        'li',
-        { class: 'm-dayh', role: 'presentation' },
-        dayLabel(day.date, locale),
-        h('span', { class: 'pl-num' }, netText(day.net, locale)),
-      ),
-      day.rows.map(row => {
-        const { title } = titleOf(row);
+    'div',
+    { class: 'm-list', role: 'region', 'aria-label': caption(ctx, derived) },
+    groupByDay(derived.visible).map(day => {
+      const id = `money-day-${day.date}`;
 
-        return h(
-          'li',
-          {},
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'm-item',
-              'data-key': `row-${row.subject}`,
-              'data-row': row.subject,
-              tabindex: row.subject === focusable ? '0' : '-1',
-              'aria-current':
-                row.subject === state.selected ? 'true' : undefined,
-              onclick: () => actions.select(row.subject),
-            },
-            h('span', { class: 'm-t' }, title),
-            amountNode(row.amount, row.currency, locale, {
-              symbol: false,
-              suffix: true,
-            }),
-            h(
-              'span',
-              { class: 'm-s' },
-              notes ? categoryChip(row.category) : undefined,
-              row.note
-                ? h('span', {}, row.note.split('\n')[0])
-                : !notes
-                  ? h('span', {}, shortAccount(row.account))
-                  : undefined,
-            ),
-          ),
-        );
-      }),
-    ]),
+      return [
+        h(
+          'h3',
+          { class: 'm-dayh', id },
+          dayLabel(day.date, locale),
+          h('span', { class: 'pl-num' }, netText(day.net, locale)),
+        ),
+        h(
+          'ul',
+          { 'aria-labelledby': id },
+          day.rows.map(row => {
+            const { title } = titleOf(row);
+
+            return h(
+              'li',
+              {},
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'm-item',
+                  'data-key': `row-${row.subject}`,
+                  'data-row': row.subject,
+                  tabindex: row.subject === focusable ? '0' : '-1',
+                  'aria-current':
+                    row.subject === state.selected ? 'true' : undefined,
+                  onclick: () => actions.select(row.subject),
+                },
+                h('span', { class: 'm-t' }, title),
+                amountNode(row.amount, row.currency, locale, {
+                  symbol: false,
+                  suffix: true,
+                }),
+                h(
+                  'span',
+                  { class: 'm-s' },
+                  notes ? categoryChip(row.category) : undefined,
+                  row.note
+                    ? h('span', {}, row.note.split('\n')[0])
+                    : !notes
+                      ? h('span', {}, shortAccount(row.account))
+                      : undefined,
+                ),
+              ),
+            );
+          }),
+        ),
+      ];
+    }),
   );
 }
 

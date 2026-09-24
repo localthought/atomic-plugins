@@ -76,7 +76,12 @@ export async function mount(
     },
     setPreviewTab: tab => controller.setPreviewTab(tab),
     applyImport: () => void controller.applyImport(),
+    toggleHelp: open => {
+      controller.toggleHelp(open);
+      if (!controller.state().help) helpOpener?.focus();
+    },
   };
+  let helpOpener: HTMLElement | undefined;
 
   /** Where focus goes back to when the import sheet closes. */
   let opener: HTMLElement | undefined;
@@ -190,6 +195,13 @@ export async function mount(
     const open = modal();
     if (open) trapTab(open, event);
 
+    if (event.key === 'Escape' && current?.help) {
+      event.preventDefault();
+      actions.toggleHelp(false);
+
+      return;
+    }
+
     if (event.key === 'Escape' && current?.importing) {
       event.preventDefault();
       actions.closeImport();
@@ -231,6 +243,12 @@ export async function mount(
         event.preventDefault();
         search.focus();
       }
+    } else if (event.key === '?' && !open) {
+      event.preventDefault();
+      if (!current?.help) helpOpener = doc.activeElement as HTMLElement;
+      actions.toggleHelp();
+      if (current?.help)
+        root.querySelector<HTMLElement>('[data-key="help-close"]')?.focus();
     } else if (event.key === 'i' && !open) {
       event.preventDefault();
       actions.chooseFile();

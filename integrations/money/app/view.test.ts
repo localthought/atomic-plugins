@@ -74,7 +74,7 @@ describe('Money view: ledger', () => {
   it('renders a list of buttons below 560px, with the currency after the amount', async () => {
     const root = await open(fakeStore({ rows: sampleRows() }), 360);
     expect(root.querySelector('table')).toBeNull();
-    const item = root.querySelector('ul.m-list button.m-item')!;
+    const item = root.querySelector('.m-list ul button.m-item')!;
     expect(text(item)).toContain('Kantoorhuur De Werkplaats BV');
     expect(text(item.querySelector('.m-amt'))).toBe('−850.00EUR');
     const icon = root.querySelector<HTMLButtonElement>(
@@ -322,5 +322,39 @@ describe('Money view: imports tab', () => {
       .find(t => text(t).startsWith('Imports'))!
       .click();
     expect(text(root.querySelector('.pl-empty h2'))).toBe('No imports yet');
+  });
+});
+
+describe('Money view: keyboard', () => {
+  it('/ focuses search, ? lists the shortcuts, i opens the file picker', async () => {
+    const root = await open(fakeStore({ rows: sampleRows() }));
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '/', bubbles: true }),
+    );
+    expect((document.activeElement as HTMLElement).dataset.key).toBe('search');
+    // Typing in the field does not trigger shortcuts.
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '?', bubbles: true }),
+    );
+    expect(root.querySelector('.m-popover')).toBeNull();
+    (document.activeElement as HTMLElement).blur();
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '?', bubbles: true }),
+    );
+    expect(text(root.querySelector('.m-popover h2'))).toBe(
+      'Keyboard shortcuts',
+    );
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(root.querySelector('.m-popover')).toBeNull();
+    let picked = 0;
+    root
+      .querySelector<HTMLInputElement>('input[type="file"]')!
+      .addEventListener('click', () => picked++);
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'i', bubbles: true }),
+    );
+    expect(picked).toBe(1);
   });
 });

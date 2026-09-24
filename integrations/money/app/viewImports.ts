@@ -69,7 +69,7 @@ export function imports(ctx: Ctx, actions: ImportsActions): HTMLElement[] {
     return [
       h(
         'ul',
-        { class: 'm-list', 'aria-label': 'Imported statements' },
+        { class: 'm-list m-flat', 'aria-label': 'Imported statements' },
         list.map(s =>
           h(
             'li',

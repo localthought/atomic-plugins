@@ -30,6 +30,7 @@ import { importSheet, importStatus, type ImportActions } from './viewImport.js';
 import { imports, type ImportsActions } from './viewImports.js';
 
 export interface Actions extends LedgerActions, ImportActions, ImportsActions {
+  toggleHelp(open?: boolean): void;
   setTab(tab: Tab): void;
   reload(): void;
 }
@@ -181,5 +182,51 @@ export function renderApp(ctx: Ctx, actions: Actions): Node[] {
     ),
     ...body(ctx, actions),
     ...(state.importing ? importSheet(ctx, state.importing, actions) : []),
+    ...(state.help ? [shortcuts(actions)] : []),
   ];
+}
+
+const SHORTCUTS: [string, string][] = [
+  ['/', 'Search'],
+  ['↑ ↓', 'Move between transactions'],
+  ['Enter', 'Open the transaction'],
+  ['Esc', 'Close details or the import'],
+  ['i', 'Import a statement'],
+  ['?', 'Show or hide these shortcuts'],
+];
+
+function shortcuts(actions: Actions): HTMLElement {
+  return h(
+    'div',
+    {
+      class: 'm-popover',
+      role: 'dialog',
+      'aria-labelledby': 'money-shortcuts-h',
+    },
+    h(
+      'div',
+      { class: 'm-popover-head' },
+      h('h2', { id: 'money-shortcuts-h' }, 'Keyboard shortcuts'),
+      button(icons.close(), {
+        variant: 'ghost',
+        iconOnly: true,
+        ariaLabel: 'Close shortcuts',
+        onClick: () => actions.toggleHelp(false),
+        key: 'help-close',
+      }),
+    ),
+    h(
+      'dl',
+      { class: 'm-keys' },
+      SHORTCUTS.map(([key, what]) => [
+        h('dt', {}, h('kbd', {}, key)),
+        h('dd', {}, what),
+      ]),
+    ),
+    h(
+      'p',
+      { class: 'pl-muted m-small' },
+      'Shortcuts are off while you type in a field.',
+    ),
+  );
 }
