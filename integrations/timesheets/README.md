@@ -125,6 +125,34 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
     each only when it applies.
     Nothing is written to Clockify. Requests are sequential; each is one
     relay round trip.
+- **Timeline lens** (#123 M2, read-only). Two stages over the mirror, full
+  recompute on every build (not measured; #97 §3.2 estimates single-digit
+  ms at 2,000 entries):
+  - _Map_ (`devonian/clockify/lens/claims.ts`): each entry becomes at most
+    one claim over `[start, end)` with the exact instant strings:
+    `worked(P)`, `worked(none)` (no project: a label, not a conflict, #97
+    answer 3), a running timer up to now (`open`), and `didNotWork` with a
+    badge for `BREAK`, `HOLIDAY` and `TIME_OFF` (the last two are spec enum
+    values, never seen live). Locked entries and entries with custom field
+    values are flagged.
+  - _Aggregate_ (`app/timeline/sweep.ts`): a sweep over the claims and the
+    coverage gives non-overlapping segments per local day in the profile
+    time zone, from the day holding the window's start up to now; DST days
+    are 23 or 25 h. A segment is `unknown` where M1's coverage says so
+    (absence candidates included; this wins over any claim), `didNotWork`
+    where coverage is complete and no entry claims it, `worked`, `worked`
+    + `duplicate` (same project twice), or `conflict`: "unclear which
+    project" (different projects, "no project" included) or "unclear
+    whether worked" (work overlapping a break, holiday or time off). Each
+    segment lists why it would not be editable (running, locked, entry
+    type, custom fields, and `worked(none)` under `forceProjects`).
+    Sorted throughout, so equal mirrors give equal timelines.
+  - _View model_: `app/model/source.ts` fills the #89 views' `Timesheet`
+    hooks from it: `unknown` (the window's unknown spans) and `conflicts`
+    (`app/timeline/types.ts` `TimelineConflict`: the views' `Conflict` plus
+    kind, span, entries and candidates). `app/ui/coverage.ts` renders them
+    as a "Not loaded" note and a read-only "Conflicts in Clockify" list.
+    Nothing can be resolved from the app yet (M4).
 - **Errors.** If the window's first page fails, the pass fails and rows
   are not touched ("Import failed: …. Rows already in the table are
   kept."). If a later page fails, what was read is kept as an incomplete
@@ -163,6 +191,11 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
   random observation sets (`app/observations.test.ts`): appending equals
   refolding, any permutation folds the same, snapshot + tail equals the
   full fold, two devices' diffs fold the same, fields equal the latest read.
+  The timeline's #123 scenarios S1, S6 and S7 (display only), conflict
+  kinds, `forceProjects`, the DST days of 29 March and 25 October 2026 in
+  Europe/Amsterdam, the rendering hooks, and the merge property over 40
+  seeded observation sets (any fold order and record order gives equal
+  segments and conflicts) are in `app/timeline/timeline.test.ts`.
 - **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
   against the pinned atomic-server (`.atomic-server-ref`, which includes
   frame capabilities from atomic-server#1697) and the local mock proxy,

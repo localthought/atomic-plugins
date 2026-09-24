@@ -10,16 +10,15 @@
  * absence candidate (probably deleted, not confirmed) is kept, and its span
  * is `unknown` (M1's `unknownIntervals`).
  *
- * M2 hooks: `unknown` is M1's computation, `conflicts` is always empty. M2's
- * timeline lens is expected to supply both; the views render them only as
- * stubs (`../ui/coverage.ts`).
+ * M2 hooks: `unknown` and `conflicts` come from the timeline sweep
+ * (`../timeline/sweep.ts`, #123 M2) over `timeZone`; `../ui/coverage.ts`
+ * renders them.
  */
 import type { RawNamed } from '../clockifyApi.js';
 import {
   rawFromCanonical,
   timeEntries,
   TIME_ENTRY,
-  unknownIntervals,
 } from '../clockifyObserve.js';
 import type { Settings } from '../config.js';
 import {
@@ -29,6 +28,7 @@ import {
   type MirrorRecord,
 } from '../observations.js';
 import { projectEntries } from '../project.js';
+import { buildTimeline } from '../timeline/sweep.js';
 import { weekStartOf } from './time.js';
 import type { Project, Timesheet, TimeEntry } from './types.js';
 
@@ -45,6 +45,8 @@ export interface SourceInput {
   timeZone: string;
   /** Clockify's `settings.weekStart`; Monday when unknown. */
   weekStart?: string;
+  /** The workspace's `forceProjects` (M2: `worked(none)` is read-only). */
+  forceProjects?: boolean;
 }
 
 const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
@@ -84,6 +86,7 @@ export function timesheetFromMirror(input: SourceInput): Timesheet {
     r => !r.deletedAt && mine(r, settings),
   );
   const byId = new Map(records.map(r => [r.id, r]));
+
   const inWindow = (r: MirrorRecord) => {
     const start = r.fields.start;
     if (typeof start !== 'string') return false;
@@ -139,6 +142,17 @@ export function timesheetFromMirror(input: SourceInput): Timesheet {
     .map(c => c.confirmedAt)
     .sort((a, b) => ms(a) - ms(b));
   const lastChecked = confirmations.at(-1);
+  const timeline =
+    settings && window
+      ? buildTimeline({
+          mirror,
+          settings,
+          window,
+          now,
+          timeZone,
+          forceProjects: input.forceProjects,
+        })
+      : undefined;
 
   return {
     entries,
@@ -148,8 +162,9 @@ export function timesheetFromMirror(input: SourceInput): Timesheet {
     ...(lastChecked ? { lastChecked } : {}),
     weekStart: weekStartOf(input.weekStart),
     timeZone,
-    unknown:
-      settings && window ? unknownIntervals(mirror, settings, window, now) : [],
-    conflicts: [],
+    // M2: both from the timeline sweep (`../timeline/sweep.ts`).
+    ...(timeline
+      ? { unknown: timeline.unknown, conflicts: timeline.conflicts }
+      : { unknown: [], conflicts: [] }),
   };
 }

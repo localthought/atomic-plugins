@@ -210,8 +210,74 @@ test.describe('timesheets drive app', () => {
       { timeout: 60_000 },
     );
     await expectRows(page, table);
+
+    // #123 M2: a conflict and unknown time, as the #89 views show them
+    // through `ui/coverage.ts`. Those views reach the bundle only once
+    // `main.ts` renders them; until then the text below is tree-shaken
+    // out and these steps are skipped with an annotation, not passed.
+    if (!text.includes('Conflicts in Clockify')) {
+      test.info().annotations.push({
+        type: 'skipped-steps',
+        description:
+          '#123 M2 timeline assertions: the #89 views are not in the bundle yet',
+      });
+
+      return;
+    }
+
+    await page.goto(appUrl);
+    await expect(status.filter({ hasText: 'Last synced' })).toBeVisible({
+      timeout: 60_000,
+    });
+    // An entry without a project inside the running timer's span (project
+    // "Atomic plugins"): unclear which project.
+    const minute = 60_000;
+    await fixture({
+      action: 'add',
+      entry: {
+        id: 'entry-9',
+        description: 'No project here',
+        userId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+        billable: false,
+        projectId: null,
+        isLocked: false,
+        type: 'REGULAR',
+        timeInterval: {
+          start: clockifyInstant(Date.now() - 40 * minute),
+          end: clockifyInstant(Date.now() - 20 * minute),
+        },
+      },
+    });
+    await app.getByRole('button', { name: 'Sync now' }).click();
+    await expect(status.filter({ hasText: 'Last synced' })).toContainText(
+      '1 created,',
+      { timeout: 60_000 },
+    );
+    await expect(
+      app.getByRole('region', { name: 'Conflicts in Clockify' }),
+    ).toContainText('Unclear which project: Atomic plugins · No project');
+
+    // The running timer disappears from Clockify's list: a candidate, not
+    // yet a deletion, so its span is not loaded (and no longer a conflict).
+    await fixture({ action: 'delete', id: 'entry-4' });
+    await app.getByRole('button', { name: 'Sync now' }).click();
+    await expect(status.filter({ hasText: 'Last synced' })).toContainText(
+      "1 missing from Clockify's list",
+      { timeout: 60_000 },
+    );
+    await expect(
+      app.getByRole('note', { name: 'Not loaded' }).first(),
+    ).toContainText('Not loaded: ');
+    await expect(
+      app.getByRole('region', { name: 'Conflicts in Clockify' }),
+    ).toHaveCount(0);
   });
 });
+
+/** Clockify's instant form: whole seconds, `Z`. */
+const clockifyInstant = (at: number) =>
+  new Date(at).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 async function expectRows(page: Page, table: string) {
   await page.goto(
