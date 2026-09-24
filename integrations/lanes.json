@@ -17,6 +17,13 @@
       "e2e": ["integrations/calendar/e2e/calendar.spec.ts"]
     },
     {
+      "id": "remotestorage",
+      "index": 10,
+      "platforms": [],
+      "tiers": ["contract"],
+      "note": "remoteStorage server scaffold: validates planning metadata and explicit host dependencies only; no protocol implementation or live interoperability is claimed."
+    },
+    {
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],

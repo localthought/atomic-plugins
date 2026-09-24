@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "remotestorage",
+  "name": "remoteStorage",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Expose an authorized subset of Atomic data to remoteStorage clients.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
+  "proposedHostCapabilities": [
+    "http-routes",
+    "outbound-http",
+    "persistent-state"
+  ],
+  "firstInteropMilestone": "Connect a test client, write and read one document, and reject access outside its granted scope."
+}
