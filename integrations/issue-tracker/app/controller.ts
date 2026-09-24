@@ -180,9 +180,7 @@ interface Session {
 }
 
 const statusOf = (value: unknown): Status | undefined =>
-  value === 'Todo' || value === 'Doing' || value === 'Done'
-    ? value
-    : undefined;
+  value === 'Todo' || value === 'Doing' || value === 'Done' ? value : undefined;
 
 export function createController(
   store: PluginStore,
@@ -351,10 +349,7 @@ export function createController(
   };
 
   /** Shows `change` on the row at once, marked as touched. */
-  const optimistic = (
-    subject: string,
-    change: (row: IssueRow) => IssueRow,
-  ) => {
+  const optimistic = (subject: string, change: (row: IssueRow) => IssueRow) => {
     if (current.kind !== 'ready') return;
     const ready = current;
     const earlier = changes.get(subject);

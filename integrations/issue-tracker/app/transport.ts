@@ -196,7 +196,8 @@ export async function listRepositories(
       typeof response.body === 'string'
         ? (JSON.parse(response.body) as unknown)
         : response.body;
-    if (!Array.isArray(body)) throw new Error('GitHub returned no repository list');
+    if (!Array.isArray(body))
+      throw new Error('GitHub returned no repository list');
 
     for (const raw of body as Record<string, unknown>[]) {
       if (typeof raw?.full_name !== 'string') continue;

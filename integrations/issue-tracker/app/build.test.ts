@@ -20,9 +20,11 @@ describe('GitHub issues drive-app bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource; keep an eye on the size.
-    // Minified since the designed board/list/detail UI (#89), which took
-    // the unminified bundle from about 86 KB to about 200 KB.
-    expect(bytes).toBeLessThan(128 * 1024);
+    // Measured 125,472 bytes (122.5 KiB) on 2026-09-24, with the JS and the
+    // embedded stylesheets minified: the designed board/list/detail UI (#89)
+    // took the unminified bundle from about 86 KB to about 200 KB. The limit
+    // is that plus 10%, rounded up to the next KiB.
+    expect(bytes).toBeLessThan(135 * 1024);
   });
 
   it('has no storage or network access of its own', () => {

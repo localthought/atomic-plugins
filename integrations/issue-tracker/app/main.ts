@@ -26,7 +26,6 @@ import {
 } from './model.js';
 import type { ViewArgs } from './store.js';
 import { APP_CSS } from './styles.js';
-import type { Status } from './sync.js';
 import { liveRegion } from './ui/kit.js';
 import { injectStyles, watchFrame } from './ui/theme.js';
 import {

@@ -283,7 +283,12 @@ it('describes a conflict per field and settles each field for its own side', asy
   const writes = f.local.writes + f.remote.writes;
 
   expect(await f.open().describeConflict(error.subject)).toEqual([
-    { field: 'title', base: 'Same title', local: 'Local title', remote: 'Remote title' },
+    {
+      field: 'title',
+      base: 'Same title',
+      local: 'Local title',
+      remote: 'Remote title',
+    },
     { field: 'status', base: 'Todo', local: 'Done', remote: 'Doing' },
   ]);
   // A partial choice is refused, and nothing is sent before Apply.

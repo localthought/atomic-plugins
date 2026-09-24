@@ -185,11 +185,15 @@ function appHeader(state: ViewState, ui: Ui, actions: Actions): HTMLElement {
             },
             icon('plus', 14),
           )
-        : button('New issue', () => actions.open({ kind: 'new' }, 'new-issue'), {
-            kind: 'primary',
-            iconName: 'plus',
-            'data-key': 'new-issue',
-          })
+        : button(
+            'New issue',
+            () => actions.open({ kind: 'new' }, 'new-issue'),
+            {
+              kind: 'primary',
+              iconName: 'plus',
+              'data-key': 'new-issue',
+            },
+          )
       : null;
 
   return header(
@@ -243,7 +247,7 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
       // pill already says when it last synced.
       ui.size === 's' && !held
         ? null
-        : h('span', null, connectionLine(state, ui.now)),
+        : h('span', null, connectionLine(state)),
     ],
     [
       held && !state.last?.result.held.some(x => x.unconfirmed)
@@ -277,29 +281,37 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
           'more',
           'Connection menu',
           () => actions.setUi({ menu: menuOpen ? undefined : 'conn' }),
-          { sm: true, 'aria-haspopup': 'menu', 'aria-expanded': String(menuOpen) },
+          {
+            sm: true,
+            'aria-haspopup': 'menu',
+            'aria-expanded': String(menuOpen),
+          },
         ),
         menuOpen
-          ? menu('Connection', [
-              {
-                label: 'Open repository on GitHub',
-                run: () => actions.openGitHub(repoUrl(state.repository)),
-              },
-              {
-                label: 'Reconnect GitHub',
-                run: () => actions.connect(),
-                disabled: state.problem?.kind !== 'reconnect',
-              },
-              {
-                label: 'Change repository: install another app',
-                run: () => {},
-                disabled: true,
-              },
-              {
-                label: 'Keyboard shortcuts',
-                run: () => actions.setUi({ help: true, menu: undefined }),
-              },
-            ], actions)
+          ? menu(
+              'Connection',
+              [
+                {
+                  label: 'Open repository on GitHub',
+                  run: () => actions.openGitHub(repoUrl(state.repository)),
+                },
+                {
+                  label: 'Reconnect GitHub',
+                  run: () => actions.connect(),
+                  disabled: state.problem?.kind !== 'reconnect',
+                },
+                {
+                  label: 'Change repository: install another app',
+                  run: () => {},
+                  disabled: true,
+                },
+                {
+                  label: 'Keyboard shortcuts',
+                  run: () => actions.setUi({ help: true, menu: undefined }),
+                },
+              ],
+              actions,
+            )
           : null,
       ),
     ],
@@ -346,8 +358,11 @@ function menu(label: string, items: MenuItem[], actions: Actions): HTMLElement {
   );
   node.addEventListener('keydown', event => {
     const e = event as KeyboardEvent;
-    const buttons = [...node.querySelectorAll('button:not(:disabled)')] as HTMLElement[];
+    const buttons = [
+      ...node.querySelectorAll('button:not(:disabled)'),
+    ] as HTMLElement[];
     const at = buttons.indexOf(e.target as HTMLElement);
+
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       e.stopPropagation();
@@ -366,6 +381,7 @@ function bannerNode(
 ): HTMLElement | null {
   const model = bannerFor(state);
   if (!model || state.kind !== 'ready') return null;
+
   const run = (action: BannerAction) => {
     if (action === 'reconnect') actions.connect();
     else if (action === 'review-conflict')
@@ -387,7 +403,9 @@ function bannerNode(
         kind: a.primary ? 'primary' : '',
         sm: true,
         disabled: !!state.busy && a.action !== 'open-github',
-        ...(i === model.actions.length - 1 ? { 'data-key': 'banner-action' } : {}),
+        ...(i === model.actions.length - 1
+          ? { 'data-key': 'banner-action' }
+          : {}),
       }),
     ),
   });
@@ -457,7 +475,11 @@ function sources(state: ViewState, actions: Actions): HTMLElement {
           'Jira',
           'One Jira Cloud project.',
           'Read-only for now: nothing is sent back to Jira.',
-          h('span', { class: 'muted small' }, 'Not available on this server yet'),
+          h(
+            'span',
+            { class: 'muted small' },
+            'Not available on this server yet',
+          ),
           true,
         ),
         row(
@@ -500,7 +522,11 @@ function chooseRepository(
   let body: Child;
 
   if (!listing || listing.kind === 'loading') {
-    body = h('p', { class: 'lede' }, 'Loading the repositories this connection can see…');
+    body = h(
+      'p',
+      { class: 'lede' },
+      'Loading the repositories this connection can see…',
+    );
   } else if (listed && listed.length) {
     const q = ui.repoFilter.toLowerCase();
     const shown = listed.filter(r => r.fullName.toLowerCase().includes(q));
@@ -575,7 +601,12 @@ function chooseRepository(
       h(
         'div',
         { class: 'typed' },
-        h('label', { class: 'search' }, h('span', { class: 'sr' }, 'Repository (owner/name)'), input),
+        h(
+          'label',
+          { class: 'search' },
+          h('span', { class: 'sr' }, 'Repository (owner/name)'),
+          input,
+        ),
       ),
       listing.kind === 'unavailable'
         ? h(
@@ -598,7 +629,9 @@ function chooseRepository(
       { class: 'onboard' },
       h('h2', null, 'Which repository?'),
       body,
-      state.error ? h('p', { class: 'field-error', role: 'alert' }, state.error) : null,
+      state.error
+        ? h('p', { class: 'field-error', role: 'alert' }, state.error)
+        : null,
       h(
         'div',
         { class: 'effects' },
@@ -606,10 +639,32 @@ function chooseRepository(
         h(
           'ul',
           null,
-          h('li', null, 'Moving a card to ', h('b', null, 'Done'), ' closes the issue. Moving it back reopens it.'),
-          h('li', null, 'Moving a card to ', h('b', null, 'Doing'), ' adds the ', h('code', null, 'atomic:doing'), ' label; leaving Doing removes it. Other labels are never touched.'),
-          h('li', null, 'Title, description and comment edits are sent to GitHub, and new cards become new issues, each only after you review and send it.'),
-          h('li', null, 'Nothing is ever deleted on GitHub. One app syncs one repository.'),
+          h(
+            'li',
+            null,
+            'Moving a card to ',
+            h('b', null, 'Done'),
+            ' closes the issue. Moving it back reopens it.',
+          ),
+          h(
+            'li',
+            null,
+            'Moving a card to ',
+            h('b', null, 'Doing'),
+            ' adds the ',
+            h('code', null, 'atomic:doing'),
+            ' label; leaving Doing removes it. Other labels are never touched.',
+          ),
+          h(
+            'li',
+            null,
+            'Title, description and comment edits are sent to GitHub, and new cards become new issues, each only after you review and send it.',
+          ),
+          h(
+            'li',
+            null,
+            'Nothing is ever deleted on GitHub. One app syncs one repository.',
+          ),
         ),
       ),
       h(
@@ -654,7 +709,17 @@ function chipsFor(row: IssueRow, max: number): HTMLElement | null {
     { class: 'chips' },
     shown.map(l => chip(l.name, l.color)),
     rest > 0
-      ? h('span', { class: 'chip more', title: row.labels.slice(max).map(l => l.name).join(', ') }, `+${rest}`)
+      ? h(
+          'span',
+          {
+            class: 'chip more',
+            title: row.labels
+              .slice(max)
+              .map(l => l.name)
+              .join(', '),
+          },
+          `+${rest}`,
+        )
       : null,
   );
 }
@@ -725,7 +790,10 @@ function card(
         'data-key': `card:${row.subject}`,
         'data-issue': row.subject,
         onclick: () =>
-          actions.open({ kind: 'issue', subject: row.subject }, `card:${row.subject}`),
+          actions.open(
+            { kind: 'issue', subject: row.subject },
+            `card:${row.subject}`,
+          ),
         onfocus: () => actions.setUi({ focus: row.subject }, false),
       },
       h(
@@ -819,7 +887,11 @@ function board(state: Ready, ui: Ui, actions: Actions): HTMLElement {
         ),
         h(
           'ul',
-          { class: 'cards', role: 'list', 'aria-labelledby': `col-${col.status}` },
+          {
+            class: 'cards',
+            role: 'list',
+            'aria-labelledby': `col-${col.status}`,
+          },
           col.rows.map(row => card(row, state, ui, marks, actions)),
           importing ? [skeletonCard(), skeletonCard()] : null,
         ),
@@ -899,7 +971,8 @@ function list(state: Ready, ui: Ui, actions: Actions): HTMLElement {
                 const menuId = `status:${row.subject}`;
                 const open = ui.menu === menuId;
                 const selected =
-                  ui.panel?.kind === 'issue' && ui.panel.subject === row.subject;
+                  ui.panel?.kind === 'issue' &&
+                  ui.panel.subject === row.subject;
 
                 return h(
                   'li',
@@ -933,18 +1006,28 @@ function list(state: Ready, ui: Ui, actions: Actions): HTMLElement {
                           { kind: 'issue', subject: row.subject },
                           `card:${row.subject}`,
                         ),
-                      onfocus: () => actions.setUi({ focus: row.subject }, false),
+                      onfocus: () =>
+                        actions.setUi({ focus: row.subject }, false),
                     },
                     h(
                       'span',
                       { class: 'row-line' },
                       h('span', { class: 'ref' }, refOf(row)),
                       marker(marks.get(row.subject)),
-                      h('span', { class: 'when' }, short(row.updatedAt, ui.now)),
+                      h(
+                        'span',
+                        { class: 'when' },
+                        short(row.updatedAt, ui.now),
+                      ),
                     ),
                     h('span', { class: 'row-title' }, row.title),
                     row.labels.length || row.comments.length
-                      ? h('span', { class: 'row-foot' }, chipsFor(row, 2), commentCount(row))
+                      ? h(
+                          'span',
+                          { class: 'row-foot' },
+                          chipsFor(row, 2),
+                          commentCount(row),
+                        )
                       : null,
                   ),
                   open ? moveMenu(row, actions, movable) : null,
@@ -981,10 +1064,8 @@ function toolbar(
   const rows = state.last?.result.rows ?? [];
   const labels = labelNames(rows);
   const small = ui.size === 's';
-  const { field, input } = searchField(
-    'Search issues',
-    ui.search,
-    value => actions.setUi({ search: value }),
+  const { field, input } = searchField('Search issues', ui.search, value =>
+    actions.setUi({ search: value }),
   );
   input.dataset.key = 'search';
   input.id = 'issue-search';
@@ -996,8 +1077,18 @@ function toolbar(
     segmented<Layout>(
       'Layout',
       [
-        { value: 'board', label: small ? [] : 'Board', iconName: 'board', title: 'Board' },
-        { value: 'list', label: small ? [] : 'List', iconName: 'list', title: 'List' },
+        {
+          value: 'board',
+          label: small ? [] : 'Board',
+          iconName: 'board',
+          title: 'Board',
+        },
+        {
+          value: 'list',
+          label: small ? [] : 'List',
+          iconName: 'list',
+          title: 'List',
+        },
       ],
       layout,
       value => actions.setUi({ layout: value }),
@@ -1017,7 +1108,8 @@ function toolbar(
               'aria-expanded': String(menuOpen),
               'data-key': 'label-filter',
               disabled: !labels.length && !ui.label,
-              onclick: () => actions.setUi({ menu: menuOpen ? undefined : 'label' }),
+              onclick: () =>
+                actions.setUi({ menu: menuOpen ? undefined : 'label' }),
             },
             ui.label ? `Label: ${ui.label}` : 'Label',
             icon('chevron', 10),
@@ -1053,7 +1145,11 @@ function toolbar(
   );
 }
 
-function emptyContent(state: Ready, ui: Ui, actions: Actions): HTMLElement | null {
+function emptyContent(
+  state: Ready,
+  ui: Ui,
+  actions: Actions,
+): HTMLElement | null {
   const rows = state.last?.result.rows ?? [];
   if (!state.last) return null;
   const filter: Filter = { search: ui.search, label: ui.label };
@@ -1112,7 +1208,9 @@ function detailBar(
     'div',
     { class: 'd-bar' },
     mode === 'sheet'
-      ? iconButton('back', 'Back to issues', close, { 'data-key': 'detail-close' })
+      ? iconButton('back', 'Back to issues', close, {
+          'data-key': 'detail-close',
+        })
       : null,
     h('span', { class: 'ref' }, label),
     h('span', { class: 'spacer' }),
@@ -1155,7 +1253,10 @@ function issueDetail(
     'aria-label': 'Title',
     'data-key': 'detail-title',
     oninput: event =>
-      actions.setDrafts({ title: (event.target as HTMLTextAreaElement).value }, false),
+      actions.setDrafts(
+        { title: (event.target as HTMLTextAreaElement).value },
+        false,
+      ),
     onkeydown: event => {
       const e = event as KeyboardEvent;
       const t = e.target as HTMLTextAreaElement;
@@ -1198,7 +1299,9 @@ function issueDetail(
           onclick: () =>
             actions.setDrafts({
               tab,
-              ...(tab === 'write' && d.body === undefined ? { body: row.body } : {}),
+              ...(tab === 'write' && d.body === undefined
+                ? { body: row.body }
+                : {}),
             }),
         },
         tab === 'write' ? 'Write' : 'Preview',
@@ -1213,7 +1316,10 @@ function issueDetail(
       'aria-label': 'Description (Markdown)',
       'data-key': 'detail-body',
       oninput: event =>
-        actions.setDrafts({ body: (event.target as HTMLTextAreaElement).value }, false),
+        actions.setDrafts(
+          { body: (event.target as HTMLTextAreaElement).value },
+          false,
+        ),
     });
     editor.value = d.body ?? row.body;
     description = [
@@ -1221,9 +1327,13 @@ function issueDetail(
       h(
         'div',
         { class: 'row-actions' },
-        button('Cancel', () => actions.setDrafts({ tab: 'preview', body: undefined }), {
-          sm: true,
-        }),
+        button(
+          'Cancel',
+          () => actions.setDrafts({ tab: 'preview', body: undefined }),
+          {
+            sm: true,
+          },
+        ),
         button(
           'Save description',
           () => actions.saveBody(row.subject, editor.value),
@@ -1247,7 +1357,11 @@ function issueDetail(
       return h(
         'li',
         { class: waiting ? 'pending' : '' },
-        h('span', { class: `avatar${c.author ? '' : ' me'}`, 'aria-hidden': 'true' }, c.author ? initials(c.author) : 'You'.slice(0, 2)),
+        h(
+          'span',
+          { class: `avatar${c.author ? '' : ' me'}`, 'aria-hidden': 'true' },
+          c.author ? initials(c.author) : 'You'.slice(0, 2),
+        ),
         h(
           'div',
           null,
@@ -1255,8 +1369,20 @@ function issueDetail(
             'p',
             { class: 'c-meta' },
             c.author
-              ? [h('b', null, c.author), ' on GitHub', c.createdAt ? ` · ${ago(c.createdAt, ui.now)}` : '']
-              : [h('b', null, 'You'), ' · ', h('span', { class: 'pend' }, state.busy === 'sending' ? 'Sending' : 'Waiting to send')],
+              ? [
+                  h('b', null, c.author),
+                  ' on GitHub',
+                  c.createdAt ? ` · ${ago(c.createdAt, ui.now)}` : '',
+                ]
+              : [
+                  h('b', null, 'You'),
+                  ' · ',
+                  h(
+                    'span',
+                    { class: 'pend' },
+                    state.busy === 'sending' ? 'Sending' : 'Waiting to send',
+                  ),
+                ],
           ),
           h('div', { class: 'md' }, markdown(c.body)),
         ),
@@ -1276,6 +1402,7 @@ function issueDetail(
     },
     onkeydown: event => {
       const e = event as KeyboardEvent;
+
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         actions.comment(row.subject, (e.target as HTMLTextAreaElement).value);
@@ -1283,12 +1410,16 @@ function issueDetail(
     },
   });
   composer.value = d.comment;
-  const send = button('Comment', () => actions.comment(row.subject, composer.value), {
-    kind: 'primary',
-    sm: true,
-    disabled: !d.comment.trim(),
-    'data-key': 'comment',
-  });
+  const send = button(
+    'Comment',
+    () => actions.comment(row.subject, composer.value),
+    {
+      kind: 'primary',
+      sm: true,
+      disabled: !d.comment.trim(),
+      'data-key': 'comment',
+    },
+  );
   const bound = row.number !== undefined;
   const mark = marks.get(row.subject);
 
@@ -1310,12 +1441,29 @@ function issueDetail(
         'span',
         { class: 'chips' },
         row.labels.map(l => chip(l.name, l.color)),
-        h('span', { class: 'muted small' }, row.labels.length ? 'Labels are edited on GitHub' : 'None · edited on GitHub'),
+        h(
+          'span',
+          { class: 'muted small' },
+          row.labels.length
+            ? 'Labels are edited on GitHub'
+            : 'None · edited on GitHub',
+        ),
       ),
       row.assignees.length ? h('span', { class: 'd-k' }, 'Assignees') : null,
-      row.assignees.length ? h('span', { class: 'small' }, row.assignees.join(', ')) : null,
+      row.assignees.length
+        ? h('span', { class: 'small' }, row.assignees.join(', '))
+        : null,
     ),
-    mark ? h('p', { class: 'ro-note' }, icon(mark === 'conflict' ? 'warn' : 'info', 14), mark === 'conflict' ? 'Changed here and on GitHub; review the conflict to resume sync.' : 'Changes to this issue are waiting to send. Review and send them from the bar above.') : null,
+    mark
+      ? h(
+          'p',
+          { class: 'ro-note' },
+          icon(mark === 'conflict' ? 'warn' : 'info', 14),
+          mark === 'conflict'
+            ? 'Changed here and on GitHub; review the conflict to resume sync.'
+            : 'Changes to this issue are waiting to send. Review and send them from the bar above.',
+        )
+      : null,
     h('h3', { class: 'd-h' }, 'Description'),
     tabs,
     description,
@@ -1325,7 +1473,9 @@ function issueDetail(
       'Comments',
       h('span', { class: 'count' }, String(row.comments.length)),
     ),
-    row.comments.length ? comments : h('p', { class: 'muted small', style: 'margin:0' }, 'No comments yet.'),
+    row.comments.length
+      ? comments
+      : h('p', { class: 'muted small', style: 'margin:0' }, 'No comments yet.'),
     h(
       'div',
       { class: 'composer' },
@@ -1333,7 +1483,13 @@ function issueDetail(
       h(
         'div',
         { class: 'cmp-row' },
-        h('span', { class: 'muted small' }, bound ? 'Sent to GitHub after you review it' : 'Sent once the issue is on GitHub'),
+        h(
+          'span',
+          { class: 'muted small' },
+          bound
+            ? 'Sent to GitHub after you review it'
+            : 'Sent once the issue is on GitHub',
+        ),
         send,
       ),
     ),
@@ -1342,7 +1498,13 @@ function issueDetail(
   const foot = h(
     'div',
     { class: 'd-foot' },
-    h('span', { class: 'mono' }, bound ? `${state.repository}#${row.number}` : `${state.repository} · not on GitHub yet`),
+    h(
+      'span',
+      { class: 'mono' },
+      bound
+        ? `${state.repository}#${row.number}`
+        : `${state.repository} · not on GitHub yet`,
+    ),
     state.last?.at ? ` · synced ${ago(state.last.at, ui.now)}` : '',
     row.url
       ? [
@@ -1357,10 +1519,19 @@ function issueDetail(
       : null,
   );
 
-  return [detailBar(bound ? `#${row.number}` : 'New issue', mode, actions), body, foot];
+  return [
+    detailBar(bound ? `#${row.number}` : 'New issue', mode, actions),
+    body,
+    foot,
+  ];
 }
 
-function newDetail(state: Ready, ui: Ui, mode: DetailMode, actions: Actions): HTMLElement[] {
+function newDetail(
+  state: Ready,
+  ui: Ui,
+  mode: DetailMode,
+  actions: Actions,
+): HTMLElement[] {
   const d = ui.drafts;
   const title = h('textarea', {
     class: 'd-title',
@@ -1369,9 +1540,12 @@ function newDetail(state: Ready, ui: Ui, mode: DetailMode, actions: Actions): HT
     'aria-label': 'Title',
     'data-key': 'new-title',
     oninput: event =>
-      actions.setDrafts({ newTitle: (event.target as HTMLTextAreaElement).value }),
+      actions.setDrafts({
+        newTitle: (event.target as HTMLTextAreaElement).value,
+      }),
     onkeydown: event => {
       const e = event as KeyboardEvent;
+
       if (e.key === 'Enter') {
         e.preventDefault();
         if (d.newTitle.trim()) actions.create();
@@ -1385,7 +1559,10 @@ function newDetail(state: Ready, ui: Ui, mode: DetailMode, actions: Actions): HT
     'aria-label': 'Description (Markdown)',
     'data-key': 'new-body',
     oninput: event =>
-      actions.setDrafts({ newBody: (event.target as HTMLTextAreaElement).value }, false),
+      actions.setDrafts(
+        { newBody: (event.target as HTMLTextAreaElement).value },
+        false,
+      ),
   });
   editor.value = d.newBody;
 
@@ -1399,11 +1576,20 @@ function newDetail(state: Ready, ui: Ui, mode: DetailMode, actions: Actions): HT
         'div',
         { class: 'd-props' },
         h('span', { class: 'd-k' }, 'Status'),
-        statusControl(d.newStatus, s => actions.setDrafts({ newStatus: s }), false),
+        statusControl(
+          d.newStatus,
+          s => actions.setDrafts({ newStatus: s }),
+          false,
+        ),
       ),
       h('h3', { class: 'd-h' }, 'Description'),
       editor,
-      h('p', { class: 'ro-note' }, icon('info', 14), `Created in this table first. It becomes an issue in ${state.repository} once you review and send it.`),
+      h(
+        'p',
+        { class: 'ro-note' },
+        icon('info', 14),
+        `Created in this table first. It becomes an issue in ${state.repository} once you review and send it.`,
+      ),
     ),
     h(
       'div',
@@ -1418,7 +1604,11 @@ function newDetail(state: Ready, ui: Ui, mode: DetailMode, actions: Actions): HT
   ];
 }
 
-function reviewDetail(state: Ready, mode: DetailMode, actions: Actions): HTMLElement[] {
+function reviewDetail(
+  state: Ready,
+  mode: DetailMode,
+  actions: Actions,
+): HTMLElement[] {
   const held = state.last?.result.held ?? [];
   const n = held.length;
 
@@ -1427,19 +1617,39 @@ function reviewDetail(state: Ready, mode: DetailMode, actions: Actions): HTMLEle
     h(
       'section',
       { class: 'd-body', 'aria-label': 'Changes to send to GitHub' },
-      h('h2', { class: 'd-title ro' }, n ? `Send ${n} ${n === 1 ? 'change' : 'changes'} to GitHub?` : 'Nothing is waiting'),
-      h('p', { class: 'muted small', style: 'margin:0' }, 'Nothing reaches GitHub until you send it. A change edited after this review is held again.'),
-      n ? h('ol', { class: 'review' }, held.map(x => h('li', null, describeHeld(x)))) : null,
+      h(
+        'h2',
+        { class: 'd-title ro' },
+        n
+          ? `Send ${n} ${n === 1 ? 'change' : 'changes'} to GitHub?`
+          : 'Nothing is waiting',
+      ),
+      h(
+        'p',
+        { class: 'muted small', style: 'margin:0' },
+        'Nothing reaches GitHub until you send it. A change edited after this review is held again.',
+      ),
+      n
+        ? h(
+            'ol',
+            { class: 'review' },
+            held.map(x => h('li', null, describeHeld(x))),
+          )
+        : null,
     ),
     h(
       'div',
       { class: 'd-actions' },
       button('Not now', () => actions.open(undefined)),
-      button(`Send ${n} ${n === 1 ? 'change' : 'changes'} to GitHub`, () => actions.send(), {
-        kind: 'primary',
-        disabled: !n || !!state.busy,
-        'data-key': 'send',
-      }),
+      button(
+        `Send ${n} ${n === 1 ? 'change' : 'changes'} to GitHub`,
+        () => actions.send(),
+        {
+          kind: 'primary',
+          disabled: !n || !!state.busy,
+          'data-key': 'send',
+        },
+      ),
     ),
   ];
 }
@@ -1450,9 +1660,18 @@ const FIELD_NAMES: Record<string, string> = {
   status: 'Status',
 };
 
-function conflictValue(field: string, value: unknown, other: unknown): HTMLElement {
+function conflictValue(
+  field: string,
+  value: unknown,
+  other: unknown,
+): HTMLElement {
   if (field === 'status' && typeof value === 'string' && value in GLYPH)
-    return h('span', { class: 'cf-val' }, statusGlyph(GLYPH[value as Status]), value);
+    return h(
+      'span',
+      { class: 'cf-val' },
+      statusGlyph(GLYPH[value as Status]),
+      value,
+    );
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
   const theirs = typeof other === 'string' ? other : '';
   // Highlight the part that differs: common prefix and suffix stay plain.
@@ -1490,10 +1709,15 @@ function conflictDetail(
 
   if (!p) body = h('p', null, 'This conflict is settled.');
   else if (panel.error) body = h('p', { class: 'field-error' }, panel.error);
-  else if (!panel.fields) body = h('p', { class: 'muted' }, 'Reading both versions…');
+  else if (!panel.fields)
+    body = h('p', { class: 'muted' }, 'Reading both versions…');
   else
     body = [
-      h('p', { class: 'muted small', style: 'margin:0' }, 'Pick which version to keep for each field. Nothing is sent or saved until you apply.'),
+      h(
+        'p',
+        { class: 'muted small', style: 'margin:0' },
+        'Pick which version to keep for each field. Nothing is sent or saved until you apply.',
+      ),
       fields.map(f =>
         h(
           'fieldset',
@@ -1515,13 +1739,25 @@ function conflictDetail(
                     choices: { ...panel.choices, [f.field]: side },
                   }),
               }),
-              h('span', { class: 'cf-src' }, side === 'local' ? 'Here' : 'On GitHub'),
-              conflictValue(f.field, f[side], side === 'local' ? f.remote : f.local),
+              h(
+                'span',
+                { class: 'cf-src' },
+                side === 'local' ? 'Here' : 'On GitHub',
+              ),
+              conflictValue(
+                f.field,
+                f[side],
+                side === 'local' ? f.remote : f.local,
+              ),
             ),
           ),
         ),
       ),
-      h('p', { class: 'muted small', style: 'margin:0' }, 'Other fields and comments did not conflict and will sync normally. Keeping “Here” for a field becomes a change you review before it is sent.'),
+      h(
+        'p',
+        { class: 'muted small', style: 'margin:0' },
+        'Other fields and comments did not conflict and will sync normally. Keeping “Here” for a field becomes a change you review before it is sent.',
+      ),
     ];
 
   return [
@@ -1529,7 +1765,11 @@ function conflictDetail(
     h(
       'div',
       { class: 'd-body' },
-      h('h2', { class: 'd-title ro' }, row ? `${refOf(row)} ${row.title}` : 'Changed on both sides'),
+      h(
+        'h2',
+        { class: 'd-title ro' },
+        row ? `${refOf(row)} ${row.title}` : 'Changed on both sides',
+      ),
       body,
     ),
     h(
@@ -1541,7 +1781,11 @@ function conflictDetail(
         'data-key': 'apply',
       }),
       missing.length && panel.fields
-        ? h('p', { class: 'hint muted small' }, `Choose ${missing.map(f => FIELD_NAMES[f.field] ?? f.field).join(' and ')} first`)
+        ? h(
+            'p',
+            { class: 'hint muted small' },
+            `Choose ${missing.map(f => FIELD_NAMES[f.field] ?? f.field).join(' and ')} first`,
+          )
         : null,
     ),
   ];
@@ -1592,22 +1836,33 @@ function helpOverlay(actions: Actions): HTMLElement {
     {
       class: 'overlay',
       onclick: event => {
-        if (event.target === event.currentTarget) actions.setUi({ help: false });
+        if (event.target === event.currentTarget)
+          actions.setUi({ help: false });
       },
     },
     h(
       'div',
-      { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'help-title' },
+      {
+        class: 'dialog',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'help-title',
+      },
       h('h2', { id: 'help-title' }, 'Keyboard shortcuts'),
       h(
         'dl',
         { class: 'keys' },
-        SHORTCUTS.map(([k, v]) => [h('dt', null, h('kbd', null, k)), h('dd', null, v)]),
+        SHORTCUTS.map(([k, v]) => [
+          h('dt', null, h('kbd', null, k)),
+          h('dd', null, v),
+        ]),
       ),
       h(
         'div',
         { class: 'actions-row' },
-        button('Close', () => actions.setUi({ help: false }), { 'data-key': 'help-close' }),
+        button('Close', () => actions.setUi({ help: false }), {
+          'data-key': 'help-close',
+        }),
       ),
     ),
   );
@@ -1627,7 +1882,10 @@ export function page(
 
   if (state.kind === 'no-proxy') return [top, noProxy()];
   if (state.kind === 'loading')
-    return [top, h('p', { class: 'lede', style: 'padding:24px 16px' }, 'Loading…')];
+    return [
+      top,
+      h('p', { class: 'lede', style: 'padding:24px 16px' }, 'Loading…'),
+    ];
   if (state.kind === 'not-connected' || state.kind === 'connecting')
     return [top, sources(state, actions)];
   if (state.kind === 'choose-repository')
@@ -1643,7 +1901,9 @@ export function page(
     bannerNode(state, ui, actions),
     toolbar(state, ui, layout, actions),
     emptyContent(state, ui, actions) ??
-      (layout === 'board' ? board(state, ui, actions) : list(state, ui, actions)),
+      (layout === 'board'
+        ? board(state, ui, actions)
+        : list(state, ui, actions)),
   );
   const panel = detail(state, ui, mode, actions);
   const body =

@@ -115,7 +115,10 @@ describe('the shared kit', () => {
 });
 
 describe('theme tokens', () => {
-  const css = KIT_CSS + APP_CSS;
+  // Formatting-independent: no whitespace around punctuation.
+  const css = (KIT_CSS + APP_CSS)
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([:;{},>])\s*/g, '$1');
 
   it('uses no literal colour except the --pl-pos fallback', () => {
     const literals = css
@@ -150,6 +153,7 @@ describe('theme tokens', () => {
     expect(css).toContain(
       '--pl-hairline:color-mix(in srgb,var(--t-color-bg-2) 55%,var(--t-color-bg))',
     );
+    expect(css).toContain('[data-pl-scheme="dark"]{--pl-pos:#5cc48a;}');
   });
 
   it('follows the host theme for --pl-pos, light and dark', () => {

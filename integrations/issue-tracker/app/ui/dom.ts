@@ -10,6 +10,7 @@
 
 export type Child = Node | string | number | false | null | undefined | Child[];
 type Handler = (event: Event) => void;
+
 export type Attrs = Record<
   string,
   string | number | boolean | undefined | null | Handler

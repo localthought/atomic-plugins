@@ -55,10 +55,7 @@ export function pill(
 }
 
 /** Plugin mark, name (the page's h1), then whatever the app adds. */
-export function header(
-  name: Child,
-  ...rest: Child[]
-): HTMLElement {
+export function header(name: Child, ...rest: Child[]): HTMLElement {
   return h(
     'header',
     { class: 'pl-header' },
@@ -91,7 +88,8 @@ export function connectionBar(
   parts
     .filter(p => p !== undefined && p !== null && p !== false && p !== '')
     .forEach((part, i) => {
-      if (i) items.push(h('span', { class: 'dot-sep', 'aria-hidden': 'true' }, '·'));
+      if (i)
+        items.push(h('span', { class: 'dot-sep', 'aria-hidden': 'true' }, '·'));
       items.push(...(Array.isArray(part) ? part : [part]));
     });
   const bar = h(
@@ -141,7 +139,9 @@ export function banner(spec: BannerSpec): HTMLElement {
     },
     h('span', { class: 'b-icon' }, icon(spec.icon)),
     h('p', { class: 'b-text' }, h('b', null, spec.title), ' ', spec.text),
-    spec.actions?.length ? h('div', { class: 'b-actions' }, spec.actions) : null,
+    spec.actions?.length
+      ? h('div', { class: 'b-actions' }, spec.actions)
+      : null,
   );
   if (!spec.details) return box;
 
@@ -180,7 +180,12 @@ export type ButtonKind = 'primary' | 'ghost' | 'danger' | '';
 export function button(
   label: Child,
   onclick: (event: Event) => void,
-  { kind = '', sm = false, iconName, ...attrs }: {
+  {
+    kind = '',
+    sm = false,
+    iconName,
+    ...attrs
+  }: {
     kind?: ButtonKind;
     sm?: boolean;
     iconName?: IconName;
@@ -252,9 +257,15 @@ export function segmented<T extends string>(
         {
           type: 'button',
           ...(mode === 'radio'
-            ? { role: 'radio', 'aria-checked': String(on), tabindex: on ? 0 : -1 }
+            ? {
+                role: 'radio',
+                'aria-checked': String(on),
+                tabindex: on ? 0 : -1,
+              }
             : { 'aria-pressed': String(on) }),
-          ...(option.title ? { 'aria-label': option.title, title: option.title } : {}),
+          ...(option.title
+            ? { 'aria-label': option.title, title: option.title }
+            : {}),
           'data-value': option.value,
           disabled,
           onclick: () => onchange(option.value),
@@ -276,7 +287,10 @@ export function segmented<T extends string>(
             : 0;
       if (!step) return;
       e.preventDefault();
-      const at = Math.max(0, options.findIndex(o => o.value === value));
+      const at = Math.max(
+        0,
+        options.findIndex(o => o.value === value),
+      );
       const next = options[(at + step + options.length) % options.length];
       onchange(next.value);
     });

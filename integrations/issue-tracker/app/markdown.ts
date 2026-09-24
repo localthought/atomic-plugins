@@ -92,7 +92,8 @@ export function markdown(source: string): DocumentFragment {
       paragraph(buffer);
       const code: string[] = [];
       i++;
-      while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+      while (i < lines.length && !/^\s*```/.test(lines[i]))
+        code.push(lines[i++]);
       i++;
       const pre = el('pre');
       const c = el('code');

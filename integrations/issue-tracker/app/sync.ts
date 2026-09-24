@@ -380,7 +380,8 @@ export async function resolveConflict(
   }
 }
 
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+const text = (value: unknown) =>
+  typeof value === 'string' ? value : undefined;
 
 function issueRow(
   row: {

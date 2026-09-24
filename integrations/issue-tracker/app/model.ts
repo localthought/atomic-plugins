@@ -65,6 +65,7 @@ export function pillFor(state: ViewState, now: number): Pill | undefined {
       return state.settingUp
         ? { state: 'syncing', text: 'Setting up…' }
         : { state: 'synced', text: 'Connected' };
+
     case 'ready': {
       if (state.busy === 'syncing' && !state.last)
         return { state: 'syncing', text: 'Importing…' };
@@ -113,6 +114,7 @@ export const unconfirmed = (state: Ready): Held[] =>
 export function bannerFor(state: ViewState): BannerModel | undefined {
   if (state.kind !== 'ready') return undefined;
   const p = state.problem;
+
   const ref = (subject?: string) => {
     const row = state.last?.result.rows.find(r => r.subject === subject);
 
@@ -216,7 +218,7 @@ export function bannerFor(state: ViewState): BannerModel | undefined {
 }
 
 /** The connection bar's status line. */
-export function connectionLine(state: Ready, now: number): string {
+export function connectionLine(state: Ready): string {
   const held = state.last?.result.held.length ?? 0;
   const waiting = held
     ? ` · ${plural(held, 'change')} waiting to send`
@@ -253,7 +255,9 @@ export function markers(state: Ready): Map<string, Marker> {
 
   for (const h of held) {
     const subject =
-      h.local && commentOwner.has(h.local) ? commentOwner.get(h.local)! : h.local;
+      h.local && commentOwner.has(h.local)
+        ? commentOwner.get(h.local)!
+        : h.local;
     if (subject)
       out.set(subject, state.busy === 'sending' ? 'sending' : 'waiting');
   }

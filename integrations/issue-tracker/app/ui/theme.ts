@@ -94,14 +94,17 @@ export function watchFrame(
 
   scheme();
   measure();
+
   // The host re-sends `__atomic_style` when the user switches theme.
   const onMessage = (event: MessageEvent) => {
     if ((event.data as { type?: string })?.type === '__atomic_style')
       setTimeout(scheme, 0);
   };
+
   win?.addEventListener('message', onMessage);
-  const RO = (win as (Window & { ResizeObserver?: typeof ResizeObserver }) | null)
-    ?.ResizeObserver;
+  const RO = (
+    win as (Window & { ResizeObserver?: typeof ResizeObserver }) | null
+  )?.ResizeObserver;
   const observer = RO ? new RO(measure) : undefined;
   observer?.observe(root);
   if (!observer) win?.addEventListener('resize', measure);
