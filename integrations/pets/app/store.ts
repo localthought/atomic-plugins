@@ -7,7 +7,7 @@
  * truth.
  *
  * A copy of `integrations/timesheets/app/store.ts`, extended with the relay
- * ops atomic-server's `claude/plugin-proxy-relay` branch adds
+ * ops atomic-server#1657 adds (merged into `feat/plugin-debug`)
  * (`connections`, `connect`, response `headers`, request `method`/`body`).
  * Kept per plugin on purpose (strict per-plugin containment); sharing one
  * copy is a maintainer decision, see README.md.

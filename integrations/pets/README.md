@@ -76,8 +76,9 @@ stylesheet.
   with no remote change writes nothing.
 
 **Host requirement.** This needs the relay ops `proxy`, `proxyConnections`
-and `proxyConnect` in atomic-server (branch `claude/plugin-proxy-relay`,
-atomic-server#1624). On a host without them the app says so and stops. The
+and `proxyConnect` in atomic-server (atomic-server#1657, for #1624, merged
+into `feat/plugin-debug` and in the pin). On a host without them the app says
+so and stops. The
 relay is the interim shape. #1624's scoped capability (#40, #54) is meant to
 replace the rotating code without changing this app.
 

@@ -5,12 +5,10 @@
  * integration-proxy relay (#52), and imports the mock proxy's notion fixture
  * through syncables/browser, cursor in the POST body included.
  *
- * QUARANTINED: `lanes.json` does not list the e2e tier for `notion`. It needs
- * an atomic-server with #52's relay (`store.proxy`, the host consent bar and
- * the connect return), which the pinned commit does not have. It passed
- * locally (about 12s, eight runs) against an e2e build of atomic-server
- * claude/plugin-proxy-relay (b5797333d + 7f4978667) + the Notion removal, with `platforms:
- * ["notion"]` set for the lane. This spec
+ * It needs an atomic-server with #52's relay (`store.proxy`, the host consent
+ * bar and the connect return): ontola/atomic-server#1657, merged into
+ * `feat/plugin-debug` together with the Notion code removal (#1658). The pin,
+ * `bae5cdbe3`, has both. This spec
  * replaces the old one, which drove the `[data-integration=notion]` card that
  * atomic-server 4bab16ee6 removed (#68). Its two-way, PATCH and
  * revoked-access checks have no read-only counterpart, so they are gone.

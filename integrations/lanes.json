@@ -53,7 +53,7 @@
       "index": 5,
       "platforms": ["pets"],
       "tiers": ["e2e"],
-      "note": "e2e drives the Pets drive app (integrations/pets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server claude/plugin-proxy-relay, #1624); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
+      "note": "e2e drives the Pets drive app (integrations/pets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server#1657, for #1624, merged into feat/plugin-debug; the pin has it); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {

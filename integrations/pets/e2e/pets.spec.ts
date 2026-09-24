@@ -11,8 +11,9 @@
  * atomic-server's own apps.spec.ts does. There is no catalog install flow for
  * drive apps yet.
  *
- * Needs an atomic-server with the host proxy relay (atomic-server
- * `claude/plugin-proxy-relay`, #1624). Run it the way CI does:
+ * Needs an atomic-server with the host proxy relay (atomic-server#1657, for
+ * #1624, merged into `feat/plugin-debug`; the pin has it). Run it the way CI
+ * does:
  *   node integrations/tooling/run-lane.mjs pets --tier e2e
  */
 import { test, expect, type Page } from '@playwright/test';
