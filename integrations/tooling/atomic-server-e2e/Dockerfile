@@ -86,6 +86,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   --mount=type=cache,target=/src/target \
   set -eu \
+  && if [ -n "${CARGO_BUILD_JOBS}" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi \
   && sh .dagger/scripts/install-wasm-pack.sh /usr/local/bin \
   && cd wasm \
   && CARGO_ENCODED_RUSTFLAGS="$(printf '%s\037%s' --cfg 'getrandom_backend="wasm_js"')" \
