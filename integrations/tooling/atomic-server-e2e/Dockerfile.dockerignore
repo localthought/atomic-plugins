@@ -1,0 +1,15 @@
+# Applies instead of the atomic-server checkout's own .dockerignore when the
+# build uses -f integrations/tooling/atomic-server-e2e/Dockerfile. It keeps a
+# used checkout's build output (target/ alone is about 10 GB), installed
+# dependencies and per-lane stores out of the build context, so a local build
+# from the shared ~/.cache/atomic-plugins/atomic-server/<sha> checkout sends
+# only sources.
+.git
+target
+**/target
+**/node_modules
+**/dist
+.lane-store
+wasm/pkg
+browser/data-browser/public/wasm
+server/assets_tmp
