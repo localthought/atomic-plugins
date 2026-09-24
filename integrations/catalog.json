@@ -171,9 +171,9 @@
     "https://atomicdata.dev/properties/name": "Todoist (Devonian)",
     "https://atomicdata.dev/properties/emoji": "✅",
     "https://atomicdata.dev/properties/description": "Bring your Todoist projects and tasks into a local issue tracker.",
-    "https://atomicdata.dev/integrations/properties/capabilities": "Imports active tasks and projects. Tasks open in the Issues view with their title, due day and priority; checked tasks show as closed.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Imports active tasks and projects. Tasks open in the Issues view with their title, due day and priority. Todoist lists active tasks only, so a task shows as closed only when Todoist itself reports it checked.",
     "https://atomicdata.dev/integrations/properties/events": "Connect through LocalThought, then Sync now (and every five minutes while the folder is open) to pull the latest tasks.",
-    "https://atomicdata.dev/integrations/properties/limitation": "Read only: the proxy's Todoist access is data:read, so closing, editing or creating a task here is not sent to Todoist. Completed tasks are only included while Todoist still returns them as active.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Read only: the proxy's Todoist access is data:read, so closing, editing or creating a task here is not sent to Todoist. A task that stops appearing is never assumed completed. The lens can check such a task by id and mark it completed, deleted, unavailable or unconfirmed, with when it was last seen, but no host runs that check yet, and nothing has been verified against a live Todoist account.",
     "https://atomicdata.dev/integrations/properties/keywords": "todoist tasks todo projects devonian lens local tracker issues",
     "https://atomicdata.dev/integrations/properties/requires-api-plugins": true,
     "https://atomicdata.dev/integrations/properties/platform": "todoist"

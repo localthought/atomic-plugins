@@ -260,6 +260,11 @@ three projected columns beside the provider's own fields: `done` (from
 `priority-label` (Normal / Medium / High / Urgent). The tasks table opens in
 the Issues view, split open/closed by `done`, with the plain table one tab
 over; the same `due-day` column also works as a Calendar view's date.
+Todoist's `/tasks` lists active tasks only, so `done` is true only when
+Todoist itself reports a task checked. What happens to a task that stops
+appearing (`presence`, `last-seen`, `reconcileTodoistTasks`) is described in
+[`../issue-tracker/README.md`](../issue-tracker/README.md#todoist-tasks-that-stop-appearing);
+no host calls it yet (nor, at the pinned atomic-server, the projection).
 
 Installation records the lens as `extension: 'tasks'` and identity suffix
 `:devonian-tasks`. A Todoist folder installed from the raw proxy card
