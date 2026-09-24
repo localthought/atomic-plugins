@@ -202,6 +202,45 @@ export const clockifyReadOnlyDocument = {
   },
   openapi: '3.0.3',
   paths: {
+    // Setup and naming reads, as the read overlays declare them
+    // (crud-causality-overlay.yaml + auth-overlay.yaml), in short form:
+    // only what the proxy's allow check reads is needed here.
+    '/v1/user': {
+      get: {
+        operationId: 'getClockifyCurrentUser',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
+    '/v1/workspaces': {
+      get: {
+        operationId: 'listClockifyWorkspaces',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
+    '/v1/workspaces/{workspaceId}/projects': {
+      get: {
+        operationId: 'listClockifyProjects',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
+    '/v1/workspaces/{workspaceId}/projects/{id}': {
+      get: {
+        operationId: 'getClockifyProject',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
+    '/v1/workspaces/{workspaceId}/users': {
+      get: {
+        operationId: 'listClockifyMembers',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
+    '/v1/workspaces/{workspaceId}/users/{id}': {
+      get: {
+        operationId: 'getClockifyMember',
+        security: [{ clockifyApiKey: [] }],
+      },
+    },
     '/v1/workspaces/{workspaceId}/time-entries/{id}': {
       get: {
         operationId: 'get-time-entry',
@@ -528,6 +567,9 @@ export const PROJECT = {
 };
 
 const PREFIX = '/proxy/clockify/api';
+
+/** integration-proxy's body for a 404 it answers itself (`proxy.rs`). */
+export const NOT_IN_CATALOG = 'method or path is not in the catalog';
 const WRITES = ['POST', 'PUT', 'DELETE'];
 
 /** Does `document` declare `method` on the provider path `path`, the way
@@ -685,8 +727,16 @@ export function clockifyFixture({ withNames = true } = {}) {
 
   const serve = (method, url, body) => {
     const path = url.pathname;
-    if (!WRITES.includes(method) && method !== 'GET')
-      return { status: 404, body: 'method or path is not in the catalog' };
+    // The proxy only forwards what its catalog declares, and answers
+    // anything else, read or write, with this 404 before Clockify sees it.
+    const document = state.readOnlyCatalog
+      ? clockifyReadOnlyDocument
+      : clockifyDocument;
+    if (
+      !path.startsWith(PREFIX) ||
+      !declares(document, method, path.slice(PREFIX.length))
+    )
+      return { status: 404, body: NOT_IN_CATALOG };
     const named = path.match(
       /^\/proxy\/clockify\/api\/v1\/workspaces\/([^/]+)\/(projects|users)$/,
     );
@@ -710,19 +760,6 @@ export function clockifyFixture({ withNames = true } = {}) {
         status: 200,
         body: [WORKSPACE, { id: 'dddddddddddddddddddddddd', name: 'Personal' }],
       };
-
-    // Writes: the proxy only forwards what its catalog declares, and
-    // answers anything else with 404 before Clockify sees it.
-    if (WRITES.includes(method)) {
-      const document = state.readOnlyCatalog
-        ? clockifyReadOnlyDocument
-        : clockifyDocument;
-      if (
-        !path.startsWith(PREFIX) ||
-        !declares(document, method, path.slice(PREFIX.length))
-      )
-        return { status: 404, body: 'method or path is not in the catalog' };
-    }
 
     const list = path.match(
       /^\/proxy\/clockify\/api\/v1\/workspaces\/([^/]+)\/user\/([^/]+)\/time-entries$/,
@@ -761,8 +798,6 @@ export function clockifyFixture({ withNames = true } = {}) {
     }
 
     if (one) {
-      if ((method === 'POST') !== !one[2])
-        return { status: 404, body: 'method or path is not in the catalog' };
       state.writes.push({ method, path, body: body ?? null });
 
       if (state.failBefore) {

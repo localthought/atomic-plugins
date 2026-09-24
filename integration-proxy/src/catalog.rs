@@ -828,6 +828,14 @@ mod tests {
         assert!(catalog
             .allows("clockify", "POST", "/api/v1/workspaces/ws/time-entries")
             .is_some());
+        // The timesheets app's setup reads (read overlays, not the write one).
+        for path in ["/api/v1/user", "/api/v1/workspaces"] {
+            assert!(catalog.allows("clockify", "GET", path).is_some(), "{path}");
+            assert!(catalog.allows("clockify", "POST", path).is_none(), "{path}");
+            assert!(catalog
+                .validate_request("clockify", "GET", path, None, None, false)
+                .is_ok());
+        }
         let list = "/api/v1/workspaces/ws/user/u/time-entries";
         assert!(catalog.allows("clockify", "GET", list).is_some());
         assert!(catalog.allows("clockify", "POST", list).is_none());

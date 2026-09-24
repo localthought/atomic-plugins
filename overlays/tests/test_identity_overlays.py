@@ -2,7 +2,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-from generate_identity_catalog_fixtures import compose
+import yaml
+from generate_identity_catalog_fixtures import apply, compose, fetch, platform_config
 
 
 class IdentityOverlayTests(unittest.TestCase):
@@ -65,6 +66,33 @@ class IdentityOverlayTests(unittest.TestCase):
         # Still no write on the list path, and no PATCH anywhere.
         self.assertEqual(set(paths["/v1/workspaces/{workspaceId}/user/{userId}/time-entries"]), {"get"})
         self.assertEqual(set(paths[item]), {"get", "put", "delete"})
+
+    def test_clockify_setup_reads_are_read_overlay_operations(self):
+        # The timesheets app's setup reads the key's user and its workspaces.
+        document = self.composed("clockify")
+        for path, operation_id in (
+            ("/v1/user", "getClockifyCurrentUser"),
+            ("/v1/workspaces", "listClockifyWorkspaces"),
+        ):
+            self.assertEqual(set(document["paths"][path]), {"get"})
+            operation = document["paths"][path]["get"]
+            self.assertEqual(operation["operationId"], operation_id)
+            self.assertEqual(operation["security"], [{"clockifyApiKey": []}])
+            self.assertNotIn("requestBody", operation)
+        # They come from the read overlays: composing without the write
+        # overlay's catalog line keeps them, and has no write operation.
+        config = platform_config("clockify")
+        read_overlays = [u for u in config["overlays"] if not u.endswith("/time-entry-write-overlay.yaml")]
+        self.assertEqual(len(read_overlays), len(config["overlays"]) - 1)
+        with tempfile.TemporaryDirectory() as cache:
+            base, _ = fetch(config["openapi"], Path(cache))
+            read_only = yaml.safe_load(base)
+            for url in read_overlays:
+                apply(read_only, yaml.safe_load(fetch(url, Path(cache))[0]))
+        self.assertIn("get", read_only["paths"]["/v1/user"])
+        self.assertIn("get", read_only["paths"]["/v1/workspaces"])
+        methods = {m for item in read_only["paths"].values() for m in item}
+        self.assertEqual(methods, {"get"})
 
     def test_github_auth_and_identity_overlay(self):
         document = self.composed("github-issues")

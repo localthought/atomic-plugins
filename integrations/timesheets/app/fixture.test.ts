@@ -12,6 +12,7 @@ import {
   clockifyEntry,
   clockifyFixture,
   clockifyReadOnlyDocument,
+  NOT_IN_CATALOG,
   USER,
   WORKSPACE,
 } from '../fixtures/clockify/scenario.mjs';
@@ -46,6 +47,14 @@ describe('Clockify mock: catalog document', () => {
   it('declares the write overlay on top of the read-only document', () => {
     const one = '/v1/workspaces/{workspaceId}/time-entries/{id}';
     expect(Object.keys(clockifyReadOnlyDocument.paths[one])).toEqual(['get']);
+    // Read-only: every operation in it is a GET, setup reads included.
+    expect(
+      Object.values(clockifyReadOnlyDocument.paths).flatMap(item =>
+        Object.keys(item),
+      ),
+    ).toEqual(Object.keys(clockifyReadOnlyDocument.paths).map(() => 'get'));
+    expect(clockifyReadOnlyDocument.paths['/v1/user']).toBeDefined();
+    expect(clockifyReadOnlyDocument.paths['/v1/workspaces']).toBeDefined();
     expect(Object.keys(clockifyDocument.paths[one]).sort()).toEqual([
       'delete',
       'get',
@@ -189,6 +198,23 @@ describe('Clockify mock: time-entry endpoints', () => {
       404,
     );
     expect((await call('POST', LIST, { start: 'x' })).status).toBe(404);
+    // Reads too: every path and method outside the document gets the
+    // proxy's own 404, not Clockify's.
+    for (const path of [
+      `${WS}/time-entries`,
+      `${WS}/tags`,
+      '/proxy/clockify/api/v1/nothing',
+      '/proxy/clockify/v1/user',
+    ])
+      expect((await call('GET', path)).body).toBe(NOT_IN_CATALOG);
+    // The setup and naming reads the app makes are declared.
+    for (const path of [
+      '/proxy/clockify/api/v1/user',
+      '/proxy/clockify/api/v1/workspaces',
+      `${WS}/projects`,
+      `${WS}/users`,
+    ])
+      expect((await call('GET', path)).status).toBe(200);
     fixture.control({ action: 'catalog', readOnly: true });
     expect((await call('DELETE', `${WS}/time-entries/entry-1`)).body).toBe(
       'method or path is not in the catalog',
