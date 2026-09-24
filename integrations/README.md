@@ -57,7 +57,10 @@ node integrations/tooling/certify.mjs --layer js                 # every package
 Not covered by the script:
 
 - the atomic-server binary. The `live` and `e2e` tiers need it; build it
-  once in the checkout with the `cargo build` line `serve.mjs` prints.
+  once in the checkout with the `cargo build` line `serve.mjs` prints, or
+  set `ATOMIC_SERVER_IMAGE` to run the published
+  `ghcr.io/ontola/atomic-server-e2e:<pin>` image in Docker instead (AGENTS.md,
+  "Shared pinned atomic-server build").
 - certify's `--layer sandbox` and `--layer all` (the default). Both run
   `cargo test -p atomic-server` from this repo's root for the Rust tests
   named in each `package.json`'s `atomicCertification.sandboxTests`. That

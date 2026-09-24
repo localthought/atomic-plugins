@@ -10,16 +10,118 @@
  *
  *   node integrations/tooling/serve.mjs            # the shared block
  *   node integrations/tooling/serve.mjs --lane pets
+ *
+ * atomic-server comes from one of two places:
+ *
+ *   - by default, the binary at $ATOMIC_SERVER_CHECKOUT/target/e2e/atomic-server,
+ *     built from source (AGENTS.md, "Shared pinned atomic-server build");
+ *   - with ATOMIC_SERVER_IMAGE set (e.g.
+ *     `ghcr.io/ontola/atomic-server-e2e:$(cat .atomic-server-ref)`), that
+ *     image, run with `docker run` on the same port. Everything else is
+ *     unchanged: the mock proxy and the dev-server still run on the host, and
+ *     the lane's tests still reach atomic-server at http://localhost:<port>.
+ *     No local cargo build is needed, which also makes this the only way to
+ *     run the published linux image on a Mac. The store is a named Docker
+ *     volume per label rather than <checkout>/.lane-store/<label>. Like that
+ *     directory, it persists across tiers and runs.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLanes, lanePorts, sharedPorts, root } from './lanes.mjs';
 
 export const serverCheckout = () =>
   process.env.ATOMIC_SERVER_CHECKOUT ?? '/tmp/atomic-server';
+
+/** The image to run atomic-server from instead of a local binary, if any. */
+export const serverImage = () => process.env.ATOMIC_SERVER_IMAGE || undefined;
+
+/**
+ * atomic-server's environment for one stack. `store` is a directory the server
+ * owns: <checkout>/.lane-store/<label> for the binary, the volume's mount
+ * point for the image.
+ */
+export function serverEnv(ports, store) {
+  return {
+    ATOMIC_DATA_DIR: `${store}/data`,
+    ATOMIC_CONFIG_DIR: `${store}/config`,
+    ATOMIC_CACHE_DIR: `${store}/cache`,
+    ATOMIC_PORT: String(ports.atomicServer),
+    ATOMIC_DOMAIN: 'localhost',
+    ATOMIC_REPOPULATE_DEFAULTS: 'true',
+    // Mirrors what atomic-server's own dagger e2e pipeline sets for parity;
+    // nothing in server/src reads these today, so they are a no-op kept only
+    // so this matches upstream if a future commit does. (In a container,
+    // 127.0.0.1 would be the container itself. Revisit that if one starts
+    // being read. Plugin ctx.http refuses loopback addresses anyway.)
+    ATOMIC_INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
+    ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
+    TENANT_SECRET: 'bW9jay10ZW5hbnQ.mock-signature',
+  };
+}
+
+/** Where the image keeps its store (the Dockerfile's VOLUME). */
+export const IMAGE_STORE = '/data';
+
+/**
+ * `docker run` arguments for one atomic-server container.
+ *
+ * - The port is published on 127.0.0.1 only, at the same number inside and
+ *   out. atomic-server derives its own origin from ATOMIC_DOMAIN and
+ *   ATOMIC_PORT, and @tomic/lib's request signatures only verify when that
+ *   origin is the one the client used.
+ * - `--init` makes SIGTERM from stop() reach atomic-server, which isn't
+ *   PID 1 then, so it shuts down (and releases its store lock) the same way
+ *   the local binary does. `docker run` forwards the signal from its own
+ *   process to the container.
+ * - The name is unique per start: a container left behind after a SIGKILL
+ *   can't block the next one by name. It can't hold the port either, because
+ *   assertFree() would name the clash before anything starts.
+ */
+export function dockerRunArgs({ image, name, ports, label, env }) {
+  const args = [
+    'run',
+    '--rm',
+    '--init',
+    '--name',
+    name,
+    '--label',
+    `atomic-plugins.lane-store=${label}`,
+    '--publish',
+    `127.0.0.1:${ports.atomicServer}:${ports.atomicServer}`,
+    '--volume',
+    `${storeVolume(label)}:${IMAGE_STORE}`,
+  ];
+
+  for (const [key, value] of Object.entries(env))
+    args.push('--env', `${key}=${value}`);
+
+  args.push(image);
+
+  return args;
+}
+
+// Not link-atomic-server.mjs's pinnedRef(): that module imports this one.
+const readPin = () =>
+  readFileSync(resolve(root, '.atomic-server-ref'), 'utf8').trim();
+
+/** The named volume that holds one label's store when running the image. */
+export const storeVolume = label => `atomic-plugins-lane-store-${label}`;
+
+/**
+ * A warning for an image tagged with a different atomic-server commit than
+ * .atomic-server-ref pins, or undefined. Like run-lane.mjs's layout check,
+ * testing another commit on purpose is legitimate. Doing it by accident
+ * shouldn't go unnoticed.
+ */
+export function imagePinProblem(image, pinned) {
+  const tag = /:([0-9a-f]{40})$/.exec(image)?.[1];
+  if (tag === undefined || tag === pinned) return undefined;
+
+  return `${image} is atomic-server ${tag}, but .atomic-server-ref pins ${pinned}`;
+}
 
 const free = port =>
   new Promise(done => {
@@ -94,13 +196,34 @@ async function waitFor(url, what) {
  */
 export async function bringUp({ ports, platforms, label = 'shared' }) {
   const config = loadLanes();
+  const image = serverImage();
   const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
-  // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
-  // the caller waits out the full readiness timeout before seeing the cause.
-  if (!existsSync(binary))
+
+  if (image) {
+    const problem = imagePinProblem(image, readPin());
+    if (problem) console.warn(`warning: ${problem}`);
+
+    // Pulled up front, in the foreground: a first pull (a few hundred MB)
+    // would otherwise eat the readiness timeout below.
+    if (
+      spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' })
+        .status !== 0
+    ) {
+      const pull = spawnSync('docker', ['pull', image], { stdio: 'inherit' });
+
+      if (pull.error || pull.status !== 0)
+        throw new Error(
+          `could not pull ${image}${pull.error ? ` (${pull.error.message})` : ''}. Is Docker running, and does a tag exist for this commit? See AGENTS.md, "Shared pinned atomic-server build".`,
+        );
+    }
+  } else if (!existsSync(binary)) {
+    // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
+    // the caller waits out the full readiness timeout before seeing the cause.
     throw new Error(
-      `${binary} does not exist. Build it first:\n  cd ${serverCheckout()} && cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins\nOr point ATOMIC_SERVER_CHECKOUT at a checkout that already has one.`,
+      `${binary} does not exist. Build it first:\n  cd ${serverCheckout()} && cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins\nOr point ATOMIC_SERVER_CHECKOUT at a checkout that already has one, or set ATOMIC_SERVER_IMAGE to run the published image instead.`,
     );
+  }
+
   await assertFree(ports, config);
 
   const children = [];
@@ -117,26 +240,30 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
     children.push(child);
   };
 
-  const store = resolve(serverCheckout(), `.lane-store/${label}`);
-  start(
-    'atomic-server',
-    resolve(serverCheckout(), 'target/e2e/atomic-server'),
-    [],
-    {
-      ATOMIC_DATA_DIR: `${store}/data`,
-      ATOMIC_CONFIG_DIR: `${store}/config`,
-      ATOMIC_CACHE_DIR: `${store}/cache`,
-      ATOMIC_PORT: String(ports.atomicServer),
-      ATOMIC_DOMAIN: 'localhost',
-      ATOMIC_REPOPULATE_DEFAULTS: 'true',
-      // Mirrors what atomic-server's own dagger e2e pipeline sets for parity;
-      // nothing in server/src reads these today, so they are a no-op kept only
-      // so this matches upstream if a future commit does.
-      ATOMIC_INTEGRATION_PROXY_URL: `http://127.0.0.1:${ports.mockProxy}`,
-      ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
-      TENANT_SECRET: 'bW9jay10ZW5hbnQ.mock-signature',
-    },
-  );
+  let container;
+
+  if (image) {
+    container = `atomic-plugins-${label}-${ports.atomicServer}-${process.pid}-${Date.now()}`;
+    start(
+      'atomic-server',
+      'docker',
+      dockerRunArgs({
+        image,
+        name: container,
+        ports,
+        label,
+        env: serverEnv(ports, IMAGE_STORE),
+      }),
+    );
+  } else {
+    start(
+      'atomic-server',
+      binary,
+      [],
+      serverEnv(ports, resolve(serverCheckout(), `.lane-store/${label}`)),
+    );
+  }
+
   // MOCK_FRONTEND_ORIGIN must match wherever the browser actually loads the
   // SPA from — atomic-server directly (FRONTEND_URL in run-lane.mjs and
   // ci.yml), not the dev-server, which only hosts the catalog. The mock proxy
@@ -186,6 +313,9 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
     for (const child of running) child.kill();
     const force = setTimeout(() => {
       for (const child of running) child.kill('SIGKILL');
+      // Killing the `docker run` client doesn't stop its container.
+      if (container)
+        spawnSync('docker', ['rm', '--force', container], { stdio: 'ignore' });
     }, 10_000);
     force.unref();
 
