@@ -109,6 +109,7 @@ describe('annotations (money-category, money-note)', () => {
       expect.arrayContaining(['money-category', 'money-note']),
     );
     expect(klass.requires).not.toContain('money-category');
+
     for (const intent of run({ ...host, text: fixture }).intents as {
       set: Record<string, unknown>;
     }[]) {

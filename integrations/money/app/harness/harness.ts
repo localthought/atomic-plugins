@@ -110,6 +110,27 @@ export const SCENARIOS: Record<string, { rows: boolean; run?: Scenario }> = {
     },
   },
   'ledger-plain': { rows: true },
+  detail: {
+    rows: true,
+    run: async root => {
+      await click(root, '[data-row]', 'Studio Noord BV');
+    },
+  },
+  'detail-error': {
+    rows: true,
+    run: async (root, store) => {
+      await click(root, '[data-row]', 'Albert Heijn');
+      store.failSaves(1, 'The host did not answer save in time.');
+      const input = await until(
+        () => root.querySelector<HTMLInputElement>('#money-category'),
+        'category field',
+      );
+      input.value = 'Office supplies';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(80);
+    },
+  },
   'no-results': {
     rows: true,
     run: async root => {

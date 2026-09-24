@@ -146,3 +146,79 @@ describe('Money view: ledger', () => {
     expect(root.querySelectorAll('.m-row')).toHaveLength(15);
   });
 });
+
+describe('Money view: detail', () => {
+  const selectFirst = (root: HTMLElement, name = 'Studio Noord BV') =>
+    [...root.querySelectorAll<HTMLElement>('[data-row]')]
+      .find(b => text(b).includes(name))!
+      .click();
+
+  it('docks a labelled region at ≥900px with only category and note editable', async () => {
+    const root = await open(fakeStore({ rows: sampleRows() }));
+    selectFirst(root);
+    const panel = root.querySelector('.pl-panel')!;
+    expect(panel.getAttribute('role')).toBe('region');
+    expect(panel.getAttribute('aria-label')).toBe('Transaction details');
+    const controls = panel.querySelectorAll('input, textarea, select');
+    expect([...controls].map(c => c.id)).toEqual([
+      'money-category',
+      'money-note',
+    ]);
+    expect(
+      (panel.querySelector('#money-category') as HTMLInputElement).value,
+    ).toBe('Revenue');
+    expect(text(panel.querySelector('pre.m-narr'))).toContain(
+      '/REMI/Factuur 2026-031/EREF/NOTPROVIDED',
+    );
+    expect(text(panel.querySelector('.m-kv'))).toContain(
+      'NL42 BUNQ 0123 4567 89 · EUR',
+    );
+  });
+
+  it('is a modal sheet below 560px; Escape closes it and focus returns to the row', async () => {
+    const root = await open(fakeStore({ rows: sampleRows() }), 360);
+    selectFirst(root);
+    const sheet = root.querySelector('.pl-panel')!;
+    expect(sheet.getAttribute('role')).toBe('dialog');
+    expect(sheet.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(
+      'Back to transactions',
+    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(root.querySelector('.pl-panel')).toBeNull();
+    expect(text(document.activeElement)).toContain('Studio Noord BV');
+  });
+
+  it('saves on change and shows the failure inline with Retry, keeping the text', async () => {
+    const store = fakeStore({ rows: sampleRows() });
+    const root = await open(store, 360);
+    selectFirst(root, 'Albert Heijn');
+    const input = root.querySelector<HTMLInputElement>('#money-category')!;
+    input.value = 'Office supplies';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await settle();
+    const banner = root.querySelector('.pl-panel .pl-banner')!;
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(text(banner)).toContain("Couldn't save the category.");
+    expect(root.querySelector<HTMLInputElement>('#money-category')!.value).toBe(
+      'Office supplies',
+    );
+    expect([...banner.querySelectorAll('button')].map(b => text(b))).toContain(
+      'Retry',
+    );
+  });
+
+  it('moves between rows with the arrow keys', async () => {
+    const root = await open(fakeStore({ rows: sampleRows() }));
+    const rows = root.querySelectorAll<HTMLElement>('[data-row]');
+    rows[0].focus();
+    rows[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    expect(document.activeElement).toBe(rows[1]);
+    expect(rows[1].tabIndex).toBe(0);
+    expect(rows[0].tabIndex).toBe(-1);
+  });
+});

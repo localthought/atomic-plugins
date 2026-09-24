@@ -34,8 +34,9 @@ import {
 import { canAnnotate, type Txn } from './rows.js';
 import { button, chip, empty } from './ui/components.js';
 import { h, icons } from './ui/dom.js';
+import { detail, type DetailActions } from './viewDetail.js';
 
-export interface LedgerActions {
+export interface LedgerActions extends DetailActions {
   setFilters(patch: Partial<Filters>): void;
   clearFilters(): void;
   showMore(): void;
@@ -627,6 +628,24 @@ function listView(ctx: Ctx, derived: Derived, actions: LedgerActions) {
 }
 
 export function transactions(ctx: Ctx, actions: LedgerActions): HTMLElement[] {
+  const main = ledger(ctx, actions);
+  const row = ctx.state.rows.find(r => r.subject === ctx.state.selected);
+  if (!row) return main;
+  const panel = detail(ctx, row, actions);
+
+  return panel.mode === 'side'
+    ? [
+        h(
+          'div',
+          { class: 'm-split' },
+          h('div', { class: 'm-main' }, main),
+          panel.nodes,
+        ),
+      ]
+    : [...main, ...panel.nodes];
+}
+
+function ledger(ctx: Ctx, actions: LedgerActions): HTMLElement[] {
   const derived = derive(ctx.state, ctx.today);
   const more = derived.filtered.length - derived.visible.length;
   // The strip sums what the filters let through; with nothing through it

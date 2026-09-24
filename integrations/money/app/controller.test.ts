@@ -97,3 +97,104 @@ describe('Money controller: loading', () => {
     expect(store.subscribed.has(TABLE)).toBe(false);
   });
 });
+
+describe('Money controller: annotations', () => {
+  const opened = async (options: Parameters<typeof fakeStore>[0] = {}) => {
+    const store = fakeStore({
+      rows: [row('-23.47', '2026-09-22')],
+      ...options,
+    });
+    const { controller } = harness(store);
+    await controller.load();
+    const subject = controller.state().rows[0].subject;
+    controller.select(subject);
+
+    return { store, controller, subject };
+  };
+
+  it('saves a category and a note on the row, and says Saved', async () => {
+    const { store, controller, subject } = await opened({ rowsWritable: true });
+    await controller.saveNote('category', '  Groceries ');
+    await controller.saveNote('note', 'Team lunch\nwith receipts');
+    expect(store.saves).toEqual([
+      {
+        subject,
+        propVals: {
+          'did:ad:ontology/property/money-category': 'Groceries',
+        },
+      },
+      {
+        subject,
+        propVals: {
+          'did:ad:ontology/property/money-note': 'Team lunch\nwith receipts',
+        },
+      },
+    ]);
+    const state = controller.state();
+    expect(state.rows[0]).toMatchObject({
+      category: 'Groceries',
+      note: 'Team lunch\nwith receipts',
+    });
+    expect(state.edits.category?.status).toBe('saved');
+  });
+
+  it('does not write when nothing changed', async () => {
+    const { store, controller } = await opened({ rowsWritable: true });
+    await controller.saveNote('category', '');
+    expect(store.saves).toEqual([]);
+  });
+
+  it('removes the property when a category is cleared', async () => {
+    const { store, controller, subject } = await opened({ rowsWritable: true });
+    await controller.saveNote('category', 'Travel');
+    await controller.saveNote('category', ' ');
+    expect(
+      store.resources.get(subject)?.['did:ad:ontology/property/money-category'],
+    ).toBeUndefined();
+    expect(controller.state().rows[0].category).toBe('');
+  });
+
+  it('keeps the typed value on failure and saves it on retry', async () => {
+    const { store, controller } = await opened({ rowsWritable: true });
+    store.failSaves(1, 'The host did not answer save in time.');
+    await controller.saveNote('category', 'Office supplies');
+    expect(controller.state().edits.category).toEqual({
+      value: 'Office supplies',
+      status: 'error',
+      message: "Your server didn't respond.",
+      details: 'The host did not answer save in time.',
+    });
+    expect(controller.state().rows[0].category).toBe('');
+    await controller.saveNote('category', 'Office supplies');
+    expect(controller.state().edits.category?.status).toBe('saved');
+    expect(controller.state().rows[0].category).toBe('Office supplies');
+  });
+
+  it("explains the host's app-scope refusal (the table is not under the app)", async () => {
+    const { controller } = await opened();
+    await controller.saveNote('note', 'x');
+    expect(controller.state().edits.note).toMatchObject({
+      status: 'error',
+      message:
+        "This app isn't allowed to write to the importer's table yet. Your text is kept here.",
+    });
+  });
+
+  it('never writes annotations the row class does not declare', async () => {
+    const { store, controller } = await opened({
+      rowsWritable: true,
+      notes: false,
+    });
+    await controller.saveNote('category', 'Travel');
+    expect(store.saves).toEqual([]);
+  });
+
+  it('keeps drafts across renders and drops them with the row', async () => {
+    const { controller } = await opened();
+    controller.draft('note', 'half-typed');
+    controller.setFilters({ query: 'x' });
+    expect(controller.state().drafts.note).toBe('half-typed');
+    controller.select(undefined);
+    expect(controller.state().drafts).toEqual({});
+  });
+});

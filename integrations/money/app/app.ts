@@ -8,7 +8,7 @@ import { createController, type State } from './controller.js';
 import { MONEY_CSS } from './styles.js';
 import type { PluginStore } from './store.js';
 import { installStyles } from './ui/components.js';
-import { isTyping, replaceKeepingFocus } from './ui/focus.js';
+import { isTyping, replaceKeepingFocus, trapTab } from './ui/focus.js';
 import { renderApp, type Actions } from './view.js';
 
 export interface MountOptions {
@@ -46,14 +46,33 @@ export async function mount(
     setFilters: patch => controller.setFilters(patch),
     clearFilters: () => controller.clearFilters(),
     showMore: () => controller.showMore(),
-    select: subject => controller.select(subject),
+    select: subject => {
+      if (subject === undefined) closeDetail();
+      else controller.select(subject);
+    },
+    draft: (field, value) => controller.draft(field, value),
+    saveNote: (field, value) => void controller.saveNote(field, value),
+    showStatement: key => {
+      controller.select(undefined);
+      controller.setTab('transactions');
+      controller.setFilters({
+        statement: key,
+        account: '',
+        period: { kind: 'all' },
+      });
+    },
     chooseFile: () => {
       fileInput.value = '';
       fileInput.click();
     },
   };
 
+  /** The modal (detail drawer or sheet, import sheet) that holds focus. */
+  const modal = () =>
+    root.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+
   const draw = (state: State) => {
+    const opened = state.selected && state.selected !== current?.selected;
     current = state;
     replaceKeepingFocus(root, [
       ...renderApp(
@@ -62,6 +81,20 @@ export async function mount(
       ),
       fileInput,
     ]);
+    // A modal detail takes focus when it opens; the docked one leaves it on
+    // the row, which stays in view beside it.
+    if (opened)
+      modal()?.querySelector<HTMLElement>('[data-key="detail-close"]')?.focus();
+  };
+
+  /** Closes the detail and returns focus to the row that opened it. */
+  const closeDetail = () => {
+    const subject = current?.selected;
+    if (!subject) return;
+    controller.select(undefined);
+    root
+      .querySelector<HTMLElement>(`[data-row="${CSS.escape(subject)}"]`)
+      ?.focus();
   };
 
   const controller = createController(store, draw, { today: options.today });
@@ -81,6 +114,15 @@ export async function mount(
 
   doc.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey) return;
+    const open = modal();
+    if (open) trapTab(open, event);
+
+    if (event.key === 'Escape' && current?.selected) {
+      event.preventDefault();
+      closeDetail();
+
+      return;
+    }
 
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       const target = event.target as HTMLElement;
@@ -109,15 +151,9 @@ export async function mount(
         event.preventDefault();
         search.focus();
       }
-    } else if (event.key === 'i') {
+    } else if (event.key === 'i' && !open) {
       event.preventDefault();
       actions.chooseFile();
-    } else if (event.key === 'Escape' && current?.selected) {
-      const subject = current.selected;
-      controller.select(undefined);
-      root
-        .querySelector<HTMLElement>(`[data-row="${CSS.escape(subject)}"]`)
-        ?.focus();
     }
   });
 

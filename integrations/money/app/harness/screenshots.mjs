@@ -101,7 +101,9 @@ export async function shoot({ out = path('../dist/screenshots'), only } = {}) {
           `${scenario} @${width}: page scrolls horizontally (${state.scrollWidth}px)`,
         );
       const file = `${out}/${scenario}-${width}-${theme}.png`;
-      await tab.screenshot({ path: file, fullPage: true });
+      // A modal is fixed to the viewport: capture that, not the page under it.
+      const modal = await tab.$('[aria-modal="true"]');
+      await tab.screenshot({ path: file, fullPage: !modal });
       written.push(file);
       await tab.close();
     }

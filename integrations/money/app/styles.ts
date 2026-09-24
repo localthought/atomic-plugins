@@ -241,6 +241,86 @@ export const MONEY_CSS = `
 .m-loading { padding: 28px 20px; color: var(--pl-muted); }
 .m-pad { padding: 12px 20px; }
 
+/* Detail panel content */
+.m-panel-head { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px 10px; }
+.m-grow { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.m-big .m-amt {
+  font-family: var(--pl-font-header);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.m-small { font-size: 12.5px; }
+.pl-panel section {
+  padding: 12px 16px;
+  border-top: 1px solid var(--pl-border);
+  display: grid;
+  gap: 10px;
+}
+.pl-panel h3 {
+  margin: 0;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pl-muted);
+  font-weight: 650;
+}
+.m-kv {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 13px;
+}
+.m-kv dt { color: var(--pl-muted); }
+.m-kv dd { margin: 0; overflow-wrap: anywhere; }
+.m-narr {
+  margin: 0;
+  background: var(--pl-tint);
+  border: 1px solid var(--pl-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.m-field { display: grid; gap: 4px; }
+.m-field label { font-size: 12.5px; font-weight: 600; }
+.m-input {
+  border: 1px solid var(--pl-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--pl-surface);
+  width: 100%;
+}
+.m-input[aria-invalid='true'] { border-color: var(--pl-neg); }
+textarea.m-input { min-height: 64px; resize: vertical; }
+.m-panel-foot {
+  margin-top: auto;
+  padding: 10px 16px;
+  border-top: 1px solid var(--pl-border);
+  font-size: 12.5px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 48px;
+}
+.m-saved::before { content: '✓ '; color: var(--pl-pos); }
+.m-sheetbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid var(--pl-hair);
+}
+.m-sheetbar strong { flex: 1; font-size: 14px; }
+.pl-panel[data-mode='side'] {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  min-height: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+.pl-panel .pl-banner { padding: 8px 10px; }
+
 /* First run */
 .m-drop {
   justify-self: stretch;
