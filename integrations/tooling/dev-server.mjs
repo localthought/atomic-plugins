@@ -5,7 +5,12 @@
  * removed in feat/plugin-debug 4bab16ee6), and even then it embedded its own
  * copy, never this repo's. This process serves the same filter the embed
  * used: a `plugin.js` anywhere under integrations/, plus the root
- * `catalog.json`.
+ * `catalog.json`. It also stands in for GitHub Pages for drive apps: it serves
+ * the committed `apps/<id>/<version>/ui.js` files at `/apps/...`, the same
+ * layout Pages publishes, and the catalog it serves points `app-module` there
+ * (see `localCatalog`). So an e2e installs exactly the bytes this checkout
+ * would publish, through the same integrity check a published version gets,
+ * before they are on Pages.
  *
  * That is all it does. It used to also reverse-proxy everything else through
  * to a real atomic-server, so that one origin looked like an atomic-server
@@ -28,9 +33,10 @@
  */
 import { createServer as createHttpServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PAGES_BASE, appEntries, terms } from './apps.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -57,6 +63,49 @@ export function hostedAssets(base = root) {
   walk(integrationsDir, 1);
 
   return assets;
+}
+
+/**
+ * The catalog with each drive app's `app-module` moved from GitHub Pages
+ * (`PAGES_BASE`) to this server, which serves the same committed file at the
+ * same path. The integrity hash is left alone, so the host still refuses a
+ * module that does not match what the catalog pins — `apps.mjs check` is what
+ * keeps the two equal. A URL outside Pages, and anything that is not a
+ * catalog array, is served as it is.
+ */
+export function localCatalog(text, origin) {
+  let catalog;
+
+  try {
+    catalog = JSON.parse(text);
+  } catch {
+    return text;
+  }
+
+  if (!Array.isArray(catalog)) return text;
+  for (const entry of appEntries(catalog))
+    if (entry[terms.module].startsWith(PAGES_BASE))
+      entry[terms.module] =
+        `${origin}/${entry[terms.module].slice(PAGES_BASE.length)}`;
+
+  return `${JSON.stringify(catalog, null, 2)}\n`;
+}
+
+/**
+ * A committed drive app module (`apps/<id>/<version>/ui.js`) for a request
+ * path, or undefined. The pattern admits no `/` or leading `.` in a segment,
+ * so the path cannot leave apps/.
+ */
+export function appModuleFile(path, base = root) {
+  if (
+    !/^\/apps\/[a-z0-9][a-z0-9-]*\/[0-9A-Za-z][0-9A-Za-z.+-]*\/ui\.js$/.test(
+      path,
+    )
+  )
+    return undefined;
+  const file = resolve(base, path.slice(1));
+
+  return existsSync(file) ? file : undefined;
 }
 
 const CONTENT_TYPES = {
@@ -90,14 +139,12 @@ export function createDevServer({ assetsRoot = root } = {}) {
       return;
     }
 
-    if (req.url !== '/integrations' && !req.url.startsWith('/integrations/')) {
-      res.writeHead(404, cors).end();
-
-      return;
-    }
-
-    const key = req.url.slice('/integrations/'.length).split('?')[0];
-    const file = assets.get(key);
+    const path = req.url.split('?')[0];
+    const appModule = appModuleFile(path, assetsRoot);
+    const key = path.startsWith('/integrations/')
+      ? path.slice('/integrations/'.length)
+      : undefined;
+    const file = appModule ?? (key !== undefined ? assets.get(key) : undefined);
 
     if (!file) {
       res.writeHead(404, cors).end();
@@ -105,7 +152,16 @@ export function createDevServer({ assetsRoot = root } = {}) {
       return;
     }
 
-    const body = readFileSync(file);
+    const body =
+      key === 'catalog.json'
+        ? Buffer.from(
+            localCatalog(
+              readFileSync(file, 'utf8'),
+              `http://${req.headers.host}`,
+            ),
+          )
+        : readFileSync(file);
+
     // atomic-server serves its embedded copy of these assets as cacheable
     // static files; this matches that. Content-addressed, so it stays correct
     // when a plugin bundle is rebuilt. Note this did NOT fix the Integrations
@@ -124,7 +180,7 @@ export function createDevServer({ assetsRoot = root } = {}) {
       etag,
       'cache-control': 'no-cache',
       'content-type':
-        CONTENT_TYPES[key.endsWith('.json') ? 'catalog' : 'plugin'],
+        CONTENT_TYPES[path.endsWith('.json') ? 'catalog' : 'plugin'],
     });
     res.end(req.method === 'HEAD' ? undefined : body);
   });

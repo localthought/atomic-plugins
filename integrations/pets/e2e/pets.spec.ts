@@ -1,56 +1,62 @@
 // @wc-ignore-file
 /**
- * The Pets drive app (`integrations/pets/app/`), end to end: the app runs in
- * its own null-origin iframe, connects Pets through the host's consent bar
- * and the (mock) integration proxy, and imports the five pets through the
- * host's proxy relay into its own table. No credential ever reaches the
- * frame or the drive.
+ * The Pets drive app (`integrations/pets/app/`), end to end, from the catalog:
+ * discover it on the Integrations page, install it (the host downloads the
+ * module the catalog entry names and checks it against the entry's integrity
+ * hash), connect Pets through the host's consent bar and the (mock)
+ * integration proxy, import the five pets through the host's proxy relay into
+ * the app's own table, and reopen it. Then move it to the catalog's version
+ * from an older one, keeping its rows. No credential ever reaches the frame or
+ * the drive, and no test helper touches the app's source.
  *
- * The app is installed test-side: `New app` from the catalog, then its entry
- * point's source is replaced with `app/build.mjs`'s bundle, the way
- * atomic-server's own apps.spec.ts does. There is no catalog install flow for
- * drive apps yet.
+ * The lane's dev-server stands in for GitHub Pages: it serves the committed
+ * `apps/pets/<version>/ui.js` at `/apps/pets/<version>/ui.js` and points the
+ * catalog's `app-module` there, leaving `app-module-integrity` as committed
+ * (integrations/tooling/apps.mjs).
  *
- * Needs an atomic-server with the host proxy relay (atomic-server#1657, for
- * #1624, merged into `feat/plugin-debug`; the pin has it). Run it the way CI
+ * Needs an atomic-server with the host proxy relay (atomic-server#1657) and
+ * catalog app installation (atomic-server#1689, for #94). Run it the way CI
  * does:
  *   node integrations/tooling/run-lane.mjs pets --tier e2e
  */
 import { test, expect, type Page } from '@playwright/test';
-import {
-  before,
-  createFromCatalog,
-} from '../../../browser/e2e/tests/test-utils';
-// @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build } from '../app/build.mjs';
+import { before } from '../../../browser/e2e/tests/test-utils';
+
+/** The catalog's version of the Pets app (integrations/catalog.json). */
+const VERSION = '0.1.0';
 
 test.describe('pets integration', () => {
   test.beforeEach(before);
 
-  test('Pets connects through the host and imports into its own table', async ({
+  test('Pets installs from the catalog, connects, imports, reopens and updates', async ({
     page,
   }) => {
     test.skip(
       !process.env.ATOMIC_MOCK_INTEGRATION_PROXY,
       'Run with the documented mock integration-proxy server configuration',
     );
-    test.setTimeout(180_000);
-    const { text } = (await build()) as { text: string };
-
-    await createFromCatalog(page, 'App');
+    test.setTimeout(240_000);
     const main = page.getByRole('main');
+    const app = page.frameLocator('iframe[title="App"]');
+    const card = await openCatalogCard(page);
+
+    // Discovery: the catalog's version, not installed yet.
+    await expect(card.getByRole('heading', { name: 'Pets' })).toBeVisible();
+    await expect(card).toContainText(`Version ${VERSION}`);
+
+    // Installation: app, entry point, table and ontology from the catalog.
+    await card.getByRole('button', { name: 'Install Pets' }).click();
     await expect(main.locator('iframe[title="App"]')).toBeVisible({
       timeout: 45_000,
     });
-    await setAppSource(page, text);
-    await page.reload();
-
-    const app = page.frameLocator('iframe[title="App"]');
-    await expect(app.getByRole('heading', { name: 'Pets' })).toBeVisible();
+    const appUrl = page.url();
+    await expect(app.getByRole('heading', { name: 'Pets' })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(app.getByRole('status')).toContainText('Not connected');
-    await app.getByRole('button', { name: 'Connect Pets' }).click();
 
-    // Drawn by the host page, outside the frame: only a click here navigates.
+    // Connection: drawn by the host page, outside the frame.
+    await app.getByRole('button', { name: 'Connect Pets' }).click();
     const consent = page.getByRole('group', { name: 'Connect an account' });
     await expect(consent).toContainText('Pets');
     await consent.getByRole('button', { name: 'Connect', exact: true }).click();
@@ -65,7 +71,7 @@ test.describe('pets integration', () => {
       })
       .click();
 
-    // Back on the app page, with the handoff redeemed and out of the URL.
+    // First import, back on the app page with the handoff out of the URL.
     await expect(page).not.toHaveURL(/connection_code=|integration_state=/);
     await expect(
       app.getByRole('status').filter({ hasText: 'Last synced' }),
@@ -79,10 +85,45 @@ test.describe('pets integration', () => {
       ),
     );
     expect(stored).toHaveLength(1);
+    const table = await tableOf(page);
+
+    // Reopen from the catalog card: installed at the catalog's version, still
+    // connected, and a re-sync finds nothing new.
+    const reopened = await openCatalogCard(page);
+    await expect(reopened).toContainText(`Installed ${VERSION}`);
+    await expect(
+      reopened.getByRole('button', { name: /^Update to/ }),
+    ).toHaveCount(0);
+    await reopened.getByRole('button', { name: 'Open Pets' }).click();
+    await expect(page).toHaveURL(appUrl);
+    await expect(
+      app.getByRole('status').filter({ hasText: 'Last synced' }),
+    ).toContainText('5 pets (0 added, 0 updated, 5 unchanged)', {
+      timeout: 30_000,
+    });
+
+    // Update: an app installed at an older version is offered the catalog's
+    // one. Only the recorded version is rewound here; the update itself
+    // downloads and checks the module again, and must keep the rows.
+    await setInstalledVersion(page, VERSION, '0.0.1');
+    const outdated = await openCatalogCard(page);
+    await expect(outdated).toContainText('Installed 0.0.1');
+    await outdated
+      .getByRole('button', { name: `Update to ${VERSION}` })
+      .click();
+    await expect(outdated).toContainText(`Installed ${VERSION}`, {
+      timeout: 30_000,
+    });
+    await outdated.getByRole('button', { name: 'Open Pets' }).click();
+    await expect(
+      app.getByRole('status').filter({ hasText: 'Last synced' }),
+    ).toContainText('5 pets (0 added, 0 updated, 5 unchanged)', {
+      timeout: 30_000,
+    });
 
     // Rows are an ordinary table: open it outside the app.
     await page.goto(
-      `${new URL(page.url()).origin}/app/show?subject=${encodeURIComponent(await tableOf(page))}`,
+      `${new URL(page.url()).origin}/app/show?subject=${encodeURIComponent(table)}`,
     );
     await expect(
       main.getByRole('heading', { name: 'Pets', exact: true }),
@@ -93,11 +134,11 @@ test.describe('pets integration', () => {
     // Numeric and boolean properties keep their Atomic datatype.
     const datatypes = await page.evaluate(async () => {
       const store = window.store!;
-      const table = await store.getResource(
+      const rows = await store.getResource(
         new URL(location.href).searchParams.get('subject')!,
       );
       const klass = await store.getResource(
-        table.get('https://atomicdata.dev/properties/classtype') as string,
+        rows.get('https://atomicdata.dev/properties/classtype') as string,
       );
       const fields = klass.get(
         'https://atomicdata.dev/properties/recommends',
@@ -121,6 +162,21 @@ test.describe('pets integration', () => {
     });
   });
 });
+
+/** The Integrations page's Pets card, with experimental plugins shown. */
+async function openCatalogCard(page: Page) {
+  await page.goto(new URL('/app/integrations', page.url()).href);
+  const experimental = page.getByRole('checkbox', {
+    name: 'Show experimental plugins',
+  });
+  await experimental.check();
+  // Disabled while the setting is still saving to the private drive.
+  await expect(experimental).toBeEnabled({ timeout: 30_000 });
+
+  return page
+    .getByRole('region', { name: 'Drive apps' })
+    .locator('[data-catalog-app="pets"]');
+}
 
 /** The app's table: the value on the app that is a Table (`app-data`). */
 async function tableOf(page: Page): Promise<string> {
@@ -149,32 +205,25 @@ async function tableOf(page: Page): Promise<string> {
 }
 
 /**
- * Replaces the source of the app on screen, through `window.store`. Copied
- * from atomic-server's `browser/e2e/tests/apps.spec.ts` (not exported there).
+ * Rewinds the version the app on screen records as installed, the way an app
+ * installed before a catalog release would look. The recorded version is the
+ * app's only property holding exactly `from` (the host's drive-local
+ * `app-version`, whose subject is minted per drive).
  */
-async function setAppSource(page: Page, source: string) {
-  await page.evaluate(async (next: string) => {
-    const store = window.store!;
-    const subject = decodeURIComponent(
-      new URL(location.href).searchParams.get('subject')!,
-    );
-    const app = await store.getResource(subject);
-
-    for (const value of Object.values(app.getPropVals())) {
-      if (typeof value !== 'string' || !value.includes(':')) continue;
-      const child = await store.getResource(value).catch(() => undefined);
-      if (!child) continue;
-      const sourceProp = Object.entries(child.getPropVals()).find(
-        ([, v]) =>
-          typeof v === 'string' && v.includes('export async function view'),
-      )?.[0];
-      if (!sourceProp) continue;
-      await child.set(sourceProp, next);
-      await child.save();
-
-      return;
-    }
-
-    throw new Error('could not find the app’s entry point');
-  }, source);
+async function setInstalledVersion(page: Page, from: string, to: string) {
+  await page.evaluate(
+    async ([current, rewound]) => {
+      const store = window.store!;
+      const subject = new URL(location.href).searchParams.get('subject')!;
+      const app = await store.getResource(subject);
+      const matches = Object.entries(app.getPropVals()).filter(
+        ([, v]) => v === current,
+      );
+      if (matches.length !== 1)
+        throw new Error(`expected one property holding ${current}`);
+      await app.set(matches[0][0], rewound);
+      await app.save();
+    },
+    [from, to] as const,
+  );
 }

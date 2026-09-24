@@ -430,6 +430,7 @@ jobs:
         working-directory: atomic-plugins
         run: |
           node --test \
+            integrations/tooling/apps.test.mjs \
             integrations/tooling/certify.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
@@ -463,6 +464,24 @@ jobs:
       - name: Typecheck e2e specs
         working-directory: atomic-plugins
         run: browser/node_modules/.bin/tsc -p integrations/tsconfig.e2e.json --noEmit
+
+      # Each drive app's catalog entry must point at its committed
+      # apps/<id>/<version>/ui.js (what GitHub Pages serves), whose sha384 is
+      # the pinned integrity the host checks before it installs, and which a
+      # fresh build of its folder reproduces. On a PR or in the merge queue it
+      # also fails when a version file already on main was changed or deleted:
+      # installed apps recorded those URLs. See integrations/README.md,
+      # "Publishing a drive app".
+      - name: Fetch main, for the published drive app versions
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        working-directory: atomic-plugins
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Drive app catalog entries match their committed modules and builds
+        working-directory: atomic-plugins
+        env:
+          PUBLISHED: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'origin/main' || '' }}
+        run: node integrations/tooling/apps.mjs check ${PUBLISHED:+--published "$PUBLISHED"}
 
       - name: Offline certification (typecheck, bundle reproducibility, fixture tests)
         working-directory: atomic-plugins

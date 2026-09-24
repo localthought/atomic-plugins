@@ -1,0 +1,62 @@
+name: Drive apps published
+
+# GitHub Pages (legacy build, main branch, repository root, with a root
+# .nojekyll so files are served byte-for-byte) publishes the committed drive
+# app modules at https://ontola.github.io/atomic-plugins/apps/<id>/<version>/ui.js,
+# the `app-module` URLs in integrations/catalog.json. After each Pages build
+# this checks that every catalog app entry's module is served there with a
+# sha384 equal to its `app-module-integrity`, the check a host makes before it
+# installs (atomic-server `browser/lib/src/catalog-app.ts`). CI's
+# `apps.mjs check` has already made the committed file match the pin; this
+# catches a Pages publish that failed or lags. Pages' CDN caches for up to 10
+# minutes, so a mismatch is retried for up to 15 minutes before failing. See
+# integrations/README.md, "Publishing a drive app".
+
+on:
+  page_build:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify GitHub Pages serves apps/
+    if: github.event_name == 'workflow_dispatch' || github.event.build.status == 'built'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.build.commit || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compare served modules with the catalog's integrity
+        run: |
+          node --input-type=module - <<'JS'
+          import { appEntries, integrityOf, readCatalog, terms } from './integrations/tooling/apps.mjs';
+          const apps = appEntries(readCatalog());
+          const deadline = Date.now() + 15 * 60_000;
+          for (;;) {
+            const stale = [];
+            for (const entry of apps) {
+              const url = entry[terms.module];
+              try {
+                const res = await fetch(`${url}?v=${Date.now()}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const served = integrityOf(Buffer.from(await res.arrayBuffer()));
+                if (served !== entry[terms.integrity])
+                  stale.push(`${url}: serves ${served}, the catalog pins ${entry[terms.integrity]}`);
+              } catch (error) {
+                stale.push(`${url}: ${error.message}`);
+              }
+            }
+            if (!stale.length) {
+              console.log(`${apps.length} drive app module(s) served by Pages match the catalog`);
+              break;
+            }
+            if (Date.now() > deadline) {
+              console.error(stale.join('\n'));
+              process.exit(1);
+            }
+            console.log(`${stale.length} of ${apps.length} not yet published; retrying in 60s`);
+            await new Promise(r => setTimeout(r, 60_000));
+          }
+          JS

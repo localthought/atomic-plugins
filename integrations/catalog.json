@@ -21,7 +21,11 @@
       "https://atomicdata.dev/integrations/properties/platform",
       "https://atomicdata.dev/integrations/properties/callback-platform",
       "https://atomicdata.dev/integrations/properties/pluginUrl",
-      "https://atomicdata.dev/integrations/properties/version"
+      "https://atomicdata.dev/integrations/properties/version",
+      "https://atomicdata.dev/integrations/properties/app-module",
+      "https://atomicdata.dev/integrations/properties/app-module-integrity",
+      "https://atomicdata.dev/integrations/properties/app-row-name",
+      "https://atomicdata.dev/integrations/properties/app-row-name-plural"
     ]
   },
   {
@@ -49,7 +53,11 @@
       "https://atomicdata.dev/integrations/properties/platform",
       "https://atomicdata.dev/integrations/properties/callback-platform",
       "https://atomicdata.dev/integrations/properties/pluginUrl",
-      "https://atomicdata.dev/integrations/properties/version"
+      "https://atomicdata.dev/integrations/properties/version",
+      "https://atomicdata.dev/integrations/properties/app-module",
+      "https://atomicdata.dev/integrations/properties/app-module-integrity",
+      "https://atomicdata.dev/integrations/properties/app-row-name",
+      "https://atomicdata.dev/integrations/properties/app-row-name-plural"
     ]
   },
   {
@@ -270,6 +278,46 @@
     "https://atomicdata.dev/properties/description": "The version of this integration currently published in this repository, mirrored from its package.json (see integrations/README.md). Omitted for an entry with no local package.json, such as one reached through the generic LocalThought/Devonian bridge or fetched from pluginUrl. A host compares this against what an installation has pinned to offer an update."
   },
   {
+    "@id": "https://atomicdata.dev/integrations/properties/app-module",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "app-module",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
+    "https://atomicdata.dev/properties/description": "URL of the built ES module for exactly this entry's `version`, which a host installs as a drive app's entry point. Distinct from `pluginUrl`, which links to source. For an app built in this repo it is `https://ontola.github.io/atomic-plugins/apps/<shortname>/<version>/ui.js`: `integrations/<shortname>/app/build.mjs`'s output, committed at `apps/<shortname>/<version>/ui.js` and served by GitHub Pages from `main`. A version file on `main` is never changed or deleted, so a changed build needs a new version. A relative URL resolves against this catalog's own URL. See integrations/README.md, 'Publishing a drive app'."
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/properties/app-module-integrity",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "app-module-integrity",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
+    "https://atomicdata.dev/properties/description": "Subresource Integrity hash (`sha384-` plus base64) of the `app-module` bytes. A host refuses to install or update from a module that does not match. `integrations/tooling/apps.mjs check` keeps it equal to the committed module and to a fresh build."
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/properties/app-row-name",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "app-row-name",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
+    "https://atomicdata.dev/properties/description": "What one row in the installed app's table is called, singular (for example 'Pet'). Optional; the app may rename it itself."
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/properties/app-row-name-plural",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "app-row-name-plural",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
+    "https://atomicdata.dev/properties/description": "What the installed app's table and its rows are called, plural (for example 'Pets'). Optional; given together with `app-row-name`."
+  },
+  {
     "https://atomicdata.dev/properties/localId": "pets",
     "https://atomicdata.dev/properties/isA": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
@@ -279,11 +327,15 @@
     "https://atomicdata.dev/integrations/properties/enabled": true,
     "https://atomicdata.dev/properties/name": "Pets",
     "https://atomicdata.dev/properties/emoji": "🐾",
-    "https://atomicdata.dev/properties/description": "A trivial demo collection, useful for trying plugins out.",
-    "https://atomicdata.dev/integrations/properties/capabilities": "Imports five static demo pets into a Pets table with a small ontology (species, breed, age, mood).",
-    "https://atomicdata.dev/integrations/properties/events": "A one-off, on-demand import. Nothing runs in the background.",
-    "https://atomicdata.dev/integrations/properties/limitation": "No external account, API key or network call. Static sample data only, not a live provider.",
-    "https://atomicdata.dev/integrations/properties/keywords": "pets demo example sample ontology test touch points",
-    "https://atomicdata.dev/integrations/properties/version": "0.1.0"
+    "https://atomicdata.dev/properties/description": "A demo drive app: connect the Pets demo provider and import its pets into a table.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Connects through LocalThought and imports every pet the demo provider lists into a Pets table, with typed columns (age, vaccinated, weight, updated at). Re-syncing updates changed pets and writes nothing when nothing changed.",
+    "https://atomicdata.dev/integrations/properties/events": "Connect once, then Sync now whenever you want the latest pets. Nothing runs in the background.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Demo provider only, not a real account. Import only: nothing is written back. Keep the browser open while syncing.",
+    "https://atomicdata.dev/integrations/properties/keywords": "pets demo example sample drive app ontology test touch points localthought",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/pets/0.1.0/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-yzC96dzMDYdRJBZy7O5/wGDfMx7FoyPMmer51AQJ9M7IL9IfhMFbVOsbQR3Mw4pD",
+    "https://atomicdata.dev/integrations/properties/app-row-name": "Pet",
+    "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pets"
   }
 ]
