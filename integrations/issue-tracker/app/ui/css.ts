@@ -1,0 +1,122 @@
+// @wc-ignore-file
+/**
+ * ---- PLUGIN CSS (shared #89 kit) ----
+ *
+ * The `--pl-*` aliases of the host's `--t-*` theme variables (atomic-server
+ * `useCreateThemeVars.ts`, sent to the frame as `__atomic_style`) and the
+ * chrome every #89 app shares: header, sync pill, connection bar, banner,
+ * empty state, buttons, segmented control, search field, label chip and
+ * status glyph. Values follow `design/mockups.html`.
+ *
+ * Rules: every colour comes from a host variable, except the `--pl-pos`
+ * fallback (the host has no success colour yet; IT-18). Light or dark is the
+ * host's choice, never `prefers-color-scheme`: `ui/theme.ts` sets
+ * `data-pl-scheme` from the host's background so `--pl-pos` can follow.
+ *
+ * Kept inside this plugin (per-plugin containment) until the maintainer
+ * decides on a shared package; nothing here is issue-specific.
+ */
+export const KIT_CSS = `
+html,body{margin:0;background:var(--t-color-bg-body)}
+.pl-app{--pl-bg:var(--t-color-bg-body);--pl-surface:var(--t-color-bg);--pl-sunken:var(--t-color-bg-1);--pl-border:var(--t-color-bg-2);
+--pl-hairline:color-mix(in srgb,var(--t-color-bg-2) 55%,var(--t-color-bg));--pl-text:var(--t-color-text);--pl-muted:var(--t-color-text-light);
+--pl-accent:var(--t-color-main);--pl-accent-soft:var(--t-color-main-selected-bg);--pl-accent-ink:var(--t-color-main-selected-fg);
+--pl-on-accent:var(--t-color-bg);--pl-neg:var(--t-color-alert);--pl-warn:var(--t-color-warning);--pl-radius:var(--t-radius,9px);
+--pl-font:var(--t-font-family,system-ui,sans-serif);--pl-pos:#2f8f5b;
+background:var(--pl-bg);color:var(--pl-text);font:14px/1.45 var(--pl-font);position:relative;min-height:100vh;box-sizing:border-box}
+.pl-app[data-pl-scheme=dark]{--pl-pos:#5cc48a}
+.pl-app *,.pl-app *::before,.pl-app *::after{box-sizing:border-box}
+.pl-app button,.pl-app input,.pl-app textarea{font:inherit;color:inherit}
+.pl-app :focus-visible{outline:2px solid var(--pl-accent);outline-offset:2px}
+.pl-app [hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.spacer{flex:1 1 auto}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:.92em}
+.muted{color:var(--pl-muted)}
+.small{font-size:12.5px}
+.pl-app a{color:var(--pl-accent);text-decoration:none;display:inline-flex;align-items:center;gap:3px}
+.pl-app a:hover{text-decoration:underline}
+.pl-app code{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:.9em;background:var(--pl-sunken);padding:1px 5px;border-radius:4px}
+@keyframes pl-spin{to{transform:rotate(360deg)}}
+.pl-spin{animation:pl-spin 1s linear infinite;transform-origin:50% 50%;transform-box:fill-box}
+@keyframes pl-slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.pl-spin,.progress.indeterminate::after,.sync-mark.sending{animation:none!important}}
+.pl-header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--pl-surface);border-bottom:1px solid var(--pl-hairline);min-height:52px}
+.pl-mark{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--pl-accent-soft);color:var(--pl-accent);flex:none}
+.pl-name{font-weight:600;font-size:15px;margin:0}
+.src-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--pl-sunken);font-size:12.5px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.src-chip b{font-weight:600}
+.pl-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--pl-hairline);font-size:12.5px;white-space:nowrap;background:var(--pl-surface);cursor:default}
+button.pl-pill{cursor:pointer}
+.pl-pill[data-state=synced] svg{color:var(--pl-pos)}
+.pl-pill[data-state=idle] svg{color:var(--pl-muted)}
+.pl-pill[data-state=syncing]{color:var(--pl-accent-ink);background:var(--pl-accent-soft);border-color:transparent}
+.pl-pill[data-state=syncing] svg{color:var(--pl-accent)}
+.pl-pill[data-state=paused]{border-color:color-mix(in srgb,var(--pl-warn) 60%,transparent);background:color-mix(in srgb,var(--pl-warn) 12%,var(--pl-surface))}
+.pl-pill[data-state=paused] svg{color:var(--pl-warn)}
+.pl-pill[data-state=reauth],.pl-pill[data-state=error]{border-color:color-mix(in srgb,var(--pl-neg) 60%,transparent);background:color-mix(in srgb,var(--pl-neg) 10%,var(--pl-surface))}
+.pl-pill[data-state=reauth] svg,.pl-pill[data-state=error] svg{color:var(--pl-neg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--pl-border);background:var(--pl-surface);cursor:pointer;white-space:nowrap;font-weight:500}
+.btn.sm{height:28px;padding:0 10px;font-size:13px}
+.btn.primary{background:var(--pl-accent);border-color:var(--pl-accent);color:var(--pl-on-accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.ghost:hover:not(:disabled){background:var(--pl-sunken)}
+.btn.danger{color:var(--pl-neg);border-color:color-mix(in srgb,var(--pl-neg) 55%,transparent)}
+.btn.icon-only{width:32px;padding:0}
+.icon-btn{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:8px;border:0;background:transparent;color:var(--pl-muted);cursor:pointer;flex:none}
+.icon-btn.sm{width:26px;height:26px}
+.icon-btn:hover{background:var(--pl-sunken);color:var(--pl-text)}
+.link-btn{border:0;background:none;color:var(--pl-accent);cursor:pointer;font-weight:500;padding:4px 6px;border-radius:6px}
+.link-btn:disabled{color:var(--pl-muted);cursor:default}
+.pl-conn{position:relative;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 16px;font-size:12.5px;color:var(--pl-muted);background:var(--pl-surface);border-bottom:1px solid var(--pl-hairline);min-height:38px;flex-wrap:wrap}
+.pl-conn .acct{color:var(--pl-text);font-weight:500}
+.dot-sep{opacity:.6}
+.progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden}
+.progress::after{content:'';position:absolute;left:0;top:0;bottom:0;width:var(--p,30%);background:var(--pl-accent)}
+.progress.indeterminate::after{width:30%;animation:pl-slide 1.4s ease-in-out infinite}
+.pl-banner{display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px 12px;margin:12px 16px 0;padding:10px 12px;border-radius:var(--pl-radius);border:1px solid;font-size:13.5px}
+.pl-banner[data-tone=warn]{border-color:color-mix(in srgb,var(--pl-warn) 55%,transparent);background:color-mix(in srgb,var(--pl-warn) 10%,var(--pl-surface))}
+.pl-banner[data-tone=warn] .b-icon{color:color-mix(in srgb,var(--pl-warn) 70%,var(--pl-text))}
+.pl-banner[data-tone=neg]{border-color:color-mix(in srgb,var(--pl-neg) 50%,transparent);background:color-mix(in srgb,var(--pl-neg) 8%,var(--pl-surface))}
+.pl-banner[data-tone=neg] .b-icon{color:var(--pl-neg)}
+.pl-banner[data-tone=info]{border-color:transparent;background:var(--pl-accent-soft);color:var(--pl-accent-ink)}
+.b-icon{flex:none;padding-top:1px;display:inline-flex}
+.b-text{flex:1 1 260px;min-width:0;margin:0}
+.b-actions{display:flex;gap:8px;flex-wrap:wrap}
+.b-details{margin:6px 16px 0;font-size:12.5px;color:var(--pl-muted)}
+.b-details code{display:block;margin-top:4px;white-space:pre-wrap;word-break:break-all}
+.seg{display:inline-flex;padding:2px;border-radius:9px;background:var(--pl-sunken);gap:2px}
+.seg button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:var(--pl-muted);font-size:13px}
+.seg button[aria-pressed=true],.seg button[aria-checked=true]{background:var(--pl-surface);color:var(--pl-text);box-shadow:0 0 0 1px var(--pl-hairline)}
+.seg button:disabled{cursor:not-allowed;opacity:.6}
+.search{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px 0 10px;border:1px solid var(--pl-hairline);border-radius:8px;background:var(--pl-surface);color:var(--pl-muted);flex:0 1 260px;min-width:120px}
+.search.wide{flex:none;width:100%}
+.search input{border:0;outline:0;background:transparent;min-width:0;flex:1;color:var(--pl-text)}
+.search input::-webkit-search-cancel-button{display:none}
+.search:focus-within{border-color:var(--pl-accent)}
+kbd{font:11px/1 ui-monospace,Menlo,monospace;padding:3px 5px;border:1px solid var(--pl-hairline);border-radius:4px;color:var(--pl-muted)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:999px;background:var(--pl-sunken);font-size:11.5px;white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;flex:none;background:var(--pl-muted)}
+.chip.more{color:var(--pl-muted)}
+.glyph{flex:none}
+.g-todo{color:var(--pl-muted)}
+.g-doing{color:var(--pl-warn)}
+.g-done{color:var(--pl-accent)}
+.pl-empty{display:grid;justify-items:center;gap:12px;text-align:center;padding:40px 20px}
+.pl-empty.tall{padding:72px 24px}
+.pl-empty p{margin:0;max-width:42ch;color:var(--pl-muted)}
+.pl-empty p b{color:var(--pl-text);font-weight:600;display:block}
+.e-icon{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--pl-sunken);color:var(--pl-muted)}
+.popover{position:absolute;z-index:30;width:min(320px,calc(100vw - 32px));padding:12px;border-radius:var(--pl-radius);border:1px solid var(--pl-hairline);background:var(--pl-surface);box-shadow:var(--t-box-shadow-intense,0 10px 24px -12px color-mix(in srgb,var(--pl-text) 35%,transparent));display:grid;gap:8px;justify-items:start}
+.popover p{margin:0;font-size:13px}
+.menu{position:absolute;z-index:30;min-width:180px;padding:4px;border-radius:8px;border:1px solid var(--pl-hairline);background:var(--pl-surface);box-shadow:var(--t-box-shadow-intense,0 10px 24px -12px color-mix(in srgb,var(--pl-text) 35%,transparent));display:grid}
+.menu button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+.menu button:hover,.menu button:focus-visible{background:var(--pl-sunken);outline:none}
+.menu button[aria-checked=true]{font-weight:600}
+.menu button:disabled{color:var(--pl-muted);cursor:default}
+/* Below 600px the frame is a phone: 44px hit targets (ui/theme.ts sets data-size). */
+.pl-app[data-size=s] :is(.btn,.icon-btn,.seg button,.link-btn,.menu button){min-height:44px}
+.pl-app[data-size=s] .icon-btn{min-width:44px}
+`;
