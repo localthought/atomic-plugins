@@ -72,7 +72,7 @@ node integrations/tooling/run-lane.mjs atproto --tier node
 
 The build produces `integrations/atproto/dist/plugin.js` and `manifest.json`.
 It copies the self-contained module verbatim; no Node dependency reaches the
-QuickJS payload. Twelve Node tests exercise the host manifest/request shape,
+QuickJS payload. Thirteen Node tests exercise the host manifest/request shape,
 GET/HEAD, exact DID bytes, dispatch mismatch, invalid configuration, method
 refusal, hostile headers, production handle/DID syntax, and reproducible builds.
 The build test executes the emitted ESM as well as checking its manifest.
@@ -80,3 +80,7 @@ The build test executes the emitted ESM as well as checking its manifest.
 No live QuickJS or Atomic HTTP deployment, gate/claim collision integration test,
 or independent public resolver has been run. Record the resolver version, test
 hostname, DID and bidirectional result before claiming live verification.
+
+The manifest declares every consumed installation configuration field using the
+host-supported string/object schema. Conditional fields are checked by the entry
+point: both handle and did are required before installation use.

@@ -1,5 +1,20 @@
 /** QuickJS module; the host owns HTTPS, drive-host routing and exclusive claims. */
 export const manifest = {
+  config: {
+    key: 'atproto',
+    properties: {
+      handle: {
+        type: 'string',
+        description:
+          'Production handle matching the sole approved drive hostname.',
+      },
+      did: {
+        type: 'string',
+        description: 'Public did:plc or hostname-only did:web identity.',
+      },
+    },
+    required: ['handle', 'did'],
+  },
   schemaVersion: 3,
   name: 'atproto',
   namespace: 'atomic-plugins',

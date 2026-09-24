@@ -178,3 +178,14 @@ test('build is reproducible, executable ESM and contains the exported manifest',
   );
   assert.equal(module.handle(context(), request()).body, did);
 });
+
+test('manifest declares each consumed installation config field with host-supported types', () => {
+  assert.deepEqual(Object.keys(manifest.config.properties), ['handle', 'did']);
+  assert.deepEqual(manifest.config.required, ['handle', 'did']);
+
+  for (const field of Object.values(manifest.config.properties)) {
+    assert.ok(['string', 'object'].includes(field.type));
+    assert.equal(typeof field.description, 'string');
+    assert.ok(field.description.length > 0);
+  }
+});
