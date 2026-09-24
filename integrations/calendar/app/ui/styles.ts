@@ -72,7 +72,9 @@ html, body { height: 100%; margin: 0; background: var(--pl-bg); }
   overflow: hidden; position: relative;
 }
 .pl-app *, .pl-app *::before, .pl-app *::after { box-sizing: border-box; }
-.pl-app button, .pl-app input, .pl-app textarea, .pl-app select { font: inherit; color: inherit; }
+.pl-app > header { flex: none; }
+.pl-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+:where(.pl-app) :where(button, input, textarea, select) { font: inherit; color: inherit; }
 .pl-app :focus-visible { outline: 2px solid var(--pl-accent); outline-offset: 2px; }
 .pl-app a { color: var(--pl-accent); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -102,8 +104,10 @@ html, body { height: 100%; margin: 0; background: var(--pl-bg); }
   font-size: 12.5px; color: var(--pl-muted); background: var(--pl-surface); border: 1px solid transparent;
   white-space: nowrap; cursor: default; }
 button.pill { cursor: pointer; }
-.pill-accent { color: var(--pl-accent); background: color-mix(in srgb, var(--pl-accent) 10%, var(--pl-bg)); }
-.pill-warn { color: var(--pl-warn); background: color-mix(in srgb, var(--pl-warn) 12%, var(--pl-bg));
+/* Pill text is mixed a quarter towards --pl-text: the plain accent and warn
+   colours fall under 4.5:1 on their own tinted pill backgrounds. */
+.pill-accent { color: color-mix(in srgb, var(--pl-accent) 75%, var(--pl-text)); background: color-mix(in srgb, var(--pl-accent) 10%, var(--pl-bg)); }
+.pill-warn { color: color-mix(in srgb, var(--pl-warn) 75%, var(--pl-text)); background: color-mix(in srgb, var(--pl-warn) 12%, var(--pl-bg));
   border-color: color-mix(in srgb, var(--pl-warn) 30%, transparent); }
 .pill-warn::before { content: "!"; font-weight: 800; }
 .pill-neg { color: var(--pl-neg); background: color-mix(in srgb, var(--pl-neg) 10%, var(--pl-bg)); }

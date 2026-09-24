@@ -195,7 +195,7 @@ export function picker(
 
   const form = h(
     doc,
-    'section',
+    'div',
     { class: 'panel', role: 'form', 'aria-label': 'Choose a calendar' },
     h(doc, 'h2', {}, 'Which calendar should come in?'),
     h(

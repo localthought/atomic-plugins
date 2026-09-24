@@ -44,7 +44,7 @@ export function header(
 ): HTMLElement {
   return h(
     doc,
-    'header',
+    'div',
     { class: 'hd' },
     h(
       doc,

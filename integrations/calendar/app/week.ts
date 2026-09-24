@@ -43,6 +43,8 @@ function block(ctx: Ctx, b: Block, lanes: number, left: number): HTMLElement {
   const top = (s.startMin / 60) * ROW;
   const height = Math.max(((s.endMin - s.startMin) / 60) * ROW, 16);
   const short = s.endMin - s.startMin < 30;
+  // Under 75 minutes there is room for one title line and the time.
+  const oneLine = s.endMin - s.startMin < 75;
   const width = `calc(${100 / lanes}% - 4px)`;
   const meta = [`${hhmm(s.startMin)}–${hhmm(s.endMin)}`, e.location]
     .filter(Boolean)
@@ -56,7 +58,7 @@ function block(ctx: Ctx, b: Block, lanes: number, left: number): HTMLElement {
       doc,
       'button',
       {
-        class: `ev${short ? ' ev-short' : ''}${e.pending ? ' ev-edited' : ''}`,
+        class: `ev${short ? ' ev-short' : oneLine ? ' ev-1' : ''}${e.pending ? ' ev-edited' : ''}`,
         style: `--c:${e.calendar.color};top:${top + 1}px;height:${height - 2}px;left:calc(${(100 / lanes) * left}% + 2px);width:${width}`,
         'data-key': `ev-${e.subject}-${s.date}`,
         'data-subject': e.subject,

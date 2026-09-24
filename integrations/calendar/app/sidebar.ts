@@ -133,7 +133,7 @@ export function sidebar(
       doc,
       'section',
       { class: 'side-sec' },
-      h(doc, 'h3', {}, 'My calendars'),
+      h(doc, 'h2', {}, 'My calendars'),
       h(
         doc,
         'ul',
@@ -169,7 +169,7 @@ export function sidebar(
           doc,
           'section',
           { class: 'side-sec note' },
-          h(doc, 'h3', {}, 'Not shown'),
+          h(doc, 'h2', {}, 'Not shown'),
           h(
             doc,
             'p',

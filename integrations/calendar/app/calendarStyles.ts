@@ -54,10 +54,11 @@ export const CALENDAR_CSS = `
 .mm-g { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11.5px; font-variant-numeric: tabular-nums; row-gap: 2px; }
 .mm-w { color: var(--pl-muted); font-weight: 600; font-size: 10.5px; padding: 2px 0; }
 .mm-d { padding: 3px 0; border-radius: 6px; border: 0; background: transparent; cursor: pointer; font-size: 11.5px; }
-.mm-d.out { color: color-mix(in srgb, var(--pl-muted) 55%, transparent); }
+.mm-d { color: var(--pl-text); }
+.mm-d.out { color: var(--pl-muted); }
 .mm-d.in-wk { background: var(--pl-surface); }
 .mm-d.today { background: var(--pl-accent); color: var(--pl-on-accent); font-weight: 700; }
-.side-sec h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pl-muted); }
+.side-sec h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pl-muted); }
 .cals { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; grid-template-columns: minmax(0, 1fr); }
 .cals label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .cals label:hover { background: var(--pl-surface); }
@@ -102,6 +103,7 @@ export const CALENDAR_CSS = `
 .ev:hover { background: color-mix(in srgb, var(--c) calc(var(--pl-tint) + 8%), var(--pl-surface)); }
 .ev-t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; max-width: 100%; }
 .ev-m { color: color-mix(in srgb, var(--pl-text) 60%, var(--pl-muted)); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ev-1 .ev-t { -webkit-line-clamp: 1; }
 .ev-short { flex-direction: row; align-items: center; padding-block: 0; }
 .ev-short .ev-t { -webkit-line-clamp: 1; font-size: 11px; }
 .ev-edited { outline: 1.5px dashed color-mix(in srgb, var(--pl-accent) 70%, transparent); outline-offset: -1.5px; }

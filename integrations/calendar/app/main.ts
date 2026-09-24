@@ -653,16 +653,15 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
     switch (state.kind) {
       case 'loading':
-        return [h(doc, 'p', { class: 'sr-only', role: 'status' }, 'Loading…')];
+        return [
+          main(h(doc, 'p', { class: 'sr-only', role: 'status' }, 'Loading…')),
+        ];
       case 'no-relay':
-        return [noRelay(doc)];
+        return [main(noRelay(doc))];
       case 'disconnected':
       case 'connecting':
         return [
-          h(
-            doc,
-            'div',
-            { class: 'pl-scroll' },
+          main(
             firstRun(doc, {
               connecting: state.kind === 'connecting',
               onConnect: () => void controller.connect(),
@@ -675,14 +674,16 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
         const account = state.calendars.find(x => x.primary)?.id;
 
         return [
-          connectionBar(doc, {
-            provider: 'Google Calendar',
-            ...(account ? { account } : {}),
-          }),
           h(
             doc,
-            'div',
-            { class: 'pl-scroll' },
+            'header',
+            {},
+            connectionBar(doc, {
+              provider: 'Google Calendar',
+              ...(account ? { account } : {}),
+            }),
+          ),
+          main(
             picker(doc, {
               calendars: state.calendars,
               onImport: id => void controller.choose(id),
@@ -697,16 +698,21 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     if (!snap.meta)
       // Listing calendars, or failed before a calendar was chosen.
       return [
-        headerRow(snap, narrow),
-        banners(snap),
-        state.kind === 'error'
-          ? undefined
-          : h(
-              doc,
-              'p',
-              { class: 'fine', style: 'padding:14px', role: 'status' },
-              'Reading your calendars…',
-            ),
+        h(doc, 'header', {}, headerRow(snap, narrow)),
+        h(
+          doc,
+          'main',
+          { class: 'pl-main' },
+          banners(snap),
+          state.kind === 'error'
+            ? undefined
+            : h(
+                doc,
+                'p',
+                { class: 'fine', style: 'padding:14px', role: 'status' },
+                'Reading your calendars…',
+              ),
+        ),
       ];
 
     const days = ui.view === 'week' ? dayCount(c.width) : 7;
@@ -714,32 +720,47 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       ui.view === 'week' && days === 7 ? mondayOf(ui.anchor) : ui.anchor;
 
     return [
-      headerRow(snap, narrow),
-      cbar(snap),
-      banners(snap),
+      h(doc, 'header', {}, headerRow(snap, narrow), cbar(snap)),
       h(
         doc,
-        'div',
-        { class: 'shell' },
-        c.width >= 900 && ui.view === 'week'
-          ? sidebar(c, {
-              month: ui.month,
-              selected: ui.anchor,
-              weekFrom: from,
-              weekDays: days,
-              meta: snap.meta,
-              visible: ui.visible,
-              ...(snap.summary ? { summary: snap.summary } : {}),
-              whyOpen: ui.why,
-              onMonth: date => set({ month: date }),
-              onVisible: visible => set({ visible }),
-              onWhy: () => set({ why: !ui.why }),
-            })
-          : null,
-        content(snap, c, narrow),
-        drawer(snap, c, narrow) ?? null,
+        'main',
+        { class: 'pl-main' },
+        banners(snap),
+        h(
+          doc,
+          'div',
+          { class: 'shell' },
+          c.width >= 900 && ui.view === 'week'
+            ? sidebar(c, {
+                month: ui.month,
+                selected: ui.anchor,
+                weekFrom: from,
+                weekDays: days,
+                meta: snap.meta,
+                visible: ui.visible,
+                ...(snap.summary ? { summary: snap.summary } : {}),
+                whyOpen: ui.why,
+                onMonth: date => set({ month: date }),
+                onVisible: visible => set({ visible }),
+                onWhy: () => set({ why: !ui.why }),
+              })
+            : null,
+          content(snap, c, narrow),
+          drawer(snap, c, narrow) ?? null,
+        ),
       ),
     ];
+  }
+
+  /** A screen without the calendar chrome: one scrolling main landmark. */
+  function main(...children: Array<HTMLElement>): HTMLElement {
+    return h(
+      doc,
+      'main',
+      { class: 'pl-scroll' },
+      h(doc, 'h1', { class: 'sr-only' }, 'Calendar'),
+      ...children,
+    );
   }
 
   function render() {
