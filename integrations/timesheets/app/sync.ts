@@ -37,7 +37,13 @@ export interface SyncResult {
   log: LogReport;
   /** The profile time zone used for the window, and the workspace's
    * forceProjects, as read this pass (absent when unknown). */
-  account: { timeZone?: string; forceProjects?: boolean; weekStart?: string };
+  account: {
+    timeZone?: string;
+    forceProjects?: boolean;
+    weekStart?: string;
+    userName?: string;
+    workspaceName?: string;
+  };
   /** The mirror after this pass, and the names read for it: what the
    * timesheet views show (#89). */
   mirror: Mirror;
@@ -217,6 +223,10 @@ export async function syncClockify(
         ? { forceProjects: account.forceProjects }
         : {}),
       ...(account.weekStart ? { weekStart: account.weekStart } : {}),
+      ...(account.userName ? { userName: account.userName } : {}),
+      ...(account.workspaceName
+        ? { workspaceName: account.workspaceName }
+        : {}),
     },
     mirror: log.mirror,
     projects: projects.items,

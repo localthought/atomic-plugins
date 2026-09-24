@@ -17,7 +17,9 @@ describe('drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    expect(bytes).toBeLessThan(64 * 1024);
+    // Raised from 64 KB for the #89 views (unminified; build.mjs does not
+    // minify, and its options are left to the catalog-install work).
+    expect(bytes).toBeLessThan(160 * 1024);
   });
 
   it('carries no credential handling of its own', () => {

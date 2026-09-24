@@ -116,6 +116,8 @@ describe('syncClockify against the shared Clockify mock', () => {
         timeZone: 'Europe/Amsterdam',
         forceProjects: false,
         weekStart: 'MONDAY',
+        userName: USER.name,
+        workspaceName: WORKSPACE.name,
       },
     });
     // What the timesheet views read (#89): the mirror and the names.

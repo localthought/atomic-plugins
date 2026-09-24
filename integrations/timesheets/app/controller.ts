@@ -66,6 +66,9 @@ interface SheetInput {
   projects?: RawNamed[];
   members?: RawNamed[];
   weekStart?: string;
+  /** Display names from the last sync. */
+  userName?: string;
+  workspaceName?: string;
 }
 
 export interface SettingsChoice {
@@ -92,6 +95,8 @@ export interface Controller {
   /** Whether the host can forget the connection (`store.proxy.disconnect`). */
   canDisconnect(): boolean;
   disconnect(): Promise<ViewState>;
+  /** The account and workspace names the last sync read, if any. */
+  names(): { userName?: string; workspaceName?: string };
   /** The timesheet the views show, or undefined before anything was read. */
   sheet(now?: number): Timesheet | undefined;
 }
@@ -316,6 +321,12 @@ export function createController(
           ...(result.account.weekStart
             ? { weekStart: result.account.weekStart }
             : {}),
+          ...(result.account.userName
+            ? { userName: result.account.userName }
+            : {}),
+          ...(result.account.workspaceName
+            ? { workspaceName: result.account.workspaceName }
+            : {}),
         };
 
         return set({
@@ -416,6 +427,11 @@ export function createController(
       // Imported entries and settings stay; only the connection goes.
       return set({ kind: 'not-connected' });
     },
+
+    names: () => ({
+      ...(input?.userName ? { userName: input.userName } : {}),
+      ...(input?.workspaceName ? { workspaceName: input.workspaceName } : {}),
+    }),
 
     sheet(at = now()) {
       if (!input) return undefined;
