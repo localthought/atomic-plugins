@@ -13,12 +13,14 @@ No browser globals, Node imports, native libraries or sockets enter the bundle.
 
 - A reviewed sandbox job validates one text/plain or expanded application/ld+json
   document and emits the existing host `create` intent, storing it as an actual
-  Atomic `DocumentV2`. Name, MIME type, local identity, original body in description,
-  and a ProseMirror documentContent projection are real Atomic properties. The
+  Atomic `PlainText` resource. Name, MIME type, local identity and the original body
+  in description are real Atomic properties. The
   host reviews and applies the intent to its atom store; this function does not
   claim a commit has already happened. RDF bytes are preserved, not falsely
-  flattened into unrelated Atomic predicates. The document is readable by the
-  data browser after the host applies it.
+  flattened into unrelated Atomic predicates. The body is stored as a plain-text
+  atom; this does not populate a rich-text
+  DocumentV2 editor, whose content uses Loro and cannot be seeded through these
+  simple intents.
 - An explicitly configured public export is served from **actual `ctx.read`**
   on GET/HEAD `/_routes/<installation-slug>/resources/<id>`. The anonymous host
   principal enforces Atomic read ACLs. A private resource and unknown export both
@@ -88,9 +90,9 @@ node integrations/tooling/run-lane.mjs solid --tier node
 ```
 
 The build creates `integrations/solid/dist/plugin.js` and `manifest.json`.
-Fourteen executable Node tests cover RDF/text intent and read round-trips,
+Fifteen executable Node tests cover RDF/text intent and read round-trips,
 permission denial, path isolation, mutation refusal, lexical preservation,
-parser rejection, bounds, negotiation and conditional reads. Tests use the
+parser rejection, bounds, negotiation, conditional reads and reproducible bundles. Tests use the
 real documented ctx/intent shape with host doubles. **No running Atomic Server,
 actual commit, QuickJS execution, external Solid client or blob round-trip has
 been live verified.** A green lane establishes this bounded implementation's

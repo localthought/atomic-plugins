@@ -4,7 +4,7 @@
   "name": "Solid",
   "status": "partial",
   "runtime": "quickjs",
-  "scope": "Reviewed Atomic DocumentV2 import and public LDP resource reads; inbound writes, auth and blobs blocked by host.",
+  "scope": "Reviewed Atomic PlainText import and public LDP resource reads; inbound writes, auth and blobs blocked by host.",
   "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
   "proposedHostCapabilities": [
     "http-routes",
