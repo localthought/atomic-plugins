@@ -32,7 +32,8 @@ drive apps.
 5. **Look and edit.** Agenda (the default below 720px) and Week (3, 5 or 7
    days by width, with a sidebar from 900px). An event opens in a drawer;
    Edit changes exactly the five mapped fields and saves to the row only
-   ("Saved here · not sent to Google yet"). Rows edited in the host's table
+   ("Saved here · not sent to Google yet"). "Open in Google Calendar" asks
+   the host to open the event's Google page. Rows edited in the host's table
    show up the same way after the next sync.
 6. **Review and send.** "Review N changes" lists each changed field
    (before → after), with Discard per event. Nothing is sent until you press
@@ -244,19 +245,29 @@ Where the implementation of [`design/`](design/) had to choose:
   "Choose calendars" in the connection menu is disabled with that
   explanation. Multi-calendar import would need a per-row calendar id and
   one preview per calendar.
-- **Month** (§11 decision 1) is not offered: handing off to the host
-  table's Calendar view needs a navigation operation the frame's `store`
-  does not have. The `m` shortcut is not bound.
+- **Month** (§11 decision 1) hands off: "Month ↗" (and `m`) opens this
+  app's table in the host with `store.openResource`, where the table's own
+  Calendar view shows the month. The app draws no month grid.
 - **Outlook and Apple** are shown as "Not available yet" (§11 decision 2).
-- **No "Open in Google Calendar" link.** The frame is sandboxed without
-  `allow-popups`, so a link could not open, and `htmlLink` is not kept on
-  import. The drawer shows the event's own UTC offset (from the stored
-  string) instead of a named time zone.
+- **"Open in Google Calendar"** uses `store.openExternal`: the frame has no
+  popup rights, so the host shows the destination and asks first. The link
+  is Google's `htmlLink`, kept on each row on import (`google-link`,
+  display only). The drawer shows the event's own UTC offset (from the
+  stored string), not a named time zone, since `timeZone` is not imported.
+- **Disconnect** in the connection menu calls `store.proxy.disconnect`: only
+  this app's delegation goes; the connection (other apps may use it) and
+  the rows stay.
+- **Host operations are feature-detected.** `openExternal`, `openResource`,
+  `proxy.disconnect` and `getTheme`/`onThemeChange` arrived at pin
+  007869464; on an older host their controls are not shown, and dark mode
+  is read from the luminance of `--t-color-bg-body`.
 - **Last view is not remembered.** The null-origin frame has no usable
   `localStorage`, and the build test forbids storage; the default view is
   chosen by width on every open.
 - **Week scroll** starts at 08:00 when now is within 08:00–18:00, otherwise
   one hour before now.
+- **Theme.** `data-pl-theme` follows `store.getTheme()` and
+  `store.onThemeChange()`; `--pl-pos` reads the host's `--t-color-success`.
 - **Banner actions.** 403 and 404 offer Retry (there is no other calendar
   to choose in this app); after an uncertain write the action is Sync now.
 - **Colour.** The week time line mixes `--pl-text` into `--pl-muted`, and

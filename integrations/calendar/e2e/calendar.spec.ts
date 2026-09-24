@@ -285,6 +285,99 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
       }
     }
   });
+
+  test('hands links, Month and Disconnect to the host (pin 007869464)', async ({
+    page,
+  }) => {
+    test.skip(
+      !process.env.ATOMIC_MOCK_INTEGRATION_PROXY ||
+        !process.env.INTEGRATION_PROXY_URL,
+      'Run with the documented mock integration-proxy server configuration',
+    );
+    test.setTimeout(240_000);
+    const { text } = (await build()) as { text: string };
+    await createFromCatalog(page, 'App');
+    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+      timeout: 45_000,
+    });
+    await setAppSource(page, text);
+    await page.reload();
+    const app = page.frameLocator(APP_FRAME);
+    await connectThroughHost(page, app);
+    await app
+      .getByRole('form', { name: 'Choose a calendar' })
+      .getByRole('button', { name: 'Import this calendar' })
+      .click();
+    await expect(app.locator('.pill')).toContainText('Synced', {
+      timeout: 30_000,
+    });
+
+    // C8: the host asks before opening Google's page for the event.
+    await app.getByRole('button', { name: 'Agenda', exact: true }).click();
+    await app
+      .getByRole('button', { name: /^Calendar timed fixture, / })
+      .click();
+    await app
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Open in Google Calendar ↗' })
+      .click();
+    const ask = page.getByRole('group', { name: 'Open a link' });
+    await expect(ask).toContainText(
+      'https://www.google.com/calendar/event?eid=dGltZWQgc3ludGhldGlj',
+    );
+    await ask.getByRole('button', { name: 'Cancel' }).click();
+    await expect(ask).toHaveCount(0);
+    await app
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Close' })
+      .click();
+
+    // Disconnect: only this app's delegation goes; the connection and the
+    // rows stay.
+    await app.getByRole('button', { name: 'Connection menu' }).click();
+    await app.getByRole('menuitem', { name: /^Disconnect/ }).click();
+    await expect(
+      app.getByRole('button', { name: 'Connect Google Calendar' }),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        (await proxyConnections('google-calendar')).map(
+          c => c.delegations.length,
+        ),
+      )
+      .toEqual([0]);
+    expect(await rowsOf(page)).toHaveLength(2);
+  });
+
+  test('Month opens the app’s table in the host (pin 007869464)', async ({
+    page,
+  }) => {
+    test.skip(
+      !process.env.ATOMIC_MOCK_INTEGRATION_PROXY ||
+        !process.env.INTEGRATION_PROXY_URL,
+      'Run with the documented mock integration-proxy server configuration',
+    );
+    test.setTimeout(240_000);
+    const { text } = (await build()) as { text: string };
+    await createFromCatalog(page, 'App');
+    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+      timeout: 45_000,
+    });
+    await setAppSource(page, text);
+    await page.reload();
+    const app = page.frameLocator(APP_FRAME);
+    await connectThroughHost(page, app);
+    await app
+      .getByRole('form', { name: 'Choose a calendar' })
+      .getByRole('button', { name: 'Import this calendar' })
+      .click();
+    await expect(app.locator('.pill')).toContainText('Synced', {
+      timeout: 30_000,
+    });
+    const table = await tableOf(page);
+    await app.getByRole('button', { name: 'Month ↗' }).click();
+    await expect.poll(() => decodeURIComponent(page.url())).toContain(table);
+  });
 });
 
 /** Connect, consent in the host's bar, then the mock proxy's page. */
