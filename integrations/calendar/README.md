@@ -16,21 +16,36 @@ drive apps.
    for drive apps (#94). Today the e2e installs it test-side, as the Pets and
    Notion specs do. It makes a new App and replaces its entry point's source
    with `node integrations/calendar/app/build.mjs`'s bundle (`dist/ui.js`,
-   about 40 KB).
+   minified, about 105 KB).
 2. **Connect.** "Connect Google Calendar" asks the host to show its consent
    bar. On Connect, the page goes to the integration-proxy and comes back
    with a connection the page holds.
 3. **Choose a calendar.** The app lists `users/me/calendarList` and imports
-   the one you choose (the primary one is preselected). The choice is stored
-   on the app's table. A table never switches calendars; use a second app for
-   a second calendar. Read-only calendars are labelled, and Google refuses
-   edits to them.
-4. **Import / Refresh.** A full, paged scan of the calendar's events (see
-   _Scope_). New events become rows; Google-side edits update rows that were
-   not edited here.
-5. **Review and send.** A row edited here is listed with its changed fields
-   (`Title: before → after`). Nothing is sent until you press "Send N changes
-   to Google".
+   the one you choose (the primary one is preselected). The choice, and the
+   calendar's name, colour, access role and the account's address, are
+   stored on the app's table. A table never switches calendars; use a second
+   app for a second calendar. Read-only calendars are tagged, and their
+   events never offer Edit.
+4. **Sync now.** A full, paged scan of the calendar's events (see _Scope_),
+   on open and on "Sync now". New events become rows; Google-side edits
+   update rows that were not edited here. Reads never write to Google.
+5. **Look and edit.** Agenda (the default below 720px) and Week (3, 5 or 7
+   days by width, with a sidebar from 900px). An event opens in a drawer;
+   Edit changes exactly the five mapped fields and saves to the row only
+   ("Saved here · not sent to Google yet"). Rows edited in the host's table
+   show up the same way after the next sync.
+6. **Review and send.** "Review N changes" lists each changed field
+   (before → after), with Discard per event. Nothing is sent until you press
+   "Send N changes"; each row then reports Sent, Changed in Google (a `412`,
+   with Review again), or Unknown whether Google applied it.
+7. **Conflicts.** A field changed both here and in Google is left as is
+   until you pick "Keep mine" or "Use Google's" per field; a kept value goes
+   to the review list, never straight to Google. An event gone from Google
+   can be kept as a local event or, after an in-page confirmation, removed
+   here. Nothing is ever deleted in Google.
+
+The UI follows [`design/`](design/) (#89); see _Design decisions_ below for
+where it differs from the mockups.
 
 ### What backs the catalog entry today
 
@@ -180,6 +195,12 @@ node --test integrations/localthought/mock-proxy.test.mjs
 (cd integration-proxy && cargo test --lib composed_google_calendar_permits)
 ```
 
+- **Unit, views** (`app/view.test.ts`, jsdom; `app/controller.test.ts`,
+  `app/events.test.ts`, `app/contrast.test.ts`): every screen of the design
+  against the fake store, the banner copy for each provider status, agenda
+  grouping and week packing (exclusive all-day ends, midnight crossings,
+  viewer zone), local edits stored as offset-qualified strings, and the
+  event tints' contrast for Google's 24 classic calendar colours.
 - **Unit** (`app/sync.test.ts`, `adapter.test.ts`): the whole drive-app path
   against the stateful fixture in
   [`fixtures/google-calendar/scenario.mjs`](fixtures/google-calendar/scenario.mjs),
@@ -199,7 +220,11 @@ node --test integrations/localthought/mock-proxy.test.mjs
   (`POST /fixture/google-calendar/…`). It then sends a reviewed edit
   (checking the fixture received that `If-Match`), sends into a `412`, and
   loses a `PATCH` response (Playwright lets the request reach the mock, then
-  aborts the response), reconnects, and checks that the preview agrees.
+  aborts the response), syncs again, and checks that the preview agrees. A
+  second test renders the imported calendar in 360, 720 and 1200px frames
+  under the host's light and dark themes: no sideways scroll, no axe
+  violations, and the theme switch restyles the frame without a reload.
+  Screenshots are attached to the Playwright report.
 - **Live: not verified.** No run against a real Google account exists for
   this path. Evidence from the retired LocalThought/Devonian flow does not
   count for it. To verify, with authorized credentials and a disposable
@@ -208,5 +233,36 @@ node --test integrations/localthought/mock-proxy.test.mjs
   one all-day event, one timed event, one weekly series and one cancelled
   event, then run the e2e's steps by hand and record the outcomes. The one
   step that can't be forced against Google is the lost response.
+
+## Design decisions
+
+Where the implementation of [`design/`](design/) had to choose:
+
+- **One calendar per app.** The picker (5.4) uses radio buttons, not the
+  mockup's checkboxes: the table model binds one calendar per table (#101).
+  The header shows that calendar's chip; it toggles visibility only.
+  "Choose calendars" in the connection menu is disabled with that
+  explanation. Multi-calendar import would need a per-row calendar id and
+  one preview per calendar.
+- **Month** (§11 decision 1) is not offered: handing off to the host
+  table's Calendar view needs a navigation operation the frame's `store`
+  does not have. The `m` shortcut is not bound.
+- **Outlook and Apple** are shown as "Not available yet" (§11 decision 2).
+- **No "Open in Google Calendar" link.** The frame is sandboxed without
+  `allow-popups`, so a link could not open, and `htmlLink` is not kept on
+  import. The drawer shows the event's own UTC offset (from the stored
+  string) instead of a named time zone.
+- **Last view is not remembered.** The null-origin frame has no usable
+  `localStorage`, and the build test forbids storage; the default view is
+  chosen by width on every open.
+- **Week scroll** starts at 08:00 when now is within 08:00–18:00, otherwise
+  one hour before now.
+- **Banner actions.** 403 and 404 offer Retry (there is no other calendar
+  to choose in this app); after an uncertain write the action is Sync now.
+- **Colour.** The week time line mixes `--pl-text` into `--pl-muted`, and
+  pill text is mixed a quarter towards `--pl-text`: the plain tokens fall
+  under 4.5:1 on their tinted backgrounds.
+- **Shared chrome** (`app/ui/`) stays in this plugin; moving it to a shared
+  kit is the maintainer's decision.
 
 API reference: https://developers.google.com/calendar/api/v3/reference/events
