@@ -5,6 +5,7 @@
  * `Actions`; they keep no state themselves. `main.ts` owns both.
  */
 import {
+  describe,
   describeHeld,
   type Ready,
   type RepositoryListing,
@@ -233,7 +234,7 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
   const progress =
     state.busy === 'syncing' || state.busy === 'sending' ? true : undefined;
 
-  return connectionBar(
+  const bar = connectionBar(
     [
       ui.size === 's'
         ? h('span', { class: 'mono acct' }, state.repository)
@@ -304,6 +305,11 @@ function connBar(state: Ready, ui: Ui, actions: Actions): HTMLElement {
     ],
     progress,
   );
+  // The last pass in full ("2 issues and 1 comment in sync …; 0 added …"),
+  // as the bar's tooltip.
+  bar.title = describe(state);
+
+  return bar;
 }
 
 interface MenuItem {

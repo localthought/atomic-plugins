@@ -100,7 +100,10 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
     const layout = layoutFor(ui.size, ui.layout);
     const mode = detailModeFor(ui.size);
-    root.replaceChildren(...page(state, ui, layout, mode, actions), live.node);
+    root.replaceChildren(
+      ...page(state, ui, layout, mode, actions),
+      live.region,
+    );
 
     for (const [cls, left, top] of scrolls) {
       const el = root.querySelector<HTMLElement>(`.${cls}`);
@@ -294,11 +297,9 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       // The drawer and the sheet are modal: focus moves into them. The
       // docked panel is not, so focus stays on the card that opened it.
       if (!switching || ui.size === 'xl') return;
-      const opened = root.querySelector<HTMLElement>('.detail');
-      (
-        opened?.querySelector<HTMLElement>('textarea, input') ??
-        opened?.querySelector<HTMLElement>('button:not(:disabled)')
-      )?.focus();
+      // A new issue starts in its title; anything else at the panel's
+      // close (or back) button, so nothing looks like it is being edited.
+      focusKey(panel.kind === 'new' ? 'new-title' : 'detail-close');
     },
 
     saveTitle(subject, title) {

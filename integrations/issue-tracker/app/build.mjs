@@ -31,6 +31,7 @@ export async function build({ outfile } = {}) {
     target: 'es2022',
     splitting: false,
     legalComments: 'none',
+    minify: true,
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
     nodePaths: [path('node_modules')],

@@ -331,11 +331,14 @@ export function statusGlyph(status: Glyph, size = 14): SVGSVGElement {
 }
 
 /** A polite live region for "Moved #42 to Done" and the like. */
-export function liveRegion(): { node: HTMLElement; say(text: string): void } {
+export function liveRegion(): {
+  region: HTMLElement;
+  say(text: string): void;
+} {
   const node = h('div', { class: 'sr', 'aria-live': 'polite' });
 
   return {
-    node,
+    region: node,
     say(text: string) {
       // Re-set so the same message twice is announced twice.
       node.textContent = '';
