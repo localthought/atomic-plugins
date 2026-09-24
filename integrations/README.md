@@ -220,6 +220,39 @@ node integrations/tooling/apps.mjs check --published origin/main
 Builds pin esbuild's `absWorkingDir` to the repository root, so the bytes do
 not depend on the directory the build ran from.
 
+### Bundle size
+
+The module is stored as a string property on a resource, so its size is
+checked, not guessed at. The rule for every drive app:
+
+- **Minify, JS and CSS.** `app/build.mjs` passes `minify: true` to
+  `esbuild.build`. CSS that the module embeds as a string (a `<style>` it
+  injects) is minified too, with
+  `(await esbuild.transform(css, { loader: 'css', minify: true })).code`,
+  using the same esbuild as the JS (`browser/`'s, from the pinned
+  atomic-server).
+- **The size limit is the measured size plus about 10%.** The
+  `expect(bytes).toBeLessThan(...)` assertion in `app/build.test.ts` is the
+  minified `bytes` that `build()` returns, rounded up by about 10%, and the
+  line carries a comment stating the measured size and the date it was
+  measured, for example:
+
+  ```ts
+  // Measured 41,212 bytes minified on 2026-09-24; limit is that plus ~10%.
+  expect(bytes).toBeLessThan(45_400);
+  ```
+
+- **No silent headroom.** A round-number ceiling far above the real size
+  (`160 * 1024` for a 40 KB module) hides growth until it is large. When a
+  change pushes the module past its limit, re-measure, and raise the limit
+  and the comment together in the same commit, so the growth is visible in
+  review. Lowering it after a size win follows the same rule.
+
+Not every app follows this yet: at the time of writing, the app builds on
+`main` do not pass `minify` and their tests use round ceilings (64 KiB to
+160 KiB). An app moves to this rule the next time its build or its limit
+changes; a change of the build output needs a new version (see above).
+
 Pages itself is mutable: anyone who can push to `main` can change a file
 there. The host's integrity check is what makes that safe. A module that no
 longer matches the catalog's pin is refused, and nothing is installed or
