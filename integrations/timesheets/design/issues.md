@@ -71,7 +71,7 @@ set-up step.
   `connecting`, `choose-workspace` (with the workspace list and user), `ready`,
   `syncing` (with progress, see T3), plus `last` outcome on `ready` carrying a
   typed error (`kind: 'reauth' | 'forbidden' | 'rate-limited' | 'network' |
-  'too-many' | 'other'`, `retryAfterSeconds?`, `detail`).
+'too-many' | 'other'`, `retryAfterSeconds?`, `detail`).
 - `load()` uses `store.proxy.connections({ platform: 'clockify' })`;
   `connect()` calls `store.proxy.connect(...)` and returns to `not-connected`
   on cancel.

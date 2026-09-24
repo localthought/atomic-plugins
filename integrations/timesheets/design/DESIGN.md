@@ -42,8 +42,8 @@ Every screen below except the connect and error states is new.
 The user is one person who tracks time in Clockify (timer or manual entry)
 and wants that time in their own Atomic Server: to reference it from
 invoices, notes or project pages, to keep a copy they control, and to see it
-next to their other data. Clockify stays where they *track*; this app is
-where they *look back*.
+next to their other data. Clockify stays where they _track_; this app is
+where they _look back_.
 
 Jobs, in priority order:
 
@@ -76,18 +76,18 @@ Read September 2026 from public help pages. Not verified against logged-in
 accounts, so details such as exact cell formats are from documentation, not
 observation.
 
-| Pattern | Clockify | Toggl Track | Harvest | Here |
-|---|---|---|---|---|
-| Week grid: project rows × day columns, row and column totals | Timesheet page | Timesheet view (with approvals) | Week view | **Yes, default view** |
-| Day-grouped entry list with day totals | Time Tracker page | List view | Day view | **Yes, "Entries" view** |
-| Week navigator (previous / next / this week) | top right | date-range picker + arrows | arrows | **Yes** |
-| Day-totals strip above one day's entries | no | sidebar stats | week strip | **Yes, as the narrow layout** |
-| Project colour dot next to project name | yes | yes | no | **Yes, always with the name** |
-| Billable marker | `$` icon | `$` icon | reports | **Yes, `$` plus text alternative** |
-| Timer bar at the top | yes | yes | yes | **No** (import only; §9) |
-| Calendar (time-of-day) view | yes | yes | no | **No** (later, §9) |
-| Approval / submit week | paid plans | paid plans | yes | **No** |
-| Copy last week, templates | yes | favourites | yes | **No** (they create time) |
+| Pattern                                                      | Clockify          | Toggl Track                     | Harvest    | Here                               |
+| ------------------------------------------------------------ | ----------------- | ------------------------------- | ---------- | ---------------------------------- |
+| Week grid: project rows × day columns, row and column totals | Timesheet page    | Timesheet view (with approvals) | Week view  | **Yes, default view**              |
+| Day-grouped entry list with day totals                       | Time Tracker page | List view                       | Day view   | **Yes, "Entries" view**            |
+| Week navigator (previous / next / this week)                 | top right         | date-range picker + arrows      | arrows     | **Yes**                            |
+| Day-totals strip above one day's entries                     | no                | sidebar stats                   | week strip | **Yes, as the narrow layout**      |
+| Project colour dot next to project name                      | yes               | yes                             | no         | **Yes, always with the name**      |
+| Billable marker                                              | `$` icon          | `$` icon                        | reports    | **Yes, `$` plus text alternative** |
+| Timer bar at the top                                         | yes               | yes                             | yes        | **No** (import only; §9)           |
+| Calendar (time-of-day) view                                  | yes               | yes                             | no         | **No** (later, §9)                 |
+| Approval / submit week                                       | paid plans        | paid plans                      | yes        | **No**                             |
+| Copy last week, templates                                    | yes               | favourites                      | yes        | **No** (they create time)          |
 
 Where this app should do better than a plain mirror: every view says which
 dates the local copy covers, and a week partly or fully outside the import
@@ -106,21 +106,21 @@ plugin frames (`__atomic_style`, built by `useCreateThemeVars.ts` in
 atomic-server's data-browser and applied by `plugin_ui.rs`; read on the
 pinned atomic-server checkout, not observed in a running host):
 
-| Token | Host variable | Fallback light / dark (standalone only) |
-|---|---|---|
-| `--pl-bg` | `--t-color-bg-body` | `#fafafa` / `#000000` |
-| `--pl-surface` | `--t-color-bg` | `#ffffff` / `#000000` |
-| `--pl-subtle` | `--t-color-bg-1` | `#f2f2f2` / `#1a1a1a` |
-| `--pl-border` | `--t-color-bg-2` | `#cccccc` / `#4d4d4d` |
-| `--pl-text` | `--t-color-text` | `#000000` / `#ffffff` |
-| `--pl-muted` | `--t-color-text-light` | `#666666` / `#999999` |
-| `--pl-accent` | `--t-color-main` | `#1b50d8` / same |
-| `--pl-accent-soft` | `--t-color-main-selected-bg` | light tint / dark tint of main |
-| `--pl-neg` | `--t-color-alert` | `#cf5b5b` |
-| `--pl-warn` | `--t-color-warning` | `#f5a623` |
-| `--pl-pos` | none | `#2f8f5b` (the host has no success colour) |
-| `--pl-radius` | `--t-radius` | `9px` |
-| font | `--t-font-family`, `--t-font-family-header` | system-ui |
+| Token              | Host variable                               | Fallback light / dark (standalone only)    |
+| ------------------ | ------------------------------------------- | ------------------------------------------ |
+| `--pl-bg`          | `--t-color-bg-body`                         | `#fafafa` / `#000000`                      |
+| `--pl-surface`     | `--t-color-bg`                              | `#ffffff` / `#000000`                      |
+| `--pl-subtle`      | `--t-color-bg-1`                            | `#f2f2f2` / `#1a1a1a`                      |
+| `--pl-border`      | `--t-color-bg-2`                            | `#cccccc` / `#4d4d4d`                      |
+| `--pl-text`        | `--t-color-text`                            | `#000000` / `#ffffff`                      |
+| `--pl-muted`       | `--t-color-text-light`                      | `#666666` / `#999999`                      |
+| `--pl-accent`      | `--t-color-main`                            | `#1b50d8` / same                           |
+| `--pl-accent-soft` | `--t-color-main-selected-bg`                | light tint / dark tint of main             |
+| `--pl-neg`         | `--t-color-alert`                           | `#cf5b5b`                                  |
+| `--pl-warn`        | `--t-color-warning`                         | `#f5a623`                                  |
+| `--pl-pos`         | none                                        | `#2f8f5b` (the host has no success colour) |
+| `--pl-radius`      | `--t-radius`                                | `9px`                                      |
+| font               | `--t-font-family`, `--t-font-family-header` | system-ui                                  |
 
 Dark mode is the host swapping these values, so the frame needs no
 `prefers-color-scheme` logic of its own; the fallbacks exist for the
@@ -281,14 +281,14 @@ Clockify". With a 7-day window, a second line offers "Import 30 days instead".
 
 ### J. Errors (banners over existing data)
 
-| Cause, as the sync sees it | Banner | Recovery |
-|---|---|---|
-| 401, or the proxy reports the connection gone | "Clockify no longer accepts this connection. The API key may have been deleted or regenerated." (warn) | **Reconnect Clockify** |
-| 403 on time entries | "This Clockify account cannot read time entries in Studio Veldkamp." (neg) | **Choose another workspace** |
-| 429 | "Clockify asked for fewer requests. Try again in 30 seconds." (warn; seconds from `retry-after` when relayed, else 60) | **Try again**, disabled until then |
-| network or proxy unreachable | "Could not reach the integration proxy. Your imported entries are still here." (neg) | **Try again** |
-| projects or users 403/404 (a warning today) | "Project names could not be loaded, so some entries show a project id." (warn) | dismiss only |
-| more than 200 pages | "Clockify returned more than 10,000 entries for this window, the most this app imports at once." (neg) | **Import 7 days instead** |
+| Cause, as the sync sees it                    | Banner                                                                                                                 | Recovery                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 401, or the proxy reports the connection gone | "Clockify no longer accepts this connection. The API key may have been deleted or regenerated." (warn)                 | **Reconnect Clockify**             |
+| 403 on time entries                           | "This Clockify account cannot read time entries in Studio Veldkamp." (neg)                                             | **Choose another workspace**       |
+| 429                                           | "Clockify asked for fewer requests. Try again in 30 seconds." (warn; seconds from `retry-after` when relayed, else 60) | **Try again**, disabled until then |
+| network or proxy unreachable                  | "Could not reach the integration proxy. Your imported entries are still here." (neg)                                   | **Try again**                      |
+| projects or users 403/404 (a warning today)   | "Project names could not be loaded, so some entries show a project id." (warn)                                         | dismiss only                       |
+| more than 200 pages                           | "Clockify returned more than 10,000 entries for this window, the most this app imports at once." (neg)                 | **Import 7 days instead**          |
 
 The pill becomes `Sync failed` or `Reconnect needed`. The data below stays:
 it is the last good copy, and the connection bar keeps "Last synced 2 h ago"
