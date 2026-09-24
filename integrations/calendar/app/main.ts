@@ -29,7 +29,7 @@ import { detail, editor } from './drawer.js';
 import { busyDays, nextEvent, type CalEvent } from './events.js';
 import { firstRun, importing, noRelay, picker } from './screens.js';
 import { conflicts, review, shortcuts } from './sheets.js';
-import { sidebar } from './sidebar.js';
+import { notShown, sidebar } from './sidebar.js';
 import type { ViewArgs } from './store.js';
 import type { Choice, Conflict, ImportSummary } from './sync.js';
 import {
@@ -517,7 +517,16 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       });
     } else if (ui.view === 'week')
       body = week(c, events, from, days, c.width - (c.width >= 900 ? 232 : 0));
-    else body = agenda(c, events, ui.anchor);
+    else
+      body = agenda(
+        c,
+        events,
+        ui.anchor,
+        snap.summary &&
+          (snap.summary.skipped.recurring || snap.summary.skipped.cancelled)
+          ? notShown(snap.summary.skipped)
+          : undefined,
+      );
 
     return h(
       doc,

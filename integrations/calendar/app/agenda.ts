@@ -9,6 +9,7 @@ import { agendaDays, busyDays, type CalEvent, type Segment } from './events.js';
 import { h } from './ui/dom.js';
 import {
   addDays,
+  daysBetween,
   hhmm,
   mondayOf,
   shortDay,
@@ -100,13 +101,14 @@ export function agenda(
   ctx: Ctx,
   events: CalEvent[],
   from: string,
+  /** What was not imported; the sidebar that says so is hidden here. */
+  note?: string,
 ): HTMLElement {
   const { doc } = ctx;
-  const end = addDays(mondayOf(from), 7);
   const days = agendaDays(
     events,
     from,
-    Math.max(1, Math.round((Date.parse(end) - Date.parse(from)) / 86_400_000)),
+    Math.max(1, daysBetween(from, addDays(mondayOf(from), 7))),
     ctx.zone,
   );
 
@@ -134,5 +136,6 @@ export function agenda(
           : h(doc, 'p', { class: 'ag-none' }, 'No events'),
       ),
     ),
+    note ? h(doc, 'p', { class: 'ag-note' }, note) : null,
   );
 }

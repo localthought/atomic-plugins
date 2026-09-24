@@ -261,8 +261,8 @@ export function banner(
         tone: 'warn',
         role: 'alert',
         title: 'Google may or may not have applied the last change.',
-        body: 'The rest were not sent. Reconnect, then sync to see what Google has now.',
-        action: { label: 'Reconnect', does: 'reconnect' },
+        body: 'The rest were not sent. Sync to see what Google has now.',
+        action: { label: 'Sync now', does: 'retry' },
       };
     case 'other':
       return {

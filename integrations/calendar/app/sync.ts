@@ -775,7 +775,14 @@ async function withStatus<T>(
     return await op();
   } catch (error) {
     const last = relayed.last;
-    if (error instanceof Error && last && last.status >= 400)
+    // Only Google's own answers (the adapter's "returned NNN"); a refusal
+    // from the relay or the proxy keeps its own meaning, e.g. "Connect again".
+    if (
+      error instanceof Error &&
+      /Google Calendar returned \d{3}\b/.test(error.message) &&
+      last &&
+      last.status >= 400
+    )
       Object.assign(error, {
         status: last.status,
         ...(last.headers?.['retry-after']
