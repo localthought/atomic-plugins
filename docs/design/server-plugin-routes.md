@@ -1,21 +1,30 @@
 # Server plugin routes: placement rules and inbound endpoints
 
-Status: **design proposal. Nothing here is implemented.** Written for
+Status: **design accepted, with the gating amendment in section 0. Nothing
+here is implemented.** Written for
 [atomic-plugins#88](https://github.com/ontola/atomic-plugins/issues/88) as a
 companion to
 [ontola/atomic-server#1535](https://github.com/ontola/atomic-server/issues/1535)
-(where a plugin runs when a session has no server runtime). It is based on
-atomic-server at the commit pinned in `.atomic-server-ref`
-(`bae5cdbe3`, 2026-09-23). Limits marked *proposed* are starting numbers for
-review, not measurements. No protocol in section 3 has been prototyped against
-this design, so its feasibility column is an assessment on paper.
+(where a plugin runs when a session has no server runtime). Michiel reviewed
+it on PR #108: every public-surface feature must be gated at build time
+**and** at run time, on top of per-plugin install consent; the rest was
+accepted as proposed ("sounds good"), so section 4 now records decisions
+instead of open questions.
+
+Sections 1–3 are based on atomic-server at `bae5cdbe3` (2026-09-23).
+Section 0 was checked against `2f403624e`, the commit pinned in
+`.atomic-server-ref` when the gating was added (2026-09-24). Limits marked
+*proposed* are starting numbers for review, not measurements. No protocol in
+section 3 has been prototyped against this design, so its feasibility column
+is an assessment on paper.
 
 Contents:
 
+0. [Gating: build flag, runtime switch, install consent](#0-gating-build-flag-runtime-switch-install-consent)
 1. [Where does plugin code run?](#1-where-does-plugin-code-run)
 2. [Inbound routes: the proposal](#2-inbound-routes-the-proposal)
 3. [Per-protocol feasibility](#3-per-protocol-feasibility)
-4. [Phased plan and open questions](#4-phased-plan-and-open-questions)
+4. [Phased plan and decisions](#4-phased-plan-and-decisions)
 5. [Implementation issue drafts](#5-implementation-issue-drafts)
 
 ---
@@ -66,6 +75,201 @@ This design builds on the following facts, all true at the pinned atomic-server 
   (`integrations/pets/app/`, `integrations/notion/app/`) are plain-DOM
   `view({ root, store })` modules. They reach providers through the host's
   integration-proxy relay.
+
+---
+
+## 0. Gating: build flag, runtime switch, install consent
+
+A plugin that opens a public endpoint on the server changes what the server
+*is*: it answers strangers, stores what they send, and can make the server
+talk to other servers on their behalf. So none of that is reachable through
+installing a plugin alone. Each such surface needs **all three** of:
+
+1. **Build gate.** The server was compiled with the Cargo feature
+   `plugin-routes`.
+2. **Runtime gate.** The operator switched it on for this process with
+   `--plugin-routes <level>` or `ATOMIC_PLUGIN_ROUTES=<level>`.
+3. **Install consent.** A person who may install plugins on this node
+   approved the specific Installation after a review that lists every public
+   endpoint (section 2.9).
+
+atomic.place builds leave the feature out, so on atomic.place gates 2 and 3
+can never open anything. A self-hoster who wants it builds with the feature,
+starts the server with the switch, and then installs the plugin that asks
+for it.
+
+### 0.1 Which surfaces are gated
+
+These are the "similarly powerful" features. All of them share the same two
+gates. The table gives the minimum runtime level each needs.
+
+| Surface | Where designed | Minimum `--plugin-routes` level | Extra operator config |
+| --- | --- | --- | --- |
+| Sandbox routes (`http.routes`), `GET`/`HEAD`, `principal: anonymous`, `auth: none` | 2.2, 2.3 | `read-only` | none (`ATOMIC_ROUTES_ORIGIN` for the `installation-origin` mount) |
+| Well-known claims, shared and exclusive (`http.wellKnown`) | 2.4 | `read-only` | exclusive names on the API origin: operator config, as in 2.4 |
+| Routes with any other method, principal or auth; inbound writes (`writeTargets`); blob request bodies | 2.5, 2.6 | `read-write` | none |
+| Host-held keys and tokens (`http.keys`, `http.tokens`) | 2.2, AS-08 | `read-write` | none |
+| Route-enqueued deliveries and wildcard-host operations (`enqueues`, `https://*`) | 2.6, D5 | `read-write` | none |
+| Host-mediated WebSockets (phase 3) | AS-12 | `read-write` | none |
+| Listeners and raw ports (`http.listeners`, `world: server-extension` only) | 2.2, phase 4 | `read-write` | the operator binds each one: `ATOMIC_PLUGIN_LISTENERS=willow-wgps:4455` |
+| Sidecar access: declared operations to a loopback daemon, which the egress guard otherwise refuses | 1 (placement E), phase 4 | `read-write` | the operator names each one: `ATOMIC_PLUGIN_SIDECARS=pds=http://127.0.0.1:2583` |
+
+Nothing else is gated by this design. Views (A), jobs (B), class extenders
+(D hooks), secrets and outbound operations to fixed hosts work exactly as
+today, on every build.
+
+### 0.2 Build gate: the `plugin-routes` Cargo feature
+
+`server/Cargo.toml` gets `plugin-routes = ["wasm-plugins", …]`, **not** in
+`default` and not in `light`. It follows the precedent of `vector-search`,
+which is also off by default and paired with a runtime opt-in
+(`--enable-vector-index`, `serve.rs` `#[cfg(feature = "vector-search")]`).
+Crypto dependencies that only these surfaces use (RSA and Ed25519 signing,
+HTTP-signature and DPoP verification) are optional dependencies enabled by
+this feature, so a build without it does not link them.
+
+Behind `#[cfg(feature = "plugin-routes")]`:
+
+- the route registry, the `installation-origin` host matching and the
+  `drive-prefix` handler at `/_routes/…` (AS-04);
+- the `http` trigger kind on the host side, the route worker pool, response
+  validation and `readRouteStatus` (AS-05);
+- the well-known dispatcher, except the existing ACME challenge handler
+  (AS-06);
+- applying route intents into `writeTargets`, and route quotas (AS-07);
+- installation keys, signature verification, the token store and their host
+  calls (AS-08);
+- the durable delivery queue for route-enqueued operations and the
+  wildcard-host egress path (AS-09);
+- blob request and response bodies for routes (AS-10);
+- WebSockets, listeners and sidecar egress exceptions (AS-12, AS-13).
+
+Compiled into **every** build, so that a refusal can be precise instead of
+"unknown field":
+
+- parsing and validating the manifest's `http` block (AS-02), and computing
+  which gate level a release needs;
+- the `--plugin-routes`, `ATOMIC_ROUTES_ORIGIN`, `ATOMIC_PLUGIN_LISTENERS`
+  and `ATOMIC_PLUGIN_SIDECARS` options themselves (see 0.3);
+- reporting gate status to clients (0.5);
+- reserving `_routes/` in subject creation, so that turning the feature on
+  later never collides with existing resources.
+
+The browser (data-browser) has no build gate. It renders what the server
+reports.
+
+Build pipelines must name their features explicitly. `.dagger/src/index.ts`
+already does (`default`, `light,wasm-plugins`, `https,wasm-plugins`), and
+none of those include `plugin-routes`. A `--all-features` build would
+include it; AS-01 adds a CI check that the release and atomic.place feature
+sets do not. Gated code still needs compiling and testing in CI, so AS-01
+also adds a `cargo clippy`/`cargo test --features plugin-routes` job and an
+e2e build variant with the feature.
+
+### 0.3 Runtime gate: `--plugin-routes` / `ATOMIC_PLUGIN_ROUTES`
+
+A `clap` value enum in `server/src/config.rs`, in the same style as
+`--host-mode`/`ATOMIC_HOST_MODE`:
+
+```rust
+/// Lets installed plugins open public endpoints on this server: routes,
+/// `/.well-known/` claims, and (with `read-write`) inbound writes, host-held
+/// keys and tokens, deliveries, listeners and sidecars. Needs a build with
+/// the `plugin-routes` feature. Each plugin still needs its own install review.
+#[clap(value_enum, long, default_value = "off", env = "ATOMIC_PLUGIN_ROUTES")]
+pub plugin_routes: PluginRoutesLevel, // off | read-only | read-write
+```
+
+- **`off`** (default): no gated surface is active, even in a build that has
+  the feature.
+- **`read-only`**: anonymous `GET`/`HEAD` routes and well-known claims. No
+  inbound request can cause a write or an outbound request.
+- **`read-write`**: everything in 0.1. This is the operator's opt-in for
+  write routes that D2 asked for.
+
+Startup rules:
+
+- The option exists in every build. If it is set to anything other than
+  `off`, or `ATOMIC_PLUGIN_LISTENERS`/`ATOMIC_PLUGIN_SIDECARS` is set, in a
+  build without the feature, the server **refuses to start** with: "This
+  AtomicServer was built without the `plugin-routes` feature, so
+  `--plugin-routes read-write` has no effect. Rebuild with
+  `--features plugin-routes`, or remove the option." Silently ignoring it
+  would leave the operator believing endpoints are live. (`vector-search`
+  only warns in the same situation; this is stricter on purpose.)
+- `ATOMIC_PLUGIN_LISTENERS` and `ATOMIC_PLUGIN_SIDECARS` are refused at
+  startup unless the level is `read-write`.
+- With the gate on and no `ATOMIC_ROUTES_ORIGIN`, only the `drive-prefix`
+  mount exists, and the server logs that once at startup.
+
+### 0.4 Install consent, and what happens when a gate is off
+
+The host is authoritative; the UI mirrors it. The server checks the gates at
+four points:
+
+1. **Install, upgrade and release pin.** From the manifest the host
+   computes the level a release needs (`read-only` or `read-write`) and the
+   listener and sidecar names it asks for. If the node falls short, the
+   install is refused with a typed problem, `host-feature-unavailable`,
+   carrying `{ feature: "plugin-routes", needed, compiled, level,
+   surfaces }`, where `surfaces` lists what asked for it ("route `POST
+   /users/{name}/inbox`", "well-known `nodeinfo`"). The message is one of:
+   - not compiled: "This plugin opens public endpoints on the server
+     (…surfaces…). This AtomicServer was built without plugin routes, so the
+     plugin can't be installed here."
+   - compiled, level too low: "This plugin opens public endpoints on the
+     server (…surfaces…). The server operator hasn't enabled them. To allow
+     it, start AtomicServer with `--plugin-routes read-write` (or
+     `ATOMIC_PLUGIN_ROUTES=read-write`)."
+   - listener or sidecar not configured: names the missing
+     `ATOMIC_PLUGIN_LISTENERS`/`ATOMIC_PLUGIN_SIDECARS` entry.
+
+   An upgrade that raises the needed level is refused the same way, and the
+   old release keeps running.
+2. **Consent.** With the gates open, the install review lists every public
+   endpoint (2.9). An Installation with a gated surface is never created
+   without that review: bundled templates, auto-install and drive imports do
+   not carry it, and under `host_mode: owner` only the owner can approve it.
+3. **Activation.** The gates are re-checked, because the operator may have
+   changed them since the review.
+4. **Startup.** An active Installation whose release needs more than the
+   current gates allow becomes **degraded** (the #1535 outcome): its routes
+   and claims are not registered and their URLs answer 404, its queued
+   deliveries are paused (not dropped), and its keys, tokens and data are
+   kept. Its views and ungated jobs keep working. The Installation page
+   says "Public endpoints are turned off on this server" and names the
+   switch. Turning the gate back on restores the Installation without a new
+   review, as long as the release is unchanged.
+
+### 0.5 Catalog and UI
+
+`GET /plugin-catalog` (and the refusal above) carry the node's gate status:
+
+```jsonc
+"hostFeatures": {
+  "pluginRoutes": {
+    "compiled": true,
+    "level": "read-only",           // off | read-only | read-write
+    "routesOrigin": "https://routes.example.net", // or null: drive-prefix only
+    "listeners": ["willow-wgps"],   // names only, never ports
+    "sidecars": []
+  }
+}
+```
+
+Catalog entries (this repo's `catalog.json`, and the host's catalog) carry
+the derived requirement, for example `requires: ["plugin-routes:read-only"]`,
+so a client can filter without parsing manifests. Then:
+
+- **Not compiled** (atomic.place): gated plugins are **hidden** from the
+  catalog list. One line at the end says how many are hidden and why ("3
+  plugins need server features this server doesn't have"). A direct link to
+  such a plugin shows its page with the refusal text and no Install button.
+- **Compiled, level too low**: shown, **marked** with a "Needs public
+  endpoints" chip in the status-pill style (`needs-attention`). The Install
+  button is disabled, and the text names the switch and the level needed.
+- **Gates open**: listed normally. Installing opens the review with its
+  "Public endpoints" section (2.10), which is the third gate.
 
 ---
 
@@ -142,8 +346,10 @@ the author writing it by hand, so the two can never disagree:
 | `entrypoints.run` + a cron/query trigger | `persistent-host` |
 | `secrets` non-empty | `host-credentials` |
 | `runtime: wasip2/1` or any B/C code | `wasm-sandbox` |
-| `http.routes` non-empty (section 2) | `persistent-host`, `wasm-sandbox`, **`public-origin`** (new) |
-| `http.listeners` (section 2.2, D only) | `operator-listener` (new) |
+| `http.routes` or `http.wellKnown` non-empty, read-only surfaces only (section 0.1) | `persistent-host`, `wasm-sandbox`, **`public-origin`** (new), **`plugin-routes:read-only`** (new) |
+| any `read-write` surface in section 0.1 | the above, with **`plugin-routes:read-write`** instead |
+| `http.listeners` (section 2.2, D only) | `plugin-routes:read-write`, `operator-listener:<name>` (new) |
+| sidecar operations (phase 4) | `plugin-routes:read-write`, `operator-sidecar:<name>` (new) |
 
 `public-origin` is a new requirement. A node can have the sandbox and still
 be unreachable from the internet: a desktop node behind NAT, an Android node,
@@ -155,9 +361,14 @@ describes:
   the Installation says so;
 - delegate to a peer that is the execution owner.
 
+The `plugin-routes:*`, `operator-listener:*` and `operator-sidecar:*`
+requirements are the build and runtime gates of section 0. A node that
+lacks them **refuses** the install (0.4); degraded mode only happens when a
+gate is closed after install.
+
 A node advertises `public-origin` only when the operator has configured a
-routes origin (2.3). Ideally the host has also confirmed that origin is
-reachable (open question Q7).
+routes origin (2.3) and the gates are open. The host also runs a
+reachability self-check, whose result is shown but does not block (D7).
 
 ---
 
@@ -187,10 +398,12 @@ reachable (open question Q7).
 The manifest gets a new, optional `http` block. It is left out of the
 serialized manifest when empty, so existing release ids do not change.
 Because `Manifest` uses `deny_unknown_fields`, older hosts already reject a
-manifest that has this block, and rejection is the right outcome. This
-proposal still bumps the version to `schemaVersion: 3`, so that the refusal
-can say "needs a host with plugin routes" instead of "unknown field" (open
-question Q9).
+manifest that has this block, and rejection is the right outcome. The
+version is still bumped to `schemaVersion: 3`, so that an older host's
+refusal can say "needs a newer host" instead of "unknown field" (D9). A host
+that understands v3 but has the gates closed refuses with the specific
+message from section 0.4. A v3 manifest without an `http` block is accepted
+everywhere v3 is understood.
 
 ```jsonc
 {
@@ -268,13 +481,14 @@ What each part does:
 - **`operations`** gets a wildcard-host form. It is allowed only for
   operations listed in `enqueues`, whose destination comes from data (for
   example an inbox URL learned from a remote actor). The egress guard still
-  checks every request. Whether a wildcard host is acceptable at all is open
-  question Q5.
+  checks every request. Wildcard hosts are accepted on these terms, and
+  only on nodes at `read-write` (D5).
 - **`http.listeners`** (not shown) is accepted **only** in
   `world: server-extension` installed by the operator. Even then it only
   requests a port; the operator must bind it in server config
-  (`ATOMIC_PLUGIN_LISTENERS=willow-wgps:4455`). A user-installed `extension`
-  never gets a raw port. This document does not design listener semantics
+  (`ATOMIC_PLUGIN_LISTENERS=willow-wgps:4455`), which needs the build and
+  runtime gates of section 0. A user-installed `extension` never gets a raw
+  port. This document does not design listener semantics
   further (see phase 4).
 
 ### 2.3 Path namespaces and origins
@@ -300,7 +514,8 @@ Rules:
   - on API and drive hosts, any path that resolves to an existing resource.
 
   Subject creation must also reserve `_routes/`, so that no resource can be
-  created under it (issue draft AS-2).
+  created under it (issue draft AS-04; the reservation itself is compiled into every build,
+  section 0.2).
 - **Collisions are refused at activation**, not resolved at request time.
   The registry is keyed on `(host, method, normalized pattern)`. Overlapping
   patterns from different installations on the same host (`/users/{a}` vs
@@ -484,7 +699,7 @@ they would break principle 2.
 | Upgrade | The upgrade review includes the diff of routes, claims, writeTargets and keys. The old release keeps serving until approval. Removed routes answer `410 Gone` | Carried over (they belong to the Installation) | Unchanged |
 | Pause | `503` + `Retry-After: 3600`, so peers retry instead of forgetting the actor | Kept | Kept |
 | Revoke / uninstall | `410 Gone` for 30 days (*proposed*), then 404; slug retired | Private keys erased with the existing revocation tombstone; issued tokens stop working | Kept, like every uninstall today |
-| Execution owner moves (#1535) | Unregistered on the old node, registered on the new one. The URL only survives if the host name moves too | Keys are per node today. Moving them would be a new, explicit handoff (open question Q3) | Synced as usual |
+| Execution owner moves (#1535) | Unregistered on the old node, registered on the new one. The URL only survives if the host name moves too | Keys are per node today. Moving them would be a new, explicit handoff (D3: not in phases 1–2) | Synced as usual |
 
 Federated identities are URLs. Changing the routes origin, the drive's vanity
 host or the slug breaks every follower and every share. The install review
@@ -564,27 +779,29 @@ What the table shows:
   Willow and NextGraph. Only Solid notifications plausibly fit a model where
   each message invokes the sandbox. The others belong in sidecars.
 - **Interactive HTML** (the remoteStorage and Solid consent dialogs) needs
-  the user's Atomic session. Recommendation: the route redirects to a consent
+  the user's Atomic session. Decided (D6): the route redirects to a consent
   page that the host owns, on the API origin. That page shows the requested
   scopes and returns to the route with a one-time code. The plugin never
-  serves a login form (open question Q6).
+  serves a login form.
 
 ---
 
-## 4. Phased plan and open questions
+## 4. Phased plan and decisions
 
-Each phase is useful on its own and can land independently.
+Each phase is useful on its own and can land independently. Every phase
+from 1 on is behind the gates of section 0, which land first (AS-01).
 
 **Phase 0: no runtime change.**
-Document the placement rules (section 1) in `integrations/README.md` and
-implement the derived `requires` from #1535. Ship packages that need no
-inbound surface: a Willow drop importer (B), and read-only outbound clients
-for public atproto/ActivityPub data (A/B, egress only). Exit: an author can
-tell from the manifest where each part runs.
+Document the placement rules (section 1) and the gates (section 0) in
+`integrations/README.md` and implement the derived `requires` from #1535.
+Ship packages that need no inbound surface: a Willow drop importer (B), and
+read-only outbound clients for public atproto/ActivityPub data (A/B, egress
+only). Exit: an author can tell from the manifest where each part runs.
 
 **Phase 1: read-only public routes.**
 Scope:
 
+- the build gate, the runtime gate and gate reporting (section 0);
 - the `http` manifest block, with `GET`/`HEAD` only, `principal: anonymous`
   and `auth: none`;
 - the route registry and collision checks;
@@ -592,30 +809,33 @@ Scope:
 - the well-known dispatcher, with `webfinger` (shared) and
   `nodeinfo`/`atproto-did` (exclusive);
 - the `http` trigger kind, the route pool and its limits;
-- the install review section.
+- the catalog marking and the install review section.
 
 Demo package: `integrations/well-known/`, which answers WebFinger, NodeInfo
 and `atproto-did` for a drive. Exit: an external WebFinger client resolves
 `acct:name@<host>` from a drive's data, covered by a server test and an e2e
-test against a real server.
+test against a real server built with `--features plugin-routes` and started
+with `--plugin-routes read-only`. The same e2e also checks that a build
+without the feature refuses the install with the section 0.4 message.
 
-**Phase 2: writes and federation primitives.**
+**Phase 2: writes and federation primitives** (runtime level
+`read-write`).
 Scope:
 
 - write methods, the `writeTargets` route grant and quotas;
 - blob bodies;
 - `http-signature` and `bearer` auth;
-- host-held `keys` and `tokens`;
+- host-held `keys` and `tokens`, and the host-owned consent page (D6);
 - `enqueues` with the durable delivery queue;
-- `readRouteStatus`;
+- `readRouteStatus` in the UI;
 - the `drive-host` mount, with exclusive claims approved by the drive owner.
 
-Demo packages: single-actor ActivityPub, a remoteStorage server, an OCM share
-receiver. Exit, per package: live interop evidence against one independent
-implementation, recorded as certification evidence. Candidates are a
-Mastodon or GoToSocial instance, the remoteStorage test suite, and a
-Nextcloud OCM peer. Until that evidence exists, the package's capabilities
-are "declared", not "verified".
+Demo packages, in this order (D11): a remoteStorage server, single-actor
+ActivityPub, an OCM share receiver. Exit, per package: live interop evidence
+against one independent implementation, recorded as certification evidence.
+Candidates are the remoteStorage test suite, a Mastodon or GoToSocial
+instance, and a Nextcloud OCM peer. Until that evidence exists, the
+package's capabilities are "declared", not "verified".
 
 **Phase 3: broader HTTP.**
 Scope:
@@ -629,51 +849,70 @@ Demos: a Solid resource server with notifications, and sending OCM shares
 over WebDAV.
 
 **Phase 4: operator territory.**
-`http.listeners` for `server-extension`, plus documented sidecar recipes:
-reverse-proxy config, and how a plugin talks to the sidecar as a declared
-operation. Targets: an atproto PDS, a NextGraph broker, Willow WGPS, a Solid
-IdP.
+`http.listeners` for `server-extension` and sidecar access, both behind the
+gates and the operator's own `ATOMIC_PLUGIN_LISTENERS`/`ATOMIC_PLUGIN_SIDECARS`
+config, plus documented sidecar recipes: reverse-proxy config, and how a
+plugin talks to the sidecar as a declared operation. Targets: an atproto
+PDS, a NextGraph broker, Willow WGPS, a Solid IdP.
 
-### Open questions for you
+### Decisions
 
-- **Q1. Default origin model.** Recommendation: `installation-origin` on a
-  dedicated `ATOMIC_ROUTES_ORIGIN` (mirroring websites), with `drive-host`
-  for vanity handles. The alternative is `/_routes/…` on the API origin only.
-  That is simpler to deploy but permanently limits what plugins can serve.
-  Which do you want as the default for self-hosters without wildcard DNS?
-- **Q2. Who may install public-write routes?** Any drive owner, or only on
-  nodes where the operator allows it (for example `host_mode: owner`, or a
-  new `ATOMIC_ALLOW_PLUGIN_ROUTES`)? Recommendation: drive owners get
-  read-only routes, and the operator opts in to write routes in phase 2.
-- **Q3. Identity portability.** Federated identities are URLs and keys.
-  Moving a drive to another node breaks them unless the host name moves too.
-  Do we accept that, or should handing over keys be part of the
-  execution-owner handoff in #1535?
-- **Q4. Route writes without review.** Are the route grant and quotas (2.6)
-  acceptable? The alternative is for inbound writes to land in a "pending"
-  state that a person or an automation approves. That is safer, but a 2xx
-  would no longer mean the write was stored.
-- **Q5. Wildcard delivery destinations.** ActivityPub delivers to inbox URLs
-  learned at run time. Should we accept a `https://*` operation, only for
-  `enqueues`, with the egress guard as the only restriction?
-- **Q6. Consent pages.** A consent page owned by the host on the API origin
-  (my recommendation), or HTML served by the plugin on the isolated origin?
-- **Q7. Reachability.** Should `public-origin` require an active
-  self-check, where the node fetches its own routes origin? And do we want a
-  tunnel story for desktop/Android nodes, or declare them out of scope?
-- **Q8. Crypto in host vs JS.** Recommendation: verifying and creating HTTP
-  signatures and DPoP/JWS live in Rust host calls. JS libraries are allowed
-  in the sandbox but get no key material. Agree?
-- **Q9. Manifest version.** Bump to `schemaVersion: 3` for a clearer refusal
-  on older hosts, or keep v2 and rely on `deny_unknown_fields`?
-- **Q10. Relation to Atomic `Endpoint`.** Host endpoints such as
-  `/bind-drive` and `/did` are described as Atomic `Endpoint` resources.
-  Should registered plugin routes also be published as `Endpoint` resources
-  so they can be discovered, or stay internal to the host?
-- **Q11. First protocol.** Which demo should prove phase 2: ActivityPub (the
-  largest audience), remoteStorage (the smallest surface, and ours), or OCM
-  (the pondersource/sciencemesh context)? Recommendation: remoteStorage
-  first, then ActivityPub.
+Michiel accepted the proposal on PR #108 (2026-09-24), adding the gating in
+section 0. Where this document had a recommendation, it is now the decision.
+Where it had none, the decision below is marked **decided by default;
+revisit if needed**.
+
+- **D1. Default origin model.** `installation-origin` on a dedicated
+  `ATOMIC_ROUTES_ORIGIN` (mirroring websites) is the default, with
+  `drive-host` for vanity handles. `drive-prefix` is always available once
+  the gates are open, so self-hosters without wildcard DNS get
+  `drive-prefix` only. A package whose manifest needs `installation-origin`
+  is refused there with a message that names `ATOMIC_ROUTES_ORIGIN`.
+- **D2. Who may install public-write routes.** Nobody, unless the build and
+  runtime gates are open (section 0). At `read-only`, anyone who may install
+  plugins on the node (as `host_mode` decides) may install read-only routes.
+  Write routes need the operator to choose `read-write`. This is the
+  recommendation, expressed as the runtime level.
+- **D3. Identity portability.** Federated identities stay bound to their
+  host name, and keys stay per node in phases 1–2. Handing keys over is not
+  part of the #1535 execution-owner handoff for now. *Decided by default;
+  revisit if needed*, at the latest when that handoff is implemented.
+- **D4. Route writes without review.** The route grant and quotas of 2.6, as
+  proposed. There is no "pending" state for inbound writes, so a 2xx means
+  the write was stored.
+- **D5. Wildcard delivery destinations.** `https://*` operations are
+  accepted only for operations listed in `enqueues`, only on nodes at
+  `read-write`, with the egress guard, the per-destination concurrency limit
+  and a per-installation daily delivery cap (*proposed*: 10,000) as
+  restrictions. *Decided by default; revisit if needed.*
+- **D6. Consent pages.** A host-owned consent page on the API origin. The
+  plugin never serves a login or consent form.
+- **D7. Reachability.** The host runs a reachability self-check (fetching
+  its own routes origin) at startup and at activation. The result is shown
+  in `hostFeatures` and on the Installation page, but does not block
+  installs. Tunnels for desktop and Android nodes are out of scope. *Decided
+  by default; revisit if needed.*
+- **D8. Crypto in host vs JS.** Verifying and creating HTTP signatures and
+  DPoP/JWS are Rust host calls. JS libraries are allowed in the sandbox but
+  get no key material.
+- **D9. Manifest version.** Bump to `schemaVersion: 3`, as 2.2 proposes.
+  Hosts that understand v3 accept v3 manifests without an `http` block.
+- **D10. Relation to Atomic `Endpoint`.** Registered plugin routes stay
+  internal to the host. The install review and `readRouteStatus` are how
+  people find them. *Decided by default; revisit if needed*, for example if
+  a client needs to discover routes.
+- **D11. First protocol.** remoteStorage first, then ActivityPub, then OCM.
+- **D12. Gating.** Three layers, all required: the `plugin-routes` Cargo
+  feature (off by default, never in atomic.place builds), the
+  `--plugin-routes`/`ATOMIC_PLUGIN_ROUTES` runtime level (default `off`),
+  and per-Installation consent. Section 0 gives the details.
+
+These points were chosen while writing section 0 and are worth a quick
+confirmation: a three-value runtime level instead of a plain on/off flag
+(0.3); refusing to start, rather than warning, when the switch is set on a
+build without the feature (0.3); and hiding gated plugins from the catalog
+on builds without the feature, while only marking them on builds that have
+it (0.5).
 
 ---
 
@@ -681,134 +920,100 @@ IdP.
 
 These are drafts and have not been filed. Each heading is the proposed issue
 title. atomic-server work goes as PRs against `feat/plugin-debug`, following
-the current workflow.
+the current workflow; each issue below can be built and merged on its own
+once the issues it depends on have merged. Everything from AS-04 on is
+compiled only with `--features plugin-routes`.
 
 ### atomic-server
 
-**AS-1. Plugin manifest: `http` block and derived `requires`**
-Add the `http` block (2.2) to `server/src/plugins/manifest.rs` and its
-`@tomic/lib` mirror. Leave it out of the serialization when empty, so
-existing release ids stay byte-identical. Validate:
+**AS-01. Build and runtime gates for plugin public surfaces.** Depends on:
+nothing.
+Add the `plugin-routes` Cargo feature (not in `default` or `light`) with no
+gated code yet, the `--plugin-routes off|read-only|read-write` /
+`ATOMIC_PLUGIN_ROUTES` option plus `ATOMIC_ROUTES_ORIGIN`,
+`ATOMIC_PLUGIN_LISTENERS` and `ATOMIC_PLUGIN_SIDECARS`, the startup refusals
+of 0.3, and `hostFeatures.pluginRoutes` in `/plugin-catalog`. CI: a
+`--features plugin-routes` clippy and test job, and a check that the release
+and atomic.place feature sets exclude the feature.
 
-- path patterns and methods;
-- principal/auth combinations (`caller` requires `auth: atomic`);
-- write targets, key names and token names;
-- that `listeners` only appears with `world: server-extension`.
+**AS-02. Manifest v3: `http` block, derived `requires`, gate-aware
+refusal.** Depends on: AS-01.
+The `http` block (2.2) in `server/src/plugins/manifest.rs` and its
+`@tomic/lib` mirror, left out of the serialization when empty. Validation as
+before. The derived `requires`, including `plugin-routes:<level>`. The
+`host-feature-unavailable` refusal at install, upgrade and release pin
+(0.4). Shared fixtures under `testdata/plugin-manifest/`. Compiled into
+every build.
 
-Derive the `requires` list from #1535 out of the declarations (table in
-section 1). Add fixtures, including rejected cases, under
-`testdata/plugin-manifest/`, shared by Rust and TS. Decide Q9. No
-dependencies.
+**AS-03. Catalog and install review: gated plugins and public endpoints.**
+Depends on: AS-01, AS-02.
+Browser only. Hide or mark gated plugins from `hostFeatures` (0.5), show the
+refusal text, and add the "Public endpoints" section to the install and
+upgrade review (2.9, 2.10).
 
-**AS-2. Route registry, mounts and reserved paths**
-Build a registry keyed on `(host, method, pattern)`. Populate it when an
-Installation is activated and clear it on pause/revoke, only on the execution
-owner. Add `ATOMIC_ROUTES_ORIGIN`, validated like `website_origin`: separate
-from API and drive hosts, with `*.localhost` for development. Add the
-`drive-prefix` mount at `/_routes/<slug>/`, and reserve `_routes/` in subject
-creation. Refuse overlapping patterns with a typed problem. Serve 503/410 as
-described in 2.9. Tests: collision refusal, reserved paths, pause and revoke
-responses, no registration on a replica that is not the owner. Depends on
-AS-1.
+**AS-04. Route registry, mounts and reserved paths.** Depends on: AS-02.
+The registry keyed on `(host, method, pattern)`, the `installation-origin`
+and `drive-prefix` mounts, collision refusal, 503/410/404 responses
+(2.9, 0.4), and registration only on the execution owner. The `_routes/`
+subject reservation is compiled into every build.
 
-**AS-3. `http` trigger kind and route execution**
-Extend the JS runtime input with `trigger.kind: "http"` and the verdict with
-`response`. The runtime shim dispatches to an exported
-`handle(ctx, request)`. Also:
+**AS-05. `http` trigger kind, route execution and `readRouteStatus`.**
+Depends on: AS-04.
+The trigger, `handle(ctx, request)`, the route worker pool and 2.8 limits,
+response validation, stripping cookies and auth headers on shared hosts, a
+sampled run log, and the `readRouteStatus` host call. Report the measured
+instantiation cost per request on the PR.
 
-- a separate route worker pool and a per-installation concurrency limit;
-- the limits in 2.8, including deadline enforcement;
-- response validation and the header allowlist;
-- stripping cookies and auth headers on shared hosts;
-- a sampled run log.
+**AS-06. Well-known dispatcher and the `drive-host` mount.** Depends on:
+AS-05.
+The multiplexed `webfinger`, generated `host-meta`, exclusive claims from
+the allowlist (2.4), and the `drive-host` mount with drive-owner approval of
+exclusive claims.
 
-Measure the instantiation cost per request and report it on the PR. Depends
-on AS-2.
+**AS-07. Route writes: route grant, quotas, provenance.** Depends on: AS-05.
+Needs level `read-write`. As 2.6.
 
-**AS-4. Well-known dispatcher**
-A host-owned `/.well-known/webfinger` (multiplexed on `resource`), a
-generated `host-meta`, and exclusive claims from the allowlist in 2.4. Claims
-on drive-mapped hosts need the owner's approval; claims on the API origin
-need operator config. Depends on AS-2.
+**AS-08. Host crypto: installation keys, HTTP signatures, tokens, consent
+page.** Depends on: AS-05.
+Needs level `read-write`. Keys, signature verification, the token store,
+and the host-owned consent page (D6).
 
-**AS-5. Install and upgrade review: public endpoints**
-Show routes, claims, principals, write targets, keys and "exposes to the
-public internet" in the Store review and in the upgrade diff. Show endpoint
-health from `readRouteStatus` on the Installation page. Reuse the shared
-plugin UI language (section 2.10). Depends on AS-1 and AS-3.
+**AS-09. Durable delivery queue and wildcard destinations.** Depends on:
+AS-05.
+Needs level `read-write`. As 2.6 and D5, including pausing (not dropping)
+deliveries of degraded Installations.
 
-**AS-6. Route writes: route grant, quotas, provenance**
-Apply route intents only into `writeTargets`, signed by the installation
-agent, before the response is sent. Allow updates and deletes only on
-resources the installation created. Enforce per-caller and per-installation
-quotas that return 429. Depends on AS-3.
+**AS-10. Blob request and response bodies for routes.** Depends on: AS-05.
 
-**AS-7. Host crypto: installation keys, HTTP signatures, tokens**
-Covers:
+**AS-11. Endpoint health on the Installation page and in plugin views.**
+Depends on: AS-03, AS-05. Queue fields appear once AS-09 has merged.
 
-- per-Installation keypairs (`rsa-sha256`, `ed25519`; others on demand),
-  erased with the existing revocation tombstone;
-- `ctx.keys.sign` and publishing public keys;
-- verifying inbound draft-cavage-12 and RFC 9421 signatures, with key
-  fetches that go through the egress guard and are cached, and a replay
-  window;
-- a store of hashed bearer tokens with scopes, and
-  `ctx.tokens.issue/verify/revoke`.
+**AS-12 (phase 3). Host-mediated WebSockets for routes.** Design first. Do
+not start before a phase 2 protocol is live.
 
-DPoP comes later. Depends on AS-3.
-
-**AS-8. Durable delivery queue for route-enqueued operations**
-Let routes and query triggers enqueue declared write operations. The
-scheduler runs them through the external-intent journal, with receipts,
-exponential backoff and a concurrency limit per destination. Operations that
-keep failing end in a dead-letter state that `readRouteStatus` shows. Decide
-Q5. Depends on AS-3.
-
-**AS-9. Blob request and response bodies**
-With `body: "blob"`, the host stores the request in the blob store (blake3)
-before the sandbox runs. A handler can answer with a blob hash, which the
-host streams. The host handles `ETag` and conditional requests. Needed for
-remoteStorage and OCM WebDAV. Depends on AS-3.
-
-**AS-10 (phase 3). Host-mediated WebSockets for routes**
-Design this first: invoking the sandbox once per message, subscription
-channels fed by resource changes, connection limits. Do not start before a
-phase 2 protocol is live.
+**AS-13 (phase 4). Listeners and sidecar access.** Depends on: AS-01,
+AS-02. Design first.
 
 ### atomic-plugins
 
-**AP-1. Document placement rules in `integrations/README.md`**
-Add a "Choosing a placement" section that summarizes section 1 of this
-document and links to it, next to "Two plugin runtimes" in `AGENTS.md`. No
-code.
+**AP-01. Document placement rules and gates in `integrations/README.md`.**
+Depends on: nothing. No code.
 
-**AP-2. `integrations/well-known/`: WebFinger, NodeInfo, atproto-did (phase 1)**
-Read-only routes that answer from drive data (a handles table, a DID). Unit
-tests for the handler, a sandbox test in atomic-server, and a live-tier test
-that resolves the handle with an independent WebFinger client. Depends on
-AS-1 to AS-4.
+**AP-02. Tooling for gated plugins: catalog `requires`, certification and a
+`plugin-routes` e2e build.** Depends on: AS-01 and AS-02 merged and pinned.
 
-**AP-3. `integrations/remotestorage/`: remoteStorage server (phase 2)**
-A storage root with folder listings, conditional requests, and token
-issuance through the host's consent page. A drive view lists connected apps
-and their scopes, with revoke. Evidence: the remoteStorage server test suite
-passes, and one real app (for example a remoteStorage.js app) connects.
-Depends on AS-6, AS-7 and AS-9.
+**AP-03. `integrations/well-known/`: WebFinger, NodeInfo, atproto-did
+(phase 1).** Depends on: AS-02, AS-04, AS-05, AS-06, AP-02.
 
-**AP-4. `integrations/activitypub/`: single-actor ActivityPub (phase 2)**
-Actor, inbox, outbox and followers. Supports follow/accept and publishing a
-Note from a drive table, with delivery through AS-8. A view shows Inbox and
-Outbox tables and delivery health. Evidence: a follow and reply round trip
-with one Mastodon instance and one GoToSocial instance. Depends on AS-6 to
-AS-8.
+**AP-04. `integrations/remotestorage/`: remoteStorage server (phase 2).**
+Depends on: AS-06, AS-07, AS-08, AS-10, AP-02.
 
-**AP-5. `integrations/ocm/`: receive OCM shares (phase 2)**
-Discovery, `shares`, `notifications` and `invite-accepted`, with received
-shares listed in a drive table. Evidence: a share from a Nextcloud peer.
-Depends on AS-6 and AS-7.
+**AP-05. `integrations/activitypub/`: single-actor ActivityPub (phase 2).**
+Depends on: AS-06, AS-07, AS-08, AS-09, AP-02.
 
-**AP-6. `integrations/willow-drop/`: Willow sideloading importer (phase 0)**
-A file-upload importer in the same shape as `money`: parse a drop, verify its
-Meadowcap capabilities, and propose its entries as resources for review. No
-routes. The only blocker is a usable JS or `wasip2` Willow implementation,
-which needs to be evaluated first.
+**AP-06. `integrations/ocm/`: receive OCM shares (phase 2).** Depends on:
+AS-06, AS-07, AS-08, AP-02.
+
+**AP-07. `integrations/willow-drop/`: Willow sideloading importer
+(phase 0).** Depends on: nothing in this list; not gated. Blocked on
+evaluating a usable JS or `wasip2` Willow implementation.
