@@ -8,10 +8,11 @@ export const PLATFORM = 'clockify';
  * only ever sees this interface, so it cannot hold, rotate or persist a
  * credential; whoever implements it owns authority.
  *
- * The one implementation is the host relay (`relayTransport`): the parent
- * page performs the call with the connection it holds and returns only
- * `{ status, headers, body }`. A signed capability (#40) would be a second
- * implementation; it is not built.
+ * The one implementation is `relayTransport`, over the host's
+ * `store.proxy.request`: since ontola/atomic-plugins#54 phase 2 the host's
+ * frame client calls the proxy itself, with a capability the page signed and
+ * a key only it holds, and returns `{ status, headers, body }`. A proxy
+ * refusal (`proxyRefusal`) is thrown rather than read as Clockify's answer.
  */
 export interface ProxyTransport {
   request(
@@ -47,22 +48,78 @@ export async function requestJson<T>(
 }
 
 /**
- * The host-relayed transport for one connection. There is intentionally no
- * frame-side fallback that takes a rotating code: the frame is null-origin,
- * has no storage, and a resource must not carry a credential (#21).
+ * The integration proxy's own refusals (`integration-proxy/src/api_error.rs`):
+ * `{ error, message }` with one of these codes, answered before the provider
+ * is called. The first group means the connection is gone or no longer this
+ * app's, so the person has to connect again. `unsupported_authorization`
+ * (a retired `Bearer` code) is left out: only a host from before #54 sends
+ * one.
+ */
+const RECONNECT_CODES = [
+  'unknown_connection',
+  'not_delegated',
+  'capability_scope',
+  'platform_mismatch',
+  'credential_refresh_failed',
+];
+const REFUSAL_CODES = [
+  ...RECONNECT_CODES,
+  'missing_signature',
+  'unsupported_signature_version',
+  'invalid_agent',
+  'agent_key_mismatch',
+  'stale_timestamp',
+  'bad_signature',
+  'replayed',
+  'invalid_capability',
+  'capability_expired',
+  'capability_too_long',
+  'wrong_audience',
+  'capability_key_mismatch',
+  'not_owner',
+  'access_denied',
+];
+
+/** A proxy refusal as an error, or `undefined` for a provider answer. */
+export function proxyRefusal(response: {
+  status: number;
+  body: unknown;
+}): Error | undefined {
+  const body = response.body as { error?: unknown; message?: unknown } | null;
+  const code = typeof body?.error === 'string' ? body.error : undefined;
+  if (response.status < 400 || !code || !REFUSAL_CODES.includes(code))
+    return undefined;
+  const detail = typeof body?.message === 'string' ? `: ${body.message}` : '';
+
+  return new Error(
+    RECONNECT_CODES.includes(code)
+      ? `The integration proxy refused this connection (${code}${detail}). Connect again.`
+      : `The integration proxy refused the request (${code}${detail}).`,
+  );
+}
+
+/**
+ * The transport for one connection, over the host. There is intentionally no
+ * frame-side credential of any kind: the frame is null-origin, has no
+ * storage, and a resource must not carry a credential (#21).
  */
 export function relayTransport(
   proxy: HostProxy,
   connection: ConnectionReference,
 ): ProxyTransport {
   return {
-    request: (path, query) =>
-      proxy.request({
+    async request(path, query) {
+      const response = await proxy.request({
         platform: connection.platform,
         connectionId: connection.connectionId,
         path,
         method: 'GET',
         ...(query ? { query } : {}),
-      }),
+      });
+      const refused = proxyRefusal(response);
+      if (refused) throw refused;
+
+      return response;
+    },
   };
 }

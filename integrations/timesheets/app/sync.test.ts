@@ -280,3 +280,23 @@ describe('syncClockify against the shared Clockify mock', () => {
     expect(result.created).toBe(53);
   });
 });
+
+describe('relayTransport and the integration proxy', () => {
+  it("throws the proxy's own refusal instead of reading it as Clockify's answer", async () => {
+    const transport = relayTransport(
+      {
+        request: async () => ({
+          status: 404,
+          headers: {},
+          body: { error: 'unknown_connection', message: 'no such connection' },
+        }),
+        connections: async () => [],
+        connect: async () => ({ status: 'cancelled' as const }),
+      },
+      CONNECTION,
+    );
+    await expect(transport.request('/v1/user')).rejects.toThrow(
+      'The integration proxy refused this connection (unknown_connection: no such connection). Connect again.',
+    );
+  });
+});

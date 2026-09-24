@@ -165,9 +165,15 @@ export function createController(
       set({ kind: 'connecting' });
 
       try {
-        // On consent the host navigates away and this view reloads; the
-        // promise only settles when the person cancels.
-        await store.proxy.connect({ platform: PLATFORM });
+        // Connecting a new account navigates away and reloads this view;
+        // picking an existing one resolves `connected`, with no reload.
+        const result = await store.proxy.connect({ platform: PLATFORM });
+
+        if (result?.status === 'connected') {
+          await controller.load();
+
+          return current;
+        }
 
         return set({ kind: 'not-connected' });
       } catch (error) {

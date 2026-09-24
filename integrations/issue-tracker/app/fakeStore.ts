@@ -39,6 +39,8 @@ export interface FakeStore extends PluginStore {
   lostWriteLands?: boolean;
   /** Answers every relayed call with this status until cleared. */
   status?: number;
+  /** Answers every call with this integration-proxy refusal code. */
+  refusal?: string;
   lagReads: number;
   hideFromQuery: number;
   /** A person editing a row in the data-browser: no app write, no lag. */
@@ -126,6 +128,13 @@ export function fakeStore({
           );
         throw new Error(fake.fail);
       }
+
+      if (fake.refusal)
+        return {
+          status: fake.refusal === 'unknown_connection' ? 404 : 403,
+          headers: {},
+          body: { error: fake.refusal, message: 'refused by the proxy' },
+        };
 
       if (fake.status)
         return {

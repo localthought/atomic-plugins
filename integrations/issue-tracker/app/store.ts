@@ -7,11 +7,13 @@
  * import them from yet, and sharing one copy is a maintainer decision
  * (per-plugin containment). If they disagree, view-client.js is ground truth.
  *
- * `proxy` is the generic host relay the pets work (#52) adds to
- * atomic-server. It is feature-detected, never assumed: without it the app
- * says so and fetches nothing. Its contract is in that plan: the frame names
- * a platform and a connection id, never a credential; the rotating code stays
- * in the parent page.
+ * `proxy` (ontola/atomic-plugins#54 phase 2): the frame names a platform and
+ * a connection id, never a credential. view-client.js makes an Ed25519 key in
+ * the frame's memory, gets a short-lived capability for it from the page
+ * (signed with the user's key, after the page checked the connection is
+ * delegated to this app), and calls the integration proxy directly, signing
+ * each request with that key. It is feature-detected, never assumed. Without it
+ * the app says so and fetches nothing.
  */
 
 export type JSONValue =
@@ -38,13 +40,13 @@ export interface PluginResource {
   destroy(): Promise<void>;
 }
 
-/** One provider call, relayed by the host. A connection reference, never a credential. */
+/** One proxy call, made by the host's frame client. Carries a connection reference, never a credential. */
 export interface HostProxyRequest {
   platform: string;
   connectionId: string;
-  /** The provider path after the proxy's `/proxy/<platform>`, e.g. `/v1/search`. */
+  /** The provider path after the proxy's `/proxy/<connection>/<platform>`, e.g. `/v1/search`. */
   path: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string>;
   /** JSON text. */
   body?: string;
@@ -58,14 +60,25 @@ export interface HostProxyResponse {
   body: unknown;
 }
 
+/** What `proxy.connect` resolves to, when it resolves. */
+export type ConnectResult =
+  | { status: 'cancelled' }
+  | { status: 'connected'; connectionId: string; platform: string };
+
 export interface HostProxy {
   request(request: HostProxyRequest): Promise<HostProxyResponse>;
-  /** Connections this app made for `platform`, in this browser. */
+  /** Connections for `platform` the person delegated to this app, at the proxy. */
   connections(args: {
     platform: string;
   }): Promise<{ connectionId: string; platform: string }[]>;
-  /** Asks the host to show its consent bar; on Connect the page navigates away. */
-  connect(args: { platform: string }): Promise<{ status: 'cancelled' }>;
+  /**
+   * Shows the host's consent bar. Resolves `connected` when the person picks
+   * a connection they already have (the host delegates it to this app; no
+   * reload), `cancelled` when they cancel. Connecting a new account sends the
+   * page to the proxy and back, which reloads this view, so then it never
+   * settles.
+   */
+  connect(args: { platform: string }): Promise<ConnectResult>;
 }
 
 export interface PluginStore {

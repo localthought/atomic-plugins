@@ -100,10 +100,11 @@ export function createController(
       set({ kind: 'connecting' });
 
       try {
-        // On consent the host navigates away and this view reloads; the
-        // promise only settles when the person cancels.
-        await proxy.connect({ platform: PLATFORM });
-        set({ kind: 'disconnected' });
+        // Connecting a new account navigates away and reloads this view;
+        // picking an existing one resolves `connected`, with no reload.
+        const result = await proxy.connect({ platform: PLATFORM });
+        if (result?.status === 'connected') await this.load();
+        else set({ kind: 'disconnected' });
       } catch (error) {
         set({ kind: 'error', message: message(error) });
       }

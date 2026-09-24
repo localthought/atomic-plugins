@@ -331,7 +331,7 @@ async function readRows(
   return out;
 }
 
-/** The adapter's `Host` over the app's rows and the proxy relay. */
+/** The adapter's `Host` over the app's rows and the host's proxy calls. */
 function host(
   proxy: HostProxy,
   connectionId: string,
@@ -545,7 +545,7 @@ export type Outcome =
   | { status: 'sent'; title: string }
   /** Google answered 412: the event changed after the preview. */
   | { status: 'stale'; title: string }
-  /** The relay threw: Google may or may not have the change. */
+  /** The call threw: Google may or may not have the change. */
   | { status: 'uncertain'; title: string; message: string }
   | { status: 'failed'; title: string; message: string }
   /** Not attempted, because an earlier write's outcome was unknown. */
@@ -554,10 +554,9 @@ export type Outcome =
 /**
  * Sends reviewed edits one by one, each a PATCH of only the changed fields,
  * with `If-Match` set to the ETag its preview read. A 412 or a refusal
- * affects only that event. An uncertain outcome stops the batch: the host
- * relay spends its connection code before dispatch, so after a lost
- * response it cannot tell what happened either, and asks to reconnect. The
- * baseline advances only for events Google confirmed.
+ * affects only that event. An uncertain outcome (the call threw, so it may
+ * have reached Google) stops the batch; the next preview reads what Google
+ * has. The baseline advances only for events Google confirmed.
  */
 export async function send(
   store: PluginStore,

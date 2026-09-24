@@ -284,7 +284,8 @@ group('GitHub issues drive app', () => {
     const [issue] = rows(store).find(([, p]) => p[number] === 1)!;
     store.edit(issue, { [NAME]: 'Renamed' });
     await controller.sync();
-    store.fail = 'No github-issues connection for this app. Connect again.';
+    store.fail =
+      'No github-issues connection c1 is delegated to this app. Connect again.';
     const refused = ready(await controller.send());
     expect(refused.problem?.kind).toBe('reconnect');
 
@@ -451,12 +452,31 @@ group('frame store adapter', () => {
     ).rejects.toMatchObject({
       notSent: true,
     });
-    store.fail = 'Reconnect before retrying an uncertain request';
+    store.fail =
+      'This browser cannot make an Ed25519 key (WebCrypto Ed25519 is missing)';
     await expect(
       dispatch('/repos/a/b/issues', { method: 'GET' }),
     ).rejects.toMatchObject({
       notSent: true,
     });
+    store.fail = undefined;
+    // The proxy's own refusal comes back as a response, not a throw: it
+    // never reached GitHub, and a lost delegation means connect again.
+    store.refusal = 'not_delegated';
+    await expect(
+      dispatch('/repos/a/b/issues', { method: 'POST', body: '{}' }),
+    ).rejects.toMatchObject({
+      notSent: true,
+      message: expect.stringMatching(/not_delegated.*Connect again\.$/),
+    });
+    store.refusal = 'stale_timestamp';
+    await expect(
+      dispatch('/repos/a/b/issues', { method: 'GET' }),
+    ).rejects.toMatchObject({
+      notSent: true,
+      message: expect.not.stringMatching(/Connect again/),
+    });
+    store.refusal = undefined;
     store.fail = 'The host did not answer proxy in time.';
     await expect(
       dispatch('/repos/a/b/issues', { method: 'GET' }),

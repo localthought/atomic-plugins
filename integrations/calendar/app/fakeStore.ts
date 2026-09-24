@@ -4,10 +4,12 @@
  * out the way `createApp` lays out an app: app -> ontology -> row class, and
  * app -> table. `proxy` answers from the same stateful Google Calendar
  * fixture the mock integration proxy serves
- * (`../fixtures/google-calendar/scenario.mjs`), the way the page relays:
- * `ifMatch` becomes an `If-Match` header, and a connection whose call threw
- * is spent until the person reconnects (atomic-server
- * `helpers/proxyConnections.ts`). Test-only; not bundled.
+ * (`../fixtures/google-calendar/scenario.mjs`), the way the host's frame
+ * client and the integration proxy answer (ontola/atomic-plugins#54):
+ * `ifMatch` becomes an `If-Match` header; a connection the page no longer
+ * lists throws the page's "Connect again" refusal; a revoked one gets the
+ * proxy's `403 not_delegated`. A lost response spends nothing: the same
+ * connection works on the next call. Test-only; not bundled.
  */
 import { calendarFixture } from '../fixtures/google-calendar/scenario.mjs';
 import type {
@@ -34,8 +36,10 @@ export interface FakeStore extends PluginStore {
   readonly google: Fixture;
   /** The next PATCH reaches Google, then the relay throws (a lost response). */
   loseNextWriteResponse(): void;
-  /** What the host would hold after the person connected again. */
+  /** What the proxy would hold after the person connected again. */
   reconnect(): void;
+  /** The delegation of `connectionId` revoked at the proxy, elsewhere. */
+  revoke(connectionId: string): void;
 }
 
 export function fakeStore({
@@ -54,7 +58,7 @@ export function fakeStore({
   let next = 0;
   let loseResponse = false;
   const connections = connected ? ['c1'] : [];
-  const spent = new Set<string>();
+  const revoked = new Set<string>();
 
   const wrap = (
     subject: string,
@@ -95,10 +99,17 @@ export function fakeStore({
       calls.push(request);
       if (!connections.includes(request.connectionId))
         throw new Error(
-          'No google-calendar connection for this app. Connect again.',
+          `No google-calendar connection ${request.connectionId} is delegated to this app. Connect again.`,
         );
-      if (spent.has(request.connectionId))
-        throw new Error('Reconnect before retrying an uncertain request');
+      if (revoked.has(request.connectionId))
+        return {
+          status: 403,
+          headers: {},
+          body: {
+            error: 'not_delegated',
+            message: 'the signing agent has no delegation for this connection',
+          },
+        };
       const url = new URL(
         `/proxy/${request.platform}${request.path}`,
         'http://mock-proxy.test',
@@ -118,7 +129,6 @@ export function fakeStore({
 
       if (request.method === 'PATCH' && loseResponse) {
         loseResponse = false;
-        spent.add(request.connectionId);
         throw new Error('Failed to fetch');
       }
 
@@ -149,6 +159,9 @@ export function fakeStore({
     },
     reconnect: () => {
       connections.push(`c${connections.length + 1}`);
+    },
+    revoke: connectionId => {
+      revoked.add(connectionId);
     },
     getApp: async () => APP,
     getData: async () => ({ table: TABLE, rowClass: ROW_CLASS }),

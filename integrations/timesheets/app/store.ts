@@ -16,8 +16,11 @@
  *   removed with `remove()`; the host writes the removals as an `/app-write`
  *   `remove` and then sets the rest (atomic-server#1690). Afterwards the
  *   host re-reads the resource, so the next `get` sees the write.
- * - `proxy` is the relay from atomic-server#1657 (for #1624): `request`,
- *   `connections` and `connect`. Feature-detected, never assumed.
+ * - `proxy`: `request`, `connections` and `connect`. Since
+ *   ontola/atomic-plugins#54 phase 2 view-client.js calls the integration
+ *   proxy itself, with a capability from the page and a key only the frame
+ *   holds; the frame names a connection id, never a credential.
+ *   Feature-detected, never assumed.
  */
 
 export type JSONValue =
@@ -44,13 +47,13 @@ export interface PluginResource {
   destroy(): Promise<void>;
 }
 
-/** One proxy call relayed by the host. Carries a connection reference, never a credential. */
+/** One proxy call, made by the host's frame client. Carries a connection reference, never a credential. */
 export interface HostProxyRequest {
   platform: string;
   connectionId: string;
-  /** Provider path after the proxy's `/proxy/<platform>` prefix. */
+  /** Provider path after the proxy's `/proxy/<connection>/<platform>` prefix. */
   path: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string>;
   /** JSON text. */
   body?: string;
@@ -64,18 +67,29 @@ export interface HostProxyResponse {
   body: unknown;
 }
 
-/** A connection held by the host page, named by public ids only. */
+/** A connection at the proxy, named by public ids only. */
 export interface ConnectionReference {
   platform: string;
   connectionId: string;
 }
 
+/** What `proxy.connect` resolves to, when it resolves. */
+export type ConnectResult =
+  | { status: 'cancelled' }
+  | { status: 'connected'; connectionId: string; platform: string };
+
 export interface HostProxy {
   request(request: HostProxyRequest): Promise<HostProxyResponse>;
-  /** This app's connections for `platform`, in this browser. */
+  /** Connections for `platform` the person delegated to this app, at the proxy. */
   connections(args: { platform: string }): Promise<ConnectionReference[]>;
-  /** Shows the host's consent bar; settles only when the person cancels. */
-  connect(args: { platform: string }): Promise<{ status: 'cancelled' }>;
+  /**
+   * Shows the host's consent bar. Resolves `connected` when the person picks
+   * a connection they already have (the host delegates it to this app; no
+   * reload), `cancelled` when they cancel. Connecting a new account sends the
+   * page to the proxy and back, which reloads this view, so then it never
+   * settles.
+   */
+  connect(args: { platform: string }): Promise<ConnectResult>;
 }
 
 export interface PluginStore {
@@ -90,7 +104,7 @@ export interface PluginStore {
   }): Promise<PluginResource>;
   /** `handler` takes no argument; re-fetch via getResource for the new data. */
   subscribe(subject: string, handler: () => void): () => void;
-  /** Feature-detected: hosts without the relay (atomic-server#1624) lack it. */
+  /** Feature-detected: hosts without integration-proxy support lack it. */
   proxy?: HostProxy;
 }
 

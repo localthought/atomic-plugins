@@ -17,28 +17,87 @@ export type Dispatch = (
 ) => Promise<Receipt>;
 
 /**
- * Host errors that are raised before the relay spends a connection code, so
- * the request certainly never left this browser (atomic-server
- * `helpers/proxyConnections.ts` and `chunks/AppPage/hostStore.ts` at the
- * pin). Matching on text is brittle; a message that stops matching only makes
- * a write look uncertain, which pauses sync instead of resending it.
+ * Host errors raised before the frame sends anything to the proxy, so the
+ * request certainly never left this browser: the page refusing to mint a
+ * capability, the frame unable to make its key, or an invalid request
+ * (atomic-server `helpers/proxyConnections.ts`, `chunks/AppPage/hostStore.ts`
+ * and `view-client.js` at the pin). Matching on text is brittle; a message
+ * that stops matching only makes a write look uncertain, which pauses sync
+ * instead of resending it.
  */
 const NOT_SENT = [
-  /^No [a-z0-9-]+ connection for this app/,
-  /^Reconnect before retrying an uncertain request/,
+  /^No [a-z0-9-]+ connection .* is delegated to this app/,
   /^This host cannot reach the integration proxy/,
-  /^This browser needs Web Locks/,
+  /^This browser (has no WebCrypto|cannot make an Ed25519 key)/,
+  /^The host returned no capability/,
+  /^This app has no identity of its own yet/,
+  /^The integration proxy refused (GET|POST|DELETE) \/connections/,
   /^Invalid (platform|proxy path|proxy method|proxy query|If-Match)/,
   /^A (GET )?proxy request/,
-  /^connectionId is required/,
+  /^(connectionId|publicKey|platform) is required/,
   /^Sign in/,
 ];
 
 /**
- * `proxyTransport`'s `dispatch` over the host's relay (`store.proxy.request`).
- * The frame names the connection; the host page holds and rotates its code,
- * serialises calls per connection and returns status and body only. This
- * module never sees or stores a credential.
+ * The integration proxy's own refusals (`integration-proxy/src/api_error.rs`):
+ * `{ error, message }` with one of these codes. The proxy answers them before
+ * calling GitHub, so a refused write was not sent. The first group means the
+ * connection is gone or no longer this app's: connect again.
+ * `unsupported_authorization` (a retired `Bearer` code) is left out: only a
+ * host from before #54 sends one.
+ */
+const RECONNECT_CODES = [
+  'unknown_connection',
+  'not_delegated',
+  'capability_scope',
+  'platform_mismatch',
+  'credential_refresh_failed',
+];
+const REFUSAL_CODES = [
+  ...RECONNECT_CODES,
+  'missing_signature',
+  'unsupported_signature_version',
+  'invalid_agent',
+  'agent_key_mismatch',
+  'stale_timestamp',
+  'bad_signature',
+  'replayed',
+  'invalid_capability',
+  'capability_expired',
+  'capability_too_long',
+  'wrong_audience',
+  'capability_key_mismatch',
+  'not_owner',
+  'access_denied',
+];
+
+/** A proxy refusal as an error, or `undefined` for a provider answer. */
+export function proxyRefusal(response: {
+  status: number;
+  body: unknown;
+}): (Error & { notSent: true }) | undefined {
+  const body = response.body as { error?: unknown; message?: unknown } | null;
+  const code = typeof body?.error === 'string' ? body.error : undefined;
+  if (response.status < 400 || !code || !REFUSAL_CODES.includes(code))
+    return undefined;
+  const detail = typeof body?.message === 'string' ? `: ${body.message}` : '';
+
+  return Object.assign(
+    new Error(
+      RECONNECT_CODES.includes(code)
+        ? `The integration proxy refused this connection (${code}${detail}). Connect again.`
+        : `The integration proxy refused the request (${code}${detail}).`,
+    ),
+    { notSent: true as const },
+  );
+}
+
+/**
+ * `proxyTransport`'s `dispatch` over the host's `store.proxy.request`. The
+ * frame names the connection; the host's frame client calls the proxy with a
+ * capability the page signed and a key it holds itself, and returns status,
+ * a few headers and the body. This module never sees or stores a
+ * credential.
  *
  * `path` comes from the GitHub adapter as `/repos/{owner}/{name}/issues…`
  * with its query string; it is split into the relay's `path` and `query`,
@@ -81,6 +140,9 @@ export function relayDispatch(
         notSent: NOT_SENT.some(pattern => pattern.test(message)),
       });
     }
+
+    const refused = proxyRefusal(response);
+    if (refused) throw refused;
 
     return {
       status: response.status,

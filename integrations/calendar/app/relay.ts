@@ -1,19 +1,21 @@
 // @wc-ignore-file
 /**
  * `adapter.ts` reads and writes through `Host.read(intent)` with absolute
- * Google URLs. In the drive app that becomes one call to the host's proxy
- * relay (`store.proxy.request`) per intent, for platform `google-calendar`.
+ * Google URLs. In the drive app that becomes one `store.proxy.request` per
+ * intent, for platform `google-calendar`: the host's frame client calls the
+ * integration proxy itself, with a capability the page signed and a key only
+ * it holds (ontola/atomic-plugins#54). The file keeps its old name, "relay".
  *
- * The relay wants the provider path after `/proxy/google-calendar`. The
- * integration-proxy strips its catalog server's base path (`/calendar/v3`)
+ * The proxy wants the provider path after `/proxy/<connection>/google-calendar`.
+ * The integration-proxy strips its catalog server's base path (`/calendar/v3`)
  * itself, so the path keeps it: `/calendar/v3/calendars/{id}/events`.
  * Anything outside `https://www.googleapis.com/calendar/v3/` is refused here,
  * before it reaches the host.
  *
  * The adapter's `Authorization: secret:google-calendar` header is the
  * sandbox runtime's credential placeholder. It is dropped: the frame never
- * names a credential, only a connection id. `If-Match` becomes the relay's
- * `ifMatch` field; no other request header can cross the relay.
+ * names a credential, only a connection id. `If-Match` becomes the request's
+ * `ifMatch` field; no other request header crosses to the proxy.
  */
 import type {
   ExternalIntent,
@@ -25,10 +27,10 @@ export const PLATFORM = 'google-calendar';
 export const UPSTREAM = 'https://www.googleapis.com/calendar/v3';
 
 /**
- * The relay call for a write threw instead of answering. The host may have
- * sent it (the page spends its connection code before dispatch), so Google
- * may or may not have applied it. Nothing about the event is assumed: the
- * next preview reads what Google has.
+ * The call for a write threw instead of answering (a lost response, a
+ * timeout). It may have reached Google, so Google may or may not have
+ * applied it. Nothing about the event is assumed: the next preview reads
+ * what Google has.
  */
 export class UncertainWriteError extends Error {
   constructor(
@@ -41,6 +43,57 @@ export class UncertainWriteError extends Error {
       }). Refresh to see what Google has now.`,
     );
   }
+}
+
+/**
+ * The integration proxy's own refusals (`integration-proxy/src/api_error.rs`):
+ * `{ error, message }` with one of these codes, answered before the provider
+ * is called. The first group means the connection is gone or no longer this
+ * app's, so the person has to connect again. `unsupported_authorization`
+ * (a retired `Bearer` code) is left out: only a host from before #54 sends
+ * one.
+ */
+const RECONNECT_CODES = [
+  'unknown_connection',
+  'not_delegated',
+  'capability_scope',
+  'platform_mismatch',
+  'credential_refresh_failed',
+];
+const REFUSAL_CODES = [
+  ...RECONNECT_CODES,
+  'missing_signature',
+  'unsupported_signature_version',
+  'invalid_agent',
+  'agent_key_mismatch',
+  'stale_timestamp',
+  'bad_signature',
+  'replayed',
+  'invalid_capability',
+  'capability_expired',
+  'capability_too_long',
+  'wrong_audience',
+  'capability_key_mismatch',
+  'not_owner',
+  'access_denied',
+];
+
+/** A proxy refusal as an error, or `undefined` for a provider answer. */
+export function proxyRefusal(response: {
+  status: number;
+  body: unknown;
+}): Error | undefined {
+  const body = response.body as { error?: unknown; message?: unknown } | null;
+  const code = typeof body?.error === 'string' ? body.error : undefined;
+  if (response.status < 400 || !code || !REFUSAL_CODES.includes(code))
+    return undefined;
+  const detail = typeof body?.message === 'string' ? `: ${body.message}` : '';
+
+  return new Error(
+    RECONNECT_CODES.includes(code)
+      ? `The integration proxy refused this connection (${code}${detail}). Connect again.`
+      : `The integration proxy refused the request (${code}${detail}).`,
+  );
 }
 
 export interface Relayed {
@@ -99,6 +152,9 @@ export function relay(proxy: HostProxy, connectionId: string): Relayed {
       }
 
       out.last = response;
+      // Answered by the proxy itself, before Google: certainly not applied.
+      const refused = proxyRefusal(response);
+      if (refused) throw refused;
 
       return {
         status: response.status,
