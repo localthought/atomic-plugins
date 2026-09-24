@@ -21,10 +21,10 @@ resource is a human Agent.
 Each binding has a stable local ID, an existing HTTPS Atomic subject and an
 operator-provided publication time. Only selected properties are projected:
 
-| Atomic resource | ActivityStreams object | Data |
-| --- | --- | --- |
-| Message or PlainText | Note | `description`, HTML-escaped as plain text; optional `name` |
-| Document or DocumentV2 | Article | `name` and a link to the actual document; no invented CRDT content |
+| Atomic resource        | ActivityStreams object | Data                                                               |
+| ---------------------- | ---------------------- | ------------------------------------------------------------------ |
+| Message or PlainText   | Note                   | `description`, HTML-escaped as plain text; optional `name`         |
+| Document or DocumentV2 | Article                | `name` and a link to the actual document; no invented CRDT content |
 
 Each projected object has a stable `/ap/objects/<id>` identity, public addressing,
 actor attribution, the configured publication timestamp, and `url` linking to
@@ -91,13 +91,15 @@ from its registered claim. This plugin does not implement a separate host-meta.
   "origin": "https://social.example",
   "username": "news",
   "profile": "https://atomic.example/public-profile",
-  "publication": { "objects": [
-    {
-      "id": "announcement-1",
-      "subject": "https://atomic.example/public-announcement",
-      "published": "2026-09-24T12:00:00.000Z"
-    }
-  ] }
+  "publication": {
+    "objects": [
+      {
+        "id": "announcement-1",
+        "subject": "https://atomic.example/public-announcement",
+        "published": "2026-09-24T12:00:00.000Z"
+      }
+    ]
+  }
 }
 ```
 
