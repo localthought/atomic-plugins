@@ -243,7 +243,13 @@ const expected: Record<string, unknown> = {
     resources: 1,
     reconcileRecord: 'function',
   },
-  './atomic': { published: 't1', name: 'Rocket', count: 1 },
+  './atomic': {
+    published: 't1',
+    name: 'Rocket',
+    count: 1,
+    unbound: 't1',
+    bound: null,
+  },
   './background': { runs: 1, outcome: 'ran', stored: true },
   './reflect': {
     counterpart: { system: 'b', id: '9' },

@@ -105,6 +105,35 @@ export class AtomicIdentityMap {
     });
   }
 
+  /**
+   * Forget which external record `subject` corresponds to in `scope`, and
+   * return that external ID (or `undefined` when none was bound). Only the
+   * identity mapping resource is removed: the native resource, the external
+   * record and mappings in other scopes are untouched, and no connector is
+   * called. Use it when the external record is gone and the native resource
+   * should stay as a local-only copy.
+   *
+   * Afterwards `externalId(scope, subject)` and `lookup(scope, id)` return
+   * `undefined`, so publishing `subject` through a lens creates a new
+   * external record, and `subjectFor(scope, id)` allocates by ID again: if
+   * the same external record is seen again it is bound to the subject
+   * `subjectFor` gives, which is `subject` itself when `subject` was
+   * allocated by `subjectFor` for it. Callers that must keep the two apart
+   * record that decision themselves.
+   */
+  unbind(scope: IdentityScope, subject: string): ExternalId | undefined {
+    assertSubject(scope.scope);
+    assertSubject(subject);
+    if (!scope.entity) throw new Error('Expected an entity');
+    const resource = this.find(scope).find(
+      (resource) => resource[identity.resource] === subject,
+    );
+    if (!resource) return undefined;
+    const id = this.externalId(scope, subject);
+    this.store.delete(resource['@id']);
+    return id;
+  }
+
   private find(scope: IdentityScope): AtomicResource[] {
     const resources = this.store
       .all(identity.class)

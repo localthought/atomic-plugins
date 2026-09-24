@@ -39,11 +39,14 @@ const scope = {
 identities.bind(scope, 15, subject);
 identities.lookup(scope, 15); // subject
 identities.externalId(scope, subject); // 15
+identities.unbind(scope, subject); // 15; the mapping is gone
 ```
 
 The identity key includes the connector instance/account/repository URL, entity type, and external ID's type and value. Numeric `15` and string `"15"` are distinct. Numbers must be safe integers; use strings for larger IDs. Conflicting bindings are rejected. Within one scope/entity, a resource has at most one external ID.
 
 Mappings are ordinary Atomic Data resources using the definitions in [../vocab](../vocab). Their local ID is stored as a string alongside an explicit type. They link to their native resource and are included in snapshots. `subjectFor` deterministically allocates an import subject when no mapping exists, without content-based deduplication. Reserve the supplied base URL's `/resources/` and `/identities/` paths for this purpose, use a stable base, and arrange serving those resources yourself.
+
+`unbind(scope, subject)` forgets the external ID bound to `subject` in one scope and returns it, or `undefined` when there was none. It deletes only that mapping resource, so the next snapshot no longer carries it; the native resource, the external record and mappings in other scopes are kept, and no connector is called. Use it when the external record is gone and the native resource should stay as a local-only copy. After it, `lookup` and `externalId` return `undefined` for that pair, `lens.publish(subject)` creates a new external record, and `lens.ingest` of the same external record again binds it to the subject `subjectFor` allocates, which is the original subject when that subject was allocated for this ID. An application that must not re-link a record it unbound records that decision itself and does not ingest or publish it.
 
 ## Connector lenses
 

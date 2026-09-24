@@ -144,6 +144,66 @@ describe('AtomicIdentityMap', () => {
     expect(() => ids.bind(scope, Number.MAX_SAFE_INTEGER + 1, b)).toThrow();
     expect(() => ids.bind(scope, '', b)).toThrow();
   });
+
+  it('unbinds one scope without touching the resource or other scopes, and survives a restart', () => {
+    const store = setup();
+    const ids = new AtomicIdentityMap(store, 'https://example.com/bridge');
+    const local = { scope: 'https://example.com/table', entity: 'issue' };
+    const remote = { scope: 'https://github.com/acme/project', entity: 'issue' };
+    store.put({ '@id': a, [name]: 'Kept here' });
+    ids.bind(local, 'https://example.com/row-1', a);
+    ids.bind(remote, 15, a);
+    ids.bind(remote, 16, b);
+    const before = store.get(a);
+
+    expect(ids.unbind(remote, a)).toBe(15);
+    expect(ids.externalId(remote, a)).toBeUndefined();
+    expect(ids.lookup(remote, 15)).toBeUndefined();
+    // The native resource, the other scope and other subjects are untouched.
+    expect(store.get(a)).toEqual(before);
+    expect(ids.externalId(local, a)).toBe('https://example.com/row-1');
+    expect(ids.lookup(remote, 16)).toBe(b);
+    expect(store.all(identity.class)).toHaveLength(2);
+    // Idempotent: nothing left to forget.
+    expect(ids.unbind(remote, a)).toBeUndefined();
+    expect(ids.unbind(remote, 'https://example.com/never-bound')).toBeUndefined();
+
+    // The snapshot no longer carries it, so a restart does not restore it.
+    const restored = setup();
+    const restoredIds = new AtomicIdentityMap(
+      restored,
+      'https://example.com/bridge',
+    );
+    restored.loadJSONAD(store.toJSONAD());
+    expect(restoredIds.externalId(remote, a)).toBeUndefined();
+    expect(restoredIds.externalId(local, a)).toBe('https://example.com/row-1');
+    expect(restored.get(a)).toEqual(before);
+
+    // The subject can be bound to another external record afterwards, and
+    // the external ID to another subject.
+    restoredIds.bind(remote, 17, a);
+    restoredIds.bind(remote, 15, `${b}/2`);
+    expect(restoredIds.externalId(remote, a)).toBe(17);
+    expect(restoredIds.lookup(remote, 15)).toBe(`${b}/2`);
+  });
+
+  it('keeps a string and a number ID apart when unbinding', () => {
+    const store = setup();
+    const ids = new AtomicIdentityMap(store, 'https://example.com/bridge');
+    const scope = { scope: a, entity: 'issue' };
+    ids.bind(scope, 15, a);
+    ids.bind(scope, '15', b);
+    expect(ids.unbind(scope, b)).toBe('15');
+    expect(ids.lookup(scope, 15)).toBe(a);
+    expect(ids.lookup(scope, '15')).toBeUndefined();
+  });
+
+  it('refuses to unbind with an invalid scope or subject', () => {
+    const ids = new AtomicIdentityMap(setup(), 'https://example.com/bridge');
+    expect(() => ids.unbind({ scope: 'relative', entity: 'issue' }, a)).toThrow();
+    expect(() => ids.unbind({ scope: a, entity: '' }, a)).toThrow('entity');
+    expect(() => ids.unbind({ scope: a, entity: 'issue' }, 'relative')).toThrow();
+  });
 });
 
 describe('DID resources', () => {
