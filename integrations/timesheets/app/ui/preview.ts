@@ -90,11 +90,16 @@ export const FRAMES = {
 
 export type FrameId = keyof typeof FRAMES;
 
-/** Host dark-theme values for the `--t-*` variables (frame O). */
+/**
+ * The host's own dark-theme values for the `--t-*` variables (frame O), as
+ * atomic-server's `buildTheme(darkMode, '#1b50d8')` computes them
+ * (`styling.tsx` at the pin): the main colour lightened by 0.2.
+ */
 export const DARK_THEME = `:root {
   --t-color-bg-body: #000000; --t-color-bg: #000000; --t-color-bg-1: #1a1a1a;
   --t-color-bg-2: #4d4d4d; --t-color-text: #ffffff; --t-color-text-light: #999999;
-  --t-color-main: #3d6ff0; --t-color-main-selected-bg: #04091a; color-scheme: dark;
+  --t-color-main: #6c90ed; --t-color-main-selected-bg: #030817;
+  --t-color-success: #4cc27a; color-scheme: dark;
 }`;
 
 interface Stub {
@@ -136,6 +141,9 @@ function stub(
     setLookback: async () => back(),
     reconnect: async () => set({ kind: 'connecting' }),
     canDisconnect: () => true,
+    canOpen: () => ({ external: true, resource: true }),
+    openExternal: async () => true,
+    openRow: async () => true,
     disconnect: async () => set({ kind: 'not-connected' }),
     names: () => ({
       userName: 'Mira Janssen',
@@ -250,6 +258,7 @@ export function renderFrame(root: HTMLElement, id: FrameId): Shell {
   shell = mountShell(root, controller, {
     now: () => SAMPLE_NOW,
     width: FRAMES[id].width,
+    colorScheme: id === 'o' ? 'dark' : 'light',
   });
   shell.render();
 

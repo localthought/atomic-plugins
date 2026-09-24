@@ -16,7 +16,7 @@ body {
   --pl-accent-soft: var(--t-color-main-selected-bg, #f3f6fd);
   --pl-neg: var(--t-color-alert, #cf5b5b);
   --pl-warn: var(--t-color-warning, #f5a623);
-  --pl-pos: #2f8f5b;
+  --pl-pos: var(--t-color-success, #2f8f5b);
   --pl-radius: var(--t-radius, 9px);
   --pl-font: var(
     --t-font-family,
@@ -1043,6 +1043,20 @@ select.sel {
 .conflicts ul {
   margin: 0;
   padding-left: 18px;
+}
+
+/* The host's colour scheme (store.getTheme / onThemeChange), as data-scheme.
+   The colours still come from the host's --t-* values; this sets native
+   controls to dark, and puts dark text on the accent, which the host
+   lightens in dark mode (#6c90ed by default: white on it is ~3.2:1). */
+.pl[data-scheme='dark'] {
+  color-scheme: dark;
+  --pl-pos: var(--t-color-success, #4cc27a);
+  --pl-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+.pl[data-scheme='dark'] .btn:not(.sec):not(.ghost):not(.danger),
+.pl[data-scheme='dark'] .mark {
+  color: #000 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

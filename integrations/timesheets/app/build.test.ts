@@ -17,11 +17,10 @@ describe('drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    // Measured 89,560 bytes (87.5 KB) with the #89 views: JS minified by
-    // esbuild, the stylesheet (ui/theme.css, about 18 KB) by esbuild's CSS
-    // minifier. The limit is that plus about 10%, rounded up; it was 64 KB
-    // before the views. A bigger jump should be a visible decision.
-    expect(bytes).toBeLessThan(97 * 1024);
+    // Measured 90,965 bytes minified on 2026-09-24 (JS by esbuild, the
+    // stylesheet ui/theme.css by esbuild's CSS minifier); limit is that plus
+    // ~10%. It was 64 KB before the #89 views.
+    expect(bytes).toBeLessThan(100_100);
   });
 
   it('carries no credential handling of its own', () => {

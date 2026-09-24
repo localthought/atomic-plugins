@@ -12,6 +12,7 @@ import { APP, fakeStore } from '../fakeStore.js';
 import { fixtureProxy } from '../fixtureProxy.js';
 import { view } from '../main.js';
 import { ensureSchema } from '../schema.js';
+import type { ColorScheme, PluginStore } from '../store.js';
 import { FRAMES, renderFrame, type FrameId } from './preview.js';
 import type { Shell } from './shell.js';
 import { css } from './theme.js';
@@ -144,7 +145,12 @@ describe('frames', () => {
       'Changes made in Clockify replace this copy on the next sync.',
     );
 
-    const link = dialog.querySelector('footer a')!;
+    const footer = [...dialog.querySelectorAll('footer button')].map(b =>
+      text(b),
+    );
+    // The host can open both (frame D's two actions).
+    expect(footer).toEqual(['Open row in Atomic', 'Open Clockify']);
+    const link = dialog.querySelector('footer button:last-child')!;
     (link as HTMLElement).focus();
     dialog.dispatchEvent(
       new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
@@ -330,6 +336,16 @@ describe('frames', () => {
     expect(root.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it('O: the host dark scheme reaches the frame', () => {
+    expect(
+      frame('o').root.querySelector('.pl')!.getAttribute('data-scheme'),
+    ).toBe('dark');
+    expect(
+      frame('a').root.querySelector('.pl')!.getAttribute('data-scheme'),
+    ).toBe('light');
+    expect(css).toMatch(/--pl-pos: var\(--t-color-success/);
+  });
+
   it('view tabs move with the arrow keys', () => {
     const { root, dom } = frame('a');
     const tablist = root.querySelector('.bar [role="tablist"]')!;
@@ -349,9 +365,9 @@ describe('frames', () => {
 describe('view() against the fake store and the Clockify mock', () => {
   const NOW = Date.now();
 
-  async function mount(configured: boolean) {
+  async function mount(configured: boolean, host: Partial<PluginStore> = {}) {
     const proxy = fixtureProxy(NOW);
-    const store = fakeStore({ proxy: proxy.request });
+    const store = Object.assign(fakeStore({ proxy: proxy.request }), host);
 
     if (configured) {
       const schema = await ensureSchema(store);
@@ -399,5 +415,64 @@ describe('view() against the fake store and the Clockify mock', () => {
     buttons(root, 'Projects')[0].click();
     expect(text(root.querySelector('.prow'))).toContain('Atomic plugins');
     expect(text(root.querySelector('.prow small'))).toBe('Test client');
+  });
+
+  it('opens Clockify and the entry’s row through the host, and follows its theme', async () => {
+    const opened: string[] = [];
+    const shown: string[] = [];
+    let themed: ((t: { colorScheme: ColorScheme }) => void) | undefined;
+    const { root, store } = await mount(true, {
+      openExternal: async url => {
+        opened.push(url);
+
+        return { status: 'opened' as const };
+      },
+      openResource: async subject => {
+        shown.push(subject);
+
+        return { status: 'opened' as const, subject };
+      },
+      getTheme: () => ({ colorScheme: 'dark' as const }),
+      onThemeChange: handler => {
+        themed = handler;
+
+        return () => {};
+      },
+    });
+    const pl = root.querySelector('.pl')!;
+    expect(pl.getAttribute('data-scheme')).toBe('dark');
+    themed!({ colorScheme: 'light' });
+    expect(pl.getAttribute('data-scheme')).toBe('light');
+
+    await expect
+      .poll(() => text(root.querySelector('[role="status"]')))
+      .toContain('Last synced');
+    buttons(root, 'Entries')[0].click();
+    if (!root.querySelector('.entry'))
+      buttons(root, 'Previous week')[0].click();
+    (root.querySelector('.entry') as HTMLElement).click();
+    buttons(root, 'Open Clockify')[0].click();
+    expect(opened).toEqual(['https://app.clockify.me/tracker']);
+
+    const entryId = root.querySelector('.entry')!.getAttribute('data-entry');
+    buttons(root, 'Open row in Atomic')[0].click();
+    await expect.poll(() => shown.length).toBe(1);
+    const row = store.resources.get(shown[0])!;
+    expect(Object.values(row)).toContain(entryId);
+  });
+
+  it('without the host’s open calls, links stay plain links and the row link is left out', async () => {
+    const { root } = await mount(true);
+    await expect
+      .poll(() => text(root.querySelector('[role="status"]')))
+      .toContain('Last synced');
+    buttons(root, 'Entries')[0].click();
+    if (!root.querySelector('.entry'))
+      buttons(root, 'Previous week')[0].click();
+    (root.querySelector('.entry') as HTMLElement).click();
+    expect(buttons(root, 'Open row in Atomic')).toHaveLength(0);
+    expect(root.querySelector('footer a')!.getAttribute('href')).toBe(
+      'https://app.clockify.me/tracker',
+    );
   });
 });

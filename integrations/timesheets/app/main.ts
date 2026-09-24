@@ -22,8 +22,10 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
 
   let shell: Shell | undefined;
   const controller = createController(store, () => shell?.render());
-  shell = mountShell(root, controller);
+  const colorScheme = store.getTheme?.().colorScheme;
+  shell = mountShell(root, controller, colorScheme ? { colorScheme } : {});
   shell.render();
+  store.onThemeChange?.(theme => shell?.setColorScheme(theme.colorScheme));
 
   store.subscribe(await store.getApp(), () => void controller.appChanged());
   await controller.load();

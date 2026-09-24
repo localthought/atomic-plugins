@@ -27,6 +27,7 @@ import {
   type Week,
 } from '../model/time.js';
 import type { Timesheet } from '../model/types.js';
+import type { ColorScheme } from '../store.js';
 import { dayList, projectSummary, weekGrid } from '../model/views.js';
 import { button, header, pill, type PillState } from './components.js';
 import { renderConflicts, renderUnknown, unknownIn } from './coverage.js';
@@ -83,6 +84,8 @@ interface Ui {
 
 export interface Shell {
   render(): void;
+  /** The host switched between light and dark (`store.onThemeChange`). */
+  setColorScheme(scheme: ColorScheme): void;
   destroy(): void;
 }
 
@@ -90,6 +93,8 @@ export interface ShellOptions {
   now?: () => number;
   /** For tests: a fixed frame width instead of a ResizeObserver. */
   width?: number;
+  /** The host's colour scheme (`store.getTheme()`); light when unknown. */
+  colorScheme?: ColorScheme;
 }
 
 const DAY = 86_400_000;
@@ -133,6 +138,12 @@ export function mountShell(
   };
 
   const sync = () => void controller.sync();
+  let scheme: ColorScheme = options.colorScheme ?? 'light';
+  /** The host's openExternal, when it has one. */
+  const opener = () =>
+    controller.canOpen().external
+      ? (url: string) => void controller.openExternal(url)
+      : undefined;
 
   const openSettings = () => {
     ui.settingsOpen = true;
@@ -548,6 +559,7 @@ export function mountShell(
               syncing: false,
               onSync: sync,
               onWiden: () => void controller.setLookback(30),
+              openExternal: opener(),
             }),
           ),
         ],
@@ -671,6 +683,10 @@ export function mountShell(
               onClose: update(() => {
                 ui.entryId = undefined;
               }),
+              openExternal: opener(),
+              openRow: controller.canOpen().resource
+                ? () => void controller.openRow(entry.id)
+                : undefined,
             }),
           }
         : {}),
@@ -747,6 +763,7 @@ export function mountShell(
     const text = describe(state);
     if (status.textContent !== text) status.textContent = text;
     frame.setAttribute('data-size', size);
+    frame.setAttribute('data-scheme', scheme);
 
     const parts: Child[] = [headerRow(state, sheet)];
     let overlay: Overlay | undefined;
@@ -953,6 +970,10 @@ export function mountShell(
 
   return {
     render,
+    setColorScheme(next) {
+      scheme = next;
+      render();
+    },
     destroy() {
       if (timer) clearTimeout(timer);
       observer?.disconnect();

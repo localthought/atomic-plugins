@@ -192,6 +192,35 @@ describe('controller for the timesheet views', () => {
     expect(back.kind).toBe('ready');
   });
 
+  it('opens links and rows only through the host', async () => {
+    const { store, schema } = await configured();
+    const controller = await ready(store);
+    expect(controller.canOpen()).toEqual({ external: false, resource: false });
+    expect(
+      await controller.openExternal('https://app.clockify.me/tracker'),
+    ).toBe(false);
+    expect(await controller.openRow('entry-1')).toBe(false);
+
+    const shown: string[] = [];
+    const host = Object.assign(store, {
+      openExternal: async () => ({ status: 'cancelled' as const }),
+      openResource: async (subject: string) => {
+        shown.push(subject);
+
+        return { status: 'opened' as const, subject };
+      },
+    });
+    const other = await ready(host);
+    expect(other.canOpen()).toEqual({ external: true, resource: true });
+    // Cancelled in the host's prompt: not opened.
+    expect(await other.openExternal('https://app.clockify.me/tracker')).toBe(
+      false,
+    );
+    expect(await other.openRow('entry-1')).toBe(true);
+    expect(store.resources.get(shown[0])![schema.row.entryId]).toBe('entry-1');
+    expect(await other.openRow('no-such-entry')).toBe(false);
+  });
+
   it('offers Disconnect only when the host can forget the connection', async () => {
     const { store } = await configured();
     const controller = await ready(store);
@@ -205,6 +234,12 @@ describe('controller for the timesheet views', () => {
         ...store.proxy!,
         disconnect: async ({ platform }: { platform: string }) => {
           forgotten.push(platform);
+
+          return {
+            status: 'disconnected' as const,
+            platform,
+            connectionIds: ['conn-1'],
+          };
         },
       },
     };

@@ -242,6 +242,7 @@ export function emptyWindow(
     syncing: boolean;
     onSync: () => void;
     onWiden: () => void;
+    openExternal?: ((url: string) => void) | undefined;
   },
 ) {
   const range =
@@ -267,7 +268,7 @@ export function emptyWindow(
           })
         : null,
     ],
-    link: extLink(h, CLOCKIFY_TRACKER, 'Open Clockify'),
+    link: extLink(h, CLOCKIFY_TRACKER, 'Open Clockify', 'link', p.openExternal),
   });
 }
 

@@ -11,6 +11,7 @@ import { browserTimeZone } from './model/time.js';
 import type { Timesheet } from './model/types.js';
 import { emptyMirror, type Mirror } from './observations.js';
 import { classify, type Problem } from './problem.js';
+import { atomic } from './ontology.js';
 import { ensureSchema, findSchema } from './schema.js';
 import type { ConnectionReference, PluginStore } from './store.js';
 import { syncClockify, type SyncResult } from './sync.js';
@@ -99,6 +100,12 @@ export interface Controller {
   /** Whether the host can forget the connection (`store.proxy.disconnect`). */
   canDisconnect(): boolean;
   disconnect(): Promise<ViewState>;
+  /** Whether the host can open links and resources (#89 frame D). */
+  canOpen(): { external: boolean; resource: boolean };
+  /** Asks the host to open an http(s) link; false when it cannot. */
+  openExternal(url: string): Promise<boolean>;
+  /** Shows the table row of a Clockify entry in the host; false if none. */
+  openRow(entryId: string): Promise<boolean>;
   /** The account and workspace names the last sync read, if any. */
   names(): { userName?: string; workspaceName?: string; timeZone?: string };
   /** The timesheet the views show, or undefined before anything was read. */
@@ -422,6 +429,44 @@ export function createController(
     },
 
     canDisconnect: () => typeof store.proxy?.disconnect === 'function',
+
+    canOpen: () => ({
+      external: typeof store.openExternal === 'function',
+      resource: typeof store.openResource === 'function',
+    }),
+
+    async openExternal(url) {
+      if (typeof store.openExternal !== 'function') return false;
+
+      try {
+        return (await store.openExternal(url)).status === 'opened';
+      } catch {
+        return false;
+      }
+    },
+
+    async openRow(entryId) {
+      if (typeof store.openResource !== 'function') return false;
+
+      try {
+        // The row is the table child carrying this entry id (the table is
+        // a projection of the mirror, written by the sync).
+        const schema = await findSchema(store);
+        if (!schema.row.entryId) return false;
+        const own = new Set(
+          await store.query({ property: atomic.parent, value: schema.table }),
+        );
+        const subject = (
+          await store.query({ property: schema.row.entryId, value: entryId })
+        ).find(s => own.has(s));
+        if (!subject) return false;
+        await store.openResource(subject);
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
 
     async disconnect() {
       const proxy = store.proxy;

@@ -145,14 +145,37 @@ export const panel = (h: H, title: string, ...children: Child[]) =>
     h('div', { class: 'panel' }, h('h2', null, title), ...children),
   );
 
-/** An external link. The frame is sandboxed; see the PR for the gap. */
-export const extLink = (h: H, href: string, text: string, cls = 'link') => {
+/**
+ * An external link. The frame has no popup rights, so with the host's
+ * `openExternal` (passed as `open`) it is a button that asks the host;
+ * without it, a plain link that an older host may block.
+ */
+export const extLink = (
+  h: H,
+  href: string,
+  text: string,
+  cls = 'link',
+  open?: (url: string) => void,
+) => {
   const doc = h.doc;
+  const ext = cls.includes('btn') ? icon(doc, 'ext') : null;
+
+  if (open) {
+    const node = h(
+      'button',
+      { type: 'button', class: cls, 'data-k': `open:${href}` },
+      text,
+      ext,
+    );
+    node.addEventListener('click', () => open(href));
+
+    return node;
+  }
 
   return h(
     'a',
     { class: cls, href, target: '_blank', rel: 'noopener noreferrer' },
     text,
-    cls.includes('btn') ? icon(doc, 'ext') : null,
+    ext,
   );
 };

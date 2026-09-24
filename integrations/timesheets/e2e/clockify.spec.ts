@@ -139,12 +139,34 @@ test.describe('timesheets drive app', () => {
     const detail = app.getByRole('dialog', { name: 'Weekly sync' });
     await expect(detail).toContainText('Atomic plugins');
     await expect(detail).toContainText('Test client');
+    // "Open Clockify" asks the host (the frame cannot open a tab itself):
+    // the host names the destination; cancelling opens nothing.
+    await detail.getByRole('button', { name: 'Open Clockify' }).click();
+    const openLink = page.getByRole('group', { name: 'Open a link' });
+    await expect(openLink).toContainText('app.clockify.me');
+    await openLink.getByRole('button', { name: 'Cancel' }).click();
+    await expect(openLink).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await expect(weekly).toBeFocused();
     await app.getByRole('tab', { name: 'Week' }).click();
 
     const table = await tableOf(page);
+
+    // "Open row in Atomic" shows the entry's table row in the host.
+    await app.getByRole('tab', { name: 'Entries' }).click();
+    if (!(await weekly.count()))
+      await app.getByRole('button', { name: 'Previous week' }).click();
+    await weekly.click();
+    await detail.getByRole('button', { name: 'Open row in Atomic' }).click();
+    await expect(page).not.toHaveURL(appUrl);
+    await expect(
+      page.getByRole('main').getByText('Weekly sync', { exact: true }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.goto(appUrl);
+    await expect(status.filter({ hasText: 'Last synced' })).toBeVisible({
+      timeout: 60_000,
+    });
 
     // The drive holds settings, never the connection or the key.
     // The connection lives at the proxy, owned by the signed-in user and
@@ -304,6 +326,19 @@ test.describe('timesheets drive app', () => {
     await expect(
       app.getByRole('region', { name: 'Conflicts in Clockify' }),
     ).toHaveCount(0);
+
+    // #89 frame M: Disconnect, confirmed inline, removes this app's
+    // delegation (store.proxy.disconnect); the imported rows stay.
+    await app.getByRole('button', { name: 'Settings', exact: true }).click();
+    const sheet = app.getByRole('dialog', { name: 'Settings' });
+    await sheet.getByRole('button', { name: 'Disconnect…' }).click();
+    await expect(sheet).toContainText('already imported stay in this drive');
+    await sheet
+      .getByRole('button', { name: 'Disconnect', exact: true })
+      .click();
+    await expect(status).toContainText('Not connected', { timeout: 30_000 });
+    expect((await proxyConnections('clockify'))[0].delegations).toHaveLength(0);
+    await expectRows(page, table);
   });
 });
 
@@ -489,15 +524,14 @@ test.describe('timesheets views, frame by frame', () => {
         body: await page.screenshot({ fullPage: true }),
         contentType: 'image/png',
       });
-      // Frame O uses a dark accent chosen for the harness; the host picks
-      // the real one (DESIGN.md §8: accent contrast is not guaranteed).
+      // Frame O uses the host's default dark values (preview.ts), so its
+      // contrast is checked too.
       const axe = new AxeBuilder({ page }).withTags([
         'wcag2a',
         'wcag2aa',
         'wcag21a',
         'wcag21aa',
       ]);
-      if (id === 'o') axe.disableRules(['color-contrast']);
       const { violations } = await axe.analyze();
       expect(violations.map(v => `${id}: ${v.id} (${v.nodes.length})`)).toEqual(
         [],

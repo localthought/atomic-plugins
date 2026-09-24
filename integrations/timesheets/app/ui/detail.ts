@@ -101,6 +101,10 @@ export function entryDetail(
     full: boolean;
     lastChecked?: string | undefined;
     onClose: () => void;
+    /** The host's `openExternal`, when it has one. */
+    openExternal?: ((url: string) => void) | undefined;
+    /** Shows the entry's table row in the host, when it can. */
+    openRow?: (() => void) | undefined;
   },
 ): Overlay {
   const day = dayKey(entry.start, p.timeZone);
@@ -161,6 +165,21 @@ export function entryDetail(
         }. Changes made in Clockify replace this copy on the next sync.`,
       ),
     ],
-    footer: [extLink(h, CLOCKIFY_TRACKER, 'Open Clockify', 'btn ghost')],
+    footer: [
+      p.openRow
+        ? button(h, 'Open row in Atomic', {
+            variant: 'sec',
+            key: 'open-row',
+            onClick: p.openRow,
+          })
+        : null,
+      extLink(
+        h,
+        CLOCKIFY_TRACKER,
+        'Open Clockify',
+        'btn ghost',
+        p.openExternal,
+      ),
+    ],
   });
 }
