@@ -72,11 +72,11 @@ must enforce the token's user, category and read/write scope.
 - [ ] Implement WebFinger discovery and authorization through host-owned consent.
 - [ ] Implement bounded document access, folder listings and CORS responses.
 - [ ] Test conditional writes, concurrent stale updates, revoked/expired tokens,
-  category boundaries, read-only grants and cross-user isolation.
+      category boundaries, read-only grants and cross-user isolation.
 - [ ] Add protocol fixtures and executable tests here, covering the milestone
-  and denied access before changing the status to `implemented`.
+      and denied access before changing the status to `implemented`.
 - [ ] Record live interoperability evidence against an independent client or
-  remoteStorage test suite; passing metadata checks is not that evidence.
+      remoteStorage test suite; passing metadata checks is not that evidence.
 
 ## CI
 
