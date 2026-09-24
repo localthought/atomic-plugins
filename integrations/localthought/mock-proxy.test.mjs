@@ -1032,6 +1032,7 @@ test('github-issues: the repository picker pages with Link; labels change one at
       await connect(base, 'github-issues'),
       'github-issues',
     );
+
     const read = async (method, path, body) => {
       const response = await call(method, path, {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
