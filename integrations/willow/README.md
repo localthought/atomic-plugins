@@ -55,13 +55,13 @@ bounded dataset between two independent peers.
 - [ ] Select an engine and document its placement, transport and bridge boundary.
 - [ ] Prove invocation/state feasibility, session limits and safe cancellation.
 - [ ] Define namespace, Meadowcap capability and Atomic resource mappings;
-  reject unauthorized reads and writes before transferring data.
+      reject unauthorized reads and writes before transferring data.
 - [ ] Add fixtures for revoked access, reconnects, interrupted transfers and
-  conflicting updates once the bridge exists.
+      conflicting updates once the bridge exists.
 - [ ] Replace the planning tier with executable adapter and authorization tests
-  before changing status to `implemented`.
+      before changing status to `implemented`.
 - [ ] Record peer/version, command, scope and results only after actual live
-  interoperability has been verified.
+      interoperability has been verified.
 
 ## CI
 
