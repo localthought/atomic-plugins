@@ -67,9 +67,9 @@ not establish PDS compatibility, record round trips or firehose support.
 - [ ] Define the handle/DID configuration and exclusive-claim ownership alongside AP-03.
 - [ ] Implement the bounded anonymous read-only route and host installation manifest.
 - [ ] Add fixtures for configured and unconfigured handles, invalid configuration,
-  claim collisions and every closed-gate refusal.
+      claim collisions and every closed-gate refusal.
 - [ ] Add executable route and sandbox tests before replacing the contract tier
-  or changing the status to `implemented`.
+      or changing the status to `implemented`.
 - [ ] Record independent resolver evidence before marking a capability verified.
 
 ## CI
