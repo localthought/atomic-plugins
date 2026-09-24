@@ -215,12 +215,13 @@ export function createController(
         proxy,
         connectionId,
         upstream(NOTION_DOCUMENT),
-        ({ method, path, status, headers }) => {
-          if (status >= 200 && status < 300) return;
+        ({ method, path, status, headers, code }) => {
+          if (status >= 200 && status < 300 && !code) return;
           failures.push({
             status,
             method,
             path,
+            ...(code ? { code } : {}),
             ...(headers['retry-after']
               ? { retryAfter: headers['retry-after'] }
               : {}),

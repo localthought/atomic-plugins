@@ -92,6 +92,89 @@ describe('classifyFailure', () => {
   });
 });
 
+describe('proxy refusal codes (#54 phase 2)', () => {
+  const refusal = (code: string, status = 401) => ({
+    status,
+    method: 'POST',
+    path: '/v1/search',
+    at: T0,
+    code,
+  });
+  const failed = new Error('Read incomplete');
+
+  it.each([
+    'unknown_connection',
+    'not_delegated',
+    'capability_expired',
+    'unsupported_authorization',
+  ])('%s means reconnect', code => {
+    expect(classifyFailure([refusal(code)], failed, T0)?.kind).toBe('reauth');
+    // Even when other data sources were read.
+    expect(classifyFailure([refusal(code)], undefined, T0)?.kind).toBe('reauth');
+  });
+
+  it.each(['unauthorized', 'forbidden'])(
+    '%s is an access problem, not a reconnect',
+    code => {
+      const state = classifyFailure([refusal(code, 403)], failed, T0);
+      expect(state).toMatchObject({
+        kind: 'failed',
+        title: 'Atomic isn’t allowed to read this',
+      });
+      if (state?.kind === 'failed') {
+        expect(state.message).toMatch(/Reconnecting does not change that/);
+        expect(state.technical).toContain(code);
+      }
+    },
+  );
+
+  it('an unauthorized refusal is not reauth even with status 401', () => {
+    expect(classifyFailure([refusal('unauthorized', 401)], failed, T0)?.kind).toBe(
+      'failed',
+    );
+  });
+
+  it('other refusals (a bad signature) are a failed sync', () => {
+    expect(
+      classifyFailure([refusal('bad_signature')], failed, T0),
+    ).toMatchObject({ kind: 'failed', title: 'The integration relay refused the request' });
+  });
+
+  const refusing = (code: string, status: number) =>
+    setup('default', {
+      request: async () => ({
+        status,
+        headers: {},
+        body: { error: code, message: 'refused' },
+      }),
+    });
+
+  it.each([
+    ['unknown_connection', 404],
+    ['not_delegated', 403],
+    ['capability_expired', 401],
+    ['unsupported_authorization', 401],
+  ])('the controller shows Reconnect needed for %s', async (code, status) => {
+    const { controller } = refusing(code, status);
+    await controller.load();
+    const state = await controller.sync();
+    expect(state.kind).toBe('reauth');
+    if (state.kind === 'reauth') expect(state.technical).toContain(code);
+  });
+
+  it.each([
+    ['unauthorized', 401],
+    ['forbidden', 403],
+  ])('the controller shows an access problem for %s', async (code, status) => {
+    const { controller } = refusing(code, status);
+    await controller.load();
+    expect(await controller.sync()).toMatchObject({
+      kind: 'failed',
+      title: 'Atomic isn’t allowed to read this',
+    });
+  });
+});
+
 describe('controller (N2)', () => {
   it('reports a host without the relay and fetches nothing', async () => {
     const { controller } = setup();
@@ -107,6 +190,21 @@ describe('controller (N2)', () => {
     const connecting = controller.connect();
     expect(controller.state().kind).toBe('connecting');
     expect((await connecting).kind).toBe('not-connected');
+  });
+
+  it('reloads when the host connects an existing account without navigating', async () => {
+    let connected = false;
+    const { controller } = setup('default', {
+      connections: async () =>
+        connected ? [{ connectionId: 'conn-1', platform: 'notion' }] : [],
+      connect: async () => {
+        connected = true;
+
+        return { status: 'connected', connectionId: 'conn-1', platform: 'notion' };
+      },
+    });
+    expect((await controller.load()).kind).toBe('not-connected');
+    expect(await controller.connect()).toMatchObject({ kind: 'ready', connectionId: 'conn-1' });
   });
 
   it('imports first (importing), then syncs over rows (syncing)', async () => {

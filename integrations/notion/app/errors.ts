@@ -1,7 +1,9 @@
 // @wc-ignore-file
+import { ACCESS_CODES, RECONNECT_CODES } from './transport.js';
+
 /**
- * What went wrong in a sync, classified by the relay's HTTP status, never by
- * message text. The transport (`transport.ts`) records one `ProviderFailure`
+ * What went wrong in a sync, classified by the integration proxy's refusal
+ * code and the HTTP status, never by message text. The transport (`transport.ts`) records one `ProviderFailure`
  * per non-2xx response; the controller hands those and the thrown error (if
  * any) to `classifyFailure`, which picks the one state the view shows.
  */
@@ -14,6 +16,8 @@ export interface ProviderFailure {
   path: string;
   /** The `retry-after` header as the relay passed it, if any. */
   retryAfter?: string;
+  /** The integration proxy's refusal code (`transport.ts`), if it refused. */
+  code?: string;
   at: number;
 }
 
@@ -50,6 +54,7 @@ const technical = (
     ...failures.map(
       f =>
         `${new Date(f.at).toISOString()} ${f.method} ${f.path} → ${f.status}` +
+        (f.code ? ` ${f.code}` : '') +
         (f.retryAfter ? ` (retry-after: ${f.retryAfter})` : ''),
     ),
     ...(error === undefined
@@ -62,7 +67,12 @@ const technical = (
  * with partial-read warnings). Returns `undefined` when there is nothing to
  * show beyond the sync record's own warnings.
  *
- * - Any 401: the relay's credential for Notion is gone or revoked: reauth.
+ * - A proxy refusal whose code means the connection is gone or no longer
+ *   this app's (`RECONNECT_CODES`): reauth, even if the sync finished.
+ * - A proxy refusal for access (`unauthorized`, `forbidden`) on a failed
+ *   sync: `failed`, as an access problem; reconnecting does not fix it.
+ * - Any other proxy refusal on a failed sync: `failed`.
+ * - Any 401 from Notion: its grant to the integration is gone: reauth.
  * - A failed sync with a 403: Notion refuses the integration: reauth.
  * - A failed sync with a 429: rate-limited until `retry-after`.
  * - Anything else that failed: `failed`, with the cause in plain words.
@@ -76,6 +86,30 @@ export function classifyFailure(
   now: number,
 ): FailureState | undefined {
   const details = technical(failures, error);
+  if (failures.some(f => f.code && RECONNECT_CODES.includes(f.code)))
+    return { kind: 'reauth', technical: details };
+  const refused = failures.find(f => f.code);
+
+  if (refused) {
+    if (error === undefined) return undefined;
+
+    return ACCESS_CODES.includes(refused.code!)
+      ? {
+          kind: 'failed',
+          title: 'Atomic isn’t allowed to read this',
+          message:
+            'The integration relay refused access to this Notion connection for this app. Reconnecting does not change that; ask the person who manages the connection.',
+          technical: details,
+        }
+      : {
+          kind: 'failed',
+          title: 'The integration relay refused the request',
+          message:
+            'The relay did not accept this app’s request. This is usually temporary; try again.',
+          technical: details,
+        };
+  }
+
   if (failures.some(f => f.status === 401))
     return { kind: 'reauth', technical: details };
   if (error === undefined) return undefined;
