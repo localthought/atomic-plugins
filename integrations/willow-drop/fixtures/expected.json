@@ -1,0 +1,194 @@
+{
+  "generator": "willow25 0.7.9",
+  "drops": {
+    "communal": [
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6e6f746573", "68656c6c6f2e747874"],
+        "pathDisplay": "/notes/hello.txt",
+        "timestamp": "843480069184000",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "18",
+        "payloadDigest": "c61e281145edca6347ba4f95de104d9fa9e9395c8d1e35413af4cf70ab1bf0dd",
+        "capability": "communal",
+        "payload": "48656c6c6f2066726f6d2057696c6c6f770a"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6e6f746573", "746f646f2e747874"],
+        "pathDisplay": "/notes/todo.txt",
+        "timestamp": "843480069184001",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "12",
+        "payloadDigest": "6a117da9855ac1c70e3dd966008c59cd9621bd08866e74c99894cc576ba594eb",
+        "capability": "communal",
+        "payload": "627579206f6174206d696c6b"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "ba14252f8b3dfff89fded9b8b23ebdaaa0fb51fff327841f590c176a433fe1b4",
+        "path": ["626c6f67", "32303236", "66697273742d706f7374"],
+        "pathDisplay": "/blog/2026/first-post",
+        "timestamp": "843480069184002",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "11",
+        "payloadDigest": "410d49e55ab8e4fb057d636f4ce04a3875dbe20815bbb4f979df8c1e1c458773",
+        "capability": "communal",
+        "payload": "4772c3bcc39f6520e29c93"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "ba14252f8b3dfff89fded9b8b23ebdaaa0fb51fff327841f590c176a433fe1b4",
+        "path": ["626c6f67", "656d707479"],
+        "pathDisplay": "/blog/empty",
+        "timestamp": "843480069184003",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "0",
+        "payloadDigest": "96d34c5478458231e364767952aaea02a31d2203c66f4365692ef91f351068d2",
+        "capability": "communal",
+        "payload": ""
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["70686f746f73", "706978656c2e62696e"],
+        "pathDisplay": "/photos/pixel.bin",
+        "timestamp": "843480069184004",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "256",
+        "payloadDigest": "4ebd653afbb31ca1f001063d458682865d78fc596067fafe0b24726a1fd228ec",
+        "capability": "communal",
+        "payload": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbbab9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6c61726765", "323530302d6279746573"],
+        "pathDisplay": "/large/2500-bytes",
+        "timestamp": "843480069184005",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "2500",
+        "payloadDigest": "50f1da6b684c21eb529ef7338277c36034d2191577536f96d6723e5d037bd3a1",
+        "capability": "communal",
+        "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6d657461646174612d6f6e6c79"],
+        "pathDisplay": "/metadata-only",
+        "timestamp": "843480069184006",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "5",
+        "payloadDigest": "fd24b3ec3b776cac6eb5883ca45a2276a86bf4b2d03dce6636aeb37dc748cfad",
+        "capability": "communal",
+        "payload": null
+      }
+    ],
+    "owned": [
+      {
+        "namespace": "7c44d5ada89dd6675df7ee27dc7a2621a703daa537450d48d30229517048b62d",
+        "subspace": "8e17d51812511b80b6c6140d5970e23f579b08566548864bee153564572effc2",
+        "path": ["70726f66696c65"],
+        "pathDisplay": "/profile",
+        "timestamp": "843480069184000",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "5",
+        "payloadDigest": "4fa1f1e72eee35fe655dfc222094a6bb3d504842a239bcb25eb74e0f574ff5e2",
+        "capability": "owned",
+        "payload": "6361726f6c"
+      },
+      {
+        "namespace": "7c44d5ada89dd6675df7ee27dc7a2621a703daa537450d48d30229517048b62d",
+        "subspace": "3c04654bbf485c72ab7caa44bb4d5b2434a4bb4ac3d73660409455bde4293dce",
+        "path": ["6775657374626f6f6b", "6361726f6c"],
+        "pathDisplay": "/guestbook/carol",
+        "timestamp": "843480069184001",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "7",
+        "payloadDigest": "a445d7578b045236a95cdbce46872b92ee464da8883300b05a5ed5dbfac2c333",
+        "capability": "owned",
+        "payload": "68692064617665"
+      },
+      {
+        "namespace": "7c44d5ada89dd6675df7ee27dc7a2621a703daa537450d48d30229517048b62d",
+        "subspace": "8e17d51812511b80b6c6140d5970e23f579b08566548864bee153564572effc2",
+        "path": ["6f6464", "612062", "782f79"],
+        "pathDisplay": "/odd/a%20b/x%2fy",
+        "timestamp": "843480069184002",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "3",
+        "payloadDigest": "fba30ed472a7b8912b1614b777449093de3ddb1f7a019ef09c27bbb69ff71241",
+        "capability": "owned",
+        "payload": "6f6464"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "ba14252f8b3dfff89fded9b8b23ebdaaa0fb51fff327841f590c176a433fe1b4",
+        "path": ["626c6f67", "7365636f6e642d706f7374"],
+        "pathDisplay": "/blog/second-post",
+        "timestamp": "843480069184002",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "3",
+        "payloadDigest": "7f0bfe7ec3d8620ab32305f67a4203e3051bd0fad8e4f1642ac59b019ce80279",
+        "capability": "communal",
+        "payload": "74776f"
+      }
+    ],
+    "delegated": [
+      {
+        "namespace": "7c44d5ada89dd6675df7ee27dc7a2621a703daa537450d48d30229517048b62d",
+        "subspace": "3c04654bbf485c72ab7caa44bb4d5b2434a4bb4ac3d73660409455bde4293dce",
+        "path": ["6e6f746573"],
+        "pathDisplay": "/notes",
+        "timestamp": "843480069184000",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "9",
+        "payloadDigest": "c4fb868dcfd2823e1e18bf1e9b691d665f738868716ee5a672c73fed427e197d",
+        "capability": "delegated",
+        "payload": "64656c656761746564"
+      }
+    ],
+    "pruning": [
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6f6c64", "6e6f7465"],
+        "pathDisplay": "/old/note",
+        "timestamp": "843480069184000",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "6",
+        "payloadDigest": "36e621d8235eb69a6e408d989b52c4e4de8bd2fb1e759a3b0f196ef07e9c4486",
+        "capability": "communal",
+        "payload": "7072756e6564"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6f6c64"],
+        "pathDisplay": "/old",
+        "timestamp": "843480069184001",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "6",
+        "payloadDigest": "28cafd40f2c0f3a47d18b0561889485c77896c4dd487e427ab0dc977dcdc295e",
+        "capability": "communal",
+        "payload": "707265666978"
+      },
+      {
+        "namespace": "de16405da10e75113a15a9955787fec751d6b3339b2c68b4ab42c7409618cc1c",
+        "subspace": "7b1030e4b9bb14740450a7b4354366524f082d605ce34ba1d531397b70e47203",
+        "path": ["6f6c64", "6e65776572"],
+        "pathDisplay": "/old/newer",
+        "timestamp": "843480069184002",
+        "willow25UnixMillis": "1790294432184",
+        "payloadLength": "4",
+        "payloadDigest": "9fff30ab2c9229d03f5f10dd525a5d3b6c151679d9856684813a595a176f401c",
+        "capability": "communal",
+        "payload": "6b657074"
+      }
+    ],
+    "empty": []
+  }
+}
