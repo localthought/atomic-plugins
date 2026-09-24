@@ -99,7 +99,7 @@ describe('syncClockify against the shared Clockify mock', () => {
 
     const result = await run();
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       created: 2,
       updated: 0,
       unchanged: 0,
@@ -111,8 +111,17 @@ describe('syncClockify against the shared Clockify mock', () => {
         candidates: 0,
         unknownMs: 0,
       },
-      account: { timeZone: 'Europe/Amsterdam', forceProjects: false },
+      account: {
+        timeZone: 'Europe/Amsterdam',
+        forceProjects: false,
+        weekStart: 'MONDAY',
+      },
     });
+    // What the timesheet views read (#89): the mirror and the names.
+    // 7-day window: entry-3 (20 days ago) is not read.
+    expect(Object.keys(result.mirror.records)).toHaveLength(4);
+    expect(result.projects.map(p => p.id)).toEqual([PROJECT.id]);
+    expect(result.members.map(m => m.id)).toEqual([USER.id]);
     // Rows are projected from the mirror in start order.
     expect(rows().map(([, r]) => r[schema.row.entryId])).toEqual([
       'entry-1',

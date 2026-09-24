@@ -25,11 +25,22 @@ export function fixtureProxy(now: number, options?: { withNames?: boolean }) {
     for (const [k, v] of Object.entries(req.query ?? {}))
       url.searchParams.set(k, v);
 
-    return fixture.request(
+    const response = await fixture.request(
       req.method ?? 'GET',
       url,
       req.body === undefined ? undefined : JSON.parse(req.body),
     );
+
+    // The host relay hands headers over lower-cased.
+    return {
+      ...response,
+      headers: Object.fromEntries(
+        Object.entries(response.headers ?? {}).map(([k, v]) => [
+          k.toLowerCase(),
+          String(v),
+        ]),
+      ),
+    };
   };
 
   return { fixture, seen, request };

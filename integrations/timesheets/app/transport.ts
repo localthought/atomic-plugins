@@ -17,7 +17,12 @@ export interface ProxyTransport {
   request(
     path: string,
     query?: Record<string, string>,
-  ): Promise<{ status: number; body: unknown }>;
+  ): Promise<{
+    status: number;
+    body: unknown;
+    /** Lower-cased; the relay passes `retry-after` among a few others. */
+    headers?: Record<string, string>;
+  }>;
 }
 
 export class ProxyError extends Error {
@@ -25,6 +30,8 @@ export class ProxyError extends Error {
     readonly path: string,
     readonly status: number,
     readonly body: unknown,
+    /** The `retry-after` header, as relayed (seconds or an HTTP date). */
+    readonly retryAfter?: string,
   ) {
     const detail =
       body && typeof body === 'object' && 'message' in body
@@ -40,8 +47,9 @@ export async function requestJson<T>(
   path: string,
   query?: Record<string, string>,
 ): Promise<T> {
-  const { status, body } = await transport.request(path, query);
-  if (status < 200 || status >= 300) throw new ProxyError(path, status, body);
+  const { status, body, headers } = await transport.request(path, query);
+  if (status < 200 || status >= 300)
+    throw new ProxyError(path, status, body, headers?.['retry-after']);
 
   return body as T;
 }

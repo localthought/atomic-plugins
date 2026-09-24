@@ -59,7 +59,7 @@ export interface ClockifyUser {
   name?: string;
   email?: string;
   activeWorkspace?: string;
-  settings?: { timeZone?: string };
+  settings?: { timeZone?: string; weekStart?: string };
 }
 
 export interface ClockifyWorkspace extends RawNamed {
@@ -76,6 +76,8 @@ export interface AccountContext {
    * be written back there.
    */
   forceProjects?: boolean;
+  /** The profile's first day of the week (`MONDAY` …), for the views. */
+  weekStart?: string;
   warnings: string[];
 }
 
@@ -103,6 +105,8 @@ export async function fetchAccountContext(
   try {
     const user = await requestJson<ClockifyUser>(transport, '/api/v1/user');
     const zone = user?.settings?.timeZone;
+    if (typeof user?.settings?.weekStart === 'string')
+      context.weekStart = user.settings.weekStart;
     if (isTimeZone(zone)) context.timeZone = zone;
     else
       context.warnings.push(
