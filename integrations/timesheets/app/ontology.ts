@@ -121,5 +121,40 @@ export const SETTING_FIELDS = {
   ),
 } as const;
 
+/**
+ * The observation log (#123 M1, `observationLog.ts`), stored as Atomic
+ * resources in the app's own subtree (#97 answer 4): a pointer on the App,
+ * one head resource, and one resource per incremental and per snapshot
+ * under it. JSON text in string properties, as the issue-tracker app does
+ * with its sync state; editing them by hand breaks the log.
+ */
+export const LOG_FIELDS = {
+  log: field(
+    'clockify-observation-log',
+    'Clockify observation log',
+    datatypes.string,
+    "The subject of this app's Clockify observation log head.",
+  ),
+  head: field(
+    'clockify-log-head',
+    'Clockify log head',
+    datatypes.string,
+    'JSON text: the current snapshot, the incrementals after it and what has been read. Written by the timesheets app; do not edit.',
+  ),
+  observation: field(
+    'clockify-observation',
+    'Clockify observation',
+    datatypes.string,
+    'JSON text: one read from Clockify, as a diff against what the app knew before. Written by the timesheets app; do not edit.',
+  ),
+  snapshot: field(
+    'clockify-snapshot',
+    'Clockify snapshot',
+    datatypes.string,
+    'JSON text: the Clockify mirror folded up to a point in the log. Written by the timesheets app; do not edit.',
+  ),
+} as const;
+
 export type RowKey = keyof typeof ROW_FIELDS;
 export type SettingKey = keyof typeof SETTING_FIELDS;
+export type LogKey = keyof typeof LOG_FIELDS;

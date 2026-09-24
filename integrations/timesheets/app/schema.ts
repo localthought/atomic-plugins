@@ -1,9 +1,11 @@
 // @wc-ignore-file
 import {
   atomic,
+  LOG_FIELDS,
   ROW_FIELDS,
   SETTING_FIELDS,
   type Field,
+  type LogKey,
   type RowKey,
   type SettingKey,
 } from './ontology.js';
@@ -16,11 +18,13 @@ export interface Schema {
   ontology: string;
   row: Partial<Record<RowKey, string>>;
   settings: Partial<Record<SettingKey, string>>;
+  log: Partial<Record<LogKey, string>>;
 }
 
 export type CompleteSchema = Schema & {
   row: Record<RowKey, string>;
   settings: Record<SettingKey, string>;
+  log: Record<LogKey, string>;
 };
 
 const list = (value: JSONValue): string[] =>
@@ -73,6 +77,7 @@ export async function findSchema(store: PluginStore): Promise<Schema> {
     ontology: ontology.subject,
     row: bind(ROW_FIELDS, byShortname),
     settings: bind(SETTING_FIELDS, byShortname),
+    log: bind(LOG_FIELDS, byShortname),
   };
 }
 
@@ -124,6 +129,9 @@ export async function ensureSchema(
   const settings = {} as Record<SettingKey, string>;
   for (const key of Object.keys(SETTING_FIELDS) as SettingKey[])
     settings[key] = await ensure(SETTING_FIELDS[key]);
+  const log = {} as Record<LogKey, string>;
+  for (const key of Object.keys(LOG_FIELDS) as LogKey[])
+    log[key] = await ensure(LOG_FIELDS[key]);
 
   if (added.length) {
     ontology.set(atomic.properties, [
@@ -148,5 +156,6 @@ export async function ensureSchema(
     ontology: ontology.subject,
     row,
     settings,
+    log,
   };
 }
