@@ -21,6 +21,7 @@
  *
  *   node integrations/tooling/run-lane.mjs calendar --tier e2e
  */
+import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type FrameLocator, type Page } from '@playwright/test';
 import {
   before,
@@ -54,9 +55,19 @@ test.describe('calendar drive app', () => {
     await page.reload();
 
     const app = page.frameLocator(APP_FRAME);
-    const status = app.getByRole('status');
-    await expect(app.getByRole('heading', { name: 'Calendar' })).toBeVisible();
-    await expect(status).toContainText('Not connected');
+    // The #89 design: the status pill carries the sync state in words, the
+    // header's primary action is "Sync now" or "Review N changes", and the
+    // review happens in a sheet (a dialog).
+    const pill = app.locator('.pill');
+    const syncNow = () =>
+      app.getByRole('button', { name: 'Sync now', exact: true }).first();
+    const sheet = app.getByRole('dialog');
+    await expect(
+      app.getByRole('heading', { name: 'Bring your calendar into Atomic' }),
+    ).toBeVisible();
+    await expect(
+      app.getByRole('button', { name: 'Connect Google Calendar' }),
+    ).toBeVisible();
     await connectThroughHost(page, app);
 
     // Calendar selection: both calendars listed, the primary preselected.
@@ -64,19 +75,23 @@ test.describe('calendar drive app', () => {
     await expect(choose.getByRole('radio', { name: /Synthetic/ })).toBeChecked({
       timeout: 30_000,
     });
+    const team = choose.getByRole('radio', { name: /Team/ });
+    await expect(team).not.toBeChecked();
     await expect(
-      choose.getByRole('radio', { name: /Team \(read-only/ }),
-    ).not.toBeChecked();
+      choose.locator('li').filter({ hasText: 'Team' }).getByText('Read-only'),
+    ).toBeVisible();
     await choose.getByRole('button', { name: 'Import this calendar' }).click();
 
     // Bounded, paged import: the all-day and the timed event; the weekly
     // series (master and instance) and the cancelled event are not imported.
-    await expect(status).toContainText('2 events (2 added', {
-      timeout: 30_000,
-    });
-    await expect(status).toContainText(
-      'Not imported: 2 recurring, 1 cancelled.',
+    await expect(pill).toContainText('Synced', { timeout: 30_000 });
+    await app.getByRole('button', { name: 'Agenda', exact: true }).click();
+    await expect(app.locator('.agenda')).toContainText(
+      '2 recurring events and 1 cancelled event aren’t imported yet.',
     );
+    await expect(
+      app.getByRole('button', { name: /^Calendar timed fixture, .*Room 4/ }),
+    ).toBeVisible();
     const imported = await rowsOf(page);
     expect(imported).toEqual(
       expect.arrayContaining([
@@ -98,10 +113,12 @@ test.describe('calendar drive app', () => {
     expect(allDay.start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(allDay.day).toBe(allDay.start);
 
-    // Refresh after an edit made in Google.
+    // Sync after an edit made in Google.
     await driver('editRemote', ['timed', { location: 'Room 2' }]);
-    await app.getByRole('button', { name: 'Refresh' }).click();
-    await expect(status).toContainText('1 updated, 1 unchanged');
+    await syncNow().click();
+    await expect(
+      app.getByRole('button', { name: /^Calendar timed fixture, .*Room 2/ }),
+    ).toBeVisible();
     // The app writes as the app agent; the page's store sees it once the
     // commit comes back, so poll.
     await expect
@@ -110,18 +127,19 @@ test.describe('calendar drive app', () => {
 
     // A local edit is previewed, not sent, until approved.
     await setRowTitle(page, 'Calendar timed fixture', 'Renamed here');
-    await app.getByRole('button', { name: 'Refresh' }).click();
-    const review = app.getByRole('region', { name: 'Review changes' });
-    await expect(review).toContainText(
-      'Title: Calendar timed fixture → Renamed here',
+    await syncNow().click();
+    await app.getByRole('button', { name: 'Review 1 change' }).click();
+    await expect(sheet).toContainText('Send 1 change to Google Calendar');
+    await expect(sheet).toContainText(
+      /Title\s*Calendar timed fixture\s*→\s*becomes\s*Renamed here/,
     );
     expect((await driver('state', [])).writes).toEqual([]);
-    const sendOne = review.getByRole('button', {
+    const sendOne = sheet.getByRole('button', {
       name: 'Send 1 change to Google',
     });
     await sendOne.click();
-    const sent = app.getByRole('region', { name: 'Sent changes' });
-    await expect(sent).toContainText('Calendar timed fixture: Sent');
+    await expect(sheet).toContainText('1 of 1 change sent');
+    await expect(sheet).toContainText('Calendar timed fixture: Sent');
     const afterSend = await driver('state', []);
     expect(afterSend.writes).toEqual([
       expect.objectContaining({
@@ -130,38 +148,49 @@ test.describe('calendar drive app', () => {
         ifMatch: expect.stringMatching(/^"v\d+"$/),
       }),
     ]);
+    await sheet.getByRole('button', { name: 'Done' }).click();
 
     // ETag conflict: Google changes the event between preview and send.
     await setRowTitle(page, 'Renamed here', 'Renamed twice');
-    await app.getByRole('button', { name: 'Refresh' }).click();
-    await expect(review).toContainText('Renamed here → Renamed twice');
+    await syncNow().click();
+    await app.getByRole('button', { name: 'Review 1 change' }).click();
+    await expect(sheet).toContainText(
+      /Renamed here\s*→\s*becomes\s*Renamed twice/,
+    );
     await driver('editRemote', ['timed', { location: 'Room 9' }]);
     await sendOne.click();
-    await expect(sent).toContainText('Changed in Google since this preview');
+    await expect(sheet).toContainText('0 of 1 change sent');
+    await expect(sheet).toContainText('Changed in Google since this preview');
     expect((await driver('state', [])).writes).toHaveLength(1);
 
     // A lost response: the PATCH reaches the proxy, its answer never
     // reaches the frame. The app says it can't know.
-    await app.getByRole('button', { name: 'Refresh' }).click();
-    await expect(review).toContainText('Renamed here → Renamed twice');
+    await sheet.getByRole('button', { name: 'Review again' }).click();
+    await expect(sheet).toContainText(
+      /Renamed here\s*→\s*becomes\s*Renamed twice/,
+    );
     await page.route('**/proxy/*/google-calendar/**', async route => {
       if (route.request().method() !== 'PATCH') return route.continue();
       await route.fetch();
       await route.abort('connectionreset');
     });
     await sendOne.click();
-    await expect(status).toContainText('may or may not have applied');
-    await expect(sent).toContainText('Unknown whether Google applied it');
+    await expect(sheet).toContainText('Unknown whether Google applied it');
     await page.unroute('**/proxy/*/google-calendar/**');
     expect((await driver('state', [])).writes).toHaveLength(2);
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    const banner = app.locator('.banner');
+    await expect(banner).toContainText('may or may not have applied');
 
     // Nothing was spent (there are no connection codes any more): the same
-    // connection refreshes straight away. Google has the change, so the new
-    // preview agrees: nothing to review.
-    await app.getByRole('button', { name: 'Refresh' }).click();
-    await expect(status).toContainText('Last refreshed', { timeout: 30_000 });
-    await expect(status).not.toContainText('to review');
-    await expect(status).not.toContainText('conflict');
+    // connection syncs straight away. Google has the change, so the new
+    // preview agrees: nothing to review, no conflict.
+    await banner.getByRole('button', { name: 'Sync now' }).click();
+    await expect(pill).toContainText('Synced', { timeout: 30_000 });
+    await expect(banner).toHaveCount(0);
+    await expect(app.getByRole('button', { name: /^Review \d/ })).toHaveCount(
+      0,
+    );
     expect((await driver('state', [])).writes).toHaveLength(2);
 
     // The connection lives at the proxy, owned by the signed-in user and
@@ -175,6 +204,86 @@ test.describe('calendar drive app', () => {
         expect.stringMatching(/^atomic-proxy-connect|connection-v1/),
       ]),
     );
+  });
+});
+
+test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
+  // Wide enough that a 1200px frame is not clipped by the host page.
+  test.use({ viewport: { width: 1680, height: 900 } });
+  test.beforeEach(before);
+
+  test('fits 360, 720 and 1200px frames in light and dark without horizontal scroll', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !process.env.ATOMIC_MOCK_INTEGRATION_PROXY ||
+        !process.env.INTEGRATION_PROXY_URL,
+      'Run with the documented mock integration-proxy server configuration',
+    );
+    test.setTimeout(240_000);
+    const { text } = (await build()) as { text: string };
+    await page.emulateMedia({ colorScheme: 'light' });
+    await createFromCatalog(page, 'App');
+    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+      timeout: 45_000,
+    });
+    await setAppSource(page, text);
+    await page.reload();
+    const app = page.frameLocator(APP_FRAME);
+    await connectThroughHost(page, app);
+    await app
+      .getByRole('form', { name: 'Choose a calendar' })
+      .getByRole('button', { name: 'Import this calendar' })
+      .click();
+    await expect(app.locator('.pill')).toContainText('Synced', {
+      timeout: 30_000,
+    });
+
+    // The host re-sends its theme into the frame; the view follows it
+    // without a reload (DESIGN.md §3).
+    const root = app.locator('.pl-app');
+    await root.evaluate(el => el.setAttribute('data-e2e-mark', 'kept'));
+    const html = app.locator('html');
+    await expect(html).toHaveAttribute('data-pl-theme', 'light');
+
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect(html).toHaveAttribute('data-pl-theme', scheme);
+      await expect(root).toHaveAttribute('data-e2e-mark', 'kept');
+
+      for (const width of [360, 720, 1200]) {
+        await page.locator(APP_FRAME).evaluate((el, w) => {
+          (el as HTMLElement).style.width = `${w}px`;
+          (el as HTMLElement).style.maxWidth = 'none';
+        }, width);
+        await expect
+          .poll(() =>
+            root.evaluate(el => el.ownerDocument.documentElement.clientWidth),
+          )
+          .toBe(width);
+        const overflow = await root.evaluate(el => {
+          const doc = el.ownerDocument.documentElement;
+
+          return doc.scrollWidth - doc.clientWidth;
+        });
+        expect(overflow, `${scheme} ${width}px scrolls sideways`).toBe(0);
+        // Week below 720px only when chosen; Agenda is the default there.
+        await expect(
+          width < 720
+            ? app.locator('.agenda, .wk')
+            : app.locator('.wk, .agenda'),
+        ).toBeVisible();
+        const axe = await new AxeBuilder({ page }).include(APP_FRAME).analyze();
+        expect(
+          axe.violations.map(v => `${v.id}: ${v.nodes.length}`),
+          `${scheme} ${width}px`,
+        ).toEqual([]);
+        await testInfo.attach(`calendar-${width}-${scheme}.png`, {
+          body: await page.locator(APP_FRAME).screenshot(),
+          contentType: 'image/png',
+        });
+      }
+    }
   });
 });
 
