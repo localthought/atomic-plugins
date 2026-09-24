@@ -89,9 +89,7 @@ test.describe('GitHub issues drive app', () => {
       app.getByRole('heading', { name: 'Which repository?' }),
     ).toBeVisible({ timeout: 30_000 });
     await app.getByRole('radio', { name: new RegExp(REPOSITORY) }).check();
-    await app
-      .getByRole('button', { name: `Import ${REPOSITORY}` })
-      .click();
+    await app.getByRole('button', { name: `Import ${REPOSITORY}` }).click();
     const bar = app.locator('.pl-conn');
     await expect(bar).toHaveAttribute(
       'title',
@@ -131,9 +129,7 @@ test.describe('GitHub issues drive app', () => {
       'Update #1: status Todo → Done (close it)',
     );
     expect((await github('GET', '/issues/1')).state).toBe('open');
-    await app
-      .getByRole('button', { name: 'Send 1 change to GitHub' })
-      .click();
+    await app.getByRole('button', { name: 'Send 1 change to GitHub' }).click();
     await expect(bar).toHaveAttribute('title', /1 sent to GitHub/, {
       timeout: 30_000,
     });
@@ -180,9 +176,7 @@ test.describe('GitHub issues drive app', () => {
     await expect(review).toContainText(
       'Update #2: status Doing → Done (close it)',
     );
-    await app
-      .getByRole('button', { name: 'Send 1 change to GitHub' })
-      .click();
+    await app.getByRole('button', { name: 'Send 1 change to GitHub' }).click();
     await expect(bar).toHaveAttribute('title', /1 sent to GitHub/, {
       timeout: 30_000,
     });
@@ -205,9 +199,7 @@ test.describe('GitHub issues drive app', () => {
     await expect(review).toContainText(
       'Add a comment on #1: “Fixed in the app.”',
     );
-    await app
-      .getByRole('button', { name: 'Send 1 change to GitHub' })
-      .click();
+    await app.getByRole('button', { name: 'Send 1 change to GitHub' }).click();
     await expect(bar).toHaveAttribute('title', /1 sent to GitHub/, {
       timeout: 30_000,
     });
@@ -216,10 +208,7 @@ test.describe('GitHub issues drive app', () => {
     };
     expect(
       comments.filter(c => c.issue_url.endsWith('/issues/1')).map(c => c.body),
-    ).toEqual([
-      'I can reproduce this in Firefox.',
-      'Fixed in the app.',
-    ]);
+    ).toEqual(['I can reproduce this in Firefox.', 'Fixed in the app.']);
 
     // The connection lives at the proxy, owned by the signed-in user and
     // delegated to this app; the page keeps nothing credential-like.
@@ -310,7 +299,11 @@ async function github(
   if (!number) throw new Error(`Unsupported GitHub path ${path}`);
 
   if (method === 'PATCH')
-    return fixture('updateIssue', [REPOSITORY, number, body ?? {}]);
+    return (await fixture('updateIssue', [
+      REPOSITORY,
+      number,
+      body ?? {},
+    ])) as Record<string, unknown>;
   const { issues } = (await fixture('snapshot', [REPOSITORY])) as {
     issues: { number: number }[];
   };

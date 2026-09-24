@@ -176,7 +176,10 @@ group('issue-tracker controller: conflict review', () => {
     });
     // Status agrees (both Done), so only the title conflicts.
     const paused = ready(await controller.sync());
-    expect(paused.problem).toMatchObject({ kind: 'conflict', fields: ['title'] });
+    expect(paused.problem).toMatchObject({
+      kind: 'conflict',
+      fields: ['title'],
+    });
     expect(await controller.conflict()).toEqual([
       {
         field: 'title',
@@ -236,7 +239,10 @@ group('issue-tracker controller: repository picker', () => {
     const controller = createController(store);
     await controller.load();
     const listed = await controller.listRepositories();
-    if (listed.kind !== 'choose-repository' || listed.listing?.kind !== 'listed')
+    if (
+      listed.kind !== 'choose-repository' ||
+      listed.listing?.kind !== 'listed'
+    )
       throw new Error('not listed');
     expect(listed.listing.repositories).toHaveLength(122);
     expect(store.calls.filter(c => c.path === '/user/repos')).toHaveLength(2);
@@ -269,7 +275,11 @@ group('issue-tracker controller: view preferences', () => {
     await controller.savePrefs({ layout: 'list', search: 'csv', label: 'bug' });
     const again = createController(store);
     await again.load();
-    expect(again.prefs()).toEqual({ layout: 'list', search: 'csv', label: 'bug' });
+    expect(again.prefs()).toEqual({
+      layout: 'list',
+      search: 'csv',
+      label: 'bug',
+    });
     // And the sync state next to them is intact.
     expect(ready(await again.sync()).problem).toBeUndefined();
   });
@@ -277,7 +287,9 @@ group('issue-tracker controller: view preferences', () => {
 
 group('issue-tracker controller: problems', () => {
   it('names the reason a pass paused, for the banner', () => {
-    expect(classify(new Error('Uncertain GitHub write (create_issue).'))).toMatchObject({
+    expect(
+      classify(new Error('Uncertain GitHub write (create_issue).')),
+    ).toMatchObject({
       kind: 'paused',
       reason: 'uncertain',
     });
@@ -296,10 +308,14 @@ group('issue-tracker controller: problems', () => {
 group('issue-tracker controller: host calls from pin 007869464', () => {
   it('disconnects this app from GitHub and keeps the table', async () => {
     const { store, controller } = await bound();
-    const rows = [...store.resources.values()].filter(p => p[PARENT] === TABLE).length;
+    const rows = [...store.resources.values()].filter(
+      p => p[PARENT] === TABLE,
+    ).length;
     expect((await controller.disconnect()).kind).toBe('not-connected');
     expect(store.disconnected).toEqual(['github-issues']);
-    expect([...store.resources.values()].filter(p => p[PARENT] === TABLE)).toHaveLength(rows);
+    expect(
+      [...store.resources.values()].filter(p => p[PARENT] === TABLE),
+    ).toHaveLength(rows);
   });
 
   it('does nothing on a host without proxy.disconnect', async () => {
@@ -325,7 +341,12 @@ group('issue-tracker controller: host calls from pin 007869464', () => {
     expect(withMany.getResource).toBeLessThan(oneByOne);
     const shape = (c: typeof batched.controller) =>
       ready(c.state())
-        .last!.result.rows.map(r => [r.number, r.title, r.status, r.comments.map(x => x.body)])
+        .last!.result.rows.map(r => [
+          r.number,
+          r.title,
+          r.status,
+          r.comments.map(x => x.body),
+        ])
         .sort();
     expect(shape(batched.controller)).toEqual(shape(single.controller));
   });
@@ -339,12 +360,15 @@ group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
 
     store.proxy!.request = async r => {
       const own = new RegExp(`/issues/${n}(/|$)`);
-      if (hidden && own.test(r.path)) return { status: 404, headers: {}, body: {} };
+      if (hidden && own.test(r.path))
+        return { status: 404, headers: {}, body: {} };
       const response = await request(r);
       if (hidden && /\/issues$/.test(r.path) && Array.isArray(response.body))
         return {
           ...response,
-          body: (response.body as { number: number }[]).filter(i => i.number !== n),
+          body: (response.body as { number: number }[]).filter(
+            i => i.number !== n,
+          ),
         };
 
       return response;
@@ -373,7 +397,9 @@ group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
     expect(kept.last!.result.held).toEqual([]);
     const here = kept.last!.result.rows.find(r => r.subject === row)!;
     expect(here.number).toBeUndefined();
-    expect(store.resources.get(row)?.[property(store, 'github-issue-number')]).toBeUndefined();
+    expect(
+      store.resources.get(row)?.[property(store, 'github-issue-number')],
+    ).toBeUndefined();
     expect(ready(await controller.sync()).last!.result.held).toEqual([]);
     expect(writes(store)).toBe(sent);
 
@@ -407,7 +433,9 @@ group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
     expect(again.problem).toBeUndefined();
     const back = again.last!.result.rows.find(r => r.number === 1)!;
     expect(back.title).toBe(first.title);
-    expect(back.comments.map(c => c.body)).toEqual(['I can reproduce this in Firefox.']);
+    expect(back.comments.map(c => c.body)).toEqual([
+      'I can reproduce this in Firefox.',
+    ]);
     expect(again.last!.result.rows).toHaveLength(2);
     expect(writes(store)).toBe(sent);
   });

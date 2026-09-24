@@ -125,7 +125,7 @@
 .ref {
   font:
     12px/1 ui-monospace,
-    "SF Mono",
+    'SF Mono',
     Menlo,
     Consolas,
     monospace;
@@ -191,7 +191,7 @@
 }
 .card:hover .card-menu,
 .card:focus-within .card-menu,
-.card-menu[aria-expanded="true"] {
+.card-menu[aria-expanded='true'] {
   opacity: 1;
 }
 .card .menu {
@@ -265,7 +265,7 @@
   border-left: 1px solid var(--pl-hairline);
   box-shadow: var(--t-box-shadow-intense, none);
 }
-.pl-app[data-size="m"] .detail.drawer {
+.pl-app[data-size='m'] .detail.drawer {
   width: calc(100% - 48px);
 }
 .detail.sheet {
@@ -360,7 +360,7 @@ textarea.d-title:focus {
   margin-bottom: -1px;
   font-size: 13px;
 }
-.tabs button[aria-selected="true"] {
+.tabs button[aria-selected='true'] {
   color: var(--pl-text);
   border-bottom-color: var(--pl-accent);
 }
@@ -416,7 +416,7 @@ textarea.d-title:focus {
   background: var(--pl-surface);
   font:
     13px/1.5 ui-monospace,
-    "SF Mono",
+    'SF Mono',
     Menlo,
     Consolas,
     monospace;
@@ -608,7 +608,7 @@ textarea.d-title:focus {
   cursor: pointer;
   min-height: 44px;
 }
-.group-head[aria-expanded="false"] > svg:first-child {
+.group-head[aria-expanded='false'] > svg:first-child {
   transform: rotate(-90deg);
 }
 .group-head:focus-visible {
@@ -869,10 +869,10 @@ textarea.d-title:focus {
   max-height: 280px;
   overflow: auto;
 }
-.pl-app[data-size="s"] .d-props {
+.pl-app[data-size='s'] .d-props {
   grid-template-columns: 56px 1fr;
 }
-.pl-app[data-size="s"] .pl-header {
+.pl-app[data-size='s'] .pl-header {
   gap: 8px;
   padding: 8px 12px;
 }

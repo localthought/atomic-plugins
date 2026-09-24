@@ -20,7 +20,14 @@ import { injectStyles, luminance, watchFrame } from './theme.js';
 
 describe('the shared kit', () => {
   it('draws each pill state with its own icon shape and one status role', () => {
-    const states: PillState[] = ['idle', 'synced', 'syncing', 'paused', 'reauth', 'error'];
+    const states: PillState[] = [
+      'idle',
+      'synced',
+      'syncing',
+      'paused',
+      'reauth',
+      'error',
+    ];
     const shapes = states.map(state => {
       const node = pill(state, state);
       expect(node.dataset.state).toBe(state);
@@ -38,7 +45,12 @@ describe('the shared kit', () => {
 
   it('renders banner tones, and an alert role only when asked', () => {
     for (const tone of ['neg', 'warn', 'info'] as const) {
-      const node = banner({ tone, icon: 'warn', title: 'Title.', text: 'Text' });
+      const node = banner({
+        tone,
+        icon: 'warn',
+        title: 'Title.',
+        text: 'Text',
+      });
       expect(node.dataset.tone).toBe(tone);
       expect(node.getAttribute('role')).toBeNull();
       expect(node.textContent).toBe('Title. Text');
@@ -52,11 +64,15 @@ describe('the shared kit', () => {
       actions: [button('Retry', () => {})],
       details: 'GitHub list_issues returned 401',
     });
-    expect(raised.querySelector('.pl-banner')!.getAttribute('role')).toBe('alert');
+    expect(raised.querySelector('.pl-banner')!.getAttribute('role')).toBe(
+      'alert',
+    );
     expect(raised.querySelector('details code')!.textContent).toBe(
       'GitHub list_issues returned 401',
     );
-    expect(raised.querySelector('.b-actions button')!.textContent).toBe('Retry');
+    expect(raised.querySelector('.b-actions button')!.textContent).toBe(
+      'Retry',
+    );
   });
 
   it('builds header, connection bar with progress, empty state and search', () => {
@@ -65,10 +81,19 @@ describe('the shared kit', () => {
     const bar = connectionBar(['GitHub', 'Last sync 09:41'], [], 0.4);
     expect(bar.textContent).toBe('GitHub·Last sync 09:41');
     expect(
-      (bar.querySelector('.progress') as HTMLElement).style.getPropertyValue('--p'),
+      (bar.querySelector('.progress') as HTMLElement).style.getPropertyValue(
+        '--p',
+      ),
     ).toBe('40%');
-    expect(connectionBar(['x'], [], true).querySelector('.indeterminate')).not.toBeNull();
-    const e = empty('inbox', 'Nothing here.', 'Add one.', button('New', () => {}));
+    expect(
+      connectionBar(['x'], [], true).querySelector('.indeterminate'),
+    ).not.toBeNull();
+    const e = empty(
+      'inbox',
+      'Nothing here.',
+      'Add one.',
+      button('New', () => {}),
+    );
     expect(e.querySelector('p')!.textContent).toBe('Nothing here.Add one.');
     let typed = '';
     const { input } = searchField('Search issues', 'abc', v => (typed = v));
@@ -88,7 +113,9 @@ describe('the shared kit', () => {
   });
 
   it('draws the status glyphs as three shapes', () => {
-    const glyphs = (['todo', 'doing', 'done'] as const).map(s => statusGlyph(s));
+    const glyphs = (['todo', 'doing', 'done'] as const).map(s =>
+      statusGlyph(s),
+    );
     expect(glyphs.map(g => g.getAttribute('class'))).toEqual([
       'glyph g-todo',
       'glyph g-doing',
@@ -99,17 +126,38 @@ describe('the shared kit', () => {
 
   it('segmented control: pressed toggles, or a radiogroup with arrow keys', () => {
     let picked = '';
-    const group = segmented('Layout', [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], 'a', v => (picked = v));
+    const group = segmented(
+      'Layout',
+      [
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ],
+      'a',
+      v => (picked = v),
+    );
     expect(group.getAttribute('role')).toBe('group');
     expect(
-      [...group.querySelectorAll('button')].map(b => b.getAttribute('aria-pressed')),
+      [...group.querySelectorAll('button')].map(b =>
+        b.getAttribute('aria-pressed'),
+      ),
     ).toEqual(['true', 'false']);
     (group.querySelectorAll('button')[1] as HTMLElement).click();
     expect(picked).toBe('b');
 
-    const radio = segmented('Status', [{ value: 'x', label: 'X' }, { value: 'y', label: 'Y' }], 'x', v => (picked = v), { mode: 'radio' });
+    const radio = segmented(
+      'Status',
+      [
+        { value: 'x', label: 'X' },
+        { value: 'y', label: 'Y' },
+      ],
+      'x',
+      v => (picked = v),
+      { mode: 'radio' },
+    );
     expect(radio.getAttribute('role')).toBe('radiogroup');
-    radio.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    radio.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
     expect(picked).toBe('y');
   });
 });
@@ -155,7 +203,7 @@ describe('theme tokens', () => {
       '--pl-hairline:color-mix(in srgb,var(--t-color-bg-2) 55%,var(--t-color-bg))',
     );
     expect(css).toContain(
-      '[data-pl-scheme="dark"]{--pl-pos:var(--t-color-success,#5cc48a);}',
+      "[data-pl-scheme='dark']{--pl-pos:var(--t-color-success,#5cc48a);}",
     );
   });
 

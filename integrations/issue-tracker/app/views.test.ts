@@ -41,8 +41,10 @@ async function settle(root: HTMLElement) {
   }
 }
 
-const q = <T extends HTMLElement = HTMLElement>(root: HTMLElement, sel: string) =>
-  root.querySelector<T>(sel)!;
+const q = <T extends HTMLElement = HTMLElement>(
+  root: HTMLElement,
+  sel: string,
+) => root.querySelector<T>(sel)!;
 
 const cardOf = (root: HTMLElement, ref: string) =>
   [...root.querySelectorAll<HTMLElement>('[data-issue]')].find(
@@ -56,34 +58,57 @@ const key = (target: EventTarget, k: string) =>
   target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
 
 const openIssues = (store: FakeStore) =>
-  store.github.snapshot(SEEDED_REPOSITORY).issues.map((i: { state: string }) => i.state);
+  store.github
+    .snapshot(SEEDED_REPOSITORY)
+    .issues.map((i: { state: string }) => i.state);
 
 afterEach(() => document.body.replaceChildren());
 
 describe('first run', () => {
   it('says the host cannot relay, with no button', async () => {
-    const { root } = await mount({ store: fakeStore({ relay: false }), bind: false });
-    expect(root.textContent).toContain('This Atomic Server can’t reach GitHub or Jira for apps.');
+    const { root } = await mount({
+      store: fakeStore({ relay: false }),
+      bind: false,
+    });
+    expect(root.textContent).toContain(
+      'This Atomic Server can’t reach GitHub or Jira for apps.',
+    );
     expect(root.querySelectorAll('.pl-empty button')).toHaveLength(0);
   });
 
   it('offers GitHub, and Jira and Todoist as not available', async () => {
-    const { root } = await mount({ store: fakeStore({ connected: false }), bind: false });
+    const { root } = await mount({
+      store: fakeStore({ connected: false }),
+      bind: false,
+    });
     expect(q(root, 'h1').textContent).toBe('GitHub Issues');
     expect(q(root, '[role=status]').textContent).toBe('Not connected');
-    const connect = q<HTMLButtonElement>(root, '[aria-label="Connect GitHub Issues"]');
+    const connect = q<HTMLButtonElement>(
+      root,
+      '[aria-label="Connect GitHub Issues"]',
+    );
     expect(connect.disabled).toBe(false);
     const rows = [...root.querySelectorAll('.src')];
-    expect(rows.map(r => r.classList.contains('disabled'))).toEqual([false, true, true]);
+    expect(rows.map(r => r.classList.contains('disabled'))).toEqual([
+      false,
+      true,
+      true,
+    ]);
     expect(rows[1].textContent).toContain('Not available on this server yet');
   });
 
   it('lists repositories to pick from and imports the chosen one', async () => {
     const { root, store } = await mount({ bind: false, width: 720 });
     expect(root.textContent).toContain('Which repository?');
-    const disabled = q<HTMLInputElement>(root, 'input[value="atomic-fixture/no-issues"]');
+    const disabled = q<HTMLInputElement>(
+      root,
+      'input[value="atomic-fixture/no-issues"]',
+    );
     expect(disabled.disabled).toBe(true);
-    const pick = q<HTMLInputElement>(root, `input[value="${SEEDED_REPOSITORY}"]`);
+    const pick = q<HTMLInputElement>(
+      root,
+      `input[value="${SEEDED_REPOSITORY}"]`,
+    );
     pick.checked = true;
     pick.dispatchEvent(new Event('change'));
     const go = q<HTMLButtonElement>(root, '[data-key=import]');
@@ -97,7 +122,9 @@ describe('first run', () => {
 
 describe('board and list', () => {
   it('defaults to the board at 1000 px and the list at 380 px', async () => {
-    expect((await mount({ width: 1180 })).root.querySelector('.board')).not.toBeNull();
+    expect(
+      (await mount({ width: 1180 })).root.querySelector('.board'),
+    ).not.toBeNull();
     const narrow = await mount({ width: 380 });
     expect(narrow.root.querySelector('.board')).toBeNull();
     expect(narrow.root.querySelector('.list')).not.toBeNull();
@@ -113,17 +140,22 @@ describe('board and list', () => {
     await wait(40);
     expect(q(root, '[aria-live=polite]').textContent).toBe('Moved #1 to Done');
     await settle(root);
-    expect(cardOf(root, '#1').querySelector('.sync-mark.waiting')).not.toBeNull();
+    expect(
+      cardOf(root, '#1').querySelector('.sync-mark.waiting'),
+    ).not.toBeNull();
     expect(root.textContent).toContain('1 change waiting to send');
     expect(openIssues(store)).toEqual(['open', 'open']);
   });
 
   it('moves a card from its "Move to…" menu', async () => {
     const { root } = await mount();
-    q(root, `[data-key="cardmenu:${cardOf(root, '#2').dataset.issue}"]`).click();
-    const todo = [...root.querySelectorAll<HTMLButtonElement>('[role=menu] button')].find(
-      b => b.textContent === 'Todo',
-    )!;
+    q(
+      root,
+      `[data-key="cardmenu:${cardOf(root, '#2').dataset.issue}"]`,
+    ).click();
+    const todo = [
+      ...root.querySelectorAll<HTMLButtonElement>('[role=menu] button'),
+    ].find(b => b.textContent === 'Todo')!;
     todo.click();
     expect(columnOf(root, '#2')).toBe('Todo');
     await settle(root);
@@ -138,7 +170,9 @@ describe('board and list', () => {
     await settle(root);
     q(root, '[data-key=review]').click();
     const panel = q(root, '[aria-label="Changes to send to GitHub"]');
-    expect(panel.textContent).toContain('Update #1: status Todo → Done (close it)');
+    expect(panel.textContent).toContain(
+      'Update #1: status Todo → Done (close it)',
+    );
     q(root, '[data-key=send]').click();
     await settle(root);
     expect(openIssues(store)).toEqual(['closed', 'open']);
@@ -162,7 +196,9 @@ describe('board and list', () => {
     await c.load();
     await c.choose('atomic-fixture/empty');
     const empty = await mount({ store, bind: false });
-    expect(empty.root.textContent).toContain('No issues in atomic-fixture/empty yet.');
+    expect(empty.root.textContent).toContain(
+      'No issues in atomic-fixture/empty yet.',
+    );
     expect(q(empty.root, '[data-key=empty-new]').textContent).toBe('New issue');
 
     const { root } = await mount();
@@ -185,7 +221,9 @@ describe('board and list', () => {
     await settle(root);
     const again = await mount({ store, bind: false });
     expect(again.root.querySelector('.list')).not.toBeNull();
-    expect(q<HTMLInputElement>(again.root, '[data-key=search]').value).toBe('csv');
+    expect(q<HTMLInputElement>(again.root, '[data-key=search]').value).toBe(
+      'csv',
+    );
     expect(again.root.querySelectorAll('[data-issue]')).toHaveLength(1);
   });
 });
@@ -194,7 +232,10 @@ describe('issue detail', () => {
   it('opens docked, saves the title on Enter and reverts on Esc', async () => {
     const { root } = await mount();
     cardOf(root, '#2').click();
-    const title = q<HTMLTextAreaElement>(root, '.detail.docked [data-key=detail-title]');
+    const title = q<HTMLTextAreaElement>(
+      root,
+      '.detail.docked [data-key=detail-title]',
+    );
     expect(title.value).toBe('Export the board as CSV');
 
     title.value = 'Scratch that';
@@ -217,15 +258,15 @@ describe('issue detail', () => {
   it('changes status from the segmented control', async () => {
     const { root } = await mount();
     cardOf(root, '#1').click();
-    const doing = [...root.querySelectorAll<HTMLButtonElement>('.detail [role=radio]')].find(
-      b => b.textContent === 'Doing',
-    )!;
+    const doing = [
+      ...root.querySelectorAll<HTMLButtonElement>('.detail [role=radio]'),
+    ].find(b => b.textContent === 'Doing')!;
     doing.click();
     expect(columnOf(root, '#1')).toBe('Doing');
     await settle(root);
-    expect(
-      q(root, '.detail [role=radio][aria-checked=true]').textContent,
-    ).toBe('Doing');
+    expect(q(root, '.detail [role=radio][aria-checked=true]').textContent).toBe(
+      'Doing',
+    );
   });
 
   it('adds a comment that shows as waiting to send', async () => {
@@ -253,7 +294,9 @@ describe('issue detail', () => {
     q<HTMLButtonElement>(root, '[data-key=create]').click();
     await settle(root);
     expect(q(root, '.detail').dataset.panel).toBe('issue');
-    expect(q(root, '.detail .d-foot').textContent).toContain('not on GitHub yet');
+    expect(q(root, '.detail .d-foot').textContent).toContain(
+      'not on GitHub yet',
+    );
     expect(cardOf(root, 'New').textContent).toContain('Written in the app');
     expect(root.textContent).toContain('1 change waiting to send');
   });
@@ -280,9 +323,9 @@ describe('issue detail', () => {
     expect(md.querySelector('strong')?.textContent).toBe('bold');
     expect(md.querySelector('img')).toBeNull();
     expect(md.textContent).toContain('<img src=x onerror=alert(1)>');
-    expect([...md.querySelectorAll('a')].map(a => a.getAttribute('href'))).toEqual([
-      'https://example.com',
-    ]);
+    expect(
+      [...md.querySelectorAll('a')].map(a => a.getAttribute('href')),
+    ).toEqual(['https://example.com']);
   });
 });
 
@@ -295,7 +338,9 @@ describe('sync problems', () => {
     store.status = 401;
     const { root } = await mount({ store, bind: false });
     const onLoad = q(root, '.pl-banner');
-    expect(onLoad.textContent).toContain('GitHub no longer accepts this connection.');
+    expect(onLoad.textContent).toContain(
+      'GitHub no longer accepts this connection.',
+    );
     expect(onLoad.getAttribute('role')).toBeNull();
     expect(q(root, '.pl-pill').dataset.state).toBe('reauth');
     // The board still shows the table while paused.
@@ -334,7 +379,9 @@ describe('sync problems', () => {
     store.github.updateIssue(SEEDED_REPOSITORY, 2, { title: 'There' });
     q(root, '[data-key=sync-now]').click();
     await settle(root);
-    expect(cardOf(root, '#2').querySelector('.sync-mark.conflict')).not.toBeNull();
+    expect(
+      cardOf(root, '#2').querySelector('.sync-mark.conflict'),
+    ).not.toBeNull();
     q(root, '[data-key=banner-action]').click();
     await settle(root);
     const apply = () => q<HTMLButtonElement>(root, '[data-key=apply]');
@@ -355,12 +402,14 @@ describe('host calls from pin 007869464', () => {
   it('opens GitHub links through store.openExternal', async () => {
     const { root, store } = await mount();
     cardOf(root, '#1').click();
-    const link = [...root.querySelectorAll<HTMLAnchorElement>('.detail a')].find(
-      a => a.textContent === 'Open on GitHub',
-    )!;
+    const link = [
+      ...root.querySelectorAll<HTMLAnchorElement>('.detail a'),
+    ].find(a => a.textContent === 'Open on GitHub')!;
     link.click();
     await wait();
-    expect(store.opened).toEqual([`https://github.com/${SEEDED_REPOSITORY}/issues/1`]);
+    expect(store.opened).toEqual([
+      `https://github.com/${SEEDED_REPOSITORY}/issues/1`,
+    ]);
   });
 
   it('follows the host colour scheme, not the page background', async () => {
@@ -377,9 +426,9 @@ describe('host calls from pin 007869464', () => {
       const { root } = await mount({ store });
       q(root, '[aria-label="Connection menu"]').click();
 
-      return [...root.querySelectorAll<HTMLButtonElement>('[role=menu] button')].find(
-        b => b.textContent === 'Disconnect GitHub',
-      )!;
+      return [
+        ...root.querySelectorAll<HTMLButtonElement>('[role=menu] button'),
+      ].find(b => b.textContent === 'Disconnect GitHub')!;
     };
 
     expect((await item(fakeStore({ hostApis: false }))).disabled).toBe(true);
@@ -389,7 +438,9 @@ describe('host calls from pin 007869464', () => {
     disconnect.click();
     await wait(20);
     expect(store.disconnected).toEqual(['github-issues']);
-    expect(document.querySelector('[aria-label="Connect GitHub Issues"]')).not.toBeNull();
+    expect(
+      document.querySelector('[aria-label="Connect GitHub Issues"]'),
+    ).not.toBeNull();
   });
 });
 
@@ -399,20 +450,30 @@ describe('an issue gone from GitHub', () => {
     const request = store.proxy!.request.bind(store.proxy);
 
     store.proxy!.request = async r => {
-      if (/\/issues\/1(\/|$)/.test(r.path)) return { status: 404, headers: {}, body: {} };
+      if (/\/issues\/1(\/|$)/.test(r.path))
+        return { status: 404, headers: {}, body: {} };
       const response = await request(r);
 
       return /\/issues$/.test(r.path) && Array.isArray(response.body)
-        ? { ...response, body: (response.body as { number: number }[]).filter(i => i.number !== 1) }
+        ? {
+            ...response,
+            body: (response.body as { number: number }[]).filter(
+              i => i.number !== 1,
+            ),
+          }
         : response;
     };
 
     q(root, '[data-key=sync-now]').click();
     await settle(root);
     const banner = () => q(root, '.pl-banner');
-    expect(banner().textContent).toContain('#1 is on this board but no longer on GitHub.');
+    expect(banner().textContent).toContain(
+      '#1 is on this board but no longer on GitHub.',
+    );
     const button = (label: string) =>
-      [...banner().querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === label)!;
+      [...banner().querySelectorAll<HTMLButtonElement>('button')].find(
+        b => b.textContent === label,
+      )!;
     button('Remove from board').click();
     expect(banner().textContent).toContain('Remove #1 from this board?');
     button('Cancel').click();
@@ -421,6 +482,8 @@ describe('an issue gone from GitHub', () => {
     await settle(root);
     expect(root.querySelector('.pl-banner')).toBeNull();
     expect(root.querySelectorAll('[data-issue]')).toHaveLength(1);
-    expect(store.calls.filter(c => (c.method ?? 'GET') !== 'GET')).toHaveLength(0);
+    expect(store.calls.filter(c => (c.method ?? 'GET') !== 'GET')).toHaveLength(
+      0,
+    );
   });
 });

@@ -61,12 +61,15 @@ describe('board columns', () => {
     [20, 20, 0],
     [21, 20, 1],
     [340, 20, 320],
-  ])('collapses Done at %i issues to %i shown and %i more', (n, shown, more) => {
-    const col = columns(done(n), { search: '' })[2];
-    expect(col).toMatchObject({ status: 'Done', total: n, hidden: more });
-    expect(col.rows).toHaveLength(shown);
-    expect(DONE_LIMIT).toBe(20);
-  });
+  ])(
+    'collapses Done at %i issues to %i shown and %i more',
+    (n, shown, more) => {
+      const col = columns(done(n), { search: '' })[2];
+      expect(col).toMatchObject({ status: 'Done', total: n, hidden: more });
+      expect(col.rows).toHaveLength(shown);
+      expect(DONE_LIMIT).toBe(20);
+    },
+  );
 
   it('shows every Done issue when expanded, most recent first', () => {
     const col = columns(done(25), { search: '' }, true)[2];
@@ -75,7 +78,11 @@ describe('board columns', () => {
   });
 
   it('orders Todo and Doing by number, new unsent issues first', () => {
-    const rows = [row(5), row(2), { ...row(0), number: undefined, subject: 'new' }];
+    const rows = [
+      row(5),
+      row(2),
+      { ...row(0), number: undefined, subject: 'new' },
+    ];
     expect(columns(rows, { search: '' })[0].rows.map(r => r.subject)).toEqual([
       'new',
       's2',
@@ -110,7 +117,11 @@ describe('search and label filter', () => {
   });
 
   it('counts open and done, or what the filter shows', () => {
-    const rows = [row(1), row(2, { status: 'Done' }), row(3, { status: 'Doing' })];
+    const rows = [
+      row(1),
+      row(2, { status: 'Done' }),
+      row(3, { status: 'Doing' }),
+    ];
     expect(countText(rows, { search: '' })).toBe('2 open · 1 done');
     expect(countText(rows, { search: '2' })).toBe('1 of 3 shown');
   });
@@ -145,7 +156,9 @@ describe('sync pill', () => {
     [ready({ busy: 'syncing', last: undefined }), 'syncing', 'Importing…'],
     [ready({ busy: 'sending' }), 'syncing', 'Sending…'],
     [
-      ready({ problem: { kind: 'conflict', message: '', subject: 'x', fields: [] } }),
+      ready({
+        problem: { kind: 'conflict', message: '', subject: 'x', fields: [] },
+      }),
       'paused',
       'Sync paused',
     ],
@@ -154,8 +167,16 @@ describe('sync pill', () => {
       'paused',
       'Sync paused',
     ],
-    [ready({ problem: { kind: 'reconnect', message: '' } }), 'reauth', 'Reconnect needed'],
-    [ready({ problem: { kind: 'failed', message: '' } }), 'error', 'Sync failed'],
+    [
+      ready({ problem: { kind: 'reconnect', message: '' } }),
+      'reauth',
+      'Reconnect needed',
+    ],
+    [
+      ready({ problem: { kind: 'failed', message: '' } }),
+      'error',
+      'Sync failed',
+    ],
   ])('%j → %s', (state, pill, text) => {
     expect(pillFor(state, now)).toEqual({ state: pill, text });
   });
@@ -168,12 +189,58 @@ describe('sync pill', () => {
 describe('banners', () => {
   it('maps each problem to exactly one banner, and a transient failure to none', () => {
     const kinds = [
-      [{ kind: 'reconnect', message: 'GitHub list_issues returned 401' }, 'neg', 'Reconnect GitHub'],
-      [{ kind: 'conflict', message: 'm', subject: 'x', fields: ['title'], local: 's1' }, 'warn', 'Review conflict'],
-      [{ kind: 'paused', message: 'Uncertain GitHub write (create_issue)', reason: 'uncertain' }, 'warn', 'Sync now'],
-      [{ kind: 'paused', message: 'Missing remote record: x', reason: 'missing' }, 'warn', 'Check on GitHub'],
-      [{ kind: 'paused', message: 'Atomic write rejected: x', reason: 'rejected' }, 'neg', 'Try again'],
-      [{ kind: 'paused', message: 'Duplicate external identity', reason: 'other' }, 'warn', 'Sync now'],
+      [
+        { kind: 'reconnect', message: 'GitHub list_issues returned 401' },
+        'neg',
+        'Reconnect GitHub',
+      ],
+      [
+        {
+          kind: 'conflict',
+          message: 'm',
+          subject: 'x',
+          fields: ['title'],
+          local: 's1',
+        },
+        'warn',
+        'Review conflict',
+      ],
+      [
+        {
+          kind: 'paused',
+          message: 'Uncertain GitHub write (create_issue)',
+          reason: 'uncertain',
+        },
+        'warn',
+        'Sync now',
+      ],
+      [
+        {
+          kind: 'paused',
+          message: 'Missing remote record: x',
+          reason: 'missing',
+        },
+        'warn',
+        'Check on GitHub',
+      ],
+      [
+        {
+          kind: 'paused',
+          message: 'Atomic write rejected: x',
+          reason: 'rejected',
+        },
+        'neg',
+        'Try again',
+      ],
+      [
+        {
+          kind: 'paused',
+          message: 'Duplicate external identity',
+          reason: 'other',
+        },
+        'warn',
+        'Sync now',
+      ],
     ] as const;
 
     for (const [problem, tone, action] of kinds) {
@@ -191,7 +258,13 @@ describe('banners', () => {
   it('names the conflicting issue by number', () => {
     const banner = bannerFor(
       ready({
-        problem: { kind: 'conflict', message: '', subject: 'x', fields: ['title'], local: 's2' },
+        problem: {
+          kind: 'conflict',
+          message: '',
+          subject: 'x',
+          fields: ['title'],
+          local: 's2',
+        },
       }),
     )!;
     expect(banner.text).toMatch(/^#2 was changed both here and on GitHub/);
@@ -207,8 +280,13 @@ describe('banners', () => {
       unconfirmed: true,
       local: 's1',
     };
-    const banner = bannerFor(ready({ last: { at: 1, result: result([row(1)], [held]) } }))!;
-    expect(banner.actions.map(a => a.label)).toEqual(['Check on GitHub', 'Send again']);
+    const banner = bannerFor(
+      ready({ last: { at: 1, result: result([row(1)], [held]) } }),
+    )!;
+    expect(banner.actions.map(a => a.label)).toEqual([
+      'Check on GitHub',
+      'Send again',
+    ]);
   });
 
   it('explains the first import and keeps moving off until it completes', () => {
@@ -237,9 +315,18 @@ describe('card markers', () => {
       row(4),
     ];
     const state = ready({
-      last: { at: 1, result: result(rows, [held('s2'), held('m1', 'comment:b1')]) },
+      last: {
+        at: 1,
+        result: result(rows, [held('s2'), held('m1', 'comment:b1')]),
+      },
       touched: ['s3'],
-      problem: { kind: 'conflict', message: '', subject: 'x', fields: [], local: 's4' },
+      problem: {
+        kind: 'conflict',
+        message: '',
+        subject: 'x',
+        fields: [],
+        local: 's4',
+      },
     });
     expect(Object.fromEntries(markers(state))).toEqual({
       s1: 'waiting',
@@ -262,7 +349,9 @@ describe('helpers', () => {
 
   it('knows when a keystroke belongs to a text field', () => {
     expect(typing({ tagName: 'INPUT' } as unknown as EventTarget)).toBe(true);
-    expect(typing({ tagName: 'TEXTAREA' } as unknown as EventTarget)).toBe(true);
+    expect(typing({ tagName: 'TEXTAREA' } as unknown as EventTarget)).toBe(
+      true,
+    );
     expect(typing({ tagName: 'BUTTON' } as unknown as EventTarget)).toBe(false);
     expect(typing(null)).toBe(false);
   });
@@ -273,7 +362,12 @@ describe('an issue gone from GitHub', () => {
     kind: 'paused' as const,
     message: 'Missing remote record: b',
     reason: 'missing' as const,
-    missing: { side: 'remote' as const, subject: 'b', entity: 'issue', local: 's2' },
+    missing: {
+      side: 'remote' as const,
+      subject: 'b',
+      entity: 'issue',
+      local: 's2',
+    },
   };
 
   it('offers Keep here only and Remove from board, and confirms removal inline', () => {
@@ -282,14 +376,19 @@ describe('an issue gone from GitHub', () => {
     expect(offer.actions.map(a => a.action)).toEqual(['keep-here', 'remove']);
     const confirm = bannerFor(ready({ problem }), true)!;
     expect(confirm.title).toBe('Remove #2 from this board?');
-    expect(confirm.actions.map(a => a.action)).toEqual(['cancel-remove', 'confirm-remove']);
+    expect(confirm.actions.map(a => a.action)).toEqual([
+      'cancel-remove',
+      'confirm-remove',
+    ]);
   });
 
   it('offers no removal for a record deleted from the table', () => {
-    const local = { ...problem, missing: { ...problem.missing, side: 'local' as const } };
-    expect(bannerFor(ready({ problem: local }), true)!.actions.map(a => a.action)).toEqual([
-      'open-github',
-      'sync',
-    ]);
+    const local = {
+      ...problem,
+      missing: { ...problem.missing, side: 'local' as const },
+    };
+    expect(
+      bannerFor(ready({ problem: local }), true)!.actions.map(a => a.action),
+    ).toEqual(['open-github', 'sync']);
   });
 });
