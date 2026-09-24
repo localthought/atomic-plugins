@@ -2,7 +2,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FileKvStore, InMemoryKvStore } from '../../../src/reflect/kv-store.js';
+import { InMemoryKvStore } from '../../../src/reflect/kv-store.js';
+import { FileKvStore } from '../../../src/reflect/file.js';
 
 describe('InMemoryKvStore', () => {
   it('gets undefined for an unset key', () => {

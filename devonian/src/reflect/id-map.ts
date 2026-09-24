@@ -1,6 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-
 /** One end of a reflected pair: a record `id` on a named `system`. */
 export interface Link {
   system: string;
@@ -81,37 +78,5 @@ export class InMemoryIdMap implements IdMap {
     for (const { kind, a, b } of entries) {
       this.record(kind, a, b);
     }
-  }
-}
-
-/**
- * A JSON-file-backed {@link IdMap}. The whole map is small (one entry per
- * reflected record) and rewritten on each link, owner-only. This survives
- * restarts on a durable disk; on an ephemeral host the map should live in a
- * database instead (wired where the loop is configured).
- */
-export class FileIdMap extends InMemoryIdMap {
-  private constructor(private readonly path: string) {
-    super();
-  }
-
-  static async open(path: string): Promise<FileIdMap> {
-    const map = new FileIdMap(path);
-    try {
-      const raw = await readFile(path, 'utf8');
-      const parsed = JSON.parse(raw) as { kind: string; a: Link; b: Link }[];
-      if (Array.isArray(parsed)) {
-        map.load(parsed);
-      }
-    } catch {
-      // No file yet (or unreadable) — start empty.
-    }
-    return map;
-  }
-
-  override async link(kind: string, a: Link, b: Link): Promise<void> {
-    this.record(kind, a, b);
-    await mkdir(dirname(this.path), { recursive: true });
-    await writeFile(this.path, JSON.stringify(this.entries()), { mode: 0o600 });
   }
 }

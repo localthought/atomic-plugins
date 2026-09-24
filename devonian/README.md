@@ -26,7 +26,36 @@ It was extracted from [`localthought/reflector`](https://github.com/localthought
 - `marker.ts`'s `embedMarker`/`parseMarker`/`stripMarker` are namespaced (`<!-- <namespace>:origin ... -->`, defaulting to `devonian`) so a host with its own established wire format (e.g. reflector's `<!-- reflector:origin ... -->`, for backward compatibility with markers already in production) can keep it.
 - `IdMap`/`KvStore` (each with `InMemory*`/`File*` implementations) persist the id-map and the last-agreed state ledger a host needs across restarts.
 
-Unlike this package's other exports, `devonian/reflect` resolves to **compiled JS** (`build/src/reflect/*.js`, with matching `.d.ts`), not raw `.ts` — its target consumer is a plain `tsc`-built Node app like reflector, not a bundler/`vite`-transformed one, so `npm run build` must have run (as it does before every publish) for this subpath to resolve.
+`FileIdMap` and `FileKvStore` write JSON files with `node:fs` and are Node-only. Bundlers that resolve the `browser` export condition get a build of `devonian/reflect` without them (`build/src/reflect/browser.js`); importing either name there fails at bundle time rather than at run time. In a browser, persist by subclassing `InMemoryIdMap`/`InMemoryKvStore` over IndexedDB or similar.
+
+## Entry points and browser support
+
+Every entry point resolves to compiled JS in `build/` with matching `.d.ts`
+(`npm run build` runs before every publish), and every one bundles for the
+browser without Node built-ins or polyfills:
+
+| Import | Contents |
+|---|---|
+| `devonian` | Everything below except `devonian/reflect`, plus the row API (`DevonianTable`, `DevonianLens`, `DevonianClient`, `DevonianIndex`), `effect` schemas and `reconcileRecord` |
+| `devonian/atomic` | Only the native Atomic Data API (`AtomicStore`, `AtomicIdentityMap`, `AtomicLens`, resource helpers). Runtime dependency: the optional `@tomic/lib` peer |
+| `devonian/background` | `BackgroundSync` and its service-worker helpers |
+| `devonian/reflect` | The reflection engine; `FileIdMap`/`FileKvStore` only outside the `browser` condition (see above) |
+
+`DevonianClient` and `DevonianTable` extend `DevonianEventEmitter`, a small
+synchronous emitter with the `node:events` methods they use, instead of
+`node:events` itself. A client that extends Node's `EventEmitter` is still
+accepted where a `DevonianClient` is expected, but `DevonianClient` and
+`DevonianTable` instances are no longer `instanceof` Node's `EventEmitter`.
+Automerge is not reachable from any entry point (`storage/Automerge.ts` is
+not exported), so no Automerge WASM is loaded.
+
+`__tests__/browser/bundle.test.ts` checks this: it bundles each `exports`
+subpath with esbuild `platform: 'browser'`, failing on any Node built-in, and
+runs a small driver per entry point in a `node:vm` context that has browser
+globals (timers, `structuredClone`, `TextEncoder`, `URL`, `crypto`) and no
+`process`, `Buffer`, `require` or `global`. CI runs it against `src/` and,
+after `pnpm build`, against `build/`. Not yet verified: a real browser engine,
+and the service-worker path beyond unit tests with fakes.
 
 ## Background sync scheduler
 
@@ -163,7 +192,18 @@ reason).
 See [the platform lens boundaries](docs/atomic-data.md#passive-platform-lenses)
 for the forward and reverse mappings and their scope.
 
-## Unreleased
+## 0.7.0
+
+Added: browser support for every entry point (see
+[Entry points and browser support](#entry-points-and-browser-support)).
+`DevonianClient` and `DevonianTable` extend the new, exported
+`DevonianEventEmitter` instead of `node:events` `EventEmitter`; they are no
+longer `instanceof` Node's `EventEmitter`. New subpaths `devonian/atomic` and
+`devonian/background`. `devonian/reflect` gains a `browser` export condition
+without the Node-only `FileIdMap`/`FileKvStore`. The package root now
+resolves to compiled JS (`build/src/main.js` with `.d.ts`) instead of
+`src/main.ts`, so consumers no longer typecheck devonian's sources under
+their own tsconfig. `sideEffects: false` is set for tree-shaking.
 
 **Breaking:** the `devonian/platform-lenses/github-issues*`,
 `devonian/platform-lenses/clockify*`, `devonian/platform-lenses/notion*` and
@@ -171,7 +211,7 @@ for the forward and reverse mappings and their scope.
 `exports`, and `platform-lenses/` is no longer in the published `files`.
 0.6.1 and earlier on npm still ship them. There are no compatibility shims:
 import the lens from its plugin folder in ontola/atomic-plugins instead (see
-above). The next release must be at least 0.7.0.
+above).
 
 Added: `reconcileRecord`, `acknowledgedBaseline` and their `Sync*` types are
 exported from the package root.

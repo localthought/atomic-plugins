@@ -2,7 +2,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FileIdMap, InMemoryIdMap } from '../../../src/reflect/id-map.js';
+import { InMemoryIdMap } from '../../../src/reflect/id-map.js';
+import { FileIdMap } from '../../../src/reflect/file.js';
 
 describe('InMemoryIdMap', () => {
   it('links two ends symmetrically and looks them up per kind', () => {

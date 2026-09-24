@@ -10,3 +10,4 @@ export * from './atomic/IdentityMap.js';
 export * from './atomic/Lens.js';
 export * from './background/index.js';
 export * from './reconcileRecord.js';
+export * from './events.js';

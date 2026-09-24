@@ -1,8 +1,8 @@
-import { EventEmitter } from 'node:events';
+import { DevonianEventEmitter } from './events.js';
 
 export abstract class DevonianClient<
   ModelWithoutId,
   Model,
-> extends EventEmitter {
+> extends DevonianEventEmitter {
   abstract add(obj: ModelWithoutId): Promise<Model>;
 }
