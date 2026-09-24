@@ -48,6 +48,7 @@ uses the host's `navigate` op to open the existing Bank statements dialog.
 Unstyled is acceptable here; M-2 supplies styles.
 
 Acceptance:
+
 - `vitest run --config integrations/money/vitest.config.ts` covers the
   controller's state transitions with `fakeStore`.
 - `app/build.mjs` output is reproducible (`build.test.ts`), one module, no
@@ -69,6 +70,7 @@ container. Styles are injected as one `<style>` element from the module
 designs exactly (see DESIGN.md §4); do not import from another plugin folder.
 
 Acceptance:
+
 - Unit test: each builder returns the documented roles/ARIA (`role="status"`
   on the pill, `role="alert"` on neg banners).
 - With the host's light and dark `--t-*` values (copy from `mockups.html`),
@@ -83,6 +85,7 @@ Acceptance:
 **Depends on:** nothing.
 
 Pure module `integrations/money/app/amounts.ts`:
+
 - `formatAmount(amount: string, currency: string, locale: string)` using
   `Intl.NumberFormat(...).format(amountString)` (exact decimal in engines
   with Intl.NumberFormat v3) with a string-splitting fallback when the engine
@@ -94,6 +97,7 @@ Pure module `integrations/money/app/amounts.ts`:
   per-currency net per day.
 
 Acceptance:
+
 - Tests include `"12345678901234.56789"`, `"-0.00001"`, JPY (0 decimals) and
   BHD (3 decimals), and assert no float round-trip (`Number(...)` never
   called on an amount; grep test).
@@ -107,6 +111,7 @@ Acceptance:
 
 Implement frames `#ledger-wide`, `#ledger-narrow`, `#no-results`
 (DESIGN.md 6.6, 6.8, 6.10):
+
 - Account switcher from distinct `bank-account` + currency values.
 - Filter row: search (description, reference; case-insensitive substring),
   period chips (This month · Last month · This year · Custom), direction
@@ -119,6 +124,7 @@ Implement frames `#ledger-wide`, `#ledger-narrow`, `#no-results`
 - `store.subscribe` on the table so new rows appear without reload.
 
 Acceptance:
+
 - Controller tests for filter combinations with a 500-row fake table.
 - Render budget: first render of 500 rows under 100 ms on a mid-range laptop
   (measure and record the number in the PR; this is the first measurement).
@@ -139,6 +145,7 @@ resource (renamable, shareable across tables, more setup). The design
 assumes a string for now.
 
 Acceptance:
+
 - Test: import, set category/note on a row, re-import the same statement →
   category/note unchanged and zero changes proposed.
 - Shared ontology upgrade path noted in README (existing installations get
@@ -159,6 +166,7 @@ Side panel ≥900px (non-modal region), drawer 560–899px, full-screen sheet
 <560px; Esc closes and focus returns to the row.
 
 Acceptance:
+
 - Tests with `fakeStore` for save success, save failure + retry, and that
   bank fields have no editable control.
 - Keyboard: ↑/↓ row focus, Enter opens, Esc closes.
@@ -177,6 +185,7 @@ beside its transactions, with an identity of
 Transactions keep their existing identity rules unchanged.
 
 Acceptance:
+
 - Parser/plugin tests: re-importing the same file proposes zero changes for
   both statements and transactions.
 - `plugin.js` rebuilt with the README's esbuild command; bundle
@@ -224,6 +233,7 @@ The "changed reference payload" case comes from `importRecords` in
 separate atomic-server issue, linked from this one.
 
 Acceptance:
+
 - Tests assert code + data for each case in `parser.test.ts` /
   `camt053.test.ts`; existing message assertions unchanged.
 
@@ -243,6 +253,7 @@ transactions" applies; designed banners per error code with the plain
 message in Technical details.
 
 Acceptance:
+
 - Controller tests for every sheet state, including cancel during checking
   and "Nothing new in this file".
 - A blocking error moves focus to the banner heading.
