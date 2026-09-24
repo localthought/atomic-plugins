@@ -211,7 +211,10 @@ export async function listRepositories(
       });
     }
 
-    if (body.length < 100) break;
+    // GitHub pages with a Link header; without one, a short page is the last.
+    const link = response.headers?.link;
+    if (link !== undefined ? !/rel="next"/.test(link) : body.length < 100)
+      break;
   }
 
   return out;

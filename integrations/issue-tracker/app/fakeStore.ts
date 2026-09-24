@@ -176,7 +176,14 @@ export function fakeStore({
         request.body ? JSON.parse(request.body) : {},
       );
 
-      return { status: result.status, headers: {}, body: result.body };
+      // Relayed headers arrive lower-cased, as view-client.js passes them.
+      const headers = Object.fromEntries(
+        Object.entries(
+          (result as { headers?: Record<string, string> }).headers ?? {},
+        ).map(([k, v]) => [k.toLowerCase(), v]),
+      );
+
+      return { status: result.status, headers, body: result.body };
     },
     async connections({ platform }) {
       return connected ? [{ connectionId: 'c1', platform }] : [];

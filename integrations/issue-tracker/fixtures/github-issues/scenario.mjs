@@ -85,35 +85,6 @@ export function githubTracker() {
       return structuredClone(comment);
     },
     request(method, url, input = {}) {
-      // The repository picker's read (the issue-tracker drive app). Whether
-      // the real proxy's GitHub Issues document allows it is not verified.
-      if (url.pathname === '/proxy/github-issues/user/repos') {
-        if (method !== 'GET') return { status: 404, body: {} };
-        repo(SEEDED_REPOSITORY);
-        const page = Number(url.searchParams.get('page') ?? 1);
-        const size = Number(url.searchParams.get('per_page') ?? 30);
-        const all = [
-          ...[...repositories.entries()].map(([full_name, state]) => ({
-            full_name,
-            has_issues: true,
-            private: false,
-            open_issues_count: state.issues.filter(i => i.state === 'open')
-              .length,
-          })),
-          {
-            full_name: 'atomic-fixture/no-issues',
-            has_issues: false,
-            private: false,
-            open_issues_count: 0,
-          },
-        ];
-
-        return {
-          status: 200,
-          body: all.slice((page - 1) * size, page * size),
-        };
-      }
-
       const match = url.pathname.match(
         /^\/proxy\/github-issues\/repos\/([^/]+\/[^/]+)\/issues(?:\/(.*))?$/,
       );

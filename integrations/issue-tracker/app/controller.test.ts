@@ -440,3 +440,36 @@ group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
     expect(writes(store)).toBe(sent);
   });
 });
+
+group('issue-tracker controller: the Doing label on GitHub', () => {
+  it('adds atomic:doing for Doing and removes it again for Todo, other labels kept', async () => {
+    const { store, controller } = await bound();
+    const labels = () =>
+      (
+        store.github.snapshot(SEEDED_REPOSITORY).issues[0].labels as (
+          | string
+          | { name: string }
+        )[]
+      ).map(l => (typeof l === 'string' ? l : l.name));
+    const subject = rowByNumber(ready(controller.state()), 1).subject;
+
+    await controller.edit(subject, { status: 'Doing' });
+    expect(ready(await controller.send()).problem).toBeUndefined();
+    expect(labels()).toEqual(['bug', 'atomic:doing']);
+
+    await controller.edit(subject, { status: 'Todo' });
+    expect(ready(await controller.send()).problem).toBeUndefined();
+    expect(labels()).toEqual(['bug']);
+    expect(ready(await controller.sync()).last!.result.held).toEqual([]);
+  });
+
+  it('follows the Link header when listing repositories', async () => {
+    const store = fakeStore();
+    for (let i = 0; i < 120; i++) store.github.snapshot(`many/repo-${i}`);
+    const controller = createController(store);
+    await controller.load();
+    await controller.listRepositories();
+    const pages = store.calls.filter(c => c.path === '/user/repos');
+    expect(pages.map(c => c.query?.page)).toEqual(['1', '2']);
+  });
+});
