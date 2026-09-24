@@ -16,9 +16,9 @@ export const permanentSyncErrors = [
   /^Atomic write rejected/,
   /^Uncertain GitHub write/,
   /^Operation identity reused/,
-  // The rotating proxy code is gone or revoked: reconnect first.
-  /^Connect to the proxy or supply a fresh connection code/,
-  /^Proxy did not expose X-Connection-Code/,
+  // The connection is gone or no longer delegated to this app (the host's
+  // check before it mints a capability): reconnect first.
+  /^No [a-z0-9-]+ connection .* is delegated to this app/,
   /^GitHub \S+ returned 401$/,
 ];
 
@@ -33,8 +33,8 @@ export const isPermanentSyncError = error =>
  * `openBridge` must build a new Bridge from the persisted snapshot on every
  * call: a tab, a service worker or another host may have synced since the
  * last pass, and a cached Bridge would reconcile from a stale checkpoint.
- * Every pass runs under the schedule's lease (`withLock`); a host must put
- * any other spend of the same connection's rotating proxy code under it too.
+ * Every pass runs under the schedule's lease (`withLock`), so two contexts
+ * never sync the same connection at once.
  */
 export function createBackgroundSync({
   openBridge,

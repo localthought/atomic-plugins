@@ -183,8 +183,7 @@ it('classifies human-action failures as permanent and everything else as transie
     'Atomic write rejected: forbidden',
     'Uncertain GitHub write (create_issue). Inspect its outcome before retrying; it will not be resent.',
     'Operation identity reused with different arguments',
-    'Connect to the proxy or supply a fresh connection code',
-    'Proxy did not expose X-Connection-Code. Enable CORS exposure and reconnect.',
+    'No github-issues connection abc is delegated to this app. Connect again.',
     'GitHub list_issues returned 401',
   ])
     expect(isPermanentSyncError(new Error(message)), message).toBe(true);
