@@ -42,87 +42,109 @@ nothing written back to Clockify.
 
 Live account data must never be checked into fixtures.
 
-## Drive-plugin app (`app/`, in progress — ontola/atomic-plugins#20)
+## Drive-plugin app (`app/`)
 
-`app/` is the planned replacement for the LocalThought extension path above:
-Clockify as an Atomic **App** ("drive plugin") whose module is fetched once at
-install time, stored as the App's `plugin-source` string, and served back by
-the host (`plugin_ui.rs`), which calls its exported `view({ root, store })`.
-No build-time coupling to `atomic-server` or `data-browser`.
+`app/` is the replacement for the LocalThought extension path above:
+Clockify as an Atomic **App** ("drive plugin"). `app/build.mjs` bundles it
+into one ES module (`app/dist/ui.js`, about 25 KB, no imports) that exports
+only `view({ root, store })`; the host stores it as the App's entry-point
+source and runs it in a null-origin, `allow-scripts`-only iframe
+(`plugin_ui.rs`). Plain DOM, no framework, no stylesheet.
 
-What it does today, covered by unit tests only:
-
-- `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`, the
-  same window as above), plus projects and users for naming, runs the one
-  Clockify lens (`devonian/clockify/`) over them, and
-  reconciles rows into the host's data table (`store.getData()`), or under the
-  App when there is none. Identity is a stored `entry-id` found via
-  `store.query()`, restricted to children of that table; `create` in
-  `app_write.rs` never accepts a caller-chosen subject. Import only: nothing is
-  written back to Clockify, and a vanished entry is never deleted.
-- The App resource holds only a **connection reference** (`connection-id`,
-  `workspace-id`, `user-id`, `lookback-days`; see `ontology.ts`). No connection
-  code, token or capability is ever stored or held by the frame (#21).
-- All provider traffic goes through `ProxyTransport` (`transport.ts`). The only
-  implementation is `hostTransport()`, which feature-detects the host relay's
-  `store.proxy.request`. The pinned host provides it (ontola/atomic-server#1657),
-  but this app does not yet call `store.proxy.connect`/`.connections`, so it
-  still depends on a connection reference nothing writes (#96). Without the
-  relay the app says it cannot sync and fetches nothing. There is
-  deliberately no fallback that holds a code.
-- `build.mjs` bundles `main.ts` into one ES module (~17 KB, no imports, exports
-  only `view`). `@tomic/lib` is aliased to `tomic-lib-shim.ts`, because the lens
-  needs only `Datatype.TIMESTAMP` from it.
+- **Connecting.** "Connect Clockify" calls
+  `store.proxy.connect({ platform: 'clockify' })`. The host, not the frame,
+  draws a consent bar; only a click there starts the PKCE handoff to the
+  integration proxy, where the person enters their Clockify API key. The
+  host redeems the handoff, keeps the rotating connection code in its own
+  `localStorage`, bound to this app, and navigates back. The app finds the
+  connection with `store.proxy.connections({ platform: 'clockify' })`. The
+  frame and the drive never hold a code, token or connection id (#21).
+  Connections live in one browser: another browser shows "Not connected"
+  until the person connects there too.
+- **Setup.** Once connected, the frame reads the account (`/api/v1/user`)
+  and its workspaces (`/api/v1/workspaces`) through the relay and asks for
+  a workspace and a 7- or 30-day look-back. It stores only the workspace id,
+  the account id and the look-back on the App resource, as three Properties
+  (`clockify-workspace`, `clockify-account`, `clockify-lookback-days`).
+  "Change settings" reopens the same form.
+- **Schema.** A host's `/app-write` rejects a property URL that does not
+  resolve to a Property. So `app/schema.ts` creates one Property per field
+  under the row class's ontology (inside the app's own subtree), finds them
+  again by shortname on later runs, and adds the row fields to the row
+  class's `recommends` so the table shows them: `start`/`end` (timestamp),
+  `billable` (boolean), `clockify-entry-id`, `clockify-project-id`,
+  `project`, `clockify-user-id`, `member` (string). The same pattern as the
+  Pets and Notion drive apps.
+- **Import.** Once set up, the app syncs on open and on "Sync now".
+  `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`,
+  recomputed on every run, never stored), plus projects and users for
+  naming, runs the one Clockify lens (`devonian/clockify/`) and reconciles
+  rows into the app's table by `clockify-entry-id`, restricted to children
+  of that table. Running timers and breaks are skipped by the lens. Import
+  only: nothing is written back to Clockify, and a vanished entry is never
+  deleted. Requests are sequential; each is one relay round trip.
+- **Errors.** A proxy or Clockify error fails the sync before anything is
+  written ("Import failed: …. Rows already in the table are kept."). The
+  next "Sync now", or reopening the app, retries. A 403/404 on projects or
+  users is a warning, and rows keep raw ids.
 
 ```sh
 # from an atomic-server checkout with this repo's integrations/ in place (AGENTS.md)
-node integrations/tooling/run-lane.mjs timesheets   # typecheck + unit, includes app/
-node integrations/timesheets/app/build.mjs          # -> app/dist/ui.js (git-ignored)
+node integrations/tooling/run-lane.mjs timesheets               # typecheck + unit
+node integrations/tooling/run-lane.mjs timesheets --tier e2e    # real host + mock proxy
+node integrations/timesheets/app/build.mjs                      # -> app/dist/ui.js (git-ignored)
 ```
 
-Not verified: the app has not been loaded by a real host. It has not been
-tested against the real integration proxy. The `/api/v1/...` request paths
-match `localthought/mock-clockify.mjs`, not a live proxy. It is also unknown
-whether `/app-write` accepts the provisional property URLs in `ontology.ts`,
-which do not resolve.
+### What is verified, and how
 
-App writes are signed by the node that holds the app's key, so they work on
-one node only for now (ontola/atomic-plugins#41).
+- **Unit** (`app/*.test.ts`, mock fixture `fixtures/clockify/scenario.mjs`
+  through an in-memory store that rejects unknown properties like the host
+  does): setup, schema creation, window, paging, idempotency, updates,
+  failures.
+- **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
+  against the pinned atomic-server (`.atomic-server-ref`, which includes the
+  relay from atomic-server#1657) and the local mock proxy: connect through
+  the consent bar, setup in the frame, Property and row writes through the
+  real `/app-write`, 2 completed entries imported (running timer and break
+  not), reopen with no duplicates, a changed entry updated in place, the
+  window start moving forward between runs (from the mock's request log),
+  7 → 30 days adding exactly the older entry, and a 503 that leaves the
+  three rows readable in the table and recovers on reopen. Provider changes
+  and failures are driven through the mock proxy's local-only
+  `POST /__fixture/clockify`.
+- **Not verified:** a real integration proxy or a real Clockify account.
+  The `/api/v1/...` paths match the mock fixture, not a recorded live
+  response. No live evidence is recorded, so every capability here is
+  declared, not verified.
 
-### Host bugs found while porting (atomic-server, not fixed here)
+### Known host limits (atomic-server)
 
-Read from `server/src/plugins/assets/view-client.js` and
-`browser/data-browser/src/chunks/AppPage/hostStore.ts` on a recent
-`atomic-server` branch. Not reproduced in a running host.
+Read from the pinned atomic-server, and reproduced by the e2e where noted.
 
-- `hostStore.ts` answers `get`/`create` with `{ subject, title, propVals }`,
-  but `view-client.js` builds resources from `result.props`. So
-  `resource.get(...)` would always return `undefined` in a real frame. This
-  app's config read would then report "not connected". Reconciliation avoids
-  depending on reads (membership comes from two `query` calls), but without
-  reads every run counts every existing row as "updated" and re-saves it.
-- `getApp()` resolves to the app's subject string, not an object. The Phase 1
-  scaffold typed it as an object.
+- **Stale reads after an app write** (reproduced). The host writes through
+  `/app-write`, but the page's store keeps its cached copy of the row, so a
+  second sync in the same page reads its own previous write as missing and
+  re-saves it (counted as "updated"). Harmless for this app's current
+  overwrite behaviour; the e2e reopens the app between syncs to avoid it.
+  Fixed on atomic-server branch `claude/app-write-refresh` (not yet a PR).
+- **Local-first reads on open** (reproduced, intermittently). The host
+  reads memory, then its local database, then the server, so right after a
+  reload the App can come back without settings saved moments before. The
+  app subscribes to the App and, while it is still asking for settings,
+  re-reads them when the host reports a change.
+- **`resource.remove()` does not reach the server.** view-client.js drops
+  the property locally and `save` only sets. Fixed on the same branch.
+- App writes are signed by the node that holds the app's key, so they work
+  on one node only for now (#41).
 
-### What still has to happen outside this repo
+### What still has to happen
 
-1. **Proxy access for the frame** (atomic-server#1624): either a host relay op,
-   where the parent's `BrowserIntegrations` performs the call and returns
-   `{ status, body }` (the shape `store.proxy` expects here), or a capability
-   minted as the app agent against #40's DID-bound connections. #40 is not
-   accepted yet.
-2. **Install flow**: catalog entry → fetch the built module → App resource with
-   `plugin-source`, a data table, and properties for `ontology.ts`, modelled on
-   `ConnectPets.tsx`'s `ensureInstallationResource`. The catalog needs a field
-   for the module URL, distinct from `pluginUrl`. It is not added yet, and no
-   host reads one.
-3. **Connect flow in the parent page** (PKCE is a full-page redirect and cannot
-   run in the frame), which writes the connection reference onto the App.
-4. **Publishing** `dist/ui.js` next to the gh-pages `catalog.json`.
-5. **Removal** of the LocalThought-extension Clockify path in `data-browser`,
-   and pruning `localthought.ts` to what `app/` still imports.
-
-The Phase 1/2 code on the unmerged branch `claude/hopeful-hawking-kqlrdy`
-(`integrations/clockify/app/`) is superseded by `app/` and should not be
-merged. It persisted the rotating code on the App resource (#21). No shipped
-host ever installed it, so no drive holds that property.
+1. **Install flow** (#94): catalog entry → the published module → an App
+   with its entry point, table and ontology, without the test-side
+   `setAppSource` the e2e uses.
+2. **Disconnect**: there is no `store.proxy.disconnect()` in the host
+   contract.
+3. **The designed UI** (week grid, entries, projects; branch
+   `claude/design-timesheets`, #89).
+4. **Removal** of the LocalThought-extension Clockify path in
+   `data-browser`, and pruning `localthought.ts` to what `app/` imports.
