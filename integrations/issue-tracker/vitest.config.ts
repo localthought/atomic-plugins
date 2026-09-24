@@ -42,6 +42,6 @@ export default {
     },
   },
   test: {
-    include: ['*.test.ts', 'app/*.test.ts', 'devonian/**/*.test.{ts,mjs}'],
+    include: ['*.test.ts', 'app/**/*.test.ts', 'devonian/**/*.test.{ts,mjs}'],
   },
 };

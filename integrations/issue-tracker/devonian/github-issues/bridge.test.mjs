@@ -266,3 +266,47 @@ it('resolves a same-field conflict in favour of either side and keeps other edit
     'Keep either',
   );
 });
+
+it('describes a conflict per field and settles each field for its own side', async () => {
+  const f = fixture();
+  f.remote.rows.set(1, issue(1));
+  await f.open().sync();
+  f.local.rows.get(1).value.title = 'Local title';
+  f.remote.rows.get(1).value.title = 'Remote title';
+  f.local.rows.get(1).value.status = 'Done';
+  f.remote.rows.get(1).value.status = 'Doing';
+  const error = await f
+    .open()
+    .sync()
+    .catch(e => e);
+  expect(error.fields).toEqual(['title', 'status']);
+  const writes = f.local.writes + f.remote.writes;
+
+  expect(await f.open().describeConflict(error.subject)).toEqual([
+    { field: 'title', base: 'Same title', local: 'Local title', remote: 'Remote title' },
+    { field: 'status', base: 'Todo', local: 'Done', remote: 'Doing' },
+  ]);
+  // A partial choice is refused, and nothing is sent before Apply.
+  await expect(
+    f.open().resolveConflict(error.subject, { title: 'local' }),
+  ).rejects.toThrow('Choose a side for status');
+  await expect(
+    f.open().resolveConflict(error.subject, { title: 'local', status: 'x' }),
+  ).rejects.toThrow('Keep either');
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+
+  await expect(
+    f.open().resolveConflict(error.subject, {
+      title: 'local',
+      status: 'remote',
+    }),
+  ).resolves.toEqual(['title', 'status']);
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+  await f.open().sync();
+  expect(f.local.rows.get(1).value).toEqual(f.remote.rows.get(1).value);
+  expect(f.remote.rows.get(1).value).toEqual({
+    title: 'Local title',
+    body: '',
+    status: 'Doing',
+  });
+});

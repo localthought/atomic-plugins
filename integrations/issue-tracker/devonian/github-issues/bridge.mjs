@@ -151,16 +151,8 @@ export class Bridge {
     }
   }
 
-  /**
-   * Settle a same-field conflict in favour of one side. Only the conflicting
-   * fields' baseline moves to the other side's current value, so on the next
-   * pass the kept side's value is the only change for those fields; every
-   * other field keeps reconciling normally. Nothing is written to either
-   * side here. Returns the fields that were settled.
-   */
-  async resolveConflict(subject, keep) {
-    if (keep !== 'local' && keep !== 'remote')
-      throw new Error('Keep either the local or the remote side');
+  /** Both sides' current rows and the reconcile decision for one record. */
+  async conflictRows(subject) {
     const record = this.records[subject];
     if (!record) throw new Error(`Unknown record: ${subject}`);
     if (record.pending)
@@ -183,10 +175,52 @@ export class Bridge {
       rows.local.value,
       rows.remote.value,
     );
-    const other = keep === 'local' ? 'remote' : 'local';
+
+    return { record, rows, decision };
+  }
+
+  /**
+   * What a person needs to settle a conflict: per conflicting field, the
+   * last synced value and both sides' current values. Reads only.
+   */
+  async describeConflict(subject) {
+    const { record, rows, decision } = await this.conflictRows(subject);
+
+    return decision.conflicts.map(({ property }) => ({
+      field: property,
+      base: copy(record.baseline?.[property]),
+      local: copy(rows.local.value[property]),
+      remote: copy(rows.remote.value[property]),
+    }));
+  }
+
+  /**
+   * Settle a same-field conflict. `keep` is one side for every conflicting
+   * field, or a `{ field: side }` choice that must name each of them. Only
+   * those fields' baseline moves to the other side's current value, so on
+   * the next pass the kept side's value is the only change for each field;
+   * every other field keeps reconciling normally. Nothing is written to
+   * either side here. Returns the fields that were settled.
+   */
+  async resolveConflict(subject, keep) {
+    if (typeof keep === 'string' && keep !== 'local' && keep !== 'remote')
+      throw new Error('Keep either the local or the remote side');
+    const choice = typeof keep === 'object' && keep !== null ? keep : {};
+    const sideFor = field => (typeof keep === 'string' ? keep : choice[field]);
+    const { record, rows, decision } = await this.conflictRows(subject);
+
+    for (const { property } of decision.conflicts) {
+      const side = sideFor(property);
+      if (side === undefined && typeof keep !== 'string')
+        throw new Error(`Choose a side for ${property}`);
+      if (side !== 'local' && side !== 'remote')
+        throw new Error('Keep either the local or the remote side');
+    }
+
     const baseline = copy(record.baseline ?? {});
 
     for (const { property } of decision.conflicts) {
+      const other = sideFor(property) === 'local' ? 'remote' : 'local';
       const value = rows[other].value[property];
       if (value === undefined) delete baseline[property];
       else baseline[property] = copy(value);
