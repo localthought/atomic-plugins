@@ -204,3 +204,65 @@ test('real runner executes the contract and propagates failures without browser 
   assert.match(rejected.stderr, /contract failed/);
   assert.doesNotMatch(rejected.stdout, /contract passed/);
 });
+
+test('node tier executes real suites and propagates failed or missing suites', t => {
+  const { base, folder } = fixture(t);
+  const tooling = resolve(base, 'integrations/tooling');
+  mkdirSync(tooling);
+  for (const file of [
+    'run-lane.mjs',
+    'lanes.mjs',
+    'serve.mjs',
+    'link-atomic-server.mjs',
+    'deps.mjs',
+  ])
+    copyFileSync(
+      resolve(root, 'integrations/tooling', file),
+      resolve(tooling, file),
+    );
+  const nodeConfig = {
+    ...config,
+    lanes: [
+      {
+        ...lane,
+        tiers: ['node'],
+        nodeTests: [`integrations/${lane.id}/behavior.test.mjs`],
+      },
+    ],
+  };
+  writeFileSync(
+    resolve(base, 'integrations/lanes.json'),
+    JSON.stringify(nodeConfig),
+  );
+  const suite = resolve(folder, 'behavior.test.mjs');
+  const testEnv = { ...process.env };
+  delete testEnv.NODE_TEST_CONTEXT;
+
+  const runNode = () =>
+    spawnSync(process.execPath, [resolve(tooling, 'run-lane.mjs'), lane.id], {
+      cwd: base,
+      env: testEnv,
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+  writeFileSync(
+    suite,
+    "import {test} from 'node:test'; test('works', () => {});",
+  );
+  const passed = runNode();
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(passed.stdout, /node passed/);
+  assert.match(passed.stdout, /# tests 1/);
+  assert.equal(passed.stderr, '');
+  writeFileSync(
+    suite,
+    "import {test} from 'node:test'; test('fails', () => { throw Error('expected'); });",
+  );
+  const failed = runNode();
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /node failed/);
+  rmSync(suite);
+  const missing = runNode();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /missing test file/);
+});
