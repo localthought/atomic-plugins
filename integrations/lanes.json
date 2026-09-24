@@ -12,8 +12,9 @@
       "id": "open-cloud-mesh",
       "index": 8,
       "platforms": [],
-      "tiers": ["contract"],
-      "note": "QuickJS OCM share-receiver scaffold; validates planning metadata only. Routes, host federation primitives and live interoperability remain unimplemented."
+      "tiers": ["node"],
+      "nodeTests": ["integrations/open-cloud-mesh/plugin.test.mjs"],
+      "note": "Executable OCM discovery, bounded metadata parser and reviewed Atomic document receipt importer. Network receipt remains unavailable pending host authorization and writes; no live interoperability claim."
     },
     {
       "id": "calendar",

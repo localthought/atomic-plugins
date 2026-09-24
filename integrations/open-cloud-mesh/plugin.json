@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "open-cloud-mesh",
   "name": "Open Cloud Mesh",
-  "status": "scaffold",
+  "status": "experimental",
   "runtime": "quickjs",
-  "scope": "Federated sharing between Atomic and another cloud server.",
+  "scope": "OCM 1.3 file-share metadata parsing and reviewed receipt import into existing Atomic documents; disabled discovery routes. Network receipt unavailable.",
   "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/138",
   "proposedHostCapabilities": [
     "http-routes",
