@@ -13,6 +13,9 @@ import {
   clockifyFixture,
   clockifyReadOnlyDocument,
   NOT_IN_CATALOG,
+  NOT_IN_WORKSPACE,
+  PROJECT_REQUIRED,
+  wallClockToInstant,
   USER,
   WORKSPACE,
 } from '../fixtures/clockify/scenario.mjs';
@@ -69,13 +72,14 @@ describe('Clockify mock: catalog document', () => {
 });
 
 describe('Clockify mock: time-entry endpoints', () => {
-  it('serves one entry by id, and 404 once it is gone', async () => {
+  it('serves one entry by id, and a 400 "doesn\'t belong to Workspace" for an unknown id, as Clockify does', async () => {
     const { call } = setup();
 
     const found = await call('GET', `${WS}/time-entries/entry-1`);
     expect(found.status).toBe(200);
     expect(description(found)).toBe('Fix plugin source loading');
-    expect((await call('GET', `${WS}/time-entries/nope`)).status).toBe(404);
+    const unknown = await call('GET', `${WS}/time-entries/nope`);
+    expect(unknown).toMatchObject({ status: 400, body: NOT_IN_WORKSPACE });
     expect(
       (
         await call(
@@ -168,7 +172,10 @@ describe('Clockify mock: time-entry endpoints', () => {
     expect((await call('DELETE', `${WS}/time-entries/entry-2`)).status).toBe(
       204,
     );
-    expect((await call('GET', `${WS}/time-entries/entry-2`)).status).toBe(404);
+    // Live: GET of a deleted entry is a 400, DELETE of one a 404.
+    expect((await call('GET', `${WS}/time-entries/entry-2`)).body).toEqual(
+      NOT_IN_WORKSPACE,
+    );
     expect((await call('DELETE', `${WS}/time-entries/entry-2`)).status).toBe(
       404,
     );
@@ -321,5 +328,126 @@ describe('Clockify mock: behaviour switches', () => {
     fixture.control({ action: 'reset' });
     expect(fixture.state.entries).toHaveLength(5);
     expect(fixture.state.forbidden.methods).toEqual([]);
+  });
+});
+
+describe('Clockify mock: behaviour checked live on 2026-09-24', () => {
+  const at = (text: string) => Date.parse(text);
+  const list = (fixture: ReturnType<typeof clockifyFixture>, query: string) =>
+    fixture.request(
+      'GET',
+      new URL(`${LIST}?${query}`, 'http://proxy.test'),
+    ) as {
+      status: number;
+      body: { id: string }[];
+    };
+
+  const only = (start: string, end: string) => {
+    const fixture = clockifyFixture();
+    fixture.state.entries = [clockifyEntry('e', 'E', at(start), at(end))];
+
+    return fixture;
+  };
+
+  it('reads list bounds as wall-clock time in the profile time zone, ignoring Z and offsets', () => {
+    // 00:30 in Amsterdam (CEST) is 22:30 UTC the day before.
+    const fixture = only('2026-09-26T22:30:00Z', '2026-09-26T23:00:00Z');
+
+    for (const zone of ['Z', '+02:00', '+00:00'])
+      expect(
+        list(
+          fixture,
+          `start=2026-09-27T00:00:00${encodeURIComponent(zone)}&end=2026-09-27T03:00:00Z`,
+        ).body.map(e => e.id),
+      ).toEqual(['e']);
+    // Read as UTC, 00:00–03:00 would miss it.
+    fixture.control({ action: 'settings', timeZone: 'UTC' });
+    expect(
+      list(fixture, 'start=2026-09-27T00:00:00Z&end=2026-09-27T03:00:00Z').body,
+    ).toEqual([]);
+  });
+
+  it('refuses a bound without a zone', () => {
+    const fixture = only('2026-09-26T22:30:00Z', '2026-09-26T23:00:00Z');
+
+    expect(list(fixture, 'start=2026-09-27T01:15:00').status).toBe(400);
+  });
+
+  it("filters on the entry's start in [start, end): the end is exclusive", () => {
+    // 02:30 Amsterdam = 00:30 UTC.
+    const fixture = only('2026-09-27T00:30:00Z', '2026-09-27T01:00:00Z');
+    const listed = (q: string) => list(fixture, q).body.map(e => e.id);
+
+    expect(
+      listed('start=2026-09-27T02:30:00Z&end=2026-09-27T02:59:59Z'),
+    ).toEqual(['e']);
+    expect(
+      listed('start=2026-09-27T02:30:01Z&end=2026-09-27T03:00:00Z'),
+    ).toEqual([]);
+    expect(
+      listed('start=2026-09-27T02:00:00Z&end=2026-09-27T02:30:00Z'),
+    ).toEqual([]);
+  });
+
+  it('resolves wall-clock times on DST days as java.time does (an assumption)', () => {
+    const tz = 'Europe/Amsterdam';
+    // 2026-10-25: 02:00–03:00 happens twice; the earlier instant is used.
+    expect(wallClockToInstant(at('2026-10-25T02:30:00Z'), tz)).toBe(
+      at('2026-10-25T00:30:00Z'),
+    );
+    // 2026-03-29: 02:00–03:00 does not exist; shifted forward by the gap.
+    expect(wallClockToInstant(at('2026-03-29T02:30:00Z'), tz)).toBe(
+      at('2026-03-29T01:30:00Z'),
+    );
+    expect(wallClockToInstant(at('2026-03-29T03:30:00Z'), tz)).toBe(
+      at('2026-03-29T01:30:00Z'),
+    );
+  });
+
+  it('truncates written instants to whole seconds', async () => {
+    const { call } = setup();
+
+    const created = await call('POST', `${WS}/time-entries`, {
+      start: '2026-09-27T02:20:00.789Z',
+      end: '2026-09-27T02:40:00.999Z',
+    });
+
+    expect(created.body).toMatchObject({
+      timeInterval: {
+        start: '2026-09-27T02:20:00Z',
+        end: '2026-09-27T02:40:00Z',
+      },
+    });
+  });
+
+  it('with forceProjects, refuses a create or PUT without a project', async () => {
+    const { call, fixture } = setup();
+    fixture.control({ action: 'settings', forceProjects: true });
+    const start = '2026-09-27T02:20:00Z';
+
+    expect(await call('POST', `${WS}/time-entries`, { start })).toMatchObject({
+      status: 400,
+      body: { message: PROJECT_REQUIRED },
+    });
+    expect(
+      (await call('PUT', `${WS}/time-entries/entry-1`, { start })).status,
+    ).toBe(400);
+    expect(
+      (
+        await call('PUT', `${WS}/time-entries/entry-1`, {
+          start,
+          projectId: 'p',
+        })
+      ).status,
+    ).toBe(200);
+    // Setup can see the setting, and the user's time zone.
+    const workspaces = await call('GET', '/proxy/clockify/api/v1/workspaces');
+    expect(workspaces.body).toContainEqual(
+      expect.objectContaining({ settings: { forceProjects: true } }),
+    );
+    const user = await call('GET', '/proxy/clockify/api/v1/user');
+    expect(user.body).toMatchObject({
+      settings: { timeZone: 'Europe/Amsterdam' },
+    });
   });
 });

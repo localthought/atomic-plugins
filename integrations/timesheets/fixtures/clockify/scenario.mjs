@@ -508,6 +508,85 @@ export const USER = { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Test Person' };
 const hour = 3_600_000;
 const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
+/** The fixture user's profile time zone unless a test sets another. */
+export const DEFAULT_TIME_ZONE = 'Europe/Amsterdam';
+
+/** Clockify's answer to GET by id of a deleted or unknown entry (live). */
+export const NOT_IN_WORKSPACE = {
+  message: "Time entry doesn't belong to Workspace",
+  code: 501,
+};
+
+/** Clockify's answer to a write without a project under forceProjects. */
+export const PROJECT_REQUIRED =
+  'Project is either required field or given project is archived';
+
+/** `timeZone`'s UTC offset at the instant `at`, in ms (whole seconds). */
+export function zoneOffsetMs(at, timeZone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(at)
+      .map(p => [p.type, p.value]),
+  );
+  const wall = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+
+  return wall - Math.floor(at / 1000) * 1000;
+}
+
+/**
+ * A wall-clock time in `timeZone` (given as epoch ms of the same digits
+ * read as UTC) to an instant, the way java.time's `atZone` resolves it: in
+ * a repeated hour the earlier instant, in a skipped hour shifted forward by
+ * the gap. Clockify's resolution at a DST change is the mock's assumption.
+ */
+export function wallClockToInstant(wall, timeZone) {
+  const before = zoneOffsetMs(wall - 86_400_000, timeZone);
+  const after = zoneOffsetMs(wall + 86_400_000, timeZone);
+  const valid = [...new Set([before, after])]
+    .map(offset => wall - offset)
+    .filter(at => wall - zoneOffsetMs(at, timeZone) === at);
+
+  return valid.length ? Math.min(...valid) : wall - before;
+}
+
+/**
+ * A list `start`/`end` parameter as Clockify reads it (live, 2026-09-24):
+ * the digits are wall-clock time in the user's profile time zone, a `Z`
+ * or an offset is required but ignored, and anything else is refused.
+ */
+function listBound(value, timeZone) {
+  const match =
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(
+      value,
+    );
+  if (!match) return undefined;
+
+  return wallClockToInstant(Date.parse(`${match[1]}Z`), timeZone);
+}
+
+/** An absolute instant in a write body, truncated to whole seconds. */
+const writeInstant = value => {
+  const at = Date.parse(value);
+
+  return Number.isFinite(at) ? iso(Math.floor(at / 1000) * 1000) : undefined;
+};
+
 /** One synthetic time entry in Clockify's response shape. */
 export function clockifyEntry(id, description, start, end, extra = {}) {
   return {
@@ -599,21 +678,24 @@ const durationOf = (start, end) => {
 };
 
 /**
- * The mock's model of Clockify's create and full-replacement update. Not a
- * recording: it follows the documented behaviour (#123 §3.5, *unverified
- * live*): only `start` is required, every field left out is cleared, and a
- * body without `end` makes a running timer. Server-owned fields (`id`,
+ * The mock's model of Clockify's create and full-replacement update, as
+ * checked live on 2026-09-24 (#123): `start` is required, every field left
+ * out is cleared, a body without `end` makes a running timer, instants are
+ * truncated to whole seconds, and with the workspace's `forceProjects` a
+ * body without `projectId` is refused. Not a recording: the messages other
+ * than PROJECT_REQUIRED are the mock's own. Server-owned fields (`id`,
  * `userId`, `workspaceId`, `isLocked`, `kioskId`) come from `base`.
  */
-function fromBody(body, base) {
+function fromBody(body, base, { forceProjects = false } = {}) {
   if (!body || typeof body !== 'object' || typeof body.start !== 'string')
     return { error: 'start is required' };
-  const start = body.start;
-  const end = typeof body.end === 'string' ? body.end : null;
-  if (!Number.isFinite(Date.parse(start)))
-    return { error: 'start is not a date-time' };
+  const start = writeInstant(body.start);
+  const end = typeof body.end === 'string' ? writeInstant(body.end) : null;
+  if (!start || end === undefined) return { error: 'start is not a date-time' };
   if (end !== null && !(Date.parse(end) >= Date.parse(start)))
     return { error: 'end is before start' };
+  if (forceProjects && typeof body.projectId !== 'string')
+    return { error: PROJECT_REQUIRED };
 
   return {
     entry: {
@@ -638,11 +720,19 @@ function fromBody(body, base) {
 /**
  * `withNames: false` keeps the original behaviour of answering the projects
  * and users lists with 404, so a client's "names unavailable" path stays
- * testable.
+ * testable. `timeZone` is the user's profile time zone (`GET /user` →
+ * `settings.timeZone`), which the list's `start`/`end` are read in;
+ * `forceProjects` is the workspace setting.
  */
-export function clockifyFixture({ withNames = true } = {}) {
+export function clockifyFixture({
+  withNames = true,
+  timeZone = DEFAULT_TIME_ZONE,
+  forceProjects = false,
+} = {}) {
   const fresh = () => ({
     entries: clockifyEntries(),
+    timeZone,
+    forceProjects,
     /** Every provider request, as `METHOD /path?query`. */
     requests: [],
     /** Every write, with its parsed JSON body (for body assertions). */
@@ -685,13 +775,17 @@ export function clockifyFixture({ withNames = true } = {}) {
     if (method === 'POST') {
       state.created++;
       const newId = `e${String(state.created).padStart(23, '0')}`;
-      const made = fromBody(body, {
-        id: newId,
-        userId: USER.id,
-        workspaceId: WORKSPACE.id,
-        isLocked: false,
-        kioskId: null,
-      });
+      const made = fromBody(
+        body,
+        {
+          id: newId,
+          userId: USER.id,
+          workspaceId: WORKSPACE.id,
+          isLocked: false,
+          kioskId: null,
+        },
+        state,
+      );
       if (made.error) return { status: 400, body: { message: made.error } };
       state.entries.push(made.entry);
 
@@ -712,13 +806,11 @@ export function clockifyFixture({ withNames = true } = {}) {
     }
 
     const { id: _, userId, workspaceId, isLocked, kioskId } = existing;
-    const made = fromBody(body, {
-      id,
-      userId,
-      workspaceId,
-      isLocked,
-      kioskId,
-    });
+    const made = fromBody(
+      body,
+      { id, userId, workspaceId, isLocked, kioskId },
+      state,
+    );
     if (made.error) return { status: 400, body: { message: made.error } };
     state.entries[state.entries.indexOf(existing)] = made.entry;
 
@@ -753,12 +845,23 @@ export function clockifyFixture({ withNames = true } = {}) {
     if (method === 'GET' && path === `${PREFIX}/v1/user`)
       return {
         status: 200,
-        body: { ...USER, activeWorkspace: WORKSPACE.id },
+        body: {
+          ...USER,
+          activeWorkspace: WORKSPACE.id,
+          settings: { timeZone: state.timeZone },
+        },
       };
     if (method === 'GET' && path === `${PREFIX}/v1/workspaces`)
       return {
         status: 200,
-        body: [WORKSPACE, { id: 'dddddddddddddddddddddddd', name: 'Personal' }],
+        body: [
+          { ...WORKSPACE, settings: { forceProjects: state.forceProjects } },
+          {
+            id: 'dddddddddddddddddddddddd',
+            name: 'Personal',
+            settings: { forceProjects: false },
+          },
+        ],
       };
 
     const list = path.match(
@@ -792,9 +895,10 @@ export function clockifyFixture({ withNames = true } = {}) {
       if (!one[2]) return { status: 404, body: { message: 'Not found' } };
       const entry = find(one[2]);
 
+      // Live: a deleted or unknown id is a 400, not a 404.
       return entry
         ? { status: 200, body: structuredClone(entry) }
-        : { status: 404, body: { message: 'Not found' } };
+        : { status: 400, body: { ...NOT_IN_WORKSPACE } };
     }
 
     if (one) {
@@ -821,18 +925,29 @@ export function clockifyFixture({ withNames = true } = {}) {
       return result;
     }
 
-    // The list: filtered on the entry's *start* (the mock's reading of the
-    // unverified live semantics, #123 §2.3), newest start first, with
-    // Clockify's `Last-Page` header.
-    const start = Date.parse(url.searchParams.get('start') ?? '') || -Infinity;
-    const end = Date.parse(url.searchParams.get('end') ?? '') || Infinity;
+    // The list, as checked live: `start`/`end` are wall-clock time in the
+    // user's time zone, the filter is the entry's start in [start, end),
+    // newest start first, with a `Last-Page` header.
+    const bound = (name, open) => {
+      const value = url.searchParams.get(name);
+
+      return value === null ? open : listBound(value, state.timeZone);
+    };
+
+    const start = bound('start', -Infinity);
+    const end = bound('end', Infinity);
+    if (start === undefined || end === undefined)
+      return {
+        status: 400,
+        body: { message: 'start and end need a date-time with a zone' },
+      };
     const size = Number(url.searchParams.get('page-size') ?? 50);
     const page = Number(url.searchParams.get('page') ?? 1);
     const matching = state.entries
       .filter(e => {
         const at = Date.parse(e.timeInterval.start);
 
-        return at >= start && at <= end;
+        return at >= start && at < end;
       })
       .sort(
         (a, b) =>
@@ -878,6 +993,8 @@ export function clockifyFixture({ withNames = true } = {}) {
      *           `METHOD /path?query` contains `match`
      *   { action: 'deleteDuringPaging', id }  -> delete `id` after serving
      *                                            page 1 of the next list read
+     *   { action: 'settings', timeZone?, forceProjects? }
+     *        -> the user's profile time zone, the workspace's forceProjects
      *   { action: 'reset' }                   -> fresh entries, no switches
      */
     control(command) {
@@ -941,6 +1058,16 @@ export function clockifyFixture({ withNames = true } = {}) {
           state.deleteDuringPaging = { id: String(command.id) };
 
           return { deleteDuringPaging: state.deleteDuringPaging };
+        case 'settings':
+          if (typeof command.timeZone === 'string')
+            state.timeZone = command.timeZone;
+          if (typeof command.forceProjects === 'boolean')
+            state.forceProjects = command.forceProjects;
+
+          return {
+            timeZone: state.timeZone,
+            forceProjects: state.forceProjects,
+          };
         case 'reset':
           Object.assign(state, fresh());
 

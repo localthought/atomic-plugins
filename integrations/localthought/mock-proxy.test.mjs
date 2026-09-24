@@ -429,9 +429,10 @@ test('clockify: JSON write bodies reach the fixture, PUT passes CORS, a dropped 
       (await call('DELETE', `${workspace}/time-entries/entry-2`)).status,
       204,
     );
+    // As Clockify answers live: 400 "doesn't belong to Workspace".
     assert.equal(
       (await call('GET', `${workspace}/time-entries/entry-2`)).status,
-      404,
+      400,
     );
 
     // A write whose response is lost: applied, then no answer at all.

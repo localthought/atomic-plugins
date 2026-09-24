@@ -21,15 +21,22 @@ info:
 # one catalog line returns Clockify to read-only.
 #
 # Request and response shapes follow Clockify's published API reference
-# (docs.clockify.me). Not checked against a live account:
-# - PUT replaces the whole entry: a field left out of the body is cleared,
-#   and leaving out `end` turns a completed entry into a running timer
-#   (docs, plus Clockify support in forum thread 3708). Callers must send
-#   every field they want to keep, `end` included.
+# (docs.clockify.me). Checked against a live account on 2026-09-24
+# (ontola/atomic-plugins#123):
+# - PUT replaces the whole entry: `start` is required (400 without it), a
+#   field left out is cleared, and leaving out `end` turns the entry into a
+#   running timer. Callers must send every field they keep, `end` included.
+# - With the workspace setting `forceProjects`, a POST or PUT without
+#   `projectId` is refused with 400.
+# - Instants are truncated to whole seconds.
+# - DELETE of an already-deleted entry is 404; GET of one is 400 ("Time
+#   entry doesn't belong to Workspace").
+# Not checked live:
 # - The request's `customFields` ([{customFieldId, value}]) differs from
 #   the response's `customFieldValues`; the conversion is not verified.
-# - No idempotency key, ETag, If-Match or version exists on time entries.
-# - The status for writing a locked entry is not documented.
+# - The status for writing a locked entry.
+# No idempotency key, ETag, If-Match or version exists on time entries
+# (docs).
 actions:
   - target: $.paths
     update:
