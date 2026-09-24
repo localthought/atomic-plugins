@@ -49,6 +49,14 @@ ARG PNPM_VERSION=10.15.1
 # full parallelism. Empty means cargo's default, one job per core.
 ARG CARGO_BUILD_JOBS=
 
+# libclang is for bindgen in rquickjs-sys, which the wasm32-wasip2 plugin
+# runtime builds. ubuntu-latest runners have it preinstalled; this image
+# doesn't. Without it, build_plugin_runtime.rs fails, and
+# ATOMICSERVER_REQUIRE_PLUGIN_RUNTIME below makes that fail the build.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libclang-dev clang \
+  && rm -rf /var/lib/apt/lists/*
+
 # node, npm and corepack. COPY merges into /usr/local, so the rust image's
 # /usr/local/cargo and /usr/local/rustup stay.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
