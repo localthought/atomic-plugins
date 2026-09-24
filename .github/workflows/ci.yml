@@ -437,6 +437,7 @@ jobs:
             integrations/tooling/lanes.test.mjs \
             integrations/tooling/link-atomic-server.test.mjs \
             integrations/tooling/serve.test.mjs \
+            integrations/tooling/server-contract.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \
             integrations/localthought/no-credentials-in-graph.test.mjs

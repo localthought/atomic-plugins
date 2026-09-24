@@ -30,11 +30,6 @@ import {
   sharedDependencyDirs,
 } from './deps.mjs';
 
-// A warning, not a failure: testing against another atomic-server commit on
-// purpose (e.g. before bumping .atomic-server-ref) is legitimate, but doing
-// it by accident — a stale shared checkout — should never be silent.
-for (const problem of layoutProblems()) console.warn(`warning: ${problem}`);
-
 const config = loadLanes();
 const args = process.argv.slice(2);
 const laneId = args.find(a => !a.startsWith('--'));
@@ -65,18 +60,24 @@ if (!tiers.length) {
   process.exit(0);
 }
 
-// Locally, this lane's own lockfiles (and a shared package its `paths`
-// import from source) may not be installed yet. CI installs them before this
-// script runs, so there every folder already has node_modules and nothing
-// happens (deps.mjs).
-try {
-  installMissing([
-    ...pluginDependencyDirs(lane.id),
-    ...sharedDependencyDirs(lane.paths),
-  ]);
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
+// Contract-only planning checks need only Node, without browser setup or installs.
+if (tiers.some(tier => tier !== 'contract')) {
+  // Warn on an accidental stale pin while allowing deliberate host experiments.
+  for (const problem of layoutProblems()) console.warn(`warning: ${problem}`);
+
+  // Locally, this lane's own lockfiles (and a shared package its `paths`
+  // import from source) may not be installed yet. CI installs them before this
+  // script runs, so there every folder already has node_modules and nothing
+  // happens (deps.mjs).
+  try {
+    installMissing([
+      ...pluginDependencyDirs(lane.id),
+      ...sharedDependencyDirs(lane.paths),
+    ]);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
 }
 
 /**
@@ -158,14 +159,18 @@ for (const signal of ['SIGINT', 'SIGTERM'])
     process.exit(1);
   });
 // Cheapest first, so a lane fails before paying for a server it won't reach.
-const order = ['typecheck', 'unit', 'live', 'e2e'];
+const order = TIERS;
 
 for (const tier of order.filter(t => tiers.includes(t))) {
   const ports = lanePorts(lane, config);
   console.log(`\n=== ${lane.id}: ${tier} ===`);
   let status = 0;
 
-  if (tier === 'typecheck') {
+  if (tier === 'contract') {
+    status = run(process.execPath, [
+      'integrations/tooling/server-contract.mjs', lane.id,
+    ]);
+  } else if (tier === 'typecheck') {
     status = run(requireTool(`${bin}/tsc`, 'run pnpm install in browser/'), [
       '-p',
       `integrations/${lane.id}/tsconfig.json`,

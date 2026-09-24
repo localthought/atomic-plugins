@@ -16,7 +16,7 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 /** Directories under integrations/ that are not a plugin lane. */
 export const NON_LANE_DIRECTORIES = ['tooling'];
 
-export const TIERS = ['typecheck', 'unit', 'live', 'e2e'];
+export const TIERS = ['contract', 'typecheck', 'unit', 'live', 'e2e'];
 
 export function validateConfig(config) {
   const { lanes } = config;

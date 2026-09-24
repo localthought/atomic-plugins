@@ -1,7 +1,8 @@
 # Integration maintenance
 
-Each provider lives in its own directory and ships a bundled ES module. The
-runtime, permissions, reconciliation and recovery stay shared. Packages remain
+Each provider lives in its own directory; implemented plugins ship a bundled
+ES module. The runtime, permissions, reconciliation and recovery stay shared.
+Packages remain
 experimental until their advertised capabilities have current live evidence.
 [READINESS.md](READINESS.md) records, per plugin, which runtime its current
 code uses, how it is installed on the pinned atomic-server, and which of its
@@ -14,7 +15,7 @@ in atomic-server and is not run by this repo's CI.
 
 ## Local setup
 
-Every package imports atomic-server's `browser/` tree by relative path
+Implemented packages import atomic-server's `browser/` tree by relative path
 (`../../browser/lib/src/...`, `../../browser/tsconfig.build.json`,
 `../../browser/node_modules/...`), which does not exist in this repo. From the
 repository root, once per clone or worktree and again after
@@ -44,7 +45,7 @@ skips step 1 and still verifies the commit. `--no-install` skips step 3.
 CI's `shared-checks`, `lane` and `e2e-plugin-system` jobs run it with
 `--no-fetch --no-install` after their own `actions/checkout` and
 `pnpm install`, so the local layout is CI's layout. `run-lane.mjs` prints the
-step-4 problems as warnings before it runs any tier.
+step-4 problems as warnings before it runs implementation tiers.
 
 With that in place, no server is needed for:
 
@@ -67,6 +68,27 @@ Not covered by the script:
   has not been verified to work in this symlinked layout, and it cannot pass
   at the current pin: atomic-server `4bab16ee6` removed those tests. CI runs
   `--layer js` only.
+
+## Server protocol scaffolds
+
+A protocol assessment may begin as `integrations/<id>/plugin.json` and a
+README, with a `contract` tier in `lanes.json`. This is planning metadata,
+not a runtime manifest or installable release. Declare `status: scaffold`,
+`runtime: quickjs`, the scope, proposed host capabilities, tracking issue
+and first interoperability milestone. The README records host requirements
+and an implementation checklist. Run its check with:
+
+```sh
+node integrations/tooling/run-lane.mjs <id> --tier contract
+```
+
+This tier needs only Node locally. CI selects it through the same per-folder
+lane filters as implemented plugins. Passing validates the planning contract
+and documentation; it does not execute QuickJS, prove protocol interoperability
+or produce certification evidence. Add implementation tiers as code lands.
+QuickJS executes JavaScript, not native Rust crates; native extensions or
+sidecars require a separate placement decision (see below). Proposed host
+capabilities in the contract are requirements, not claims of host support.
 
 ## One certification command
 
