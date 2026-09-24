@@ -397,8 +397,7 @@ Rules that keep parallel worktrees from fighting:
 - `integrations/money/` has one tier, `e2e` (#95): `money.spec.ts` drives
   the Bank statements importer through atomic-server's generic file entry
   point (manifest `accepts`/`destination`, the PluginPage Import tab;
-  atomic-server#1653). It needs an `.atomic-server-ref` that includes that
-  change. There is still no `typecheck`/`unit` tier on purpose (#45):
+  atomic-server#1653, merged as #1691 and in the pin). There is still no `typecheck`/`unit` tier on purpose (#45):
   `certify.mjs --layer js` in `shared-checks` already runs exactly
   `tsc -p integrations/money/tsconfig.json` and
   `vitest run --config integrations/money/vitest.config.ts`, plus bundle

@@ -4,8 +4,8 @@
 
 This needs an atomic-server with the generic file entry point
 (atomic-server#1653: manifest `accepts` and `destination`, and the Import tab
-on a plugin's page). The pinned `.atomic-server-ref` must include it; see
-[Verified](#verified) for the commit this was tested on.
+on a plugin's page; merged as atomic-server#1691). The pinned
+`.atomic-server-ref`, `2f403624e`, includes it; see [Verified](#verified).
 
 1. **Publish** (once per server, by whoever maintains it): create a Plugin,
    replace its source with this folder's `plugin.js`, name it "Bank
@@ -114,9 +114,8 @@ Browser: `node integrations/tooling/run-lane.mjs money --tier e2e` runs
 
 ## Verified
 
-`e2e/money.spec.ts` passed on 2026-09-24 against atomic-server
-`claude/plugin-accepts-file` at `9788dbb41` (an unmerged branch for
-atomic-server#1653, based on `feat/plugin-debug` `bae5cdbe3`), with this
+`e2e/money.spec.ts` passed on 2026-09-24 against the pinned atomic-server
+`2f403624e` (which includes #1691, the change for atomic-server#1653), with this
 package at version 0.2.0 (`plugin.js` sha256 `e189564805c807ffc60177b62e50eca8a39b6d2701cc26f7a63e204daae91f8c`). It covers these
 steps, all with the synthetic files in `fixtures/` and generated variants:
 

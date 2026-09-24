@@ -12,9 +12,9 @@
  * a draft, set it up, import, reload, import again.
  *
  * Needs an atomic-server with manifest `accepts`/`destination` and the
- * PluginPage Import tab (atomic-server branch `claude/plugin-accepts-file`,
- * for #1653); against a host without them, publishing fails on the unknown
- * manifest field. Run it the way CI does:
+ * PluginPage Import tab (atomic-server#1691, for #1653; in the pinned
+ * `.atomic-server-ref`); against a host without them, publishing fails on
+ * the unknown manifest field. Run it the way CI does:
  *   node integrations/tooling/run-lane.mjs money --tier e2e
  */
 import { readFileSync } from 'node:fs';
@@ -294,12 +294,16 @@ async function rowNamed(page: Page, name: string): Promise<string> {
     .poll(
       async () => {
         found = await page.evaluate(
-          async ({ table, name }) => {
+          async args => {
             const store = window.store!;
 
-            for (const hit of await store.search(name, { parents: table })) {
+            for (const hit of await store.search(args.name, {
+              parents: args.table,
+            })) {
               const row = await store.getResource(hit);
-              if (row.get('https://atomicdata.dev/properties/name') === name)
+              if (
+                row.get('https://atomicdata.dev/properties/name') === args.name
+              )
                 return hit;
             }
 
@@ -323,10 +327,10 @@ async function valueOf(
   property: string,
 ): Promise<unknown> {
   return page.evaluate(
-    async ({ subject, property }) => {
-      await window.store!.reloadResource(subject);
+    async args => {
+      await window.store!.reloadResource(args.subject);
 
-      return (await window.store!.getResource(subject)).get(property);
+      return (await window.store!.getResource(args.subject)).get(args.property);
     },
     { subject, property },
   );
