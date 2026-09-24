@@ -13,7 +13,7 @@ import {
 } from './fakeStore.js';
 import { atomic, NAME } from './ontology.js';
 import { ensureSchema, findSchema } from './schema.js';
-import { syncClockify } from './sync.js';
+import { GENERATED_TABLE_NOTE, syncClockify } from './sync.js';
 import { relayTransport, type ProxyTransport } from './transport.js';
 
 const NOW = Date.parse('2026-09-23T12:00:00Z');
@@ -61,7 +61,7 @@ describe('ensureSchema', () => {
       'https://atomicdata.dev/datatypes/integer',
     );
     expect(property(schema.row.start)[PARENT]).toBe(ONTOLOGY);
-    expect(store.resources.get(ONTOLOGY)![atomic.properties]).toHaveLength(11);
+    expect(store.resources.get(ONTOLOGY)![atomic.properties]).toHaveLength(15);
     const recommends = store.resources.get(ROW_CLASS)![
       atomic.recommends
     ] as string[];
@@ -95,7 +95,7 @@ describe('ensureSchema', () => {
 
 describe('syncClockify against the shared Clockify mock', () => {
   it('imports completed entries in the window, skipping running timers and breaks', async () => {
-    const { proxy, schema, run, rows } = await setup();
+    const { proxy, store, schema, run, rows } = await setup();
 
     const result = await run();
 
@@ -103,13 +103,24 @@ describe('syncClockify against the shared Clockify mock', () => {
       created: 2,
       updated: 0,
       unchanged: 0,
+      removed: 0,
       warnings: [],
+      log: {
+        incrementals: 1,
+        snapshotWritten: false,
+        candidates: 0,
+        unknownMs: 0,
+      },
     });
-    // The mock lists newest start first, as Clockify is believed to.
+    // Rows are projected from the mirror in start order.
     expect(rows().map(([, r]) => r[schema.row.entryId])).toEqual([
-      'entry-2',
       'entry-1',
+      'entry-2',
     ]);
+    // Marked as generated (#97 answer 2).
+    expect(store.resources.get(TABLE)![atomic.description]).toBe(
+      GENERATED_TABLE_NOTE,
+    );
     const first = rows().find(
       ([, r]) => r[schema.row.entryId] === 'entry-1',
     )![1];
@@ -121,8 +132,8 @@ describe('syncClockify against the shared Clockify mock', () => {
     expect(first[schema.row.projectName]).toBe(PROJECT.name);
     expect(first[schema.row.memberName]).toBe(USER.name);
     expect(first[schema.row.billable]).toBe(true);
-    // Every call carried the reference, and the 7-day window as the
-    // LocalThought path computes it.
+    // Every call carried the reference, and the 7-day window, read from
+    // 24 h earlier (the margin, #123 §2.3).
     expect(
       proxy.seen.every(
         r => r.connectionId === 'conn-1' && r.platform === 'clockify',
@@ -130,7 +141,7 @@ describe('syncClockify against the shared Clockify mock', () => {
     ).toBe(true);
     expect(proxy.fixture.state.requests[0]).toBe(
       `GET /proxy/clockify/api/v1/workspaces/${WORKSPACE.id}/user/${USER.id}/time-entries` +
-        '?start=2026-09-16T12%3A00%3A00Z&end=2026-09-23T12%3A00%3A00Z&page=1&page-size=50',
+        '?start=2026-09-15T12%3A00%3A00Z&end=2026-09-23T12%3A00%3A00Z&page=1&page-size=50',
     );
   });
 
@@ -145,7 +156,7 @@ describe('syncClockify against the shared Clockify mock', () => {
     expect(first[schema.row.projectName]).toBeUndefined();
   });
 
-  it('is idempotent: a second run creates nothing and rewrites nothing', async () => {
+  it('is idempotent: a second run creates nothing and rewrites no row', async () => {
     const { store, run } = await setup();
     await run();
     const writes = store.writes.length;
@@ -153,7 +164,8 @@ describe('syncClockify against the shared Clockify mock', () => {
     const again = await run();
 
     expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 2 });
-    expect(store.writes.length).toBe(writes);
+    // Only the log head is saved (its coverage is confirmed again).
+    expect(store.writes.slice(writes).map(w => w.op)).toEqual(['save']);
   });
 
   it('rolls the look-back window forward with the clock', async () => {
@@ -164,7 +176,7 @@ describe('syncClockify against the shared Clockify mock', () => {
     const starts = proxy.fixture.state.requests
       .filter(r => r.includes('/time-entries'))
       .map(r => new URL(r.slice(4), 'http://x').searchParams.get('start'));
-    expect(starts).toEqual(['2026-09-16T12:00:00Z', '2026-09-17T12:00:00Z']);
+    expect(starts).toEqual(['2026-09-15T12:00:00Z', '2026-09-16T12:00:00Z']);
   });
 
   it('updates a changed entry in place and keeps a property the import does not map', async () => {

@@ -226,6 +226,7 @@ export function createController(
           settings,
           schema,
           now(),
+          { clock: now },
         );
 
         return set({
@@ -249,6 +250,14 @@ export function createController(
 
   return controller;
 }
+
+/** `90 min`, `6 h`, `1.5 h`: how much of the window no complete read covers. */
+const hours = (ms: number) => {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 120) return `${minutes} min`;
+
+  return `${Math.round(minutes / 6) / 10} h`;
+};
 
 export function describe(state: ViewState): string {
   switch (state.kind) {
@@ -279,12 +288,18 @@ export function describe(state: ViewState): string {
         return `Ready to import the last ${state.settings.lookbackDays} days of Clockify entries.`;
       if (!state.last.ok)
         return `Import failed: ${state.last.error}. Rows already in the table are kept.`;
-      const { created, updated, unchanged, warnings } = state.last.result;
+      const { created, updated, unchanged, removed, warnings, log } =
+        state.last.result;
 
       return (
         `Last synced ${new Date(state.last.at).toLocaleTimeString()}: ` +
         `${created} created, ${updated} updated, ${unchanged} unchanged, ` +
         `last ${state.settings.lookbackDays} days.` +
+        (removed ? ` ${removed} removed (deleted in Clockify).` : '') +
+        (log.candidates
+          ? ` ${log.candidates} missing from Clockify's list, re-checked on the next sync.`
+          : '') +
+        (log.unknownMs ? ` ${hours(log.unknownMs)} not loaded.` : '') +
         (warnings.length ? ` Warnings: ${warnings.join('; ')}` : '')
       );
     }

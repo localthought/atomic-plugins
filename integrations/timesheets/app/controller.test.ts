@@ -102,9 +102,10 @@ describe('controller', () => {
         lookbackDays: 7,
       },
     });
-    // No connection id, code or token on the App: only the three settings.
+    // No connection id, code or token on the App: only the three settings
+    // and the pointer to the observation log.
     expect(Object.keys(app).sort()).toEqual(
-      Object.values(schema.settings).sort(),
+      [...Object.values(schema.settings), schema.log.log].sort(),
     );
     expect(kinds).toEqual([
       'setup',

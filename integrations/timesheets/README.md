@@ -46,7 +46,7 @@ Live account data must never be checked into fixtures.
 
 `app/` is the replacement for the LocalThought extension path above:
 Clockify as an Atomic **App** ("drive plugin"). `app/build.mjs` bundles it
-into one ES module (`app/dist/ui.js`, about 25 KB, no imports) that exports
+into one ES module (`app/dist/ui.js`, about 52 KB unminified, no imports) that exports
 only `view({ root, store })`; the host stores it as the App's entry-point
 source and runs it in a null-origin, `allow-scripts`-only iframe
 (`plugin_ui.rs`). Plain DOM, no framework, no stylesheet.
@@ -75,18 +75,55 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
   `billable` (boolean), `clockify-entry-id`, `clockify-project-id`,
   `project`, `clockify-user-id`, `member` (string). The same pattern as the
   Pets and Notion drive apps.
-- **Import.** Once set up, the app syncs on open and on "Sync now".
-  `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`,
-  recomputed on every run, never stored), plus projects and users for
-  naming, runs the one Clockify lens (`devonian/clockify/`) and reconciles
-  rows into the app's table by `clockify-entry-id`, restricted to children
-  of that table. Running timers and breaks are skipped by the lens. Import
-  only: nothing is written back to Clockify, and a vanished entry is never
-  deleted. Requests are sequential; each is one relay round trip.
-- **Errors.** A proxy or Clockify error fails the sync before anything is
-  written ("Import failed: …. Rows already in the table are kept."). The
-  next "Sync now", or reopening the app, retries. A 403/404 on projects or
-  users is a warning, and rows keep raw ids.
+- **Observation log** (#123 M1, design #97). Once set up, the app syncs on
+  open and on "Sync now". Each pass records what it _saw_ in Clockify, not
+  what Clockify "is":
+  - `clockifyObserve.ts` reads the rolling look-back window, starting 24 h
+    earlier (the margin), as one observation: all pages, with its scope
+    (workspace, user, `start` in `[from, to)`) and the fields returned.
+    Each entry is kept canonically: exact instant strings, and every field
+    the app does not interpret (`timeZone`, `duration`, …) verbatim in
+    `extra`.
+  - `observations.ts` (generic, pure) diffs it against the mirror (the
+    mask-diff) and folds it in, ordered by `(receivedAt, id)`. An entry a
+    complete read no longer returns is only an absence _candidate_; the
+    next pass confirms it with `GET /time-entries/{id}`: 404 is a
+    deletion, 200 restores it (it was skipped between pages, or moved).
+  - `observationLog.ts` stores each non-empty diff as its own resource
+    under a log head in the app's subtree, writes a snapshot every 50
+    diffs or 256 KB, and keeps everything (nothing is pruned). A pass with
+    no change stores no diff; it only confirms the coverage in the head.
+  - **Coverage.** Time in the window that no complete read covers is
+    _unknown_, never "not worked". Starts are known from where reads
+    looked; a moment counts as known only if starts are covered back by
+    the longest entry seen (at least 24 h), so an entry longer than the
+    margin leaves the window's first part unknown until an older range is
+    read.
+  - **Rows.** The table's rows are a read-only projection of the mirror
+    (#97 answer 2): completed `REGULAR` entries through the one Clockify
+    lens (`devonian/clockify/`; running timers and breaks skipped), by
+    `clockify-entry-id` among the table's children, with project and user
+    names. A row whose entry Clockify confirmed deleted is removed. Edits
+    made in the table are overwritten on the next pass; the table's
+    description (if it has none) says so.
+  - **Status line.** Created/updated/unchanged as before, plus rows
+    removed, entries waiting for a re-check, and how much of the window is
+    not loaded, when any of these is non-zero.
+    Nothing is written to Clockify. Requests are sequential; each is one
+    relay round trip.
+- **Errors.** If the window's first page fails, the pass fails and rows
+  are not touched ("Import failed: …. Rows already in the table are
+  kept."). If a later page fails, what was read is kept as an incomplete
+  observation (no absences, no coverage) and the pass fails the same way.
+  A failing re-check `GET` is a warning; the candidate is re-checked next
+  time. A 403/404 on projects or users is a warning, and rows keep raw ids.
+- **Not verified live:** the list filter selecting on an entry's start,
+  its boundary inclusivity, newest-first order, and the skipping this
+  causes on deletion between pages are the mock's reading of Clockify, not
+  observations of a live account. Whether atomic-server accepts a snapshot
+  of ~1 MB (about 2,000 entries) in one commit is not checked. Two devices
+  saving the log head at the same moment can drop one's diff from the head
+  (no compare-and-swap on `/app-write`; M5).
 
 ```sh
 # from an atomic-server checkout with this repo's integrations/ in place (AGENTS.md)
@@ -100,7 +137,11 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
 - **Unit** (`app/*.test.ts`, mock fixture `fixtures/clockify/scenario.mjs`
   through an in-memory store that rejects unknown properties like the host
   does): setup, schema creation, window, paging, idempotency, updates,
-  failures.
+  failures. The observation log's #123 scenarios S1–S5, S8 and S27
+  (`app/observationLog.test.ts`), and fold property tests over 40 seeded
+  random observation sets (`app/observations.test.ts`): appending equals
+  refolding, any permutation folds the same, snapshot + tail equals the
+  full fold, two devices' diffs fold the same, fields equal the latest read.
 - **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
   against the pinned atomic-server (`.atomic-server-ref`, which includes the
   relay from atomic-server#1657) and the local mock proxy: connect through
