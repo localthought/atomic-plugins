@@ -431,11 +431,13 @@ jobs:
         run: |
           node --test \
             integrations/tooling/apps.test.mjs \
+            integrations/tooling/catalog-requires.test.mjs \
             integrations/tooling/certify.test.mjs \
             integrations/tooling/deps.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
             integrations/tooling/link-atomic-server.test.mjs \
+            integrations/tooling/manifest-http.test.mjs \
             integrations/tooling/serve.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \
