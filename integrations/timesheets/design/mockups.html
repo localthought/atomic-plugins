@@ -1,0 +1,3423 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Timesheets Mockups</title>
+    <style>
+      /* ---------- Spec-sheet chrome (not part of the plugin) ---------- */
+      :root {
+        --doc-bg: #e8eaee;
+        --doc-ink: #15181d;
+        --doc-muted: #555b66;
+        --doc-rule: #c9cdd5;
+        --doc-tag: #ffffff;
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--doc-bg);
+        color: var(--doc-ink);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        padding-inline: 16px;
+        padding-block: 32px 64px;
+      }
+      .doc {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        gap: 40px;
+      }
+      .doc > header h1 {
+        font-size: 28px;
+        line-height: 1.2;
+        margin: 0 0 8px;
+        text-wrap: balance;
+      }
+      .doc > header p {
+        margin: 0;
+        max-width: 72ch;
+        color: var(--doc-muted);
+      }
+      .doc > header p + p {
+        margin-top: 8px;
+      }
+      .index {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 16px;
+        padding: 0;
+        list-style: none;
+      }
+      .index a {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--doc-tag);
+        color: var(--doc-ink);
+        text-decoration: none;
+        font-size: 13px;
+        border: 1px solid var(--doc-rule);
+      }
+      .index a:hover {
+        border-color: var(--doc-ink);
+      }
+      .index a:focus-visible,
+      .doc a:focus-visible {
+        outline: 2px solid #1b50d8;
+        outline-offset: 2px;
+      }
+      section.state {
+        display: grid;
+        gap: 12px;
+        scroll-margin-top: 16px;
+      }
+      .state > h2 {
+        font-size: 18px;
+        margin: 0;
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .state > h2 .letter {
+        font:
+          600 12px/1 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        background: var(--doc-ink);
+        color: #fff;
+        padding: 4px 6px;
+        border-radius: 4px;
+      }
+      .state > h2 .w {
+        font:
+          500 12px/1 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        color: var(--doc-muted);
+      }
+      .state > p {
+        margin: 0;
+        color: var(--doc-muted);
+        max-width: 80ch;
+        font-size: 14px;
+      }
+      .stage {
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: flex-start;
+      }
+      .row > figure {
+        margin: 0;
+        display: grid;
+        gap: 8px;
+      }
+      .row > figure > figcaption {
+        font-size: 13px;
+        color: var(--doc-muted);
+        max-width: 560px;
+      }
+      .tokens {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font:
+          12px/1.3 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      .tokens span {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        background: var(--doc-tag);
+        border: 1px solid var(--doc-rule);
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+      .tokens i {
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        display: inline-block;
+      }
+
+      /* ---------- Plugin frame: tokens mapped from host --t-* (fallbacks = host defaults) ---------- */
+      .pl {
+        --pl-bg: var(--t-color-bg-body, #fafafa);
+        --pl-surface: var(--t-color-bg, #ffffff);
+        --pl-subtle: var(--t-color-bg-1, #f2f2f2);
+        --pl-border: var(--t-color-bg-2, #cccccc);
+        --pl-hair: color-mix(in srgb, var(--pl-border) 55%, var(--pl-surface));
+        --pl-text: var(--t-color-text, #000000);
+        --pl-muted: var(--t-color-text-light, #666666);
+        --pl-accent: var(--t-color-main, #1b50d8);
+        --pl-accent-soft: var(--t-color-main-selected-bg, #f3f6fd);
+        --pl-neg: var(--t-color-alert, #cf5b5b);
+        --pl-warn: var(--t-color-warning, #f5a623);
+        --pl-pos: #2f8f5b;
+        --pl-radius: var(--t-radius, 9px);
+        --pl-font: var(
+          --t-font-family,
+          'Open Sans',
+          'Helvetica Neue',
+          'Segoe UI',
+          system-ui,
+          sans-serif
+        );
+        --pl-font-h: var(
+          --t-font-family-header,
+          'Montserrat',
+          'Segoe UI',
+          system-ui,
+          sans-serif
+        );
+        --pl-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        position: relative;
+        background: var(--pl-bg);
+        color: var(--pl-text);
+        font: 14px/1.45 var(--pl-font);
+        border: 1px solid var(--doc-rule);
+        border-radius: 10px;
+        overflow: hidden;
+        flex: none;
+        max-width: none;
+        color-scheme: light;
+      }
+      .pl.dark {
+        --pl-bg: #000000;
+        --pl-surface: #000000;
+        --pl-subtle: #1a1a1a;
+        --pl-border: #4d4d4d;
+        --pl-text: #ffffff;
+        --pl-muted: #999999;
+        --pl-accent: #3d6ff0;
+        --pl-accent-soft: #04091a;
+        --pl-pos: #4cb87e;
+        --pl-shadow: 0 6px 24px rgba(255, 255, 255, 0.12);
+        color-scheme: dark;
+      }
+      .pl *:focus-visible {
+        outline: 2px solid var(--pl-accent);
+        outline-offset: 2px;
+      }
+      .pl button {
+        font: inherit;
+        color: inherit;
+      }
+      .pl h1,
+      .pl h2,
+      .pl h3 {
+        font-family: var(--pl-font-h);
+        margin: 0;
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      .muted {
+        color: var(--pl-muted);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* header row */
+      .hdr {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: var(--pl-surface);
+        border-bottom: 1px solid var(--pl-hair);
+        flex-wrap: wrap;
+      }
+      .mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: var(--pl-accent);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .mark svg.i {
+        width: 17px;
+        height: 17px;
+        stroke-width: 2;
+      }
+      .hdr h1 {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        padding: 2px 10px 2px 4px;
+        border: 1px solid var(--pl-hair);
+        border-radius: 999px;
+        background: var(--pl-surface);
+        white-space: nowrap;
+      }
+      .chip .src {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #03a9f4;
+        color: #fff;
+        font: 700 10px/18px var(--pl-font);
+        text-align: center;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--pl-subtle);
+        white-space: nowrap;
+      }
+      .pill::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--pl-muted);
+      }
+      .pill.ok::before {
+        background: var(--pl-pos);
+      }
+      .pill.sync::before {
+        background: var(--pl-accent);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .pill.err::before {
+        background: var(--pl-neg);
+      }
+      .pill.warn::before {
+        background: var(--pl-warn);
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pill.sync::before,
+        .skel {
+          animation: none !important;
+        }
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid transparent;
+        border-radius: var(--pl-radius);
+        padding: 6px 14px;
+        font-weight: 600;
+        font-size: 13.5px;
+        cursor: pointer;
+        white-space: nowrap;
+        background: var(--pl-accent);
+        color: #fff !important;
+      }
+      .btn.sec {
+        background: var(--pl-surface);
+        border-color: var(--pl-border);
+        color: var(--pl-text) !important;
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--pl-text) !important;
+        padding-inline: 8px;
+      }
+      .btn.danger {
+        background: transparent;
+        color: var(--pl-neg) !important;
+        border-color: color-mix(in srgb, var(--pl-neg) 50%, var(--pl-surface));
+      }
+      .btn[disabled] {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn.icon {
+        padding: 6px;
+      }
+      .link {
+        color: var(--pl-accent);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      /* connection bar */
+      .conn {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 14px;
+        padding: 7px 16px;
+        font-size: 12.5px;
+        color: var(--pl-muted);
+        background: var(--pl-surface);
+        border-bottom: 1px solid var(--pl-hair);
+      }
+      .conn b {
+        color: var(--pl-text);
+        font-weight: 600;
+      }
+      .conn .progress {
+        flex-basis: 100%;
+        height: 3px;
+        background: var(--pl-subtle);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .conn .progress i {
+        display: block;
+        height: 100%;
+        background: var(--pl-accent);
+        border-radius: 2px;
+      }
+
+      /* toolbar */
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 16px;
+        padding: 14px 16px 10px;
+      }
+      .weeknav {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .weeknav .range {
+        font-family: var(--pl-font-h);
+        font-weight: 700;
+        font-size: 15px;
+        padding-inline: 6px;
+        white-space: nowrap;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--pl-subtle);
+        border-radius: var(--pl-radius);
+        padding: 3px;
+        gap: 2px;
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        border-radius: calc(var(--pl-radius) - 3px);
+        padding: 4px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        color: var(--pl-muted);
+      }
+      .seg button[aria-selected='true'],
+      .seg button[aria-pressed='true'] {
+        background: var(--pl-surface);
+        color: var(--pl-text);
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      .weektotal {
+        margin-left: auto;
+        text-align: right;
+        line-height: 1.1;
+      }
+      .weektotal small {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--pl-muted);
+      }
+      .weektotal strong {
+        font-family: var(--pl-font-h);
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+      }
+      .content {
+        padding: 0 16px 16px;
+        display: grid;
+        gap: 10px;
+      }
+
+      /* week grid */
+      .card {
+        background: var(--pl-surface);
+        border: 1px solid var(--pl-hair);
+        border-radius: var(--pl-radius);
+      }
+      .gridwrap {
+        overflow-x: auto;
+      }
+      table.week {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      table.week caption {
+        text-align: left;
+      }
+      table.week th,
+      table.week td {
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--pl-hair);
+      }
+      table.week thead th {
+        font-weight: 600;
+        text-align: right;
+        vertical-align: bottom;
+        white-space: nowrap;
+      }
+      table.week thead th:first-child {
+        text-align: left;
+      }
+      table.week thead th .wd {
+        display: block;
+        font-size: 10.5px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--pl-muted);
+        font-weight: 600;
+      }
+      table.week thead th .dd {
+        font-size: 14px;
+      }
+      table.week td {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      table.week td.z {
+        color: var(--pl-muted);
+      }
+      table.week .today {
+        background: var(--pl-accent-soft);
+      }
+      table.week thead th.today .wd {
+        color: var(--pl-accent);
+      }
+      table.week .future .wd,
+      table.week .future .dd {
+        color: var(--pl-muted);
+        font-weight: 500;
+      }
+      table.week .tot {
+        border-left: 1px solid var(--pl-hair);
+        font-weight: 700;
+      }
+      table.week tfoot td,
+      table.week tfoot th {
+        font-weight: 700;
+        border-bottom: 0;
+        border-top: 1px solid var(--pl-border);
+      }
+      table.week tbody th {
+        text-align: left;
+        font-weight: 600;
+        min-width: 170px;
+      }
+      table.week td button {
+        border: 0;
+        background: none;
+        padding: 2px 4px;
+        margin: -2px -4px;
+        border-radius: 5px;
+        cursor: pointer;
+        font: inherit;
+        font-variant-numeric: tabular-nums;
+      }
+      table.week td button:hover {
+        background: var(--pl-subtle);
+      }
+      .proj {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex: none;
+        margin-top: 5px;
+        box-shadow: 0 0 0 1px var(--pl-hair);
+      }
+      .proj small {
+        display: block;
+        font-weight: 400;
+        font-size: 12px;
+        color: var(--pl-muted);
+      }
+      .out {
+        background-image: repeating-linear-gradient(
+          135deg,
+          transparent 0 5px,
+          color-mix(in srgb, var(--pl-border) 45%, transparent) 5px 6px
+        );
+      }
+      .foot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 18px;
+        font-size: 12.5px;
+        color: var(--pl-muted);
+        padding-inline: 2px;
+      }
+      .foot b {
+        color: var(--pl-text);
+        font-variant-numeric: tabular-nums;
+      }
+      .note {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 12.5px;
+        color: var(--pl-muted);
+      }
+      .note .ring {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid var(--pl-accent);
+        flex: none;
+      }
+
+      /* entries */
+      .day {
+        display: grid;
+      }
+      .dayhead {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 10px 14px 8px;
+        border-bottom: 1px solid var(--pl-hair);
+      }
+      .dayhead h3 {
+        font-size: 14px;
+      }
+      .dayhead .num {
+        font-weight: 700;
+      }
+      .entry {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 190px 18px 104px 44px;
+        align-items: center;
+        gap: 12px;
+        padding: 9px 14px;
+        border: 0;
+        border-bottom: 1px solid var(--pl-hair);
+        background: none;
+        text-align: left;
+        width: 100%;
+        cursor: pointer;
+        font-size: 13.5px;
+      }
+      .entry:last-child {
+        border-bottom: 0;
+      }
+      .entry:hover {
+        background: var(--pl-subtle);
+      }
+      .entry.hl {
+        background: var(--pl-accent-soft);
+      }
+      .entry .desc {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .entry .pj {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--pl-muted);
+        font-size: 12.5px;
+        min-width: 0;
+      }
+      .entry .pj .dot {
+        margin-top: 0;
+        width: 8px;
+        height: 8px;
+      }
+      .entry .pj span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .entry .bill {
+        font-weight: 700;
+        color: var(--pl-muted);
+        text-align: center;
+      }
+      .entry .rng {
+        color: var(--pl-muted);
+        font-variant-numeric: tabular-nums;
+        font-size: 12.5px;
+        white-space: nowrap;
+      }
+      .entry .dur {
+        text-align: right;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .stack .entry {
+        grid-template-columns: minmax(0, 1fr) auto;
+        row-gap: 2px;
+      }
+      .stack .entry .desc {
+        grid-column: 1;
+      }
+      .stack .entry .dur {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .stack .entry .pj {
+        grid-column: 1;
+      }
+      .stack .entry .rng {
+        grid-column: 2;
+        grid-row: 2;
+        text-align: right;
+      }
+      .stack .entry .bill {
+        display: none;
+      }
+
+      /* projects */
+      .sumline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 24px;
+        padding: 2px 2px 4px;
+      }
+      .sumline div small {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--pl-muted);
+      }
+      .sumline div strong {
+        font-family: var(--pl-font-h);
+        font-size: 20px;
+        font-variant-numeric: tabular-nums;
+      }
+      .prow {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) 56px 52px;
+        gap: 14px;
+        align-items: center;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--pl-hair);
+        font-size: 13.5px;
+      }
+      .prow:last-child {
+        border-bottom: 0;
+      }
+      .track {
+        height: 12px;
+        background: var(--pl-subtle);
+        border-radius: 3px;
+        position: relative;
+        overflow: hidden;
+      }
+      .track i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-radius: 3px;
+      }
+      .track i.all {
+        opacity: 0.35;
+      }
+      .prow .num {
+        text-align: right;
+      }
+      .prow .pct {
+        color: var(--pl-muted);
+      }
+      .legend {
+        display: flex;
+        gap: 16px;
+        font-size: 12px;
+        color: var(--pl-muted);
+        align-items: center;
+        padding-inline: 2px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 18px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--pl-muted);
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      .legend i.a {
+        opacity: 0.35;
+      }
+
+      /* drawer / sheet */
+      .scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.28);
+      }
+      .drawer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 380px;
+        background: var(--pl-surface);
+        box-shadow: var(--pl-shadow);
+        border-left: 1px solid var(--pl-hair);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      .drawer.full {
+        width: auto;
+        left: 0;
+        border-left: 0;
+      }
+      .drawer header {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 16px;
+        border-bottom: 1px solid var(--pl-hair);
+      }
+      .drawer header h2 {
+        font-size: 17px;
+        line-height: 1.3;
+        flex: 1;
+        text-wrap: balance;
+      }
+      .drawer .body {
+        padding: 16px;
+        display: grid;
+        gap: 16px;
+        align-content: start;
+        overflow: auto;
+      }
+      .drawer footer {
+        padding: 12px 16px;
+        border-top: 1px solid var(--pl-hair);
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      dl.kv {
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        gap: 8px 12px;
+        margin: 0;
+        font-size: 13.5px;
+      }
+      dl.kv dt {
+        color: var(--pl-muted);
+      }
+      dl.kv dd {
+        margin: 0;
+      }
+      .bigdur {
+        font-family: var(--pl-font-h);
+        font-size: 28px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .prov {
+        font-size: 12.5px;
+        color: var(--pl-muted);
+        background: var(--pl-subtle);
+        border-radius: calc(var(--pl-radius) - 2px);
+        padding: 10px 12px;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field label,
+      .field .lbl {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .field .hint {
+        font-size: 12px;
+        color: var(--pl-muted);
+      }
+      select.sel {
+        font: inherit;
+        font-size: 13.5px;
+        padding: 7px 10px;
+        border: 1px solid var(--pl-border);
+        border-radius: calc(var(--pl-radius) - 2px);
+        background: var(--pl-surface);
+        color: var(--pl-text);
+      }
+      .confirm {
+        border: 1px solid
+          color-mix(in srgb, var(--pl-neg) 45%, var(--pl-surface));
+        border-radius: calc(var(--pl-radius) - 2px);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      /* centred states */
+      .centre {
+        display: grid;
+        place-items: center;
+        padding: 40px 16px 48px;
+      }
+      .panel {
+        width: 100%;
+        max-width: 440px;
+        background: var(--pl-surface);
+        border: 1px solid var(--pl-hair);
+        border-radius: var(--pl-radius);
+        padding: 24px;
+        display: grid;
+        gap: 14px;
+      }
+      .panel h2 {
+        font-size: 19px;
+        line-height: 1.25;
+        text-wrap: balance;
+      }
+      .panel p {
+        margin: 0;
+      }
+      .panel ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+        font-size: 13.5px;
+      }
+      .panel li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .panel li svg.i {
+        margin-top: 2px;
+      }
+      .panel li .y {
+        color: var(--pl-pos);
+      }
+      .panel li .n {
+        color: var(--pl-muted);
+      }
+      .panel .fine {
+        font-size: 12px;
+        color: var(--pl-muted);
+      }
+      .empty {
+        text-align: center;
+        display: grid;
+        gap: 12px;
+        justify-items: center;
+        padding: 44px 16px 52px;
+        max-width: 420px;
+        margin: 0 auto;
+      }
+      .empty svg.i {
+        width: 36px;
+        height: 36px;
+        stroke-width: 1.4;
+        color: var(--pl-muted);
+      }
+      .empty p {
+        margin: 0;
+      }
+      .opts {
+        display: grid;
+        gap: 8px;
+      }
+      .opt {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border: 1px solid var(--pl-border);
+        border-radius: calc(var(--pl-radius) - 2px);
+        font-size: 13.5px;
+        cursor: pointer;
+      }
+      .opt.on {
+        border-color: var(--pl-accent);
+        background: var(--pl-accent-soft);
+      }
+      .opt input {
+        margin-top: 3px;
+        accent-color: var(--pl-accent);
+      }
+      .opt small {
+        display: block;
+        color: var(--pl-muted);
+        font-size: 12px;
+      }
+
+      /* skeleton */
+      .skel {
+        background: var(--pl-subtle);
+        border-radius: 4px;
+        height: 12px;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+
+      /* banners */
+      .banner {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 4px 12px;
+        align-items: start;
+        padding: 11px 14px;
+        border-radius: var(--pl-radius);
+        border: 1px solid;
+        font-size: 13.5px;
+      }
+      .banner > svg.i {
+        margin-top: 2px;
+      }
+      .banner.warn {
+        background: color-mix(in srgb, var(--pl-warn) 12%, var(--pl-surface));
+        border-color: color-mix(in srgb, var(--pl-warn) 55%, var(--pl-surface));
+      }
+      .banner.warn > svg.i {
+        color: #b87400;
+      }
+      .pl.dark .banner.warn > svg.i {
+        color: var(--pl-warn);
+      }
+      .banner.neg {
+        background: color-mix(in srgb, var(--pl-neg) 10%, var(--pl-surface));
+        border-color: color-mix(in srgb, var(--pl-neg) 50%, var(--pl-surface));
+      }
+      .banner.neg > svg.i {
+        color: var(--pl-neg);
+      }
+      .banner.info {
+        background: var(--pl-subtle);
+        border-color: var(--pl-hair);
+      }
+      .banner p {
+        margin: 0;
+      }
+      .banner details {
+        grid-column: 2 / 4;
+        font-size: 12px;
+        color: var(--pl-muted);
+      }
+      .banner details summary {
+        cursor: pointer;
+        width: max-content;
+      }
+      .banner code {
+        font:
+          11.5px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        display: block;
+        margin-top: 4px;
+        white-space: pre-wrap;
+      }
+
+      /* narrow */
+      .strip {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+      }
+      .strip button {
+        display: grid;
+        gap: 1px;
+        justify-items: center;
+        padding: 6px 0 7px;
+        border: 1px solid transparent;
+        border-radius: calc(var(--pl-radius) - 3px);
+        background: var(--pl-surface);
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .strip button .wd {
+        color: var(--pl-muted);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+      }
+      .strip button .dd {
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .strip button .t {
+        font-variant-numeric: tabular-nums;
+        color: var(--pl-muted);
+      }
+      .strip button[aria-selected='true'] {
+        border-color: var(--pl-accent);
+        background: var(--pl-accent-soft);
+      }
+      .strip button[aria-selected='true'] .t {
+        color: var(--pl-text);
+        font-weight: 600;
+      }
+
+      /* conflict */
+      table.cmp {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      table.cmp th,
+      table.cmp td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--pl-hair);
+        vertical-align: top;
+      }
+      table.cmp thead th {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--pl-muted);
+      }
+      table.cmp label {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        cursor: pointer;
+      }
+      table.cmp input {
+        accent-color: var(--pl-accent);
+        margin-top: 3px;
+      }
+      table.cmp .same {
+        color: var(--pl-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5V12l3 2" />
+      </symbol>
+      <symbol id="i-left" viewBox="0 0 24 24">
+        <path d="M14.5 6 8.5 12l6 6" />
+      </symbol>
+      <symbol id="i-right" viewBox="0 0 24 24">
+        <path d="m9.5 6 6 6-6 6" />
+      </symbol>
+      <symbol id="i-sync" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 0 0-14.3-4.3L4 8.5" />
+        <path d="M4 4v4.5h4.5" />
+        <path d="M4 13a8 8 0 0 0 14.3 4.3L20 15.5" />
+        <path d="M20 20v-4.5h-4.5" />
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"
+        />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24">
+        <path d="M12 4 2.8 19.5h18.4Z" />
+        <path d="M12 10v4.2M12 17.2v.1" />
+      </symbol>
+      <symbol id="i-err" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.8v5M12 16v.1" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 11v5M12 8v.1" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12.5 4.5 4.5L19 7.5" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12" /></symbol>
+      <symbol id="i-ext" viewBox="0 0 24 24">
+        <path d="M14 5h5v5M19 5l-8 8" />
+        <path d="M18 14v5H5V6h5" />
+      </symbol>
+      <symbol id="i-plug" viewBox="0 0 24 24">
+        <path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0Z" />
+        <path d="M12 16v5" />
+      </symbol>
+      <symbol id="i-empty" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" stroke-dasharray="3 2.4" />
+        <path d="M12 8v4" />
+      </symbol>
+    </svg>
+
+    <div class="doc">
+      <header>
+        <h1>Timesheets for Clockify: screens and states</h1>
+        <p>
+          Static mockups for <code>integrations/timesheets/app/</code>, the
+          iframe app. Companion to <code>DESIGN.md</code> in this folder;
+          letters match its §6. Every frame uses only the
+          <code>--pl-*</code> tokens, mapped from the host's
+          <code>--t-*</code> theme variables; the values shown are the host's
+          defaults. Sample data is invented (a designer, Mira Janssen, in
+          workspace Studio Veldkamp; "today" is Thursday 24 September 2026).
+        </p>
+        <p>
+          Totals are consistent: week 21–27 Sep sums to 26:50 across rows and
+          columns; the 30-day window sums to 94:50.
+        </p>
+        <ul class="index">
+          <li><a href="#a">A Week</a></li>
+          <li><a href="#b">B Entries</a></li>
+          <li><a href="#c">C Projects</a></li>
+          <li><a href="#d">D Detail</a></li>
+          <li><a href="#e">E Narrow</a></li>
+          <li><a href="#f">F–G Connect</a></li>
+          <li><a href="#h">H First import</a></li>
+          <li><a href="#i">I Empty</a></li>
+          <li><a href="#j">J Errors</a></li>
+          <li><a href="#k">K No relay</a></li>
+          <li><a href="#l">L Outside window</a></li>
+          <li><a href="#m">M Settings</a></li>
+          <li><a href="#n">N Conflict (later)</a></li>
+          <li><a href="#o">O Dark</a></li>
+        </ul>
+        <div class="tokens" style="margin-top: 14px">
+          <span><i style="background: #fafafa"></i>--pl-bg</span
+          ><span><i style="background: #fff"></i>--pl-surface</span>
+          <span><i style="background: #f2f2f2"></i>--pl-subtle</span
+          ><span><i style="background: #ccc"></i>--pl-border</span>
+          <span><i style="background: #000"></i>--pl-text</span
+          ><span><i style="background: #666"></i>--pl-muted</span>
+          <span><i style="background: #1b50d8"></i>--pl-accent</span
+          ><span><i style="background: #2f8f5b"></i>--pl-pos</span>
+          <span><i style="background: #f5a623"></i>--pl-warn</span
+          ><span><i style="background: #cf5b5b"></i>--pl-neg</span>
+        </div>
+      </header>
+
+      <!-- ======================= A ======================= -->
+      <section class="state" id="a">
+        <h2>
+          <span class="letter">A</span> Week, populated (default view)
+          <span class="w">1080px</span>
+        </h2>
+        <p>
+          Project rows sorted by week total; today tinted; zero shown as an en
+          dash; Fri–Sun are in the future. Clicking a cell opens Entries at that
+          day with that project's rows highlighted. The running-timer note
+          appears only when the last sync saw one.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 1080px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span>
+              <span class="pill ok" role="status">Synced 4 min ago</span>
+              <button class="btn" type="button">
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>25 Aug – 24 Sep</b>, your entries only</span
+              ><span>61 entries</span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Previous week"
+                >
+                  <svg class="i"><use href="#i-left" /></svg>
+                </button>
+                <span class="range">21 – 27 Sep 2026</span>
+                <button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Next week"
+                  disabled
+                >
+                  <svg class="i"><use href="#i-right" /></svg>
+                </button>
+                <button class="btn ghost" type="button" disabled>
+                  This week
+                </button>
+              </div>
+              <div class="seg" role="tablist" aria-label="View">
+                <button role="tab" aria-selected="true">Week</button
+                ><button role="tab" aria-selected="false">Entries</button
+                ><button role="tab" aria-selected="false">Projects</button>
+              </div>
+              <div class="weektotal">
+                <small>Week total</small><strong>26:50</strong>
+              </div>
+            </div>
+            <div class="content">
+              <div class="note">
+                <span class="ring" aria-hidden="true"></span>1 timer is running
+                in Clockify. It appears here after you stop it and sync.
+              </div>
+              <div class="card gridwrap">
+                <table class="week">
+                  <caption class="sr">
+                    Hours per project, 21 – 27 Sep 2026
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Project</th>
+                      <th scope="col">
+                        <span class="wd">Mon</span><span class="dd">21</span>
+                      </th>
+                      <th scope="col">
+                        <span class="wd">Tue</span><span class="dd">22</span>
+                      </th>
+                      <th scope="col">
+                        <span class="wd">Wed</span><span class="dd">23</span>
+                      </th>
+                      <th scope="col" class="today">
+                        <span class="wd">Today</span><span class="dd">24</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Fri</span><span class="dd">25</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Sat</span><span class="dd">26</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Sun</span><span class="dd">27</span>
+                      </th>
+                      <th scope="col" class="tot">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #0b8a8a"></span
+                          ><span
+                            >Harbor Lights website<small
+                              >Havenbedrijf Rotterdam</small
+                            ></span
+                          >
+                        </div>
+                      </th>
+                      <td><button>3:00</button></td>
+                      <td><button>4:00</button></td>
+                      <td><button>2:30</button></td>
+                      <td class="today"><button>2:00</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">11:30</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #7b4fd6"></span
+                          ><span>Kestrel iOS app<small>Kestrel BV</small></span>
+                        </div>
+                      </th>
+                      <td><button>2:00</button></td>
+                      <td><button>1:30</button></td>
+                      <td><button>3:30</button></td>
+                      <td class="today"><button>2:45</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">9:45</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #8a8f98"></span
+                          ><span
+                            >Admin &amp; email<small
+                              >Studio Veldkamp</small
+                            ></span
+                          >
+                        </div>
+                      </th>
+                      <td><button>0:45</button></td>
+                      <td><button>0:30</button></td>
+                      <td><button>0:40</button></td>
+                      <td class="today"><button>0:25</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">2:20</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #c9622a"></span
+                          ><span>Atomic onboarding<small>Internal</small></span>
+                        </div>
+                      </th>
+                      <td><button>1:00</button></td>
+                      <td class="z">–</td>
+                      <td><button>0:45</button></td>
+                      <td class="today"><button>0:30</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">2:15</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #d6457a"></span
+                          ><span
+                            >Workshop prep<small>Studio Veldkamp</small></span
+                          >
+                        </div>
+                      </th>
+                      <td class="z">–</td>
+                      <td><button>1:00</button></td>
+                      <td class="z">–</td>
+                      <td class="today z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">1:00</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" style="text-align: left">Day total</th>
+                      <td>6:45</td>
+                      <td>7:00</td>
+                      <td>7:25</td>
+                      <td class="today">5:40</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">26:50</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="foot">
+                <span>Billable <b>21:15</b></span
+                ><span>Not billable <b>5:35</b></span
+                ><span>Times in Europe/Amsterdam</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= B + D ======================= -->
+      <section class="state" id="b">
+        <h2>
+          <span class="letter">B</span> Entries, grouped by day
+          <span class="w">760px</span>
+        </h2>
+        <p>
+          Same week as a list, newest day first. Rows are buttons that open the
+          detail drawer (D). Highlighted rows came from clicking Kestrel · Today
+          in the Week grid.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 760px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span>
+              <span class="pill ok">Synced 4 min ago</span>
+              <button class="btn" type="button">
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>25 Aug – 24 Sep</b></span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Previous week"
+                >
+                  <svg class="i"><use href="#i-left" /></svg>
+                </button>
+                <span class="range">21 – 27 Sep 2026</span>
+                <button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Next week"
+                  disabled
+                >
+                  <svg class="i"><use href="#i-right" /></svg>
+                </button>
+              </div>
+              <div class="seg" role="tablist" aria-label="View">
+                <button role="tab" aria-selected="false">Week</button
+                ><button role="tab" aria-selected="true">Entries</button
+                ><button role="tab" aria-selected="false">Projects</button>
+              </div>
+              <div class="weektotal">
+                <small>Week total</small><strong>26:50</strong>
+              </div>
+            </div>
+            <div class="content">
+              <div class="card day">
+                <div class="dayhead">
+                  <h3>Thursday 24 Sep</h3>
+                  <span class="num">5:40</span>
+                </div>
+                <button class="entry">
+                  <span class="desc">Homepage hero, responsive pass</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #0b8a8a"></span
+                    ><span>Harbor Lights website</span></span
+                  ><span class="bill" title="Billable"
+                    >$<span class="sr">Billable</span></span
+                  ><span class="rng">12:15 – 14:15</span
+                  ><span class="dur">2:00</span>
+                </button>
+                <button class="entry hl">
+                  <span class="desc">Review TestFlight feedback</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">14:15 – 15:15</span
+                  ><span class="dur">1:00</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Pairing with Joep on plugin host</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #c9622a"></span
+                    ><span>Atomic onboarding</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">11:00 – 11:30</span
+                  ><span class="dur">0:30</span>
+                </button>
+                <button class="entry hl">
+                  <span class="desc">Offline sync: conflict sheet</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">09:15 – 11:00</span
+                  ><span class="dur">1:45</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Inbox, invoices</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #8a8f98"></span
+                    ><span>Admin &amp; email</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">08:50 – 09:15</span
+                  ><span class="dur">0:25</span>
+                </button>
+              </div>
+              <div class="card day">
+                <div class="dayhead">
+                  <h3>Wednesday 23 Sep</h3>
+                  <span class="num">7:25</span>
+                </div>
+                <button class="entry">
+                  <span class="desc">Crash on cold start (#412)</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">14:45 – 16:45</span
+                  ><span class="dur">2:00</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Docs: integration proxy</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #c9622a"></span
+                    ><span>Atomic onboarding</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">14:00 – 14:45</span
+                  ><span class="dur">0:45</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Push notification settings</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">12:30 – 14:00</span
+                  ><span class="dur">1:30</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Accessibility audit fixes</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #0b8a8a"></span
+                    ><span>Harbor Lights website</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">09:10 – 11:40</span
+                  ><span class="dur">2:30</span>
+                </button>
+                <button class="entry">
+                  <span class="desc muted">(no description)</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #8a8f98"></span
+                    ><span>Admin &amp; email</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">08:30 – 09:10</span
+                  ><span class="dur">0:40</span>
+                </button>
+              </div>
+              <div class="card day">
+                <div class="dayhead">
+                  <h3>Tuesday 22 Sep</h3>
+                  <span class="num">7:00</span>
+                </div>
+                <button class="entry">
+                  <span class="desc">Settings screen layout</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">15:00 – 16:30</span
+                  ><span class="dur">1:30</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Content model review with client</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #0b8a8a"></span
+                    ><span>Harbor Lights website</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">13:30 – 15:00</span
+                  ><span class="dur">1:30</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Slides: local-first sync</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #d6457a"></span
+                    ><span>Workshop prep</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">12:30 – 13:30</span
+                  ><span class="dur">1:00</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Homepage hero, first pass</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #0b8a8a"></span
+                    ><span>Harbor Lights website</span></span
+                  ><span class="bill">$<span class="sr">Billable</span></span
+                  ><span class="rng">09:15 – 11:45</span
+                  ><span class="dur">2:30</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Inbox and invoices</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #8a8f98"></span
+                    ><span>Admin &amp; email</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">08:45 – 09:15</span
+                  ><span class="dur">0:30</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="state" id="d">
+        <h2>
+          <span class="letter">D</span> Entry detail drawer (read-only in v1)
+          <span class="w">1080px</span>
+        </h2>
+        <p>
+          Opens from the right at ≥ 720px; below that it is a full-width sheet.
+          Focus moves to the heading; Esc returns focus to the row. Provenance
+          says plainly that Clockify is the source of truth.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 1080px; height: 560px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span>
+              <span class="pill ok">Synced 4 min ago</span>
+              <button class="btn" type="button">
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>25 Aug – 24 Sep</b></span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Previous week"
+                >
+                  <svg class="i"><use href="#i-left" /></svg></button
+                ><span class="range">21 – 27 Sep 2026</span
+                ><button
+                  class="btn sec icon"
+                  type="button"
+                  aria-label="Next week"
+                  disabled
+                >
+                  <svg class="i"><use href="#i-right" /></svg>
+                </button>
+              </div>
+              <div class="seg">
+                <button aria-selected="false">Week</button
+                ><button aria-selected="true">Entries</button
+                ><button aria-selected="false">Projects</button>
+              </div>
+              <div class="weektotal">
+                <small>Week total</small><strong>26:50</strong>
+              </div>
+            </div>
+            <div class="content">
+              <div class="card day">
+                <div class="dayhead">
+                  <h3>Thursday 24 Sep</h3>
+                  <span class="num">5:40</span>
+                </div>
+                <button class="entry hl">
+                  <span class="desc">Homepage hero, responsive pass</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #0b8a8a"></span
+                    ><span>Harbor Lights website</span></span
+                  ><span class="bill">$</span
+                  ><span class="rng">12:15 – 14:15</span
+                  ><span class="dur">2:00</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Review TestFlight feedback</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app</span></span
+                  ><span class="bill">$</span
+                  ><span class="rng">14:15 – 15:15</span
+                  ><span class="dur">1:00</span>
+                </button>
+                <button class="entry">
+                  <span class="desc">Pairing with Joep on plugin host</span
+                  ><span class="pj"
+                    ><span class="dot" style="background: #c9622a"></span
+                    ><span>Atomic onboarding</span></span
+                  ><span class="bill"></span
+                  ><span class="rng">11:00 – 11:30</span
+                  ><span class="dur">0:30</span>
+                </button>
+              </div>
+            </div>
+            <div class="scrim"></div>
+            <aside class="drawer" role="dialog" aria-labelledby="d-h">
+              <header>
+                <h2 id="d-h" tabindex="-1">Homepage hero, responsive pass</h2>
+                <button class="btn ghost icon" type="button" aria-label="Close">
+                  <svg class="i"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="body">
+                <div>
+                  <div class="bigdur">2:00</div>
+                  <div class="muted" style="font-size: 12.5px; margin-top: 4px">
+                    Thursday 24 Sep 2026 · 12:15 – 14:15
+                  </div>
+                </div>
+                <dl class="kv">
+                  <dt>Project</dt>
+                  <dd>
+                    <span class="proj" style="display: inline-flex"
+                      ><span
+                        class="dot"
+                        style="background: #0b8a8a; margin-top: 4px"
+                      ></span
+                      >Harbor Lights website</span
+                    >
+                  </dd>
+                  <dt>Client</dt>
+                  <dd>Havenbedrijf Rotterdam</dd>
+                  <dt>Billable</dt>
+                  <dd>Yes</dd>
+                  <dt>Member</dt>
+                  <dd>Mira Janssen</dd>
+                  <dt>Start</dt>
+                  <dd class="num">24 Sep 2026, 12:15</dd>
+                  <dt>End</dt>
+                  <dd class="num">24 Sep 2026, 14:15</dd>
+                </dl>
+                <div class="prov">
+                  Imported from Clockify, last checked 24 Sep 14:03. Changes
+                  made in Clockify replace this copy on the next sync.
+                  Properties you add to the row in Atomic are kept.
+                </div>
+              </div>
+              <footer>
+                <a class="btn sec" href="#d">Open row in Atomic</a
+                ><a class="btn ghost" href="https://app.clockify.me/tracker"
+                  >Open Clockify<svg class="i"><use href="#i-ext" /></svg
+                ></a>
+              </footer>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= C ======================= -->
+      <section class="state" id="c">
+        <h2>
+          <span class="letter">C</span> Projects, whole import window
+          <span class="w">760px</span>
+        </h2>
+        <p>
+          Ignores the week navigator and says which range it covers. Bars are
+          scaled to the largest project; the solid part is billable. Percentages
+          are shares of the window's total and sum to 100.0.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 760px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span>
+              <span class="pill ok">Synced 4 min ago</span>
+              <button class="btn" type="button">
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>25 Aug – 24 Sep</b></span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <span class="range">25 Aug – 24 Sep 2026</span
+                ><span class="muted" style="font-size: 12.5px"
+                  >the whole import window</span
+                >
+              </div>
+              <div class="seg">
+                <button aria-selected="false">Week</button
+                ><button aria-selected="false">Entries</button
+                ><button aria-selected="true">Projects</button>
+              </div>
+            </div>
+            <div class="content">
+              <div class="sumline">
+                <div><small>Total</small><strong>94:50</strong></div>
+                <div><small>Billable</small><strong>69:15</strong></div>
+                <div><small>Not billable</small><strong>25:35</strong></div>
+              </div>
+              <div class="card">
+                <div class="prow">
+                  <div class="proj">
+                    <span class="dot" style="background: #0b8a8a"></span
+                    ><span
+                      >Harbor Lights website<small
+                        >Havenbedrijf Rotterdam</small
+                      ></span
+                    >
+                  </div>
+                  <div class="track">
+                    <i class="all" style="width: 100%; background: #0b8a8a"></i
+                    ><i style="width: 100%; background: #0b8a8a"></i>
+                  </div>
+                  <span class="num">38:30</span
+                  ><span class="num pct">40.6%</span>
+                </div>
+                <div class="prow">
+                  <div class="proj">
+                    <span class="dot" style="background: #7b4fd6"></span
+                    ><span>Kestrel iOS app<small>Kestrel BV</small></span>
+                  </div>
+                  <div class="track">
+                    <i class="all" style="width: 89%; background: #7b4fd6"></i
+                    ><i style="width: 79.9%; background: #7b4fd6"></i>
+                  </div>
+                  <span class="num">34:15</span
+                  ><span class="num pct">36.1%</span>
+                </div>
+                <div class="prow">
+                  <div class="proj">
+                    <span class="dot" style="background: #c9622a"></span
+                    ><span>Atomic onboarding<small>Internal</small></span>
+                  </div>
+                  <div class="track">
+                    <i
+                      class="all"
+                      style="width: 25.3%; background: #c9622a"
+                    ></i>
+                  </div>
+                  <span class="num">9:45</span
+                  ><span class="num pct">10.3%</span>
+                </div>
+                <div class="prow">
+                  <div class="proj">
+                    <span class="dot" style="background: #8a8f98"></span
+                    ><span
+                      >Admin &amp; email<small>Studio Veldkamp</small></span
+                    >
+                  </div>
+                  <div class="track">
+                    <i
+                      class="all"
+                      style="width: 21.6%; background: #8a8f98"
+                    ></i>
+                  </div>
+                  <span class="num">8:20</span><span class="num pct">8.8%</span>
+                </div>
+                <div class="prow">
+                  <div class="proj">
+                    <span class="dot" style="background: #d6457a"></span
+                    ><span>Workshop prep<small>Studio Veldkamp</small></span>
+                  </div>
+                  <div class="track">
+                    <i
+                      class="all"
+                      style="width: 10.4%; background: #d6457a"
+                    ></i>
+                  </div>
+                  <span class="num">4:00</span><span class="num pct">4.2%</span>
+                </div>
+              </div>
+              <div class="legend">
+                <span><i></i>Billable</span
+                ><span><i class="a"></i>Not billable</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= E ======================= -->
+      <section class="state" id="e">
+        <h2>
+          <span class="letter">E</span> Narrow: week strip over one day
+          <span class="w">360px</span>
+        </h2>
+        <p>
+          Below 560px the grid becomes a seven-day strip (a tablist) above the
+          selected day's entries. The source chip moves into the connection bar;
+          Sync now becomes an icon button with the same accessible name. The
+          right frame is the detail as a full-width sheet.
+        </p>
+        <div class="row">
+          <figure>
+            <div class="pl" style="width: 360px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="spacer"></span>
+                <span class="pill ok">Synced 4 min ago</span>
+                <button class="btn icon" type="button" aria-label="Sync now">
+                  <svg class="i"><use href="#i-sync" /></svg>
+                </button>
+              </div>
+              <div class="conn">
+                <span><b>Clockify · Studio Veldkamp</b></span
+                ><span>25 Aug – 24 Sep</span
+                ><button class="link" type="button">Settings</button>
+              </div>
+              <div class="bar" style="gap: 10px">
+                <div class="weeknav">
+                  <button class="btn sec icon" aria-label="Previous week">
+                    <svg class="i"><use href="#i-left" /></svg></button
+                  ><span class="range" style="font-size: 14px">21 – 27 Sep</span
+                  ><button class="btn sec icon" aria-label="Next week" disabled>
+                    <svg class="i"><use href="#i-right" /></svg>
+                  </button>
+                </div>
+                <div class="weektotal">
+                  <small>Week</small
+                  ><strong style="font-size: 18px">26:50</strong>
+                </div>
+                <div class="seg" style="width: 100%">
+                  <button aria-selected="true" style="flex: 1">Week</button
+                  ><button aria-selected="false" style="flex: 1">Entries</button
+                  ><button aria-selected="false" style="flex: 1">
+                    Projects
+                  </button>
+                </div>
+              </div>
+              <div class="content">
+                <div class="strip" role="tablist" aria-label="Days">
+                  <button role="tab" aria-selected="false">
+                    <span class="wd">M</span><span class="dd">21</span
+                    ><span class="t">6:45</span>
+                  </button>
+                  <button role="tab" aria-selected="false">
+                    <span class="wd">T</span><span class="dd">22</span
+                    ><span class="t">7:00</span>
+                  </button>
+                  <button role="tab" aria-selected="false">
+                    <span class="wd">W</span><span class="dd">23</span
+                    ><span class="t">7:25</span>
+                  </button>
+                  <button role="tab" aria-selected="true">
+                    <span class="wd">T</span><span class="dd">24</span
+                    ><span class="t">5:40</span>
+                  </button>
+                  <button role="tab" aria-selected="false" disabled>
+                    <span class="wd">F</span><span class="dd">25</span
+                    ><span class="t">–</span>
+                  </button>
+                  <button role="tab" aria-selected="false" disabled>
+                    <span class="wd">S</span><span class="dd">26</span
+                    ><span class="t">–</span>
+                  </button>
+                  <button role="tab" aria-selected="false" disabled>
+                    <span class="wd">S</span><span class="dd">27</span
+                    ><span class="t">–</span>
+                  </button>
+                </div>
+                <div class="card day stack" role="tabpanel">
+                  <div class="dayhead">
+                    <h3>Today, 24 Sep</h3>
+                    <span class="num">5:40</span>
+                  </div>
+                  <button class="entry">
+                    <span class="desc">Review TestFlight feedback</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #7b4fd6"></span
+                      ><span>Kestrel iOS app · $</span></span
+                    ><span class="rng">14:15 – 15:15</span
+                    ><span class="dur">1:00</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Homepage hero, responsive pass</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #0b8a8a"></span
+                      ><span>Harbor Lights website · $</span></span
+                    ><span class="rng">12:15 – 14:15</span
+                    ><span class="dur">2:00</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Pairing with Joep on plugin host</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #c9622a"></span
+                      ><span>Atomic onboarding</span></span
+                    ><span class="rng">11:00 – 11:30</span
+                    ><span class="dur">0:30</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Offline sync: conflict sheet</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #7b4fd6"></span
+                      ><span>Kestrel iOS app · $</span></span
+                    ><span class="rng">09:15 – 11:00</span
+                    ><span class="dur">1:45</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Inbox, invoices</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #8a8f98"></span
+                      ><span>Admin &amp; email</span></span
+                    ><span class="rng">08:50 – 09:15</span
+                    ><span class="dur">0:25</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <figcaption>
+              Week view at 360px. Future days are disabled tabs.
+            </figcaption>
+          </figure>
+          <figure>
+            <div class="pl" style="width: 360px; height: 560px">
+              <aside class="drawer full" role="dialog" aria-labelledby="e-h">
+                <header>
+                  <h2 id="e-h">Homepage hero, responsive pass</h2>
+                  <button
+                    class="btn ghost icon"
+                    type="button"
+                    aria-label="Close"
+                  >
+                    <svg class="i"><use href="#i-x" /></svg>
+                  </button>
+                </header>
+                <div class="body">
+                  <div>
+                    <div class="bigdur">2:00</div>
+                    <div
+                      class="muted"
+                      style="font-size: 12.5px; margin-top: 4px"
+                    >
+                      Thu 24 Sep · 12:15 – 14:15
+                    </div>
+                  </div>
+                  <dl class="kv">
+                    <dt>Project</dt>
+                    <dd>Harbor Lights website</dd>
+                    <dt>Client</dt>
+                    <dd>Havenbedrijf Rotterdam</dd>
+                    <dt>Billable</dt>
+                    <dd>Yes</dd>
+                    <dt>Member</dt>
+                    <dd>Mira Janssen</dd>
+                  </dl>
+                  <div class="prov">
+                    Imported from Clockify, last checked 24 Sep 14:03. Changes
+                    made in Clockify replace this copy on the next sync.
+                  </div>
+                </div>
+                <footer>
+                  <a class="btn sec" href="#e">Open row in Atomic</a
+                  ><a class="btn ghost" href="https://app.clockify.me/tracker"
+                    >Open Clockify<svg class="i"><use href="#i-ext" /></svg
+                  ></a>
+                </footer>
+              </aside>
+            </div>
+            <figcaption>Detail as a full-width sheet below 720px.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ======================= F / G ======================= -->
+      <section class="state" id="f">
+        <h2>
+          <span class="letter">F–G</span> First run, connecting, workspace and
+          window <span class="w">560px</span>
+        </h2>
+        <p>
+          F: not connected. G: waiting on the host's consent bar, then choosing
+          a workspace (only shown when the key sees more than one) and the
+          window. Cancelling the consent bar returns to F with no error.
+        </p>
+        <div class="row">
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="spacer"></span
+                ><span class="pill">Not connected</span>
+              </div>
+              <div class="centre">
+                <div class="panel">
+                  <h2>Bring your Clockify time into this drive</h2>
+                  <p>
+                    Copies your completed time entries from the last 7 or 30
+                    days, so you can see them by week and link them from your
+                    own pages.
+                  </p>
+                  <ul>
+                    <li>
+                      <svg class="i y"><use href="#i-check" /></svg
+                      ><span
+                        >Description, project, client, start, end and billable
+                        status</span
+                      >
+                    </li>
+                    <li>
+                      <svg class="i y"><use href="#i-check" /></svg
+                      ><span
+                        >A Clockify API key, entered on the next page. This app
+                        never sees it.</span
+                      >
+                    </li>
+                    <li>
+                      <svg class="i n"><use href="#i-minus" /></svg
+                      ><span
+                        >Nothing is written to Clockify. Running timers, tags
+                        and rates are not copied.</span
+                      >
+                    </li>
+                  </ul>
+                  <div>
+                    <button class="btn" type="button">Connect Clockify</button>
+                  </div>
+                  <p class="fine">
+                    Your API key is under Preferences → Manage API keys in
+                    Clockify.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <figcaption>F. Not connected.</figcaption>
+          </figure>
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="spacer"></span
+                ><span class="pill sync">Connecting…</span>
+              </div>
+              <div class="centre">
+                <div class="panel">
+                  <h2>Finish connecting in the bar above this app</h2>
+                  <p class="muted">
+                    Your Atomic Server opened a Clockify connection prompt at
+                    the top of the page. Paste your API key there and choose
+                    Connect.
+                  </p>
+                  <div>
+                    <button class="btn" type="button" disabled>Waiting…</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <figcaption>G1. Waiting on the host's consent bar.</figcaption>
+          </figure>
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="chip"
+                  ><span class="src" aria-hidden="true">C</span>Clockify</span
+                ><span class="spacer"></span
+                ><span class="pill ok">Connected</span>
+              </div>
+              <div class="conn">
+                <span>Connected as <b>Mira Janssen</b></span>
+              </div>
+              <div class="centre" style="padding-top: 24px">
+                <form class="panel" onsubmit="return false;">
+                  <h2>What should be imported?</h2>
+                  <fieldset
+                    class="field"
+                    style="border: 0; padding: 0; margin: 0"
+                  >
+                    <legend class="lbl" style="padding: 0; margin-bottom: 6px">
+                      Workspace
+                    </legend>
+                    <div class="opts">
+                      <label class="opt on"
+                        ><input type="radio" name="ws" id="ws-1" checked /><span
+                          >Studio Veldkamp<small
+                            >Owner · 5 projects</small
+                          ></span
+                        ></label
+                      >
+                      <label class="opt"
+                        ><input type="radio" name="ws" id="ws-2" /><span
+                          >Kestrel BV<small>Member · 12 projects</small></span
+                        ></label
+                      >
+                    </div>
+                  </fieldset>
+                  <div class="field">
+                    <span class="lbl" id="win-l">Window</span>
+                    <div class="seg" role="group" aria-labelledby="win-l">
+                      <button type="button" aria-pressed="false">
+                        Last 7 days</button
+                      ><button type="button" aria-pressed="true">
+                        Last 30 days
+                      </button>
+                    </div>
+                    <span class="hint"
+                      >Recomputed on every sync: 25 Aug – 24 Sep today.</span
+                    >
+                  </div>
+                  <div>
+                    <button class="btn" type="submit">Import entries</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+            <figcaption>
+              G2. Workspace and window. With one workspace only the window is
+              asked.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ======================= H ======================= -->
+      <section class="state" id="h">
+        <h2>
+          <span class="letter">H</span> First import, nothing to show yet
+          <span class="w">760px</span>
+        </h2>
+        <p>
+          Skeleton in the shape of the Week view; the connection bar carries the
+          progress text and a determinate bar once the entry count is known.
+          Needs a progress callback from <code>syncClockify</code>.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 760px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span
+              ><span class="pill sync">Syncing…</span>
+              <button class="btn" type="button" disabled>
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn" role="status">
+              <span>Saving 61 entries… <b>24 of 61</b></span
+              ><span>Importing 25 Aug – 24 Sep</span
+              ><span class="progress"><i style="width: 39%"></i></span>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <span class="range">21 – 27 Sep 2026</span>
+              </div>
+              <div class="seg">
+                <button aria-selected="true">Week</button
+                ><button aria-selected="false">Entries</button
+                ><button aria-selected="false">Projects</button>
+              </div>
+            </div>
+            <div class="content">
+              <div
+                class="card"
+                style="padding: 14px; display: grid; gap: 16px"
+                aria-hidden="true"
+              >
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 170px repeat(8, 1fr);
+                    gap: 14px;
+                  "
+                >
+                  <div class="skel" style="width: 60%"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                </div>
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 170px repeat(8, 1fr);
+                    gap: 14px;
+                  "
+                >
+                  <div class="skel" style="width: 85%"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel"></div>
+                </div>
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 170px repeat(8, 1fr);
+                    gap: 14px;
+                  "
+                >
+                  <div class="skel" style="width: 70%"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel"></div>
+                </div>
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 170px repeat(8, 1fr);
+                    gap: 14px;
+                  "
+                >
+                  <div class="skel" style="width: 50%"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel" style="opacity: 0.4"></div>
+                  <div class="skel"></div>
+                </div>
+              </div>
+              <p class="muted" style="margin: 0; font-size: 12.5px">
+                The first import can take a minute: every entry is one save in
+                your drive.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= I ======================= -->
+      <section class="state" id="i">
+        <h2>
+          <span class="letter">I</span> Empty: connected, nothing in the window
+          <span class="w">560px</span>
+        </h2>
+        <p>
+          Says which dates were checked. On a 7-day window it offers the 30-day
+          window.
+        </p>
+        <div class="row">
+          <div class="pl" style="width: 560px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              ><span class="spacer"></span
+              ><span class="pill ok">Synced just now</span>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>18 – 24 Sep</b></span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="empty">
+              <svg class="i"><use href="#i-empty" /></svg>
+              <p>
+                <strong
+                  >No completed time entries between 18 and 24 Sep.</strong
+                >
+              </p>
+              <p class="muted" style="font-size: 13px">
+                Entries appear here once they are stopped in Clockify. A running
+                timer is not imported.
+              </p>
+              <div
+                style="
+                  display: flex;
+                  gap: 8px;
+                  flex-wrap: wrap;
+                  justify-content: center;
+                "
+              >
+                <button class="btn" type="button">Sync now</button
+                ><button class="btn sec" type="button">
+                  Import 30 days instead
+                </button>
+              </div>
+              <a class="link" href="https://app.clockify.me/tracker"
+                >Open Clockify</a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= J ======================= -->
+      <section class="state" id="j">
+        <h2>
+          <span class="letter">J</span> Errors, over data already on screen
+          <span class="w">760px · 560px</span>
+        </h2>
+        <p>
+          A banner at the top of the content, one recovery action, raw details
+          behind a disclosure. The last good copy stays visible and the
+          connection bar says how old it is.
+        </p>
+        <div class="row">
+          <figure>
+            <div class="pl" style="width: 760px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="chip"
+                  ><span class="src" aria-hidden="true">C</span>Clockify ·
+                  Studio Veldkamp</span
+                >
+                <span class="spacer"></span
+                ><span class="pill warn">Reconnect needed</span>
+                <button class="btn sec" type="button">
+                  <svg class="i"><use href="#i-sync" /></svg>Sync now
+                </button>
+              </div>
+              <div class="conn">
+                <span>Connected as <b>Mira Janssen</b></span
+                ><span>Last synced <b>2 h ago</b></span
+                ><button class="link" type="button">Settings</button>
+              </div>
+              <div class="bar">
+                <div class="weeknav">
+                  <button class="btn sec icon" aria-label="Previous week">
+                    <svg class="i"><use href="#i-left" /></svg></button
+                  ><span class="range">21 – 27 Sep 2026</span
+                  ><button class="btn sec icon" aria-label="Next week" disabled>
+                    <svg class="i"><use href="#i-right" /></svg>
+                  </button>
+                </div>
+                <div class="seg">
+                  <button aria-selected="true">Week</button
+                  ><button aria-selected="false">Entries</button
+                  ><button aria-selected="false">Projects</button>
+                </div>
+                <div class="weektotal">
+                  <small>Week total</small><strong>24:05</strong>
+                </div>
+              </div>
+              <div class="content">
+                <div class="banner warn" role="alert">
+                  <svg class="i"><use href="#i-warn" /></svg>
+                  <p>
+                    <strong>Clockify no longer accepts this connection.</strong>
+                    The API key may have been deleted or regenerated.
+                  </p>
+                  <button class="btn" type="button">Reconnect Clockify</button>
+                  <details>
+                    <summary>Details</summary>
+                    <code
+                      >HTTP 401 on GET /api/v1/workspaces/…/user/…/time-entries
+                      "Full authentication is required to access this
+                      resource"</code
+                    >
+                  </details>
+                </div>
+                <div class="card gridwrap">
+                  <table class="week">
+                    <caption class="sr">
+                      Hours per project, 21 – 27 Sep 2026
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Project</th>
+                        <th scope="col">
+                          <span class="wd">Mon</span><span class="dd">21</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Tue</span><span class="dd">22</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Wed</span><span class="dd">23</span>
+                        </th>
+                        <th scope="col" class="today">
+                          <span class="wd">Today</span
+                          ><span class="dd">24</span>
+                        </th>
+                        <th scope="col" class="future">
+                          <span class="wd">Fri</span><span class="dd">25</span>
+                        </th>
+                        <th scope="col" class="future">
+                          <span class="wd">Sat</span><span class="dd">26</span>
+                        </th>
+                        <th scope="col" class="future">
+                          <span class="wd">Sun</span><span class="dd">27</span>
+                        </th>
+                        <th scope="col" class="tot">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">
+                          <div class="proj">
+                            <span class="dot" style="background: #0b8a8a"></span
+                            ><span>Harbor Lights website</span>
+                          </div>
+                        </th>
+                        <td>3:00</td>
+                        <td>4:00</td>
+                        <td>2:30</td>
+                        <td class="today">0:00</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">9:30</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">
+                          <div class="proj">
+                            <span class="dot" style="background: #7b4fd6"></span
+                            ><span>Kestrel iOS app</span>
+                          </div>
+                        </th>
+                        <td>2:00</td>
+                        <td>1:30</td>
+                        <td>3:30</td>
+                        <td class="today">1:45</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">8:45</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">
+                          <div class="proj">
+                            <span class="dot" style="background: #8a8f98"></span
+                            ><span>Admin &amp; email</span>
+                          </div>
+                        </th>
+                        <td>0:45</td>
+                        <td>0:30</td>
+                        <td>0:40</td>
+                        <td class="today">0:25</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">2:20</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">
+                          <div class="proj">
+                            <span class="dot" style="background: #c9622a"></span
+                            ><span>Atomic onboarding</span>
+                          </div>
+                        </th>
+                        <td>1:00</td>
+                        <td class="z">–</td>
+                        <td>0:45</td>
+                        <td class="today">0:30</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">2:15</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">
+                          <div class="proj">
+                            <span class="dot" style="background: #d6457a"></span
+                            ><span>Workshop prep</span>
+                          </div>
+                        </th>
+                        <td class="z">–</td>
+                        <td>1:00</td>
+                        <td class="z">–</td>
+                        <td class="today z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">1:00</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row" style="text-align: left">Day total</th>
+                        <td>6:45</td>
+                        <td>7:00</td>
+                        <td>7:25</td>
+                        <td class="today">2:40</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">23:50</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <figcaption>
+              Reconnect needed (401). This copy predates today's afternoon
+              entries, so it differs from A.
+            </figcaption>
+          </figure>
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="content" style="padding-top: 16px">
+                <div class="banner warn" role="alert">
+                  <svg class="i"><use href="#i-warn" /></svg>
+                  <p>
+                    <strong>Clockify asked for fewer requests.</strong> Try
+                    again in 30 seconds.
+                  </p>
+                  <button class="btn sec" type="button" disabled>
+                    Try again (30 s)
+                  </button>
+                </div>
+                <div class="banner neg" role="alert">
+                  <svg class="i"><use href="#i-err" /></svg>
+                  <p>
+                    <strong>Could not reach the integration proxy.</strong> Your
+                    imported entries are still here.
+                  </p>
+                  <button class="btn sec" type="button">Try again</button>
+                  <details>
+                    <summary>Details</summary>
+                    <code>TypeError: Failed to fetch (host relay → proxy)</code>
+                  </details>
+                </div>
+                <div class="banner neg" role="alert">
+                  <svg class="i"><use href="#i-err" /></svg>
+                  <p>
+                    <strong
+                      >This Clockify account cannot read time entries in Kestrel
+                      BV.</strong
+                    >
+                  </p>
+                  <button class="btn sec" type="button">
+                    Choose another workspace
+                  </button>
+                  <details>
+                    <summary>Details</summary>
+                    <code
+                      >HTTP 403 on GET /api/v1/workspaces/…/time-entries</code
+                    >
+                  </details>
+                </div>
+                <div class="banner warn" role="status">
+                  <svg class="i"><use href="#i-warn" /></svg>
+                  <p>
+                    <strong>Project names could not be loaded,</strong> so some
+                    entries show a project id.
+                  </p>
+                  <button
+                    class="btn ghost icon"
+                    type="button"
+                    aria-label="Dismiss"
+                  >
+                    <svg class="i"><use href="#i-x" /></svg>
+                  </button>
+                </div>
+                <div class="banner neg" role="alert">
+                  <svg class="i"><use href="#i-err" /></svg>
+                  <p>
+                    <strong
+                      >Clockify returned more than 10,000 entries for this
+                      window,</strong
+                    >
+                    the most this app imports at once.
+                  </p>
+                  <button class="btn sec" type="button">
+                    Import 7 days instead
+                  </button>
+                </div>
+              </div>
+            </div>
+            <figcaption>
+              The other banners, each alone in practice: 429, network, 403,
+              partial (warning only), page cap.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ======================= K + L ======================= -->
+      <section class="state" id="k">
+        <h2>
+          <span class="letter">K</span> Host cannot relay
+          <span class="w">560px</span> &nbsp;
+          <span class="letter" id="l">L</span> Week outside the import window
+          <span class="w">560px</span>
+        </h2>
+        <p>
+          K: <code>store.proxy</code> is missing; rows imported earlier still
+          render, read-only. L: Mon 24 Aug is before the window (25 Aug – 24
+          Sep) and is hatched; its header's accessible name says so. At 560px
+          the grid drops the client line.
+        </p>
+        <div class="row">
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="chip"
+                  ><span class="src" aria-hidden="true">C</span>Clockify ·
+                  Studio Veldkamp</span
+                ><span class="spacer"></span><span class="pill">Offline</span>
+              </div>
+              <div class="content" style="padding-top: 16px">
+                <div class="banner info" role="status">
+                  <svg class="i"><use href="#i-plug" /></svg>
+                  <p>
+                    <strong
+                      >This Atomic Server can't connect apps to Clockify
+                      yet.</strong
+                    >
+                    Entries imported earlier are still shown.
+                  </p>
+                  <span></span>
+                  <details>
+                    <summary>Details for your admin</summary>
+                    <code
+                      >The host does not provide store.proxy (the
+                      integration-proxy relay for plugin frames).</code
+                    >
+                  </details>
+                </div>
+                <div class="card day stack">
+                  <div class="dayhead">
+                    <h3>Thursday 24 Sep</h3>
+                    <span class="num">2:40</span>
+                  </div>
+                  <button class="entry">
+                    <span class="desc">Offline sync: conflict sheet</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #7b4fd6"></span
+                      ><span>Kestrel iOS app · $</span></span
+                    ><span class="rng">09:15 – 11:00</span
+                    ><span class="dur">1:45</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Pairing with Joep on plugin host</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #c9622a"></span
+                      ><span>Atomic onboarding</span></span
+                    ><span class="rng">11:00 – 11:30</span
+                    ><span class="dur">0:30</span>
+                  </button>
+                  <button class="entry">
+                    <span class="desc">Inbox, invoices</span
+                    ><span class="pj"
+                      ><span class="dot" style="background: #8a8f98"></span
+                      ><span>Admin &amp; email</span></span
+                    ><span class="rng">08:50 – 09:15</span
+                    ><span class="dur">0:25</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <figcaption>K. No relay; last copy, read-only.</figcaption>
+          </figure>
+          <figure>
+            <div class="pl" style="width: 560px">
+              <div class="hdr">
+                <span class="mark"
+                  ><svg class="i"><use href="#i-clock" /></svg
+                ></span>
+                <h1>Timesheets</h1>
+                <span class="spacer"></span
+                ><span class="pill ok">Synced 4 min ago</span
+                ><button class="btn icon" aria-label="Sync now">
+                  <svg class="i"><use href="#i-sync" /></svg>
+                </button>
+              </div>
+              <div class="bar">
+                <div class="weeknav">
+                  <button class="btn sec icon" aria-label="Previous week">
+                    <svg class="i"><use href="#i-left" /></svg></button
+                  ><span class="range">24 – 30 Aug 2026</span
+                  ><button class="btn sec icon" aria-label="Next week">
+                    <svg class="i"><use href="#i-right" /></svg></button
+                  ><button class="btn ghost">This week</button>
+                </div>
+                <div class="weektotal">
+                  <small>Week</small
+                  ><strong style="font-size: 18px">20:30</strong>
+                </div>
+              </div>
+              <div class="content">
+                <div class="banner info">
+                  <svg class="i"><use href="#i-info" /></svg>
+                  <p>
+                    Before <strong>25 Aug</strong> is outside your 30-day import
+                    window. Only entries imported earlier are listed.
+                  </p>
+                  <span></span>
+                </div>
+                <div class="card gridwrap">
+                  <table class="week" style="font-size: 12.5px">
+                    <caption class="sr">
+                      Hours per project, 24 – 30 Aug 2026
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Project</th>
+                        <th
+                          scope="col"
+                          class="out"
+                          aria-label="Monday 24, outside import window"
+                        >
+                          <span class="wd">Mon</span><span class="dd">24</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Tue</span><span class="dd">25</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Wed</span><span class="dd">26</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Thu</span><span class="dd">27</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Fri</span><span class="dd">28</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Sat</span><span class="dd">29</span>
+                        </th>
+                        <th scope="col">
+                          <span class="wd">Sun</span><span class="dd">30</span>
+                        </th>
+                        <th scope="col" class="tot">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row" style="min-width: 0">
+                          <div class="proj">
+                            <span class="dot" style="background: #0b8a8a"></span
+                            ><span>Harbor Lights website</span>
+                          </div>
+                        </th>
+                        <td class="out z">–</td>
+                        <td>3:15</td>
+                        <td>2:00</td>
+                        <td>1:45</td>
+                        <td>2:30</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">9:30</td>
+                      </tr>
+                      <tr>
+                        <th scope="row" style="min-width: 0">
+                          <div class="proj">
+                            <span class="dot" style="background: #7b4fd6"></span
+                            ><span>Kestrel iOS app</span>
+                          </div>
+                        </th>
+                        <td class="out z">–</td>
+                        <td>2:00</td>
+                        <td>3:00</td>
+                        <td>2:30</td>
+                        <td>1:15</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">8:45</td>
+                      </tr>
+                      <tr>
+                        <th scope="row" style="min-width: 0">
+                          <div class="proj">
+                            <span class="dot" style="background: #8a8f98"></span
+                            ><span>Admin &amp; email</span>
+                          </div>
+                        </th>
+                        <td class="out z">–</td>
+                        <td>0:30</td>
+                        <td>0:45</td>
+                        <td>0:20</td>
+                        <td>0:40</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">2:15</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row" style="text-align: left">Total</th>
+                        <td class="out z">–</td>
+                        <td>5:45</td>
+                        <td>5:45</td>
+                        <td>4:35</td>
+                        <td>4:25</td>
+                        <td class="z">–</td>
+                        <td class="z">–</td>
+                        <td class="tot">20:30</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <figcaption>L. Partial week at the start of the window.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ======================= M ======================= -->
+      <section class="state" id="m">
+        <h2>
+          <span class="letter">M</span> Settings <span class="w">560px</span>
+        </h2>
+        <p>
+          A sheet over the view. Disconnect confirms inline (the host has no
+          confirm dialog to borrow) and says imported rows stay.
+        </p>
+        <div class="row">
+          <div class="pl" style="width: 560px; height: 620px">
+            <div class="scrim"></div>
+            <aside class="drawer full" role="dialog" aria-labelledby="m-h">
+              <header>
+                <h2 id="m-h">Settings</h2>
+                <button class="btn ghost icon" type="button" aria-label="Close">
+                  <svg class="i"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="body" style="gap: 20px">
+                <div class="field">
+                  <span class="lbl">Clockify account</span
+                  ><span
+                    >Mira Janssen
+                    <span class="muted"
+                      >· mira@studio-veldkamp.example</span
+                    ></span
+                  >
+                </div>
+                <div class="field">
+                  <label for="set-ws">Workspace</label
+                  ><select class="sel" id="set-ws">
+                    <option>Studio Veldkamp</option>
+                    <option>Kestrel BV</option></select
+                  ><span class="hint"
+                    >Changing it imports from the new workspace on the next
+                    sync. Rows from the old one stay.</span
+                  >
+                </div>
+                <div class="field">
+                  <span class="lbl" id="set-win">Window</span>
+                  <div class="seg" role="group" aria-labelledby="set-win">
+                    <button type="button" aria-pressed="false">
+                      Last 7 days</button
+                    ><button type="button" aria-pressed="true">
+                      Last 30 days
+                    </button>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="lbl">Days are grouped in</span
+                  ><span
+                    >Europe/Amsterdam
+                    <span class="muted">(this browser)</span></span
+                  >
+                </div>
+                <div class="confirm">
+                  <p style="margin: 0">
+                    <strong>Disconnect Clockify?</strong> Syncing stops. The 61
+                    entries already imported stay in this drive.
+                  </p>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <button class="btn danger" type="button">Disconnect</button
+                    ><button class="btn ghost" type="button">Cancel</button>
+                  </div>
+                </div>
+              </div>
+              <footer>
+                <button class="btn" type="button">Save</button
+                ><button class="btn ghost" type="button">Cancel</button>
+              </footer>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= N ======================= -->
+      <section class="state" id="n">
+        <h2>
+          <span class="letter">N</span> Conflict review (later, only with
+          two-way sync) <span class="w">760px</span>
+        </h2>
+        <p>
+          Not in v1. Drawn to reserve the layout: per entry, only the fields
+          that differ get a choice; unchanged fields are listed muted for
+          context.
+        </p>
+        <div class="stage">
+          <div class="pl" style="width: 760px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              ><span class="spacer"></span
+              ><span class="pill warn">2 conflicts</span
+              ><button class="btn sec" type="button">Sync now</button>
+            </div>
+            <div class="content" style="padding-top: 16px">
+              <div class="banner warn">
+                <svg class="i"><use href="#i-warn" /></svg>
+                <p>
+                  <strong
+                    >2 entries changed in both places since the last
+                    sync.</strong
+                  >
+                  Pick which version to keep; nothing is sent until you do.
+                </p>
+                <span class="muted num" style="font-size: 12.5px">1 of 2</span>
+              </div>
+              <div class="card">
+                <div class="dayhead">
+                  <h3>Homepage hero, responsive pass · Thu 24 Sep</h3>
+                  <span class="muted" style="font-size: 12.5px"
+                    >Harbor Lights website</span
+                  >
+                </div>
+                <table class="cmp">
+                  <thead>
+                    <tr>
+                      <th scope="col">Field</th>
+                      <th scope="col">In this drive</th>
+                      <th scope="col">In Clockify</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">Description</th>
+                      <td>
+                        <label
+                          ><input
+                            type="radio"
+                            name="c1"
+                            id="c1-a"
+                            checked
+                          />Homepage hero, responsive pass</label
+                        >
+                      </td>
+                      <td>
+                        <label
+                          ><input type="radio" name="c1" id="c1-b" />Homepage
+                          hero + nav, responsive pass</label
+                        >
+                      </td>
+                    </tr>
+                    <tr>
+                      <th scope="row">End</th>
+                      <td>
+                        <label
+                          ><input type="radio" name="c2" id="c2-a" /><span
+                            class="num"
+                            >14:15</span
+                          ></label
+                        >
+                      </td>
+                      <td>
+                        <label
+                          ><input
+                            type="radio"
+                            name="c2"
+                            id="c2-b"
+                            checked
+                          /><span class="num">14:30</span></label
+                        >
+                      </td>
+                    </tr>
+                    <tr class="same">
+                      <th scope="row">Start</th>
+                      <td class="num">12:15</td>
+                      <td class="num">12:15</td>
+                    </tr>
+                    <tr class="same">
+                      <th scope="row">Billable</th>
+                      <td>Yes</td>
+                      <td>Yes</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div
+                  style="
+                    display: flex;
+                    gap: 8px;
+                    padding: 12px 14px;
+                    flex-wrap: wrap;
+                  "
+                >
+                  <button class="btn" type="button">Keep selected</button
+                  ><button class="btn ghost" type="button">Skip for now</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= O ======================= -->
+      <section class="state" id="o">
+        <h2>
+          <span class="letter">O</span> Dark (host sends dark token values)
+          <span class="w">760px</span>
+        </h2>
+        <p>
+          No layout change. Project colours appear only as dots and bars, with a
+          hairline ring so dark projects stay visible.
+        </p>
+        <div class="stage">
+          <div class="pl dark" style="width: 760px">
+            <div class="hdr">
+              <span class="mark"
+                ><svg class="i"><use href="#i-clock" /></svg
+              ></span>
+              <h1>Timesheets</h1>
+              <span class="chip"
+                ><span class="src" aria-hidden="true">C</span>Clockify · Studio
+                Veldkamp</span
+              >
+              <span class="spacer"></span
+              ><span class="pill ok">Synced 4 min ago</span>
+              <button class="btn" type="button">
+                <svg class="i"><use href="#i-sync" /></svg>Sync now
+              </button>
+            </div>
+            <div class="conn">
+              <span>Connected as <b>Mira Janssen</b></span
+              ><span>Importing <b>25 Aug – 24 Sep</b></span
+              ><button class="link" type="button">Settings</button>
+            </div>
+            <div class="bar">
+              <div class="weeknav">
+                <button class="btn sec icon" aria-label="Previous week">
+                  <svg class="i"><use href="#i-left" /></svg></button
+                ><span class="range">21 – 27 Sep 2026</span
+                ><button class="btn sec icon" aria-label="Next week" disabled>
+                  <svg class="i"><use href="#i-right" /></svg>
+                </button>
+              </div>
+              <div class="seg">
+                <button aria-selected="true">Week</button
+                ><button aria-selected="false">Entries</button
+                ><button aria-selected="false">Projects</button>
+              </div>
+              <div class="weektotal">
+                <small>Week total</small><strong>26:50</strong>
+              </div>
+            </div>
+            <div class="content">
+              <div class="card gridwrap">
+                <table class="week">
+                  <caption class="sr">
+                    Hours per project, 21 – 27 Sep 2026
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Project</th>
+                      <th scope="col">
+                        <span class="wd">Mon</span><span class="dd">21</span>
+                      </th>
+                      <th scope="col">
+                        <span class="wd">Tue</span><span class="dd">22</span>
+                      </th>
+                      <th scope="col">
+                        <span class="wd">Wed</span><span class="dd">23</span>
+                      </th>
+                      <th scope="col" class="today">
+                        <span class="wd">Today</span><span class="dd">24</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Fri</span><span class="dd">25</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Sat</span><span class="dd">26</span>
+                      </th>
+                      <th scope="col" class="future">
+                        <span class="wd">Sun</span><span class="dd">27</span>
+                      </th>
+                      <th scope="col" class="tot">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #0b8a8a"></span
+                          ><span
+                            >Harbor Lights website<small
+                              >Havenbedrijf Rotterdam</small
+                            ></span
+                          >
+                        </div>
+                      </th>
+                      <td><button>3:00</button></td>
+                      <td><button>4:00</button></td>
+                      <td><button>2:30</button></td>
+                      <td class="today"><button>2:00</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">11:30</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #7b4fd6"></span
+                          ><span>Kestrel iOS app<small>Kestrel BV</small></span>
+                        </div>
+                      </th>
+                      <td><button>2:00</button></td>
+                      <td><button>1:30</button></td>
+                      <td><button>3:30</button></td>
+                      <td class="today"><button>2:45</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">9:45</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #8a8f98"></span
+                          ><span
+                            >Admin &amp; email<small
+                              >Studio Veldkamp</small
+                            ></span
+                          >
+                        </div>
+                      </th>
+                      <td><button>0:45</button></td>
+                      <td><button>0:30</button></td>
+                      <td><button>0:40</button></td>
+                      <td class="today"><button>0:25</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">2:20</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #c9622a"></span
+                          ><span>Atomic onboarding<small>Internal</small></span>
+                        </div>
+                      </th>
+                      <td><button>1:00</button></td>
+                      <td class="z">–</td>
+                      <td><button>0:45</button></td>
+                      <td class="today"><button>0:30</button></td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">2:15</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+                        <div class="proj">
+                          <span class="dot" style="background: #d6457a"></span
+                          ><span
+                            >Workshop prep<small>Studio Veldkamp</small></span
+                          >
+                        </div>
+                      </th>
+                      <td class="z">–</td>
+                      <td><button>1:00</button></td>
+                      <td class="z">–</td>
+                      <td class="today z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">1:00</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" style="text-align: left">Day total</th>
+                      <td>6:45</td>
+                      <td>7:00</td>
+                      <td>7:25</td>
+                      <td class="today">5:40</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="z">–</td>
+                      <td class="tot">26:50</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="foot">
+                <span>Billable <b>21:15</b></span
+                ><span>Not billable <b>5:35</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
