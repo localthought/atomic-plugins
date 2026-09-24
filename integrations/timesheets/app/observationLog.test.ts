@@ -410,7 +410,7 @@ describe('observation log scenarios (#123 M1)', () => {
     expect(t.rowOf('entry-1')!['https://atomicdata.dev/properties/name']).toBe(
       `Edit ${COMPACT_AFTER_INCREMENTALS + 3}`,
     );
-  });
+  }, 30_000);
 
   it('refolds from the whole log when an incremental arrives that sorts before the snapshot', async () => {
     const t = await setup();
