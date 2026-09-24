@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "open-cloud-mesh",
+  "name": "Open Cloud Mesh",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Federated sharing between Atomic and another cloud server.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/138",
+  "proposedHostCapabilities": [
+    "http-routes",
+    "outbound-http",
+    "persistent-state",
+    "background-jobs"
+  ],
+  "firstInteropMilestone": "Exchange one share with a test peer and persist its accepted or rejected state."
+}

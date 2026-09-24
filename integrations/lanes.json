@@ -9,6 +9,13 @@
 
   "lanes": [
     {
+      "id": "open-cloud-mesh",
+      "index": 8,
+      "platforms": [],
+      "tiers": ["contract"],
+      "note": "QuickJS OCM share-receiver scaffold; validates planning metadata only. Routes, host federation primitives and live interoperability remain unimplemented."
+    },
+    {
       "id": "calendar",
       "index": 0,
       "platforms": ["google-calendar"],
