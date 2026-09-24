@@ -314,8 +314,10 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
 
     // C8: the host asks before opening Google's page for the event.
     await app.getByRole('button', { name: 'Agenda', exact: true }).click();
+    // The mock's fixture is shared by the lane's tests, so the timed event
+    // may carry an earlier test's title; it is the one with a room.
     await app
-      .getByRole('button', { name: /^Calendar timed fixture, / })
+      .getByRole('button', { name: /, Room \d+, Synthetic calendar/ })
       .click();
     await app
       .getByRole('dialog')
@@ -339,11 +341,12 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
     await expect(
       app.getByRole('button', { name: 'Connect Google Calendar' }),
     ).toBeVisible();
+    const owner = await signedInAgent(page);
     await expect
       .poll(async () =>
-        (await proxyConnections('google-calendar')).map(
-          c => c.delegations.length,
-        ),
+        (await proxyConnections('google-calendar'))
+          .filter(c => c.owner === owner)
+          .map(c => c.delegations.length),
       )
       .toEqual([0]);
     expect(await rowsOf(page)).toHaveLength(2);
