@@ -328,6 +328,9 @@ group('issue-tracker controller: host calls from pin 007869464', () => {
         .last!.result.rows.map(r => [r.number, r.title, r.status, r.comments.map(x => x.body)])
         .sort();
     expect(shape(batched.controller)).toEqual(shape(single.controller));
+  });
+});
+
 group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
   /** GitHub stops returning issue `n` (deleted or transferred) until `back()`. */
   function hide(store: FakeStore, n: number) {

@@ -216,7 +216,7 @@ read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
   there is no catalog entry: one would advertise a runtime a user cannot
   reach. The e2e installs the app test-side, as pets' and notion's do.
 
-`app/package.json` pins `devonian@0.7.0` from npm (install it with
+`app/package.json` pins `devonian@0.8.0` from npm (install it with
 `pnpm install --frozen-lockfile` in `app/`), bundled as `devonian/atomic` plus
 `reconcileRecord`; `@tomic/lib` is shimmed as in notion. It lives in `app/`
 rather than here because `certify.mjs` treats a `package.json` in a plugin

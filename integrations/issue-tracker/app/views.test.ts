@@ -390,6 +390,9 @@ describe('host calls from pin 007869464', () => {
     await wait(20);
     expect(store.disconnected).toEqual(['github-issues']);
     expect(document.querySelector('[aria-label="Connect GitHub Issues"]')).not.toBeNull();
+  });
+});
+
 describe('an issue gone from GitHub', () => {
   it('asks before removing it from the board, and never writes to GitHub', async () => {
     const { root, store } = await mount();
