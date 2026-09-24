@@ -1,0 +1,2 @@
+# The Dockerfile builds from crates.io; it needs nothing from this directory.
+*
