@@ -6,6 +6,7 @@ import type { Overlay } from './frameStore.js';
 import type { PluginResource, PluginStore } from './store.js';
 import {
   describeConflict,
+  readRows,
   resolveConflict,
   runPass,
   type ConflictField,
@@ -44,7 +45,14 @@ export type PausedReason =
 
 export type Problem =
   /** Same field changed on both sides; `keep`/`resolve` settles it. */
-  | { kind: 'conflict'; message: string; subject: string; fields: string[] }
+  | {
+      kind: 'conflict';
+      message: string;
+      subject: string;
+      fields: string[];
+      /** The table row (or comment Message) it is about. */
+      local?: string;
+    }
   /** GitHub or the host refused the connection: connect again. */
   | { kind: 'reconnect'; message: string }
   /** A person must look first (uncertain write, missing record, …). */
@@ -146,7 +154,13 @@ export function classify(error: unknown): Problem {
   const e = error as PassError;
   const message = error instanceof Error ? error.message : String(error);
   if (e?.subject && Array.isArray(e.fields))
-    return { kind: 'conflict', message, subject: e.subject, fields: e.fields };
+    return {
+      kind: 'conflict',
+      message,
+      subject: e.subject,
+      fields: e.fields,
+      ...(e.local ? { local: e.local } : {}),
+    };
   if (RECONNECT.some(p => p.test(message)))
     return { kind: 'reconnect', message };
   const paused = PAUSED.find(([p]) => p.test(message));
@@ -283,12 +297,32 @@ export function createController(
         const problem = classify(error);
         if (problem.kind === 'conflict') conflict = problem;
         const after = latest(ready);
+        let last = after.last;
+
+        // Still show the table as it is now, e.g. after a reload into a
+        // paused sync. `at: 0` (no completed pass) keeps moving disabled.
+        if (session) {
+          try {
+            const rows = await readRows(
+              passOptions(session, ready.connectionId, ready.repository),
+            );
+            last = {
+              at: after.last?.at ?? 0,
+              result: withChanges({
+                ...(after.last?.result ?? emptyResult()),
+                rows,
+              }),
+            };
+          } catch {
+            // Keep what was shown.
+          }
+        }
 
         return set({
           kind: 'ready',
           connectionId: ready.connectionId,
           repository: ready.repository,
-          ...(after.last ? { last: after.last } : {}),
+          ...(last ? { last } : {}),
           ...(after.touched?.length ? { touched: after.touched } : {}),
           problem,
         });

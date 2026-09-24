@@ -116,6 +116,8 @@ export interface PassError extends Error {
   subject?: string;
   entity?: string;
   fields?: string[];
+  /** The Atomic row or Message it is about, when bound. */
+  local?: string;
 }
 
 /**
@@ -264,15 +266,7 @@ async function summary(
   options: PassOptions,
 ): Promise<PassResult> {
   const writes = { ...atomicStore.writes };
-  const comments = await commentsByIssue(atomicStore, options);
-  const rows = (
-    (await local.list('issue')) as {
-      id: string;
-      remoteId?: number;
-      value: { title: string; body: string; status: Status };
-      metadata?: Record<string, unknown>;
-    }[]
-  ).map(row => issueRow(row, comments.get(row.id) ?? []));
+  const rows = await tableRows(atomicStore, local, options);
   const bound = Object.entries(
     bridge.records as Record<string, { entity: string }>,
   ).filter(
@@ -302,6 +296,34 @@ async function summary(
   };
 }
 
+async function tableRows(
+  atomicStore: FrameAtomicStore,
+  local: FrameAtomicPort,
+  options: PassOptions,
+): Promise<IssueRow[]> {
+  const comments = await commentsByIssue(atomicStore, options);
+
+  return (
+    (await local.list('issue')) as {
+      id: string;
+      remoteId?: number;
+      value: { title: string; body: string; status: Status };
+      metadata?: Record<string, unknown>;
+    }[]
+  ).map(row => issueRow(row, comments.get(row.id) ?? []));
+}
+
+/**
+ * The table's issues as they are now, without a pass: for the board while
+ * sync is paused or failed, so a reload never shows an empty board. Reads
+ * only; nothing is sent or written.
+ */
+export async function readRows(options: PassOptions): Promise<IssueRow[]> {
+  const { atomicStore, local } = bridgeFor(options);
+
+  return tableRows(atomicStore, local, options);
+}
+
 /** One pass. Throws a `PassError`; the state is flushed either way. */
 export async function runPass(options: PassOptions): Promise<PassResult> {
   const { bridge, atomicStore, sent, local } = bridgeFor(options);
@@ -310,6 +332,14 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   try {
     await bridge.sync();
   } catch (error) {
+    // Name the Atomic resource a conflict is about, for the view's marker.
+    const e = error as PassError;
+
+    if (e?.subject && e.entity) {
+      const at = bridge.id('local', e.entity, e.subject);
+      if (typeof at === 'string') e.local = at;
+    }
+
     // Keep the pass's own error; a failing flush would only hide it.
     await options.state.flush().catch(() => {});
     throw error;

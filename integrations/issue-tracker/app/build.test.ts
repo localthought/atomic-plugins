@@ -20,7 +20,9 @@ describe('GitHub issues drive-app bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource; keep an eye on the size.
-    expect(bytes).toBeLessThan(128 * 1024);
+    // The designed board/list/detail UI (#89) took it from about 86 KB to
+    // about 200 KB, unminified (build.mjs does not minify).
+    expect(bytes).toBeLessThan(256 * 1024);
   });
 
   it('has no storage or network access of its own', () => {
