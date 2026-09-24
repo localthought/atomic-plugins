@@ -14,7 +14,8 @@
     "statement.ts",
     "plugin.ts",
     "app/*.ts",
-    "app/ui/*.ts"
+    "app/ui/*.ts",
+    "app/harness/*.ts"
   ],
   "exclude": ["app/*.test.ts", "app/ui/*.test.ts"]
 }

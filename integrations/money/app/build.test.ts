@@ -40,9 +40,9 @@ describe('money drive-app bundle', async () => {
   });
 
   it('marks every TypeScript source with @wc-ignore-file', () => {
-    for (const dir of ['.', './ui'])
+    for (const dir of ['.', './ui', './harness'])
       for (const file of readdirSync(new URL(dir + '/', import.meta.url)))
-        if (file.endsWith('.ts'))
+        if (/\.(ts|mjs)$/.test(file))
           expect(
             readFileSync(new URL(`${dir}/${file}`, import.meta.url), 'utf8'),
             file,
