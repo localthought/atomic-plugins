@@ -78,9 +78,22 @@ export function proxyTransport({
         receipt = await dispatch(`${target.pathname}${target.search}`, {
           method: intent.method,
           ...(intent.body ? { body: intent.body } : {}),
-        }).catch(() => {
+        }).catch(async error => {
+          // A dispatcher that knows the request never left (e.g. the host
+          // refused it before spending a connection code) says so with
+          // `notSent`; only then is the journal entry dropped, so the write
+          // is not stuck as uncertain. Anything else stays uncertain.
+          if (error?.notSent) {
+            if (writes) {
+              delete journal[id];
+              await save();
+            }
+
+            throw error;
+          }
+
           throw new Error(
-            'Proxy request failed. Check CORS and reconnect; an uncertain write will not be resent.',
+            `Proxy request failed (${error?.message ?? error}). Check CORS and reconnect; an uncertain write will not be resent.`,
           );
         });
       } else {

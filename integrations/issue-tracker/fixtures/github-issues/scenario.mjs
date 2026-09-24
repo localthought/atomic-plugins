@@ -1,10 +1,38 @@
+/**
+ * A repository that exists with issues from the start, because the mock
+ * proxy runs in its own process and a host e2e cannot reach the in-process
+ * driver (`createIssue`) to seed one. Used by the issue-tracker drive app's
+ * e2e. Every other repository name starts empty, as before.
+ */
+export const SEEDED_REPOSITORY = 'atomic-fixture/tracker';
+
 /** Stateful provider fixture, shared by the HTTP proxy and its test-side driver. */
 export function githubTracker() {
   const repositories = new Map();
+  let seeding = false;
 
   const repo = name => {
-    if (!repositories.has(name))
+    if (!repositories.has(name)) {
       repositories.set(name, { issues: [], comments: [] });
+
+      if (name === SEEDED_REPOSITORY && !seeding) {
+        seeding = true;
+        api.createIssue(name, {
+          title: 'Keep the selected calendar after refresh',
+          body: 'Refreshing the page resets the selection to **All calendars**.',
+        });
+        api.updateIssue(name, 1, { labels: ['bug'] });
+        api.createIssue(name, { title: 'Export the board as CSV', body: '' });
+        api.updateIssue(name, 2, { labels: ['atomic:doing'] });
+        const comment = api.createComment(name, 1, {
+          body: 'I can reproduce this in Firefox.',
+        });
+        repositories
+          .get(name)
+          .comments.find(c => c.id === comment.id).user.login = 'alice';
+        seeding = false;
+      }
+    }
 
     return repositories.get(name);
   };
