@@ -6,8 +6,8 @@ objects, a paginated outbox, WebFinger and NodeInfo. HTTP GETs perform actual
 scoped `ctx.read` calls. Inbox receipt, signed delivery and client writes remain
 unavailable; the plugin never pretends a POST succeeded.
 
-`plugin.js` and `manifest.json` are the host release inputs. `plugin.json` is
-repository metadata. No Rust crate, network client, private key or process-local
+`plugin.js` and `manifest.json` are the host release inputs.
+No Rust crate, network client, private key or process-local
 persistent state is bundled.
 
 ## Native Atomic mapping
