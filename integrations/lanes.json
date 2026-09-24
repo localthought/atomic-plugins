@@ -12,7 +12,9 @@
       "id": "calendar",
       "index": 0,
       "platforms": ["google-calendar"],
-      "tiers": ["typecheck", "unit"]
+      "tiers": ["typecheck", "unit", "e2e"],
+      "note": "e2e drives the Calendar drive app (integrations/calendar/app/) in its plugin iframe: connect through the host's consent bar, choose a calendar, import and refresh through the host proxy relay, then preview and send edits with If-Match (atomic-server#1657's ifMatch, in the pin), against the mock proxy's stateful google-calendar fixture and its test drivers.",
+      "e2e": ["integrations/calendar/e2e/calendar.spec.ts"]
     },
     {
       "id": "issue-tracker",

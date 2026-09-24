@@ -172,12 +172,12 @@ settings. That historical verification exercised the earlier manual snapshot imp
 ## Calendar view
 
 This section describes the retired LocalThought import, which also imported
-recurring series, expanded instances and cancellations. The current
-`devonian-google-calendar` catalog entry and `../calendar/adapter.ts` skip
-recurring and cancelled events; the lens in
-`../calendar/devonian/google-calendar/` still carries recurrence query and
-projection helpers from that flow. None of it has a host at the pin
-([#101](https://github.com/ontola/atomic-plugins/issues/101)).
+recurring series, expanded instances and cancellations. The pinned host no
+longer offers that setup-dialog flow, and evidence below does not certify the
+supported Calendar path: the drive app in
+[`../calendar/README.md`](../calendar/README.md), which skips recurring and
+cancelled events. The lens in `../calendar/devonian/google-calendar/` still
+carries recurrence query and projection helpers from the old flow.
 
 Google event imports now install a Calendar view alongside the source table.
 The projected date uses the day in Google's supplied start offset (or the
