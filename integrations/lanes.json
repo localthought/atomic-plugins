@@ -36,8 +36,9 @@
       "id": "money",
       "index": 3,
       "platforms": ["moneybird"],
-      "tiers": [],
-      "note": "No lane job, on purpose. money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility; typecheck/unit tiers here would only repeat that. Add a tier once money has a server-dependent test. moneybird is listed but not consumed: integrations/money/ is an MT940/camt.053 uploader with no Moneybird code, and the moneybird catalog entry has no package in this repo. With no tier, no mock proxy is started for this lane. A future Moneybird fixture and its recorder go in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/localthought/fixtures/index.mjs registers it by importing ../../money/fixtures/moneybird/scenario.mjs. See PARALLEL_LANES.md, Still open."
+      "tiers": ["e2e"],
+      "note": "e2e drives the Bank statements importer through the host's generic file entry point (atomic-server#1653: manifest accepts/destination, PluginPage Import tab): publish, discover, set up, MT940 and camt.053 import, reload, reimport, local edit, conflict and refused files. It needs an .atomic-server-ref that includes that change; against an older pin publishing the bundle fails on the unknown manifest field. No typecheck/unit tier: money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility. moneybird is listed for a future Moneybird fixture in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/money/ has no Moneybird runtime code.",
+      "e2e": ["integrations/money/e2e/money.spec.ts"]
     },
     {
       "id": "notion",

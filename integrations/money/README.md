@@ -1,17 +1,29 @@
 # Bank statements (MT940 and camt.053)
 
-> **No entry point at the current pin.** The steps in the next paragraph used
-> atomic-server's upload dialog (`ImportMT940`), which atomic-server
-> `4bab16ee6` removed. The pinned host (`.atomic-server-ref`) offers no way to
-> install this bundle or hand it a file; restoring one is
-> [#95](https://github.com/ontola/atomic-plugins/issues/95). See
-> [`../READINESS.md`](../READINESS.md).
+## Setup
 
-Open Integrations → Bank statements → Set up connection. Choose an MT940 or
-camt.053 (ISO 20022 XML) file, preview, and approve. The format is detected
-from the file contents: XML is read as camt.053, anything else as MT940. Reopen the installed Bank statements importer for later
-files. A Bank transactions table lives beneath the importer; rows live beneath
-that table. Shared banking terms live in the drive ontology.
+This needs an atomic-server with the generic file entry point
+(atomic-server#1653: manifest `accepts` and `destination`, and the Import tab
+on a plugin's page). The pinned `.atomic-server-ref` must include it; see
+[Verified](#verified) for the commit this was tested on.
+
+1. **Publish** (once per server, by whoever maintains it): create a Plugin,
+   replace its source with this folder's `plugin.js`, name it "Bank
+   statements", and choose Code → Publish to integration store. There is no
+   generic path from this repo's catalog to a server's store yet
+   (atomic-plugins#94), so this step is manual.
+2. **Find it**: Integrations → Show experimental plugins → Community
+   plugins → Bank statements → Open → Create draft.
+3. **Set up**: on the draft's Import tab, choose Set up. This creates the
+   banking properties and the Bank transactions class in the drive ontology,
+   and a Bank transactions table with a default view beneath the importer. It
+   stores `{ table, rowClass, properties }` as the importer's config, under
+   the key `money`.
+4. **Import**: choose an MT940 or camt.053 (ISO 20022 XML) file, then
+   Preview import, then Apply. The format is detected from the file contents:
+   XML is read as camt.053, and anything else as MT940. Nothing is written
+   before Apply. Come back to the same Import tab for later files; "Open
+   workspace" opens the table.
 
 bunq exports: bank account → Settings → Export statement → MT940.
 https://help.bunq.com/en-ie/articles/how-do-i-export-a-bank-statement
@@ -21,8 +33,16 @@ https://help.bunq.com/en-ie/articles/how-do-i-export-a-bank-statement
 `plugin.ts` bundles both readers (`parser.ts` for MT940, `camt053.ts` for
 camt.053, dispatched by `statement.ts`) and the mapping into `plugin.js`. The
 sandbox has no DOMParser, so `camt053.ts` carries a small namespace-agnostic
-XML reader of its own. File acquisition is UI code. Parsing first runs in an isolated browser Worker; proposal generation
-runs in the server QuickJS/WASM host, which supplies scoped query/read access.
+XML reader of its own. File acquisition is host UI code: the manifest's
+`accepts` entry makes atomic-server draw the file picker, check the size
+(5,000,000 bytes, the camt.053 limit) and decode the file (UTF-8, else
+Windows-1252). The host hands the result to `run()` as
+`ctx.upload = { name, mediaType, size, text }`; `ctx.text` and
+`ctx.trigger.payload.text`, which the removed host dialog used, are still
+read for one release. Proposal generation runs in the server QuickJS/WASM
+host, which supplies scoped query/read access. The manifest's `destination`
+(`bankingSchema()` plus the table name, row class and default columns) is
+what Set up creates; the plugin itself never creates schema.
 No network operations or secrets are declared. File contents are runtime input,
 not plugin source. Proposals and approved transactions contain financial data
 and are handled by the user's AtomicServer; they are not sent to an LLM.
@@ -74,16 +94,54 @@ offline peers still need collision resolution after synchronization.
   since-removed `ImportMT940` upload dialog. Private bank data is not committed. Synthetic fixtures
   test format behavior; this does not establish compatibility with every bank's
   dialect.
-- The default importer, table and view reuse durable setup identities after lost
-  responses. Shared ontology/schema creation still needs resumable installation.
-- File importer metadata/UI dispatch is currently MT940-specific; generalize this
-  when adding the next file-based plugin. It uses the same proposal runtime.
+- Set up reuses the table and view (found by `localId` beneath the importer)
+  when it runs again after a lost response. Schema creation goes through the
+  host's `ensureSchema`, which finds existing terms by `localId`.
+- The file entry point is generic (any plugin declaring `accepts`), but it
+  takes one text file per preview; no bytes, no several files at once.
+- Installation is Create draft from a published release. A reviewed
+  Installation (Install instead of Create draft) has no Import tab at this
+  host commit.
 
 Reference: https://bankrec.westpac.com.au/docs/statements/mt940/
 
 Tests: `./browser/node_modules/.bin/vitest run --config integrations/money/vitest.config.ts`
-(`parser.test.ts` for MT940, `camt053.test.ts` for camt.053 and format detection).
+(`parser.test.ts` for MT940, `camt053.test.ts` for camt.053 and format
+detection, `plugin.test.ts` for the manifest declaration and `ctx.upload`).
 Bundle: `./browser/node_modules/.bin/esbuild integrations/money/plugin.ts --preserve-symlinks --bundle --format=esm --platform=neutral --target=es2022 > integrations/money/plugin.js`
-Browser: none at the current pin. atomic-server's `browser/e2e/tests/mt940.spec.ts`
-(synthetic MT940 and camt.053 files, real runtime/persistence) was removed in
-`4bab16ee6` together with the dialog it drove.
+Browser: `node integrations/tooling/run-lane.mjs money --tier e2e` runs
+`e2e/money.spec.ts` against `ATOMIC_SERVER_CHECKOUT`'s `target/e2e` build.
+
+## Verified
+
+`e2e/money.spec.ts` passed on 2026-09-24 against atomic-server
+`claude/plugin-accepts-file` at `9788dbb41` (an unmerged branch for
+atomic-server#1653, based on `feat/plugin-debug` `bae5cdbe3`), with this
+package at version 0.2.0 (`plugin.js` sha256 `e189564805c807ffc60177b62e50eca8a39b6d2701cc26f7a63e204daae91f8c`). It covers these
+steps, all with the synthetic files in `fixtures/` and generated variants:
+
+- publish, then discover under Community plugins, then create a draft;
+- Set up, then an MT940 preview (2 new, "1 statements reconciled"), then
+  Apply, then a full page reload, then the rows in the table;
+- a reimport of the same file: "2 previously imported transactions skipped",
+  and nothing to apply;
+- a local edit to an imported description, which survives the reimport. A
+  statement whose already-imported transaction changed at the bank is shown
+  as a conflict and blocked, and the edit is still there afterwards;
+- camt.053 of the same period: 2 new rows (identities are per format), then
+  a reimport skips both;
+- these files are refused with an error message, no preview dialog, and no
+  write (the first real import afterwards still proposes exactly 2):
+  - an unbalanced statement ("does not reconcile");
+  - a non-statement text file;
+  - malformed XML;
+  - an MT940 file over 512 KB;
+  - 501 transactions ("at most 500");
+  - a file over 5,000,000 bytes (refused by the host before it is read);
+- an MT940 export in Windows-1252, whose "Café" narrative the host decodes
+  correctly (checked in the preview).
+
+Not verified: other banks' dialects beyond the fixtures (the 2026-09-11 bunq
+check above was on the old host path), an Installation (as opposed to a
+draft), and the host's server-side size refusal through the browser (it has
+a Rust unit test in atomic-server, `uploads_need_a_declaration_and_respect_its_size`).

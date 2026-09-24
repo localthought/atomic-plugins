@@ -94,10 +94,8 @@ test('a lane filter covers its own directory and no other plugin', () => {
 const lane = (over = {}) => ({ id: 'a', index: 0, tiers: [], ...over });
 
 test('activeLanes drops tier-less lanes', () => {
-  const ids = activeLanes(config.lanes).map(l => l.id);
-  assert.ok(!ids.includes('money'), 'money has no tiers and needs no job');
   // Synthetic, not a real lane: which real lanes have tiers changes when one
-  // is quarantined (see "quarantined" in lanes.json).
+  // gains its first tier (money did, for #95).
   assert.deepEqual(
     activeLanes([
       lane({ id: 'idle' }),

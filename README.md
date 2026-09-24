@@ -37,8 +37,10 @@ which evidence is unit, host E2E, live or historical.
 In short, at that pin: the Pets and Notion drive apps import through the
 host's integration-proxy relay and pass a host E2E against a mock proxy, but
 no host UI installs them from the catalog yet
-([#94](https://github.com/ontola/atomic-plugins/issues/94)). The other
-plugins have no reachable entry point at the pin; each has a linked issue.
+([#94](https://github.com/ontola/atomic-plugins/issues/94)). Bank statements
+is set up and fed files through the host's generic file entry point, after a
+manual publish to the server's store. The other plugins have no reachable
+entry point at the pin; each has a linked issue.
 The one-line descriptions below come from
 [`integrations/catalog.json`](integrations/catalog.json), except GitHub
 issues, which has no catalog entry.
@@ -51,7 +53,7 @@ Screenshots are tracked in
 | 🐾 **Pets** | A trivial demo: imports five static pets into a Pets table. No account or network call. | Drive app over the host relay (read from a mock `pets` platform); the static no-network demo is a separate sandbox bundle | [`integrations/pets/`](integrations/pets/) | [#94](https://github.com/ontola/atomic-plugins/issues/94) |
 | 📓 **Notion** | Sync supported row fields, property names and table or board views of a Notion database. Hidden (`enabled: false`). | Read-only drive app over the host relay; the two-way sandbox pilot has no host UI | [`integrations/notion/`](integrations/notion/) | [#94](https://github.com/ontola/atomic-plugins/issues/94), [#97](https://github.com/ontola/atomic-plugins/issues/97), [#8](https://github.com/ontola/atomic-plugins/issues/8) |
 | ⏱️ **Clockify** | Bring completed Clockify time entries (past 7 or 30 days) into a Time Tracker. Import only. | Drive app, no connect/setup step yet | [`integrations/timesheets/`](integrations/timesheets/) | [#96](https://github.com/ontola/atomic-plugins/issues/96) |
-| 🏦 **Bank statements** | Import bank transactions from MT940 and camt.053 statement exports; up to 500 transactions per file. No bank token. | Sandbox bundle; no upload entry point at the pin | [`integrations/money/`](integrations/money/) | [#95](https://github.com/ontola/atomic-plugins/issues/95) |
+| 🏦 **Bank statements** | Import bank transactions from MT940 and camt.053 statement exports; up to 500 transactions per file. No bank token. | Sandbox bundle, started from the host's generic file entry point (atomic-server#1653, in the pin); host E2E on synthetic statements | [`integrations/money/`](integrations/money/) | [#94](https://github.com/ontola/atomic-plugins/issues/94) (publication) |
 | 🗓️ **Google Calendar** (Devonian) | Import single (non-recurring) Google Calendar events into calendar views, and preview edits to send back. | Mapping and lens libraries, no host | [`integrations/calendar/`](integrations/calendar/) | [#101](https://github.com/ontola/atomic-plugins/issues/101) |
 | ✅ **Todoist** (Devonian) | Bring Todoist projects and active tasks into a local issue tracker. Read only. | Projection library, no host | [`integrations/issue-tracker/`](integrations/issue-tracker/) | [#99](https://github.com/ontola/atomic-plugins/issues/99) |
 | 🐙 **GitHub issues** (Devonian lens) | Maps GitHub issues and comments to and from Atomic issue-tracker resources. No catalog card. | Lens and bridge libraries, no host since atomic-server#1612 | [`integrations/issue-tracker/devonian/github-issues/`](integrations/issue-tracker/devonian/github-issues/) | [#100](https://github.com/ontola/atomic-plugins/issues/100) |
