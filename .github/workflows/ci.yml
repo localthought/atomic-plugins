@@ -10,6 +10,14 @@ name: CI
 # source, unmodified, to get a server to test against. Bump
 # .atomic-server-ref to track feat/plugin-debug.
 #
+# That build is published once per pinned commit as
+# ghcr.io/ontola/atomic-server-e2e:<sha> by atomic-server-e2e-image.yml, and
+# `build-server` copies the binary out of that image when it exists. It
+# builds from source only when it doesn't, which is typically a PR that
+# bumps the pin. A same-repo pin-bump PR also publishes the image for its
+# new commit (`publish-image`), so its later runs, other PRs on the same pin
+# and the merge queue all skip the build.
+#
 # atomic-server's own checkout is never mutated: this repo's integrations/
 # is not copied into it before the build. (Since feat/plugin-debug 4bab16ee6
 # atomic-server no longer embeds any integrations at build time either.)
@@ -33,10 +41,12 @@ name: CI
 #
 #   changes -> build-server -> { lane (matrix), hosting-surface, e2e-plugin-system }
 #           -> shared-checks
+#           -> publish-image (same-repo PRs that change .atomic-server-ref)
 #
 # `build-server` exists because `cargo build --profile e2e` plus build.rs's
-# embedded frontend is the entire cost of this pipeline; it runs once and
-# every downstream job downloads the binary. The `lane` matrix then fans out
+# embedded frontend is the entire cost of this pipeline (about 15 minutes
+# cold; about 1 when the image for the pin exists); it runs once and every
+# downstream job downloads the binary. The `lane` matrix then fans out
 # one job per plugin, with `fail-fast: false` so a run reports every broken
 # plugin rather than the first. Wall clock is `build-server + slowest lane`,
 # not the sum of all of them.
@@ -88,8 +98,25 @@ jobs:
       any: ${{ steps.decide.outputs.any }}
       matrix: ${{ steps.decide.outputs.matrix }}
       has-lanes: ${{ steps.decide.outputs.has-lanes }}
+      pin: ${{ steps.pin.outputs.sha }}
+      pin-changed: ${{ steps.pin-filter.outputs.pin || 'false' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read pinned atomic-server commit
+        id: pin
+        run: echo "sha=$(cat .atomic-server-ref)" >> "$GITHUB_OUTPUT"
+
+      # Separate from the lane filters below: a pin bump is not a lane, it
+      # decides whether this PR publishes the e2e image for its new commit.
+      - name: Did this PR change the pin?
+        id: pin-filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            pin:
+              - .atomic-server-ref
 
       # Generated rather than written out, so adding a lane to lanes.json is
       # the only edit needed to gate it.
@@ -130,14 +157,22 @@ jobs:
           echo "changed: $CHANGED"
           echo "matrix:  $matrix"
 
+  # Produces the same artifact either way (`atomic-server-binary`, the one
+  # file atomic-server/target/e2e/atomic-server), so no job downstream knows
+  # or cares where it came from. Every step after "Use the published image"
+  # is the source-build fallback and is skipped when that step found one.
   build-server:
     name: Build atomic-server (pinned)
     needs: changes
     if: needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
+      from-image: ${{ steps.image.outputs.hit }}
     steps:
       - name: Checkout atomic-plugins
         uses: actions/checkout@v4
@@ -148,7 +183,51 @@ jobs:
         id: pin
         run: echo "sha=$(cat atomic-plugins/.atomic-server-ref)" >> "$GITHUB_OUTPUT"
 
+      # Only needed while the package is private (see the header of
+      # atomic-server-e2e-image.yml). Once it is public an anonymous pull
+      # works too, including from fork PRs. Never fatal: a failed login just
+      # means the pull below fails and the job builds from source.
+      - name: Log in to ghcr.io
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The image's label has to name the pinned commit and the binary has to
+      # run. Anything else (no image yet, a pull error, a mismatch) falls
+      # through to the source build rather than failing the run.
+      - name: Use the published image for this pin, if there is one
+        id: image
+        env:
+          IMAGE: ghcr.io/ontola/atomic-server-e2e:${{ steps.pin.outputs.sha }}
+          SHA: ${{ steps.pin.outputs.sha }}
+        run: |
+          set -u
+          hit=false
+          if docker pull --platform linux/amd64 "$IMAGE"; then
+            label=$(docker image inspect --format '{{ index .Config.Labels "dev.atomicdata.atomic-server.sha" }}' "$IMAGE")
+            cid=$(docker create --platform linux/amd64 "$IMAGE")
+            mkdir -p extracted
+            docker cp "$cid:/usr/local/bin/atomic-server" extracted/atomic-server
+            docker rm "$cid" > /dev/null
+            if [ "$label" != "$SHA" ]; then
+              echo "::warning::$IMAGE is labelled '$label', not $SHA; building from source"
+            elif ! extracted/atomic-server --version; then
+              echo "::warning::the binary in $IMAGE does not run here; building from source"
+            else
+              mkdir -p atomic-server/target/e2e
+              mv extracted/atomic-server atomic-server/target/e2e/atomic-server
+              hit=true
+            fi
+          else
+            echo "No image for $SHA yet; building from source"
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+
       - name: Checkout atomic-server at the pinned commit
+        if: steps.image.outputs.hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: ontola/atomic-server
@@ -156,14 +235,17 @@ jobs:
           path: atomic-server
 
       - uses: actions/setup-node@v4
+        if: steps.image.outputs.hit != 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - uses: pnpm/action-setup@v4
+        if: steps.image.outputs.hit != 'true'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Install Rust
+        if: steps.image.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       # wasm32-wasip2 builds the server-side plugin runtime component
@@ -179,6 +261,7 @@ jobs:
       # the checkout resolves the pinned toolchain and adds it there —
       # the same thing atomic-server's own dagger pipeline does.
       - name: Add the plugin-runtime target to the pinned toolchain
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         run: |
           set -eu
@@ -190,18 +273,21 @@ jobs:
           rustup target list --installed | grep -qx wasm32-wasip2
 
       - name: Cache cargo
+        if: steps.image.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: atomic-server -> target
           prefix-key: atomic-server-${{ steps.pin.outputs.sha }}
 
       - name: Cache pnpm store
+        if: steps.image.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
           key: pnpm-${{ steps.pin.outputs.sha }}-${{ hashFiles('atomic-server/browser/pnpm-lock.yaml') }}
 
       - name: Install JS dependencies
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
@@ -218,6 +304,7 @@ jobs:
       # GitHub is the flakiness SKIP_WASM_BUILD was originally added to avoid;
       # the e2e tests need a working module, not a small one.
       - name: Build the browser WASM bundle
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         run: |
           set -eu
@@ -248,7 +335,11 @@ jobs:
       # playwright.config.ts from PLUGIN_CATALOG_URL / INTEGRATION_PROXY_URL,
       # so one unmodified binary serves every lane on its own ports and the
       # step that used to grep dist/ for the baked literals is gone with them.
+      # integrations/tooling/atomic-server-e2e/Dockerfile runs this same
+      # build for the published image. Keep the two in step
+      # (workflow.test.mjs compares the cargo and wasm-pack commands).
       - name: Build atomic-server (e2e profile, unmodified pinned checkout)
+        if: steps.image.outputs.hit != 'true'
         working-directory: atomic-server
         env:
           SKIP_WASM_BUILD: "1"
@@ -342,6 +433,7 @@ jobs:
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
             integrations/tooling/link-atomic-server.test.mjs \
+            integrations/tooling/serve.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \
             integrations/localthought/no-credentials-in-graph.test.mjs
@@ -732,6 +824,31 @@ jobs:
           [ -f serve.pid ] && kill "$(cat serve.pid)" 2>/dev/null || true
           cat serve.log || true
 
+  # A same-repo PR that bumps .atomic-server-ref publishes the e2e image for
+  # its new commit (linux/amd64 only; main's push rebuilds it for both
+  # platforms and has the last word). It runs alongside build-server, which
+  # still builds from source this once, so it adds no wall-clock time before
+  # the lanes. The next push to this PR, any other PR on the same pin and the
+  # merge queue then pull the image instead.
+  #
+  # Fork PRs never get here: their GITHUB_TOKEN can't write packages. For a
+  # same-repo branch this grants nothing its author couldn't already do by
+  # pushing a workflow of their own. The reusable workflow never overwrites
+  # an existing tag, so a PR can't replace an image main already built.
+  publish-image:
+    name: Publish the e2e image for the new pin
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request'
+      && needs.changes.outputs.pin-changed == 'true'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/atomic-server-e2e-image.yml
+    with:
+      sha: ${{ needs.changes.outputs.pin }}
+
   # The single context the `main merge queue` ruleset should require.
   #
   # Per-lane job names are dynamic (`Lane: pets (e2e)` only exists on a run
@@ -750,6 +867,7 @@ jobs:
       - lane
       - hosting-surface
       - e2e-plugin-system
+      - publish-image
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
