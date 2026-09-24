@@ -394,6 +394,7 @@ describe('an issue gone from GitHub', () => {
   it('asks before removing it from the board, and never writes to GitHub', async () => {
     const { root, store } = await mount();
     const request = store.proxy!.request.bind(store.proxy);
+
     store.proxy!.request = async r => {
       if (/\/issues\/1(\/|$)/.test(r.path)) return { status: 404, headers: {}, body: {} };
       const response = await request(r);
@@ -402,6 +403,7 @@ describe('an issue gone from GitHub', () => {
         ? { ...response, body: (response.body as { number: number }[]).filter(i => i.number !== 1) }
         : response;
     };
+
     q(root, '[data-key=sync-now]').click();
     await settle(root);
     const banner = () => q(root, '.pl-banner');

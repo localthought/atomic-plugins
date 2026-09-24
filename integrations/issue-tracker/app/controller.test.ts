@@ -333,6 +333,7 @@ group('issue-tracker controller: an issue gone from GitHub (state 13)', () => {
   function hide(store: FakeStore, n: number) {
     const request = store.proxy!.request.bind(store.proxy);
     let hidden = true;
+
     store.proxy!.request = async r => {
       const own = new RegExp(`/issues/${n}(/|$)`);
       if (hidden && own.test(r.path)) return { status: 404, headers: {}, body: {} };

@@ -242,15 +242,21 @@ export class Bridge {
    */
   async keepLocalOnly(subject) {
     const record = this.records[subject];
-    if (record?.entity !== 'issue') throw new Error(`Unknown issue: ${subject}`);
-    const number = this.identities.unbind(this.scope('remote', 'issue'), subject);
+    if (record?.entity !== 'issue')
+      throw new Error(`Unknown issue: ${subject}`);
+    const number = this.identities.unbind(
+      this.scope('remote', 'issue'),
+      subject,
+    );
     delete record.pending;
     record.localOnly = true;
+
     for (const [child, r] of Object.entries(this.records))
       if (r.entity === `comment:${subject}`) {
         this.identities.unbind(this.scope('remote', r.entity), child);
         delete r.pending;
       }
+
     await this.checkpoint();
 
     return number;
@@ -266,7 +272,8 @@ export class Bridge {
    */
   async forget(subject) {
     const record = this.records[subject];
-    if (record?.entity !== 'issue') throw new Error(`Unknown issue: ${subject}`);
+    if (record?.entity !== 'issue')
+      throw new Error(`Unknown issue: ${subject}`);
     const local = [];
 
     for (const [child, r] of Object.entries(this.records)) {

@@ -118,10 +118,10 @@ export function fakeStore({
           });
         // /app-write `save` sets every property sent and removes only the
         // ones `remove` named since the last save.
-        const next = { ...before, ...structuredClone(props) };
-        for (const property of removed) delete next[property];
+        const saved = { ...before, ...structuredClone(props) };
+        for (const property of removed) delete saved[property];
         removed.clear();
-        resources.set(subject, next);
+        resources.set(subject, saved);
         writes.push({ op: 'save', subject });
 
         return this;

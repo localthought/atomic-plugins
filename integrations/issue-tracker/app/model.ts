@@ -172,6 +172,7 @@ export function bannerFor(
         details: p.message,
         problem: p,
       };
+
     if (p.reason === 'missing') {
       const issue =
         p.missing?.side === 'remote' && p.missing.entity === 'issue';
@@ -220,6 +221,7 @@ export function bannerFor(
             problem: p,
           };
     }
+
     if (p.reason === 'rejected')
       return {
         tone: 'neg',
