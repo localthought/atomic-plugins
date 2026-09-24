@@ -328,11 +328,16 @@ Decisions for the maintainer:
   containment rule as written), or allow one shared module (for example
   `integrations/plugin-ui/`)? This design assumes copies.
 - **Where to persist last-sync metadata and the option dictionary.**
-  Proposed: two string properties on the app's data table resource
-  (`notion-last-sync`, JSON; `notion-options`, JSON mapping option id to
-  name and colour). Alternative: dedicated resources under the app. Either
-  needs the host to let the app write there; the README already lists
-  writing Properties as not verified.
+  *Decided* (#144): one JSON text property, `notion-sync-record`, on the
+  app's data table resource. It holds the last sync's time, duration and
+  counts, and per database its schema in Notion's order (property names,
+  types, option names and colours) and its grouped warnings, so the option
+  dictionary is part of the same record rather than a second property. Its
+  Property sits in the app's ontology but not in the row class, so it is
+  never a table column. This follows the decision that plugin data and sync
+  state live as resources on the drive. The pinned host accepts the write
+  (the #144 e2e reloads and reads it back). A sync that fails keeps the
+  previous record.
 - **Auto-sync-on-open threshold**: 15 minutes proposed.
 - **"Choose pages in Notion".** Whether re-running `store.proxy.connect`
   for an existing connection re-opens Notion's page picker is not verified
