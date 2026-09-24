@@ -53,6 +53,7 @@ mutate the original external subjects.
    the extra row is a sentinel that rejects oversized results instead of silently
    taking a partial snapshot. Input cannot prove which query generated it: do
    not provide results truncated by a smaller limit or an intermediate client.
+
 2. Configure and run the sandbox job with an actual writable Atomic parent:
 
    ```json
@@ -66,6 +67,7 @@ mutate the original external subjects.
    ```
 
    Review/apply the proposed create intent and retain its assigned Atomic subject.
+
 3. For export, use the following config and review/apply the resulting resource:
 
    ```json
