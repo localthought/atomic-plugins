@@ -157,6 +157,24 @@ offer an update. No host does this at the current pin
 `package.json` `version` (and the matching catalog entry) whenever an
 integration's shipped `plugin.js` changes.
 
+The same card carries `requires` when the package's manifest is version 3 or
+needs the `plugin-routes` feature: the sorted list the host derives from the
+manifest (ontola/atomic-server#1732), for example `["persistent-host",
+"plugin-routes:read-only", "public-origin", "wasm-sandbox"]`. Nobody writes
+it by hand. `tooling/catalog-requires.mjs` reads the `manifest` each
+`integrations/<id>/plugin.js` exports and derives the list with
+`tooling/manifest-http.mjs`, a port of the host's rules that runs the host's
+own shared fixtures (`tooling/fixtures/plugin-manifest/`, copied from the
+commit named in `source.json` there):
+
+```sh
+node integrations/tooling/catalog-requires.mjs write   # after a manifest change
+node integrations/tooling/catalog-requires.mjs check   # what CI checks
+```
+
+`certify.mjs` refuses a gated package whose card lacks it or disagrees. No
+package here has a version-3 manifest yet, so no card carries it today.
+
 ## Publishing a drive app
 
 A drive app (an `integrations/<id>/app/` whose `build.mjs` builds one ES
@@ -351,9 +369,10 @@ list (ontola/atomic-server#1535) from these declarations instead of the
 author writing it: a cron/query trigger implies `persistent-host`, non-empty
 `secrets` imply `host-credentials`, and any route or well-known claim
 implies `public-origin` and `plugin-routes:<level>`. That derivation is
-planned in ontola/atomic-server#1712; this repo's catalog and certification
-support for it is [#134](https://github.com/ontola/atomic-plugins/issues/134).
-Neither exists yet.
+planned in ontola/atomic-server#1712 (implemented in #1732, not yet pinned);
+this repo's catalog and certification support for it is
+[#134](https://github.com/ontola/atomic-plugins/issues/134), described at the
+end of the next section.
 
 ### Public endpoints need a gated server
 
@@ -399,6 +418,29 @@ build. A package that needs a gated surface should keep its ungated parts
 atomic.place. Until ontola/atomic-server#1711 and #1712 are merged and
 pinned, no manifest in this repo can declare a route, and no gated package
 here can be tested against a real host.
+
+**Tooling for gated packages** ([#134](https://github.com/ontola/atomic-plugins/issues/134))
+is in place for when they are. It was written against
+ontola/atomic-server#1726 (the gates, for #1711) and #1732 (manifest v3, for
+#1712), which are not in `.atomic-server-ref` yet:
+
+- **Catalog.** A gated package's card carries the derived `requires` (see
+  [Version and catalog entry](#version-and-catalog-entry)).
+- **Certification.** `certify.mjs` refuses a gated package without that
+  `requires`, and runs its sandbox tests on a build with
+  `light,wasm-plugins,plugin-routes`, recording the feature in the report.
+  `tooling/evidence.mjs` accepts evidence for a gated package only when the
+  report also records the `--plugin-routes` level the server ran at, at least
+  the one the manifest needs. Cargo tests are not a running server, so
+  `certify.mjs` never records a level: a gated package's capabilities stay
+  "declared" until live evidence at that level exists.
+- **Lanes.** A lane can set `pluginRoutes` in `lanes.json` to a level (or a
+  list of levels); its live and e2e tiers then run on a build with the
+  feature, once per level (see [PARALLEL_LANES.md](PARALLEL_LANES.md)).
+  The `plugin-routes` lane uses that to check, against a real host, that
+  pinning `tooling/fixtures/gated-plugin/` is refused at `off` and allowed at
+  `read-only`. It does not test a route answering, because no host serves
+  routes yet (ontola/atomic-server#1714, #1715).
 
 ## Building an uploader plugin
 

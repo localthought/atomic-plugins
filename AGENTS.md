@@ -309,6 +309,27 @@ lanes.
 - Delete old SHAs with `git -C ~/gh/ontola/atomic-server worktree remove`
   once no pin refers to them.
 
+#### The plugin-routes feature build
+
+A lane that sets `pluginRoutes` in `integrations/lanes.json` (the
+`plugin-routes` lane does) needs the same SHA built with
+`--features wasm-plugins,plugin-routes`, which the build above leaves out on
+purpose. It lives next to it, at
+`~/.cache/atomic-plugins/atomic-server/<sha>-plugin-routes`, where `<sha>` is
+the commit `ATOMIC_SERVER_CHECKOUT` is at. `run-lane.mjs` and `serve.mjs`
+build it there on first use (`integrations/tooling/server-build.mjs`, about
+as long as the default build), from `~/gh/ontola/atomic-server` or
+`ATOMIC_SERVER_REPO`. To use a binary built elsewhere, set
+`ATOMIC_SERVER_ROUTES_BINARY`.
+
+- **Build lock.** The builder holds `<dir>.lock/` (created with `mkdir`, with
+  its pid and host in `owner.json`) until the build ends. Another session
+  that finds it waits and then uses the finished binary. A lock whose pid is
+  gone on this host is removed as stale. Take the same lock if you build a
+  `<sha>-plugin-routes` directory by hand.
+- Read-only once built, like `<sha>`. `ATOMIC_SERVER_IMAGE` does not apply
+  to these lanes: the published image is the default build.
+
 #### Or run the published image instead of building
 
 CI publishes the same build once per pinned SHA as
