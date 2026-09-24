@@ -61,7 +61,11 @@ interface ClockifyFixture {
     }>;
     /** Every provider request, as `METHOD /path?query`. */
     requests: string[];
+    /** Every time-entry write, with its parsed JSON body. */
+    writes: Array<{ method: string; path: string; body: unknown }>;
   };
+  /** The test-side driver behind `POST /__fixture/clockify`. */
+  control(command: { action: string; [key: string]: unknown }): unknown;
 }
 
 export function mockProxy(options?: { frontendOrigin?: string }): Server & {

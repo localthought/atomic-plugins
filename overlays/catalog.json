@@ -130,7 +130,8 @@
       "overlays": [
         "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/crud-causality-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/auth-overlay.yaml",
-        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/pagination-overlay.yaml"
+        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/pagination-overlay.yaml",
+        "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/time-entry-write-overlay.yaml"
       ]
     }
   ]

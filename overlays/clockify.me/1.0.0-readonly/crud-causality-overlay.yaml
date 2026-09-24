@@ -171,6 +171,37 @@ actions:
                   schema: {$ref: '#/components/schemas/Member'}
           x-crud: {action: read, resource: member}
 
+      # --- Setup reads (ontola/atomic-plugins#123) ---------------------
+      # The timesheets drive app's setup asks which account the API key
+      # belongs to and which workspaces it can see, then stores only the
+      # chosen ids. Neither is a CRUD resource here (no x-crud): the account
+      # is not a tenant identity selection, and nothing is synced from
+      # these lists.
+      /v1/user:
+        get:
+          operationId: getClockifyCurrentUser
+          summary: Read the user the API key belongs to
+          responses:
+            '200':
+              description: The API key's user.
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/CurrentUser'}
+      /v1/workspaces:
+        get:
+          operationId: listClockifyWorkspaces
+          summary: List the workspaces the API key's user belongs to
+          description: >-
+            One unpaged list (Clockify documents no page parameters here).
+          responses:
+            '200':
+              description: The user's workspaces.
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items: {$ref: '#/components/schemas/Workspace'}
+
   # --- New schemas, since the base OAD only defines TimeEntry/TimeInterval.
   # Field lists are representative (id/name plus what a reconciliation lens
   # needs to display a name), assembled from third-party client libraries
@@ -203,3 +234,18 @@ actions:
             description: Workspace membership status, e.g. ACTIVE,
               PENDING_EMAIL_VERIFICATION, DECLINED.
           profilePicture: {type: string, nullable: true}
+      CurrentUser:
+        type: object
+        required: [id]
+        properties:
+          id: {type: string}
+          name: {type: string}
+          email: {type: string}
+          activeWorkspace: {type: string}
+          defaultWorkspace: {type: string}
+      Workspace:
+        type: object
+        required: [id, name]
+        properties:
+          id: {type: string}
+          name: {type: string}

@@ -814,6 +814,57 @@ mod tests {
                 "/calendar/v3/calendars/team%40example.com/events/id"
             )
             .is_some());
+        // atomic-plugins#123 M0: the Clockify time-entry write overlay. The
+        // document's server URL is https://api.clockify.me/api, so request
+        // paths carry the /api prefix.
+        let entry = "/api/v1/workspaces/ws/time-entries/entry-1";
+        for method in ["GET", "PUT", "DELETE"] {
+            assert!(
+                catalog.allows("clockify", method, entry).is_some(),
+                "{method}"
+            );
+        }
+        assert!(catalog.allows("clockify", "PATCH", entry).is_none());
+        assert!(catalog
+            .allows("clockify", "POST", "/api/v1/workspaces/ws/time-entries")
+            .is_some());
+        // The timesheets app's setup reads (read overlays, not the write one).
+        for path in ["/api/v1/user", "/api/v1/workspaces"] {
+            assert!(catalog.allows("clockify", "GET", path).is_some(), "{path}");
+            assert!(catalog.allows("clockify", "POST", path).is_none(), "{path}");
+            assert!(catalog
+                .validate_request("clockify", "GET", path, None, None, false)
+                .is_ok());
+        }
+        let list = "/api/v1/workspaces/ws/user/u/time-entries";
+        assert!(catalog.allows("clockify", "GET", list).is_some());
+        assert!(catalog.allows("clockify", "POST", list).is_none());
+        // Writes carry a JSON body; the delete does not accept one.
+        for (method, path) in [
+            ("POST", "/api/v1/workspaces/ws/time-entries"),
+            ("PUT", entry),
+        ] {
+            assert!(catalog
+                .validate_request(
+                    "clockify",
+                    method,
+                    path,
+                    None,
+                    Some("application/json"),
+                    true
+                )
+                .is_ok());
+            assert!(catalog
+                .validate_request("clockify", method, path, None, None, false)
+                .is_err());
+        }
+        assert!(catalog
+            .validate_request("clockify", "DELETE", entry, None, None, false)
+            .is_ok());
+        assert_eq!(
+            catalog.required_headers("clockify", "PUT", entry),
+            Some(vec![])
+        );
     }
 
     /// Tests a specific, separately identified catalog revision (not the
