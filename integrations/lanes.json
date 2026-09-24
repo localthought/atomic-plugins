@@ -44,6 +44,13 @@
       "e2e": ["integrations/money/e2e/money.spec.ts"]
     },
     {
+      "id": "fediverse",
+      "index": 13,
+      "platforms": [],
+      "tiers": ["contract"],
+      "note": "Single-actor ActivityPub scaffold (#137, named activitypub in the assessment). Planning contract only; no protocol implementation or interoperability evidence."
+    },
+    {
       "id": "notion",
       "index": 4,
       "platforms": ["notion"],
