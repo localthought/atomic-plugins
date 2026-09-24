@@ -206,6 +206,15 @@ writes them. A file that is already on `main` is never changed or deleted;
 CI's `apps.mjs check --published origin/main` enforces that. See
 [Publishing a drive app](integrations/README.md#publishing-a-drive-app).
 
+Drive app bundles are minified with esbuild, JS and CSS: `minify: true` in
+`app/build.mjs`, and embedded CSS goes through
+`esbuild.transform(css, { loader: 'css', minify: true })`. Each app's
+build-test size limit (`app/build.test.ts`) is the measured minified size
+plus about 10%, with a comment stating the measured size and the date. No
+silent headroom: when a change needs a higher limit, re-measure and raise the
+limit and its comment in the same commit. See
+[Bundle size](integrations/README.md#bundle-size).
+
 ## Style notes for docs and code in `integrations/`
 
 - Prose here is precise and hedged, not marketing copy: state exact limits

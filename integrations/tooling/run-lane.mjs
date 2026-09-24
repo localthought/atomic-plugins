@@ -24,6 +24,11 @@ import { resolve } from 'node:path';
 import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
 import { bringUp, mockProxyOrigin } from './serve.mjs';
 import { layoutProblems } from './link-atomic-server.mjs';
+import {
+  installMissing,
+  pluginDependencyDirs,
+  sharedDependencyDirs,
+} from './deps.mjs';
 
 // A warning, not a failure: testing against another atomic-server commit on
 // purpose (e.g. before bumping .atomic-server-ref) is legitimate, but doing
@@ -58,6 +63,20 @@ if (!tiers.length) {
     `Lane ${lane.id} declares no tiers${lane.note ? ` — ${lane.note}` : ''}`,
   );
   process.exit(0);
+}
+
+// Locally, this lane's own lockfiles (and a shared package its `paths`
+// import from source) may not be installed yet. CI installs them before this
+// script runs, so there every folder already has node_modules and nothing
+// happens (deps.mjs).
+try {
+  installMissing([
+    ...pluginDependencyDirs(lane.id),
+    ...sharedDependencyDirs(lane.paths),
+  ]);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
 }
 
 /**

@@ -9,6 +9,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { installMissing, pluginDependencyDirs } from './deps.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export function bundleArguments(entry) {
@@ -181,6 +182,13 @@ export function certify({
     packages = discover();
     if (only && !packages.some(p => p.id === only))
       throw new Error(`Unknown integration: ${only}`);
+    // Locally, a plugin that pins its own npm packages may not have them
+    // installed yet; CI already has, so this is a no-op there (deps.mjs).
+    installMissing(
+      packages
+        .filter(pkg => !only || pkg.id === only)
+        .flatMap(pkg => pluginDependencyDirs(pkg.id)),
+    );
   } catch (e) {
     writeFileSync(
       resolve(output, 'report.json'),

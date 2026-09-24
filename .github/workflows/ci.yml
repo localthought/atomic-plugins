@@ -432,6 +432,7 @@ jobs:
           node --test \
             integrations/tooling/apps.test.mjs \
             integrations/tooling/certify.test.mjs \
+            integrations/tooling/deps.test.mjs \
             integrations/tooling/dev-server.test.mjs \
             integrations/tooling/lanes.test.mjs \
             integrations/tooling/link-atomic-server.test.mjs \

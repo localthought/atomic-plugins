@@ -502,10 +502,35 @@ that it has no path, query, fragment or credentials. The server signs
 requests to exactly that origin as the installed plugin's app agent. This
 option comes from
 [atomic-server#1702](https://github.com/ontola/atomic-server/pull/1702),
-which was **not yet merged** when this was written. Check your Atomic
-Server's `--help` for it. What the server does when the option is unset, and
-whether that will default to atomic.place's proxy, is not settled by that
-PR.
+which is in the atomic-server commit this repository pins
+(`.atomic-server-ref`) but was not yet merged upstream when this was
+written. Check your Atomic Server's `--help` for it.
+
+- **Unset, today:** with #1702, if neither `--integration-proxy-url` nor
+  `ATOMIC_INTEGRATION_PROXY_URL` is set, no proxy is configured, and plugins
+  cannot reach one. Set it to use any proxy at all.
+- **Unset, later (planned, not yet released):** the default is planned to
+  become atomic.place's proxy, `https://integrations.atomic.place`, in the
+  same change that switches the data browser's build-time default (below)
+  away from `https://localthought.io`. From then on: if unset, the server
+  uses atomic.place's proxy (from version **TODO: fill in the atomic-server
+  release that ships this default**); set this flag to use your own.
+
+Which addresses the proxy may be on: the server refuses outgoing requests to
+private, loopback and link-local addresses, and before
+[atomic-server#1731](https://github.com/ontola/atomic-server/pull/1731) it
+exempted the proxy only when `--integration-proxy-url` was a literal
+loopback address or `localhost`. With #1731, a URL whose origin (scheme,
+host and port) equals exactly the configured proxy origin may resolve to a
+loopback or private address (RFC 1918, CGNAT `100.64.0.0/10`, IPv6 ULA
+`fc00::/7`, and their IPv4-mapped forms). That allows a proxy on your LAN
+(`http://proxy.lan:8787`) or on the Docker host
+(`http://host.docker.internal:8787`). Link-local addresses (including cloud
+metadata endpoints such as `169.254.169.254`), unspecified and multicast
+addresses are still refused, even for the proxy. Every other destination
+keeps the full checks. #1731 was **open, and not in this repository's
+pinned atomic-server commit**, when this was written; without it, use a
+public address or a literal loopback address for the proxy.
 
 **The data browser** (where users click *Connect*): open **Settings →
 Integrations** and enter the proxy's origin (HTTPS, or loopback HTTP for
@@ -649,8 +674,11 @@ self-hosting fits your needs:
 - [SECURITY.md](SECURITY.md#not-verified) lists what is unverified about the
   protocol itself. For example, it states that no real client had signed
   against the proxy yet.
-- The Atomic Server option (atomic-server#1702) was unmerged when this was
-  written. The data-browser setting was described from the atomic-server
+- The Atomic Server option (atomic-server#1702) was unmerged upstream when
+  this was written, though in this repository's pinned atomic-server commit;
+  the private-address rule (atomic-server#1731) was open and not in the pin.
+  The planned default (`https://integrations.atomic.place`) is not
+  released. The data-browser setting was described from the atomic-server
   source on its `feat/plugin-debug` branch
   (`browser/data-browser/src/components/Settings/IntegrationSettings.tsx`
   and `browser/data-browser/src/helpers/integrationProxy.ts`), not from a
