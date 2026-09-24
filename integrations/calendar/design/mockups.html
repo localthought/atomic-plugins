@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar Plugin Mockups</title>
+<style>
+:root{
+  --pl-bg:var(--t-color-bg-body,#ffffff);
+  --pl-surface:var(--t-color-bg-1,#f5f6f8);
+  --pl-border:var(--t-color-bg-2,#e3e6ea);
+  --pl-text:var(--t-color-text,#1b1e22);
+  --pl-muted:var(--t-color-text-light,#626a73);
+  --pl-accent:var(--t-color-main,#1a6ef5);
+  --pl-neg:var(--t-color-alert,#c62828);
+  --pl-warn:var(--t-color-warning,#9a6200);
+  --pl-pos:#1f7a45;
+  --pl-radius:var(--t-radius,8px);
+  --pl-font:var(--t-font-family,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif);
+  --tint:14%;
+  --page:#eceef1; --page-ink:#1b1e22; --page-muted:#5d656e; --page-rule:#d5d9de;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pl-bg:#15171a;--pl-surface:#1d2024;--pl-border:#2c3036;--pl-text:#e8eaed;--pl-muted:#9aa2ab;
+    --pl-accent:#6ea3ff;--pl-neg:#ff7b72;--pl-warn:#e3b341;--pl-pos:#56c98a;--tint:22%;
+    --page:#0e1012;--page-ink:#e8eaed;--page-muted:#9aa2ab;--page-rule:#2c3036;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --pl-bg:#15171a;--pl-surface:#1d2024;--pl-border:#2c3036;--pl-text:#e8eaed;--pl-muted:#9aa2ab;
+  --pl-accent:#6ea3ff;--pl-neg:#ff7b72;--pl-warn:#e3b341;--pl-pos:#56c98a;--tint:22%;
+  --page:#0e1012;--page-ink:#e8eaed;--page-muted:#9aa2ab;--page-rule:#2c3036;color-scheme:dark;
+}
+/* forced themes for side-by-side comparison frames */
+.force-dark{--pl-bg:#15171a;--pl-surface:#1d2024;--pl-border:#2c3036;--pl-text:#e8eaed;--pl-muted:#9aa2ab;
+  --pl-accent:#6ea3ff;--pl-neg:#ff7b72;--pl-warn:#e3b341;--pl-pos:#56c98a;--tint:22%;color-scheme:dark}
+.force-light{--pl-bg:#ffffff;--pl-surface:#f5f6f8;--pl-border:#e3e6ea;--pl-text:#1b1e22;--pl-muted:#626a73;
+  --pl-accent:#1a6ef5;--pl-neg:#c62828;--pl-warn:#9a6200;--pl-pos:#1f7a45;--tint:14%;color-scheme:light}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.doc{max-width:1240px;margin:0 auto;padding-inline:16px;padding-block:32px 64px}
+.doc-hd{max-width:68ch;display:grid;gap:8px;margin-bottom:28px}
+.doc-hd h1{margin:0;font-size:26px;letter-spacing:-.01em;text-wrap:balance}
+.doc-hd p{margin:0;color:var(--page-muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--page-muted);margin-top:6px}
+.legend code{font-size:11.5px}
+.toc{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 32px;padding:0;list-style:none}
+.toc a{display:inline-block;padding:3px 10px;border:1px solid var(--page-rule);border-radius:999px;color:var(--page-ink);text-decoration:none;font-size:12.5px}
+.toc a:hover{border-color:var(--page-muted)}
+.st{margin-block:0 44px;display:grid;gap:12px}
+.st-hd{display:grid;gap:2px;max-width:80ch}
+.st-hd h2{margin:0;font-size:16px}
+.st-hd h2 span{color:var(--page-muted);font-weight:500;margin-right:6px;font-variant-numeric:tabular-nums}
+.st-hd p{margin:0;color:var(--page-muted);font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.frame{flex:none;max-width:100%;overflow-x:auto;border-radius:10px;box-shadow:0 0 0 1px var(--page-rule),0 6px 24px rgb(0 0 0 / .06)}
+.frame-cap{font-size:11.5px;color:var(--page-muted);margin:6px 2px 0;font-variant-numeric:tabular-nums}
+.fw{display:grid}
+
+/* ---------- plugin app ---------- */
+.app{font-family:var(--pl-font);font-size:14px;line-height:1.45;background:var(--pl-bg);color:var(--pl-text);
+  display:flex;flex-direction:column;min-width:0}
+.app button,.app input,.app textarea{font:inherit;color:inherit}
+.app :focus-visible{outline:2px solid var(--pl-accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.muted{color:var(--pl-muted)}
+
+.hd{display:flex;align-items:center;gap:12px;padding:10px 14px;flex-wrap:wrap}
+.hd-id{display:flex;align-items:center;gap:8px}
+.hd-id h1{margin:0;font-size:16px;font-weight:650;letter-spacing:-.005em}
+.mark{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:color-mix(in srgb,var(--pl-accent) 12%,transparent);color:var(--pl-accent)}
+.hd-chips{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.hd-act{margin-left:auto;display:flex}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 8px;border:1px solid var(--pl-border);border-radius:999px;font-size:12.5px;background:var(--pl-bg);cursor:pointer;white-space:nowrap}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
+.sw.lg{width:12px;height:12px}
+.sw-stack{display:inline-flex}
+.sw-stack i{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--pl-bg)}
+.sw-stack i+i{margin-left:-3px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;font-size:12.5px;color:var(--pl-muted);background:var(--pl-surface);border:1px solid transparent;white-space:nowrap;cursor:default}
+button.pill{cursor:pointer}
+.pill-accent{color:var(--pl-accent);background:color-mix(in srgb,var(--pl-accent) 10%,var(--pl-bg))}
+.pill-warn{color:var(--pl-warn);background:color-mix(in srgb,var(--pl-warn) 12%,var(--pl-bg));border-color:color-mix(in srgb,var(--pl-warn) 30%,transparent)}
+.pill-neg{color:var(--pl-neg);background:color-mix(in srgb,var(--pl-neg) 10%,var(--pl-bg))}
+.pill-warn::before{content:"!";font-weight:800}
+.spin{width:10px;height:10px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--pl-radius);border:1px solid var(--pl-border);background:var(--pl-bg);cursor:pointer;font-weight:550;white-space:nowrap;text-decoration:none;color:var(--pl-text)}
+.btn:hover{background:var(--pl-surface)}
+.btn-primary{background:var(--pl-accent);border-color:var(--pl-accent);color:#fff}
+.force-dark .btn-primary,.btn-primary.on-dark{color:#0c1320}
+.btn-primary:hover{background:color-mix(in srgb,var(--pl-accent) 88%,#000)}
+.btn-primary[disabled]{opacity:.45;cursor:not-allowed}
+.btn-ghost{border-color:transparent;background:transparent;color:var(--pl-accent)}
+.btn-sm{height:28px;padding:0 10px;font-size:13px}
+.btn-lg{height:40px;padding:0 18px;font-size:14.5px}
+.btn-neg{color:var(--pl-neg)}
+.icon-btn{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:6px;border:0;background:transparent;color:var(--pl-muted);cursor:pointer;font-size:18px;line-height:1}
+.icon-btn:hover{background:var(--pl-surface);color:var(--pl-text)}
+.icon-btn.sm{width:24px;height:24px;font-size:15px}
+
+.cbar{position:relative;display:flex;align-items:center;gap:8px;padding:6px 14px;border-block:1px solid var(--pl-border);background:var(--pl-surface);font-size:12.5px;color:var(--pl-muted)}
+.cbar b{color:var(--pl-text);font-weight:550}
+.cbar .icon-btn{margin-left:auto;width:26px;height:26px}
+.gmark{display:inline-flex}
+.cbar.is-busy::after{content:"";position:absolute;left:0;bottom:-1px;height:2px;width:35%;background:var(--pl-accent);animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{0%{left:-35%}100%{left:100%}}
+@media (prefers-reduced-motion:reduce){.spin,.cbar.is-busy::after{animation:none}.cbar.is-busy::after{width:100%;left:0;opacity:.4}}
+
+.shell{display:flex;min-height:0;position:relative}
+.side{width:232px;flex:none;grid-template-columns:minmax(0,1fr);border-right:1px solid var(--pl-border);padding:12px 12px 16px;display:grid;gap:18px;align-content:start}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.mm-hd{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.mm-g{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11.5px;font-variant-numeric:tabular-nums;row-gap:2px}
+.mm-w{color:var(--pl-muted);font-weight:600;font-size:10.5px;padding:2px 0}
+.mm-d,.mm-o{padding:3px 0;border-radius:6px}
+.mm-o{color:color-mix(in srgb,var(--pl-muted) 55%,transparent)}
+.mm-d.in-wk{background:var(--pl-surface)}
+.mm-d.today{background:var(--pl-accent);color:#fff;font-weight:700}
+.force-dark .mm-d.today{color:#0c1320}
+.side-sec h3{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--pl-muted)}
+.cals{list-style:none;margin:0;padding:0;display:grid;gap:2px;grid-template-columns:minmax(0,1fr)}
+.cals label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;font-size:13px;cursor:pointer}
+.cals label:hover{background:var(--pl-surface)}
+.cals input{accent-color:var(--pl-accent);margin:0}
+.cals span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-style:normal;font-size:10.5px;padding:1px 6px;border-radius:999px;background:var(--pl-surface);color:var(--pl-muted);border:1px solid var(--pl-border);white-space:nowrap}
+.note p{margin:0;font-size:12.5px;color:var(--pl-muted)}
+.note a,.app a{color:var(--pl-accent)}
+
+.tb{display:flex;align-items:center;gap:8px;padding:10px 14px;flex-wrap:wrap}
+.tb-nav{display:flex}
+.tb-title{margin:0 8px 0 2px;font-size:16px;font-weight:620;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.segs{display:inline-flex;padding:2px;background:var(--pl-surface);border-radius:8px;border:1px solid var(--pl-border)}
+.seg{border:0;background:transparent;height:26px;padding:0 10px;border-radius:6px;font-size:12.5px;color:var(--pl-muted);cursor:pointer}
+.seg.on{background:var(--pl-bg);color:var(--pl-text);font-weight:600;box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+
+/* week grid */
+.wk{--row:44px;--gut:52px;display:grid;border-top:1px solid var(--pl-border)}
+.wk-head,.wk-all{display:grid;grid-template-columns:var(--gut) repeat(var(--n),1fr)}
+.wk-tz{font-size:10.5px;color:var(--pl-muted);padding:6px 6px 0 0;text-align:right}
+.wk-dh{display:flex;align-items:baseline;gap:6px;padding:8px 8px 6px;font-size:12px;color:var(--pl-muted);border-left:1px solid var(--pl-border)}
+.wk-dh b{font-size:17px;color:var(--pl-text);font-weight:600;font-variant-numeric:tabular-nums}
+.wk-dh.is-today span{color:var(--pl-accent);font-weight:600}
+.wk-dh.is-today b{background:var(--pl-accent);color:#fff;border-radius:999px;min-width:28px;text-align:center;padding:1px 6px}
+.force-dark .wk-dh.is-today b{color:#0c1320}
+.wk-all{border-bottom:1px solid var(--pl-border);padding-block:4px;row-gap:3px;grid-auto-rows:22px}
+.wk-all .wk-tz{grid-row:1 / span 2;padding-top:3px}
+.ad{border:0;border-radius:5px;margin:0 3px;padding:0 8px;height:22px;text-align:left;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
+  background:color-mix(in srgb,var(--c) calc(var(--tint) + 6%),var(--pl-bg));box-shadow:inset 3px 0 0 var(--c)}
+.wk-body{display:grid;grid-template-columns:var(--gut) repeat(var(--n),1fr);position:relative;
+  background-image:repeating-linear-gradient(to bottom,var(--pl-border) 0 1px,transparent 1px var(--row));background-position:0 -1px}
+.wk-hours .wk-h{height:var(--row);position:relative}
+.wk-h span{position:absolute;right:8px;top:-8px;font-size:10.5px;color:var(--pl-muted);font-variant-numeric:tabular-nums}
+.wk-h:first-child span{visibility:hidden}
+.wk-col{position:relative;border-left:1px solid var(--pl-border);height:calc(var(--row) * 10)}
+.wk-col.is-today{background:color-mix(in srgb,var(--pl-accent) 4%,transparent)}
+.wk-col ul{list-style:none;margin:0;padding:0}
+.ev{position:absolute;margin-left:2px;display:flex;flex-direction:column;gap:1px;align-items:flex-start;text-align:left;border:0;border-radius:5px;padding:3px 6px 3px 8px;overflow:hidden;cursor:pointer;
+  background:color-mix(in srgb,var(--c) var(--tint),var(--pl-surface));box-shadow:inset 3px 0 0 var(--c);font-size:12px;line-height:1.3}
+.ev:hover{background:color-mix(in srgb,var(--c) calc(var(--tint) + 8%),var(--pl-surface))}
+.ev-t{font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ev-m{color:var(--pl-muted);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ev-short{flex-direction:row;align-items:center;padding-block:0}
+.ev-short .ev-t{-webkit-line-clamp:1;font-size:11px}
+.ev-edited{outline:1.5px dashed color-mix(in srgb,var(--pl-accent) 70%,transparent);outline-offset:-1.5px}
+.ev-dot{position:absolute;right:5px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--pl-accent)}
+.ev-badge{position:absolute;right:4px;top:4px;width:15px;height:15px;border-radius:50%;background:var(--pl-warn);color:var(--pl-bg);font-size:10.5px;font-weight:800;display:grid;place-items:center}
+.now{position:absolute;left:-1px;right:0;height:2px;background:var(--pl-neg);z-index:2}
+.now::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--pl-neg)}
+
+/* drawer */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:380px;max-width:100%;background:var(--pl-bg);border-left:1px solid var(--pl-border);box-shadow:-12px 0 32px rgb(0 0 0 / .12);
+  padding:14px 18px 16px;display:flex;flex-direction:column;gap:14px;z-index:5}
+.drawer.static{position:static;box-shadow:none;border-left:0;height:auto}
+.dr-hd{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--pl-muted)}
+.dr-hd .icon-btn{margin-left:auto;font-size:14px}
+.drawer h2{margin:0;font-size:20px;line-height:1.25;font-weight:650;text-wrap:balance}
+.dr-f{margin:0;display:grid;gap:12px}
+.dr-f div{display:grid;grid-template-columns:64px 1fr;gap:8px}
+.dr-f dt{font-size:12px;color:var(--pl-muted);padding-top:1px}
+.dr-f dd{margin:0;display:grid}
+.dr-f dd b{font-variant-numeric:tabular-nums;font-weight:600}
+.dr-f .muted{font-size:12.5px}
+.dr-hint{margin:0;font-size:12.5px;color:var(--pl-muted);padding:8px 10px;background:var(--pl-surface);border-radius:6px}
+.dr-ft{margin-top:auto;display:flex;justify-content:space-between;gap:8px;padding-top:12px;border-top:1px solid var(--pl-border)}
+.form{display:flex;flex-direction:column;gap:12px;flex:1}
+.fld{display:grid;gap:4px;font-size:12px;color:var(--pl-muted)}
+.fld input,.fld textarea{height:34px;border:1px solid var(--pl-border);border-radius:6px;padding:0 10px;background:var(--pl-bg);font-size:14px;color:var(--pl-text)}
+.fld textarea{height:auto;padding:8px 10px;resize:vertical}
+.fld input:focus,.fld textarea:focus{outline:2px solid var(--pl-accent);outline-offset:-1px;border-color:transparent}
+.fld-2{display:grid;gap:10px}
+.fld-2 .fld{grid-template-columns:1fr 76px;column-gap:6px}
+.fld-2 .fld span{grid-column:1 / -1}
+.fld input.t{font-variant-numeric:tabular-nums;text-align:center}
+.fld input.is-bad{border-color:var(--pl-neg);box-shadow:0 0 0 1px var(--pl-neg)}
+.err{margin:-6px 0 0;color:var(--pl-neg);font-size:12.5px;font-weight:550}
+.sw-row{display:flex;align-items:center;gap:8px;font-size:13px}
+.sw-row input{appearance:none;width:32px;height:18px;border-radius:999px;background:var(--pl-border);position:relative;margin:0;cursor:pointer}
+.sw-row input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--pl-bg);box-shadow:0 1px 2px rgb(0 0 0 / .25)}
+.saved{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:color-mix(in srgb,var(--pl-accent) 8%,var(--pl-bg));border:1px solid color-mix(in srgb,var(--pl-accent) 25%,transparent)}
+.saved div{display:grid;flex:1;font-size:12.5px;color:var(--pl-muted)}
+.saved b{color:var(--pl-text);font-size:13px}
+.dot-accent{width:8px;height:8px;border-radius:50%;background:var(--pl-accent);flex:none}
+
+/* agenda */
+.narrow .hd{padding:10px 12px;gap:8px}
+.narrow .hd-chips{flex:none;order:3;width:100%}
+.narrow .hd-act{margin-left:auto}
+.narrow .cbar{padding-inline:12px}
+.narrow .cbar-last,.narrow .cbar-sep{display:none}
+.tb-narrow{padding:10px 12px 6px}
+.strip{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 8px 8px;border-bottom:1px solid var(--pl-border)}
+.st-d{display:grid;justify-items:center;gap:1px;border:0;background:transparent;border-radius:10px;padding:6px 0 5px;cursor:pointer;min-height:48px}
+.st-d span{font-size:10.5px;color:var(--pl-muted);font-weight:600}
+.st-d b{font-size:15px;font-variant-numeric:tabular-nums;font-weight:600}
+.st-d i{width:4px;height:4px;border-radius:50%;background:var(--pl-muted)}
+.st-d i.off{visibility:hidden}
+.st-d.on{background:var(--pl-accent)}
+.st-d.on span,.st-d.on b{color:#fff}.st-d.on i{background:#fff}
+.force-dark .st-d.on span,.force-dark .st-d.on b{color:#0c1320}.force-dark .st-d.on i{background:#0c1320}
+.agenda{display:grid}
+.ag-dh{position:sticky;top:0;margin:0;display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px 4px;font-size:13px;font-weight:650;background:var(--pl-bg)}
+.ag-dh span{font-size:12px;color:var(--pl-muted);font-weight:500}
+.ag-dh.is-today{color:var(--pl-accent)}
+.ag-day ul{list-style:none;margin:0;padding:0 4px 6px}
+.ag-row{width:100%;display:flex;align-items:flex-start;gap:10px;border:0;background:transparent;text-align:left;padding:8px;border-radius:8px;min-height:48px;cursor:pointer}
+.ag-row:hover{background:var(--pl-surface)}
+.ag-row .sw{margin-top:5px}
+.ag-time{width:44px;flex:none;display:grid;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.35}
+.ag-time small{font-weight:400;color:var(--pl-muted);font-size:11.5px}
+.ag-main{display:grid;min-width:0;gap:1px}
+.ag-main b{font-weight:600;font-size:14px}
+.ag-main>span{font-size:12.5px;color:var(--pl-muted)}
+.tagline{font-size:11px;font-weight:650;letter-spacing:.02em}
+.tagline.accent{color:var(--pl-accent)}.tagline.warn{color:var(--pl-warn)}
+.ag-none{padding:6px 12px 10px 66px;color:var(--pl-muted);font-size:12.5px}
+
+/* cards: empty, connect */
+.center{display:grid;place-items:center;padding:36px 20px;min-height:360px}
+.card{width:100%;max-width:400px;display:grid;gap:14px;text-align:center;justify-items:center}
+.card h2{margin:0;font-size:19px;font-weight:650;text-wrap:balance}
+.card p{margin:0;color:var(--pl-muted);max-width:36ch}
+.big-ic{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--pl-accent) 12%,transparent);color:var(--pl-accent)}
+.big-ic svg{width:28px;height:28px}
+.big-ic.muted-ic{background:var(--pl-surface);color:var(--pl-muted)}
+.prov{width:100%;list-style:none;margin:0;padding:0;display:grid;gap:8px;text-align:left}
+.prov li{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--pl-border);border-radius:10px}
+.prov li.off{opacity:.62}
+.prov .pl{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:800;font-size:13px;flex:none;color:#fff}
+.prov .pn{flex:1;display:grid;font-size:13.5px;font-weight:600}
+.prov .pn span{font-weight:400;font-size:12px;color:var(--pl-muted)}
+.fine{font-size:12px;color:var(--pl-muted)}
+.waiting{display:flex;align-items:center;gap:8px;color:var(--pl-accent);font-weight:550}
+
+/* picker */
+.panel{padding:16px 16px 14px;display:grid;gap:12px}
+.panel h2{margin:0;font-size:17px;font-weight:650}
+.panel>p{margin:0;color:var(--pl-muted);font-size:13px}
+.pick{list-style:none;margin:0;padding:0;border:1px solid var(--pl-border);border-radius:10px;overflow:hidden}
+.pick li+li{border-top:1px solid var(--pl-border)}
+.pick label{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;min-height:48px}
+.pick input{accent-color:var(--pl-accent);width:16px;height:16px;margin:0}
+.pick .pn{flex:1;display:grid;font-size:13.5px;font-weight:550;min-width:0}
+.pick .pn span{font-size:12px;color:var(--pl-muted);font-weight:400}
+.panel-ft{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* syncing skeleton */
+.prog{display:grid;gap:8px;padding:14px;border-bottom:1px solid var(--pl-border)}
+.prog-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;font-size:12.5px}
+.prog-row b{font-weight:600}
+.bar{height:4px;border-radius:999px;background:var(--pl-surface);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pl-accent);border-radius:inherit}
+.prog-row .n{color:var(--pl-muted);font-variant-numeric:tabular-nums}
+.skel{padding:12px;display:grid;gap:10px}
+.sk{height:44px;border-radius:8px;background:linear-gradient(90deg,var(--pl-surface),color-mix(in srgb,var(--pl-border) 60%,var(--pl-surface)),var(--pl-surface))}
+.sk.h{height:14px;width:30%}
+
+/* banners */
+.banner{display:flex;gap:10px;align-items:flex-start;margin:10px 12px 0;padding:10px 12px;border-radius:8px;font-size:13px;border:1px solid}
+.banner .bi{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:11px;flex:none;margin-top:1px;color:var(--pl-bg)}
+.banner .bt{flex:1;display:grid;gap:2px}
+.banner .bt b{font-weight:650}
+.banner .bt span{color:var(--pl-muted)}
+.banner details{font-size:12px;color:var(--pl-muted)}
+.banner summary{cursor:pointer}
+.banner code{font-size:11.5px}
+.b-neg{background:color-mix(in srgb,var(--pl-neg) 7%,var(--pl-bg));border-color:color-mix(in srgb,var(--pl-neg) 30%,transparent)}
+.b-neg .bi{background:var(--pl-neg)}
+.b-warn{background:color-mix(in srgb,var(--pl-warn) 8%,var(--pl-bg));border-color:color-mix(in srgb,var(--pl-warn) 30%,transparent)}
+.b-warn .bi{background:var(--pl-warn)}
+.b-info{background:var(--pl-surface);border-color:var(--pl-border)}
+.b-info .bi{background:var(--pl-muted)}
+.banner .btn{flex:none}
+.banners{display:grid;gap:0;padding-bottom:12px}
+
+/* review + conflicts */
+.sheet{padding:16px;display:grid;gap:14px}
+.sheet-hd{display:flex;align-items:flex-start;gap:10px}
+.sheet-hd div{flex:1;display:grid;gap:2px}
+.sheet-hd h2{margin:0;font-size:17px;font-weight:650}
+.sheet-hd p{margin:0;font-size:12.5px;color:var(--pl-muted)}
+.chg{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.chg>li{border:1px solid var(--pl-border);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
+.chg-hd{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.chg-hd b{flex:1;font-weight:600}
+.chg-hd .when{font-size:12px;color:var(--pl-muted);font-variant-numeric:tabular-nums}
+.diff{display:grid;grid-template-columns:78px 1fr;gap:4px 10px;font-size:12.5px;margin:0}
+.diff dt{color:var(--pl-muted)}
+.diff dd{margin:0;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:baseline}
+.diff del{color:var(--pl-muted);text-decoration-color:color-mix(in srgb,var(--pl-neg) 70%,transparent)}
+.diff ins{text-decoration:none;font-weight:600;background:color-mix(in srgb,var(--pl-accent) 10%,transparent);padding:0 4px;border-radius:3px}
+.rs{font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.rs.ok{color:var(--pl-pos)}.rs.fail{color:var(--pl-warn)}.rs.wait{color:var(--pl-muted)}
+.chg-ft{display:flex;gap:8px;justify-content:flex-end}
+.sheet-ft{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--pl-border)}
+.cf{display:grid;gap:6px}
+.cf-row{display:grid;grid-template-columns:78px 1fr 1fr;gap:6px;align-items:stretch;font-size:12.5px}
+.cf-row>span{color:var(--pl-muted);padding-top:9px}
+.opt{display:grid;gap:1px;border:1px solid var(--pl-border);border-radius:8px;padding:7px 10px 7px 30px;position:relative;cursor:pointer}
+.opt input{position:absolute;left:9px;top:10px;margin:0;accent-color:var(--pl-accent)}
+.opt small{font-size:11px;color:var(--pl-muted);font-weight:600;letter-spacing:.02em}
+.opt.on{border-color:var(--pl-accent);background:color-mix(in srgb,var(--pl-accent) 6%,var(--pl-bg))}
+.cf-lost{font-size:12.5px;color:var(--pl-muted);margin:0}
+</style></head>
+<body><div class="doc">
+<header class="doc-hd">
+  <h1>Calendar plugin — screens and states</h1>
+  <p>Static mockups for <code>integrations/calendar/design/DESIGN.md</code> (issue #89). Section numbers match the design doc. Sample data is invented: week of Monday 21 September 2026, "now" is Thursday 24 September 14:20, viewer in Amsterdam (GMT+2). Frame widths are the plugin iframe's width.</p>
+  <div class="legend"><span>Colours come only from <code>--pl-*</code> tokens (host <code>--t-*</code> with fallbacks).</span><span>Calendar swatches are Google's calendar colours.</span><span>Page follows your system theme; 5.7 and 5.8 also show both themes side by side.</span></div>
+</header>
+<ul class="toc"><li><a href="#s5-1">5.1 No proxy</a></li><li><a href="#s5-2-5-3">5.2 / 5.3 First run</a></li><li><a href="#s5-4">5.4 Choose calendars</a></li><li><a href="#s5-5">5.5 First import</a></li><li><a href="#s5-6">5.6 Empty</a></li><li><a href="#s5-7">5.7 Week</a></li><li><a href="#s5-8">5.8 Agenda</a></li><li><a href="#s5-9">5.9 Event detail</a></li><li><a href="#s5-10">5.10 Review</a></li><li><a href="#s5-11">5.11 Conflicts</a></li><li><a href="#s5-12">5.12 Errors</a></li></ul>
+<section class="st" id="s5-1"><div class="st-hd"><h2><span>5.1</span>No proxy</h2><p>Host has no <code>store.proxy</code>. Nothing is fetched; no button, because the user cannot fix this from here.</p></div><div class="row"><div class="fw"><div class="frame" style="width:480px"><div class="app ">
+          <div class="center"><div class="card"><div class="big-ic muted-ic"><svg viewBox="0 0 20 20" width="28" height="28"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></div>
+          <h2>Calendars can't be reached from this server yet</h2>
+          <p>This Atomic Server can't reach calendar providers on your behalf, so nothing was fetched. Ask the server's administrator to enable the integration proxy.</p></div></div></div></div><p class="frame-cap">480px · no header: there is no connection to describe</p></div></div></section>
+<section class="st" id="s5-2-5-3"><div class="st-hd"><h2><span>5.2 / 5.3</span>First run and connecting</h2><p>One primary action. What will and won't happen is stated before connecting. While the host's consent bar is up, the button becomes a waiting line with Cancel.</p></div><div class="row"><div class="fw"><div class="frame" style="width:480px"><div class="app ">
+          <div class="center"><div class="card"><div class="big-ic"><svg viewBox="0 0 20 20" width="28" height="28"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></div>
+          <h2>Bring your calendar into Atomic</h2>
+          <p>Events are copied into this table. Nothing is sent to Google until you review it.</p>
+          
+      <ul class="prov">
+        <li><span class="pl" style="background:#4285f4">G</span><span class="pn">Google Calendar<span>Read events, send reviewed edits back</span></span><button class="btn btn-primary btn-sm">Connect</button></li>
+        <li class="off"><span class="pl" style="background:#0f6cbd">O</span><span class="pn">Outlook Calendar<span>Not available yet</span></span></li>
+        <li class="off"><span class="pl" style="background:#7a7f86"></span><span class="pn">Apple Calendar<span>Not available yet</span></span></li>
+      </ul>
+          <p class="fine">Recurring events aren't imported yet.</p></div></div></div></div><p class="frame-cap">480px · not connected</p></div><div class="fw"><div class="frame" style="width:480px"><div class="app ">
+          <div class="center"><div class="card"><div class="big-ic"><svg viewBox="0 0 20 20" width="28" height="28"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></div>
+          <h2>Bring your calendar into Atomic</h2>
+          <p>Events are copied into this table. Nothing is sent to Google until you review it.</p>
+          
+      <ul class="prov">
+        <li><span class="pl" style="background:#4285f4">G</span><span class="pn">Google Calendar<span>Read events, send reviewed edits back</span></span><span class="waiting"><span class="spin"></span></span></li>
+        <li class="off"><span class="pl" style="background:#0f6cbd">O</span><span class="pn">Outlook Calendar<span>Not available yet</span></span></li>
+        <li class="off"><span class="pl" style="background:#7a7f86"></span><span class="pn">Apple Calendar<span>Not available yet</span></span></li>
+      </ul>
+          <p class="waiting" role="status">Confirm the connection in the bar above… <a href="#">Cancel</a></p></div></div></div></div><p class="frame-cap">480px · connecting</p></div></div></section>
+<section class="st" id="s5-4"><div class="st-hd"><h2><span>5.4</span>Choose calendars</h2><p>From Google's <code>calendarList</code>. Read-only calendars import but never offer Edit. Shown after first connect and from the connection menu.</p></div><div class="row"><div class="fw"><div class="frame" style="width:480px"><div class="app ">
+          <div class="cbar"><span class="gmark"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span><span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span></div>
+          <div class="panel"><h2>Which calendars should come in?</h2>
+          <p>You can change this later from the connection menu.</p>
+          <ul class="pick"><li><label><input id="pk0" type="checkbox" checked><i class="sw lg" style="--c:#039be5"></i><span class="pn">Work<span>michiel@example.org · Owner</span></span></label></li><li><label><input id="pk1" type="checkbox" checked><i class="sw lg" style="--c:#33b679"></i><span class="pn">Personal<span>Owner</span></span></label></li><li><label><input id="pk2" type="checkbox" checked><i class="sw lg" style="--c:#f4511e"></i><span class="pn">Team offsite<span>Shared by anna@example.org · Can edit</span></span></label></li><li><label><input id="pk3" type="checkbox" ><i class="sw lg" style="--c:#8e24aa"></i><span class="pn">Holidays in the Netherlands<span>Google · View only</span></span><em class="tag">Read-only</em></label></li><li><label><input id="pk4" type="checkbox" ><i class="sw lg" style="--c:#e67c73"></i><span class="pn">Birthdays<span>Google · View only</span></span><em class="tag">Read-only</em></label></li></ul>
+          <div class="panel-ft"><span class="fine">Recurring events aren't imported yet.</span><button class="btn btn-primary">Import 3 calendars</button></div></div></div></div><p class="frame-cap">480px</p></div></div></section>
+<section class="st" id="s5-5"><div class="st-hd"><h2><span>5.5</span>First import</h2><p>Content area is a skeleton; progress is per calendar in pages of 250 events. The header chrome is already final, so nothing jumps when events arrive.</p></div><div class="row"><div class="fw"><div class="frame" style="width:720px"><div class="app ">
+          
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i>Work</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i>Personal</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i>Team offsite</label></div>
+      <div class="hd-act" role="status"><span class="pill pill-accent"><span class="spin" aria-hidden="true"></span>Syncing…</span></div>
+      <button class="btn">Sync now</button>
+    </header>
+    <div class="cbar is-busy">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Reading events…</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+          <div class="prog" role="status">
+            <div class="prog-row"><i class="sw" style="--c:#039be5"></i><div class="bar"><i style="width:62%"></i></div><span class="n"><b>Work</b> · 750 events read (page 3)</span></div>
+            <div class="prog-row"><i class="sw" style="--c:#33b679"></i><div class="bar"><i style="width:100%"></i></div><span class="n"><b>Personal</b> · 212 events · done</span></div>
+            <div class="prog-row"><i class="sw" style="--c:#f4511e"></i><div class="bar"><i style="width:0"></i></div><span class="n"><b>Team offsite</b> · waiting</span></div>
+          </div>
+          <div class="skel"><div class="sk h"></div><div class="sk"></div><div class="sk"></div><div class="sk h"></div><div class="sk"></div></div></div></div><p class="frame-cap">720px · syncing</p></div></div></section>
+<section class="st" id="s5-6"><div class="st-hd"><h2><span>5.6</span>Empty range</h2><p>Connected, synced, nothing this week. One sentence, one action that moves the user to where events are.</p></div><div class="row"><div class="fw"><div class="frame" style="width:720px"><div class="app ">
+          
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i>Work</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i>Personal</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i>Team offsite</label></div>
+      <div class="hd-act" role="status"><span class="pill">Synced 4 min ago</span></div>
+      <button class="btn">Sync now</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+          <main class="main">
+    <div class="tb">
+      <button class="btn btn-sm">Today</button>
+      <div class="tb-nav"><button class="icon-btn" aria-label="Previous week">‹</button><button class="icon-btn" aria-label="Next week">›</button></div>
+      <h2 class="tb-title">5 – 11 October 2026</h2>
+      <div class="segs" role="group" aria-label="View"><button class="seg" aria-pressed="false">Agenda</button><button class="seg on" aria-pressed="true">Week</button><button class="seg" aria-pressed="false">Month</button></div>
+    </div>
+          <div class="center" style="min-height:280px"><div class="card"><div class="big-ic muted-ic"><svg viewBox="0 0 20 20" width="28" height="28"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></div>
+          <h2>No events this week</h2><p>Your next event is Roadmap check-in on Tuesday 13 October.</p>
+          <button class="btn btn-primary">Jump to next event</button></div></div></main></div></div><p class="frame-cap">720px</p></div></div></section>
+<section class="st" id="s5-7"><div class="st-hd"><h2><span>5.7</span>Week — populated, light and dark</h2><p>Sidebar at ≥ 900px. Recurring events (e.g. daily stand-ups) are absent and counted under "Not shown". Dashed block = edited here, not sent yet. "!" = conflict. Red line = now (Thu 14:20).</p></div><div class="row"><div class="fw"><div class="frame" style="width:1120px">
+    <div class="app force-light">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i>Work</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i>Personal</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i>Team offsite</label></div>
+      <div class="hd-act" role="status"><button class="pill pill-warn">1 conflict</button></div>
+      <button class="btn btn-primary">Review 1 change</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <div class="shell has-side">
+        
+    <aside class="side">
+      <div class="mm">
+        <div class="mm-hd"><b>September 2026</b><span><button class="icon-btn sm" aria-label="Previous month">‹</button><button class="icon-btn sm" aria-label="Next month">›</button></span></div>
+        <div class="mm-g"><span class="mm-w">M</span><span class="mm-w">T</span><span class="mm-w">W</span><span class="mm-w">T</span><span class="mm-w">F</span><span class="mm-w">S</span><span class="mm-w">S</span><span class="mm-o">31</span><span class="mm-d">1</span><span class="mm-d">2</span><span class="mm-d">3</span><span class="mm-d">4</span><span class="mm-d">5</span><span class="mm-d">6</span><span class="mm-d">7</span><span class="mm-d">8</span><span class="mm-d">9</span><span class="mm-d">10</span><span class="mm-d">11</span><span class="mm-d">12</span><span class="mm-d">13</span><span class="mm-d">14</span><span class="mm-d">15</span><span class="mm-d">16</span><span class="mm-d">17</span><span class="mm-d">18</span><span class="mm-d">19</span><span class="mm-d">20</span><span class="mm-d in-wk">21</span><span class="mm-d in-wk">22</span><span class="mm-d in-wk">23</span><span class="mm-d in-wk today">24</span><span class="mm-d in-wk">25</span><span class="mm-d in-wk">26</span><span class="mm-d in-wk">27</span><span class="mm-d">28</span><span class="mm-d">29</span><span class="mm-d">30</span><span class="mm-o">1</span><span class="mm-o">2</span><span class="mm-o">3</span><span class="mm-o">4</span></div>
+      </div>
+      <div class="side-sec">
+        <h3>My calendars</h3>
+        <ul class="cals"><li><label><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i><span>Work</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i><span>Personal</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i><span>Team offsite</span></label></li><li><label><input type="checkbox" ><i class="sw" style="--c:#8e24aa"></i><span>Holidays in the Netherlands</span><em class=tag>Read-only</em></label></li></ul>
+      </div>
+      <div class="side-sec note">
+        <h3>Not shown</h3>
+        <p>14 recurring events and 3 cancelled events aren't imported yet. <a href="#">Why?</a></p>
+      </div>
+    </aside>
+        <main class="main">
+          
+    <div class="tb">
+      <button class="btn btn-sm">Today</button>
+      <div class="tb-nav"><button class="icon-btn" aria-label="Previous week">‹</button><button class="icon-btn" aria-label="Next week">›</button></div>
+      <h2 class="tb-title">21 – 27 September 2026</h2>
+      <div class="segs" role="group" aria-label="View"><button class="seg" aria-pressed="false">Agenda</button><button class="seg on" aria-pressed="true">Week</button><button class="seg" aria-pressed="false">Month</button></div>
+    </div>
+          
+    <div class="wk" style="--n:7">
+      <a class="sr-only" href="#">Switch to agenda view</a>
+      <div class="wk-head"><div class="wk-tz">GMT+2</div><div class="wk-dh"><span>Mon</span><b>21</b></div><div class="wk-dh"><span>Tue</span><b>22</b></div><div class="wk-dh"><span>Wed</span><b>23</b></div><div class="wk-dh is-today"><span>Thu</span><b>24</b></div><div class="wk-dh"><span>Fri</span><b>25</b></div><div class="wk-dh"><span>Sat</span><b>26</b></div><div class="wk-dh"><span>Sun</span><b>27</b></div></div>
+      <div class="wk-all"><div class="wk-tz">all-day</div><button class="ad" style="--c:#f4511e;grid-column:4 / span 3" aria-label="Team offsite · Utrecht, all day, Team offsite calendar">Team offsite · Utrecht</button><button class="ad" style="--c:#039be5;grid-column:2 / span 1" aria-label="Deadline: Q3 report, all day, Work calendar">Deadline: Q3 report</button></div>
+      <div class="wk-body"><div class="wk-hours"><div class="wk-h"><span>08:00</span></div><div class="wk-h"><span>09:00</span></div><div class="wk-h"><span>10:00</span></div><div class="wk-h"><span>11:00</span></div><div class="wk-h"><span>12:00</span></div><div class="wk-h"><span>13:00</span></div><div class="wk-h"><span>14:00</span></div><div class="wk-h"><span>15:00</span></div><div class="wk-h"><span>16:00</span></div><div class="wk-h"><span>17:00</span></div></div><section class="wk-col" aria-label="Monday 21 September"><ul><li><button class="ev" style="--c:#039be5;top:220px;height:64px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Design review, 13:00 to 14:30, Room 4, Work calendar"><span class="ev-t">Design review</span><span class="ev-m">13:00–14:30 · Room 4</span></button></li></ul></section><section class="wk-col" aria-label="Tuesday 22 September"><ul><li><button class="ev" style="--c:#039be5;top:132px;height:42px;left:calc(0 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="1:1 Joep, 11:00 to 12:00, Work calendar"><span class="ev-t">1:1 Joep</span><span class="ev-m">11:00–12:00</span></button></li><li><button class="ev" style="--c:#33b679;top:154px;height:42px;left:calc(1 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="Dentist, 11:30 to 12:30, Oudegracht 112, Personal calendar"><span class="ev-t">Dentist</span><span class="ev-m">11:30–12:30 · Oudegracht 112</span></button></li><li><button class="ev" style="--c:#039be5;top:352px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Sync with New York office, 16:00 to 17:00, Video call, Work calendar"><span class="ev-t">Sync with New York office</span><span class="ev-m">16:00–17:00 · Video call</span></button></li></ul></section><section class="wk-col" aria-label="Wednesday 23 September"><ul><li><button class="ev" style="--c:#f4511e;top:88px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Roadmap workshop, 10:00 to 12:00, Utrecht, Team offsite calendar"><span class="ev-t">Roadmap workshop</span><span class="ev-m">10:00–12:00 · Utrecht</span></button></li></ul></section><section class="wk-col is-today" aria-label="Thursday 24 September"><div class="now" style="top:279px" aria-hidden="true"></div><ul><li><button class="ev ev-edited" style="--c:#039be5;top:88px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Plugin design review, 10:00 to 11:00, Room 2, Work calendar, edited here, not sent yet"><span class="ev-dot" aria-hidden="true"></span><span class="ev-t">Plugin design review</span><span class="ev-m">10:00–11:00 · Room 2</span></button></li><li><button class="ev" style="--c:#33b679;top:264px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Invoice run, 14:00 to 15:00, Personal calendar, conflict"><span class="ev-badge" aria-hidden="true">!</span><span class="ev-t">Invoice run</span><span class="ev-m">14:00–15:00</span></button></li><li><button class="ev ev-short" style="--c:#33b679;top:330px;height:9px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Call Anna, 15:30 to 15:45, Personal calendar"><span class="ev-t">Call Anna</span></button></li></ul></section><section class="wk-col" aria-label="Friday 25 September"><ul><li><button class="ev" style="--c:#f4511e;top:308px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Offsite retro, 15:00 to 17:00, Utrecht, Team offsite calendar"><span class="ev-t">Offsite retro</span><span class="ev-m">15:00–17:00 · Utrecht</span></button></li></ul></section><section class="wk-col" aria-label="Saturday 26 September"><ul><li><button class="ev" style="--c:#33b679;top:88px;height:108px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Farmers market, 10:00 to 12:30, Vredenburg, Personal calendar"><span class="ev-t">Farmers market</span><span class="ev-m">10:00–12:30 · Vredenburg</span></button></li></ul></section><section class="wk-col" aria-label="Sunday 27 September"><ul></ul></section></div>
+    </div>
+        </main>
+        
+      </div>
+    </div></div><p class="frame-cap">1120px · light</p></div><div class="fw"><div class="frame" style="width:1120px">
+    <div class="app force-dark">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i>Work</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i>Personal</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i>Team offsite</label></div>
+      <div class="hd-act" role="status"><button class="pill pill-warn">1 conflict</button></div>
+      <button class="btn btn-primary">Review 1 change</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <div class="shell has-side">
+        
+    <aside class="side">
+      <div class="mm">
+        <div class="mm-hd"><b>September 2026</b><span><button class="icon-btn sm" aria-label="Previous month">‹</button><button class="icon-btn sm" aria-label="Next month">›</button></span></div>
+        <div class="mm-g"><span class="mm-w">M</span><span class="mm-w">T</span><span class="mm-w">W</span><span class="mm-w">T</span><span class="mm-w">F</span><span class="mm-w">S</span><span class="mm-w">S</span><span class="mm-o">31</span><span class="mm-d">1</span><span class="mm-d">2</span><span class="mm-d">3</span><span class="mm-d">4</span><span class="mm-d">5</span><span class="mm-d">6</span><span class="mm-d">7</span><span class="mm-d">8</span><span class="mm-d">9</span><span class="mm-d">10</span><span class="mm-d">11</span><span class="mm-d">12</span><span class="mm-d">13</span><span class="mm-d">14</span><span class="mm-d">15</span><span class="mm-d">16</span><span class="mm-d">17</span><span class="mm-d">18</span><span class="mm-d">19</span><span class="mm-d">20</span><span class="mm-d in-wk">21</span><span class="mm-d in-wk">22</span><span class="mm-d in-wk">23</span><span class="mm-d in-wk today">24</span><span class="mm-d in-wk">25</span><span class="mm-d in-wk">26</span><span class="mm-d in-wk">27</span><span class="mm-d">28</span><span class="mm-d">29</span><span class="mm-d">30</span><span class="mm-o">1</span><span class="mm-o">2</span><span class="mm-o">3</span><span class="mm-o">4</span></div>
+      </div>
+      <div class="side-sec">
+        <h3>My calendars</h3>
+        <ul class="cals"><li><label><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i><span>Work</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i><span>Personal</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i><span>Team offsite</span></label></li><li><label><input type="checkbox" ><i class="sw" style="--c:#8e24aa"></i><span>Holidays in the Netherlands</span><em class=tag>Read-only</em></label></li></ul>
+      </div>
+      <div class="side-sec note">
+        <h3>Not shown</h3>
+        <p>14 recurring events and 3 cancelled events aren't imported yet. <a href="#">Why?</a></p>
+      </div>
+    </aside>
+        <main class="main">
+          
+    <div class="tb">
+      <button class="btn btn-sm">Today</button>
+      <div class="tb-nav"><button class="icon-btn" aria-label="Previous week">‹</button><button class="icon-btn" aria-label="Next week">›</button></div>
+      <h2 class="tb-title">21 – 27 September 2026</h2>
+      <div class="segs" role="group" aria-label="View"><button class="seg" aria-pressed="false">Agenda</button><button class="seg on" aria-pressed="true">Week</button><button class="seg" aria-pressed="false">Month</button></div>
+    </div>
+          
+    <div class="wk" style="--n:7">
+      <a class="sr-only" href="#">Switch to agenda view</a>
+      <div class="wk-head"><div class="wk-tz">GMT+2</div><div class="wk-dh"><span>Mon</span><b>21</b></div><div class="wk-dh"><span>Tue</span><b>22</b></div><div class="wk-dh"><span>Wed</span><b>23</b></div><div class="wk-dh is-today"><span>Thu</span><b>24</b></div><div class="wk-dh"><span>Fri</span><b>25</b></div><div class="wk-dh"><span>Sat</span><b>26</b></div><div class="wk-dh"><span>Sun</span><b>27</b></div></div>
+      <div class="wk-all"><div class="wk-tz">all-day</div><button class="ad" style="--c:#f4511e;grid-column:4 / span 3" aria-label="Team offsite · Utrecht, all day, Team offsite calendar">Team offsite · Utrecht</button><button class="ad" style="--c:#039be5;grid-column:2 / span 1" aria-label="Deadline: Q3 report, all day, Work calendar">Deadline: Q3 report</button></div>
+      <div class="wk-body"><div class="wk-hours"><div class="wk-h"><span>08:00</span></div><div class="wk-h"><span>09:00</span></div><div class="wk-h"><span>10:00</span></div><div class="wk-h"><span>11:00</span></div><div class="wk-h"><span>12:00</span></div><div class="wk-h"><span>13:00</span></div><div class="wk-h"><span>14:00</span></div><div class="wk-h"><span>15:00</span></div><div class="wk-h"><span>16:00</span></div><div class="wk-h"><span>17:00</span></div></div><section class="wk-col" aria-label="Monday 21 September"><ul><li><button class="ev" style="--c:#039be5;top:220px;height:64px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Design review, 13:00 to 14:30, Room 4, Work calendar"><span class="ev-t">Design review</span><span class="ev-m">13:00–14:30 · Room 4</span></button></li></ul></section><section class="wk-col" aria-label="Tuesday 22 September"><ul><li><button class="ev" style="--c:#039be5;top:132px;height:42px;left:calc(0 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="1:1 Joep, 11:00 to 12:00, Work calendar"><span class="ev-t">1:1 Joep</span><span class="ev-m">11:00–12:00</span></button></li><li><button class="ev" style="--c:#33b679;top:154px;height:42px;left:calc(1 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="Dentist, 11:30 to 12:30, Oudegracht 112, Personal calendar"><span class="ev-t">Dentist</span><span class="ev-m">11:30–12:30 · Oudegracht 112</span></button></li><li><button class="ev" style="--c:#039be5;top:352px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Sync with New York office, 16:00 to 17:00, Video call, Work calendar"><span class="ev-t">Sync with New York office</span><span class="ev-m">16:00–17:00 · Video call</span></button></li></ul></section><section class="wk-col" aria-label="Wednesday 23 September"><ul><li><button class="ev" style="--c:#f4511e;top:88px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Roadmap workshop, 10:00 to 12:00, Utrecht, Team offsite calendar"><span class="ev-t">Roadmap workshop</span><span class="ev-m">10:00–12:00 · Utrecht</span></button></li></ul></section><section class="wk-col is-today" aria-label="Thursday 24 September"><div class="now" style="top:279px" aria-hidden="true"></div><ul><li><button class="ev ev-edited" style="--c:#039be5;top:88px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Plugin design review, 10:00 to 11:00, Room 2, Work calendar, edited here, not sent yet"><span class="ev-dot" aria-hidden="true"></span><span class="ev-t">Plugin design review</span><span class="ev-m">10:00–11:00 · Room 2</span></button></li><li><button class="ev" style="--c:#33b679;top:264px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Invoice run, 14:00 to 15:00, Personal calendar, conflict"><span class="ev-badge" aria-hidden="true">!</span><span class="ev-t">Invoice run</span><span class="ev-m">14:00–15:00</span></button></li><li><button class="ev ev-short" style="--c:#33b679;top:330px;height:9px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Call Anna, 15:30 to 15:45, Personal calendar"><span class="ev-t">Call Anna</span></button></li></ul></section><section class="wk-col" aria-label="Friday 25 September"><ul><li><button class="ev" style="--c:#f4511e;top:308px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Offsite retro, 15:00 to 17:00, Utrecht, Team offsite calendar"><span class="ev-t">Offsite retro</span><span class="ev-m">15:00–17:00 · Utrecht</span></button></li></ul></section><section class="wk-col" aria-label="Saturday 26 September"><ul><li><button class="ev" style="--c:#33b679;top:88px;height:108px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Farmers market, 10:00 to 12:30, Vredenburg, Personal calendar"><span class="ev-t">Farmers market</span><span class="ev-m">10:00–12:30 · Vredenburg</span></button></li></ul></section><section class="wk-col" aria-label="Sunday 27 September"><ul></ul></section></div>
+    </div>
+        </main>
+        
+      </div>
+    </div></div><p class="frame-cap">1120px · dark (host sends dark <code>--t-*</code> values)</p></div></div></section>
+<section class="st" id="s5-8"><div class="st-hd"><h2><span>5.8</span>Agenda — narrow</h2><p>Default below 720px. Day strip on top, day-grouped list, sticky day headers, 48px rows. Calendar chips collapse into one button.</p></div><div class="row"><div class="fw"><div class="frame" style="width:360px">
+    <div class="app narrow force-light">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><button class="chip"><span class="sw-stack"><i style="--c:#039be5"></i><i style="--c:#33b679"></i><i style="--c:#f4511e"></i></span>3 calendars</button></div>
+      <div class="hd-act" role="status"><span class="pill">Synced 4 min ago</span></div>
+      <button class="btn btn-primary btn-sm">Review 1</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <main class="main">
+        
+        <div class="tb tb-narrow"><h2 class="tb-title">September 2026</h2><div class="segs"><button class="seg on">Agenda</button><button class="seg">Week</button></div></div>
+        <div class="strip" role="group" aria-label="Week of 21 September"><button class="st-d"><span>M</span><b>21</b><i></i></button><button class="st-d"><span>T</span><b>22</b><i></i></button><button class="st-d"><span>W</span><b>23</b><i></i></button><button class="st-d on"><span>T</span><b>24</b><i></i></button><button class="st-d"><span>F</span><b>25</b><i></i></button><button class="st-d"><span>S</span><b>26</b><i></i></button><button class="st-d"><span>S</span><b>27</b><i class=off></i></button></div>
+        <div class="agenda"><section class="ag-day"><h3 class="ag-dh is-today">Today<span>Thu 24 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 2 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">10:00<small>11:00</small></span><i class="sw" style="--c:#039be5"></i><span class="ag-main"><b>Plugin design review</b><span>Room 2</span><span class="tagline accent">Not sent yet</span></span></button></li><li><button class="ag-row"><span class="ag-time">14:00<small>15:00</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Invoice run</b><span>Personal</span><span class="tagline warn">Conflict</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:30<small>15:45</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Call Anna</b><span>Personal</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Tomorrow<span>Fri 25 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 3 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:00<small>17:00</small></span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Offsite retro</b><span>Utrecht</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Saturday<span>Sat 26 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">10:00<small>12:30</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Farmers market</b><span>Vredenburg</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Sunday<span>Sun 27 Sep</span></h3><ul><li class="ag-none">No events</li></ul></section></div>
+      </main>
+    </div></div><p class="frame-cap">360px · light</p></div><div class="fw"><div class="frame" style="width:360px">
+    <div class="app narrow force-dark">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><button class="chip"><span class="sw-stack"><i style="--c:#039be5"></i><i style="--c:#33b679"></i><i style="--c:#f4511e"></i></span>3 calendars</button></div>
+      <div class="hd-act" role="status"><span class="pill">Synced 4 min ago</span></div>
+      <button class="btn btn-primary btn-sm">Review 1</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <main class="main">
+        
+        <div class="tb tb-narrow"><h2 class="tb-title">September 2026</h2><div class="segs"><button class="seg on">Agenda</button><button class="seg">Week</button></div></div>
+        <div class="strip" role="group" aria-label="Week of 21 September"><button class="st-d"><span>M</span><b>21</b><i></i></button><button class="st-d"><span>T</span><b>22</b><i></i></button><button class="st-d"><span>W</span><b>23</b><i></i></button><button class="st-d on"><span>T</span><b>24</b><i></i></button><button class="st-d"><span>F</span><b>25</b><i></i></button><button class="st-d"><span>S</span><b>26</b><i></i></button><button class="st-d"><span>S</span><b>27</b><i class=off></i></button></div>
+        <div class="agenda"><section class="ag-day"><h3 class="ag-dh is-today">Today<span>Thu 24 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 2 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">10:00<small>11:00</small></span><i class="sw" style="--c:#039be5"></i><span class="ag-main"><b>Plugin design review</b><span>Room 2</span><span class="tagline accent">Not sent yet</span></span></button></li><li><button class="ag-row"><span class="ag-time">14:00<small>15:00</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Invoice run</b><span>Personal</span><span class="tagline warn">Conflict</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:30<small>15:45</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Call Anna</b><span>Personal</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Tomorrow<span>Fri 25 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 3 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:00<small>17:00</small></span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Offsite retro</b><span>Utrecht</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Saturday<span>Sat 26 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">10:00<small>12:30</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Farmers market</b><span>Vredenburg</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Sunday<span>Sun 27 Sep</span></h3><ul><li class="ag-none">No events</li></ul></section></div>
+      </main>
+    </div></div><p class="frame-cap">360px · dark</p></div></div></section>
+<section class="st" id="s5-9"><div class="st-hd"><h2><span>5.9</span>Event detail and edit</h2><p>Right drawer over the grid at ≥ 720px, full-screen below. Only the five fields the adapter maps are editable. Save is local; sending is a separate, reviewed step.</p></div><div class="row"><div class="fw"><div class="frame" style="width:1120px">
+    <div class="app force-light">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i>Work</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i>Personal</label><label class="chip"><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i>Team offsite</label></div>
+      <div class="hd-act" role="status"><button class="pill pill-warn">1 conflict</button></div>
+      <button class="btn btn-primary">Review 1 change</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <div class="shell has-side" style="min-height:640px">
+        
+    <aside class="side">
+      <div class="mm">
+        <div class="mm-hd"><b>September 2026</b><span><button class="icon-btn sm" aria-label="Previous month">‹</button><button class="icon-btn sm" aria-label="Next month">›</button></span></div>
+        <div class="mm-g"><span class="mm-w">M</span><span class="mm-w">T</span><span class="mm-w">W</span><span class="mm-w">T</span><span class="mm-w">F</span><span class="mm-w">S</span><span class="mm-w">S</span><span class="mm-o">31</span><span class="mm-d">1</span><span class="mm-d">2</span><span class="mm-d">3</span><span class="mm-d">4</span><span class="mm-d">5</span><span class="mm-d">6</span><span class="mm-d">7</span><span class="mm-d">8</span><span class="mm-d">9</span><span class="mm-d">10</span><span class="mm-d">11</span><span class="mm-d">12</span><span class="mm-d">13</span><span class="mm-d">14</span><span class="mm-d">15</span><span class="mm-d">16</span><span class="mm-d">17</span><span class="mm-d">18</span><span class="mm-d">19</span><span class="mm-d">20</span><span class="mm-d in-wk">21</span><span class="mm-d in-wk">22</span><span class="mm-d in-wk">23</span><span class="mm-d in-wk today">24</span><span class="mm-d in-wk">25</span><span class="mm-d in-wk">26</span><span class="mm-d in-wk">27</span><span class="mm-d">28</span><span class="mm-d">29</span><span class="mm-d">30</span><span class="mm-o">1</span><span class="mm-o">2</span><span class="mm-o">3</span><span class="mm-o">4</span></div>
+      </div>
+      <div class="side-sec">
+        <h3>My calendars</h3>
+        <ul class="cals"><li><label><input type="checkbox" checked><i class="sw" style="--c:#039be5"></i><span>Work</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#33b679"></i><span>Personal</span></label></li><li><label><input type="checkbox" checked><i class="sw" style="--c:#f4511e"></i><span>Team offsite</span></label></li><li><label><input type="checkbox" ><i class="sw" style="--c:#8e24aa"></i><span>Holidays in the Netherlands</span><em class=tag>Read-only</em></label></li></ul>
+      </div>
+      <div class="side-sec note">
+        <h3>Not shown</h3>
+        <p>14 recurring events and 3 cancelled events aren't imported yet. <a href="#">Why?</a></p>
+      </div>
+    </aside>
+        <main class="main">
+          
+    <div class="tb">
+      <button class="btn btn-sm">Today</button>
+      <div class="tb-nav"><button class="icon-btn" aria-label="Previous week">‹</button><button class="icon-btn" aria-label="Next week">›</button></div>
+      <h2 class="tb-title">21 – 27 September 2026</h2>
+      <div class="segs" role="group" aria-label="View"><button class="seg" aria-pressed="false">Agenda</button><button class="seg on" aria-pressed="true">Week</button><button class="seg" aria-pressed="false">Month</button></div>
+    </div>
+          
+    <div class="wk" style="--n:7">
+      <a class="sr-only" href="#">Switch to agenda view</a>
+      <div class="wk-head"><div class="wk-tz">GMT+2</div><div class="wk-dh"><span>Mon</span><b>21</b></div><div class="wk-dh"><span>Tue</span><b>22</b></div><div class="wk-dh"><span>Wed</span><b>23</b></div><div class="wk-dh is-today"><span>Thu</span><b>24</b></div><div class="wk-dh"><span>Fri</span><b>25</b></div><div class="wk-dh"><span>Sat</span><b>26</b></div><div class="wk-dh"><span>Sun</span><b>27</b></div></div>
+      <div class="wk-all"><div class="wk-tz">all-day</div><button class="ad" style="--c:#f4511e;grid-column:4 / span 3" aria-label="Team offsite · Utrecht, all day, Team offsite calendar">Team offsite · Utrecht</button><button class="ad" style="--c:#039be5;grid-column:2 / span 1" aria-label="Deadline: Q3 report, all day, Work calendar">Deadline: Q3 report</button></div>
+      <div class="wk-body"><div class="wk-hours"><div class="wk-h"><span>08:00</span></div><div class="wk-h"><span>09:00</span></div><div class="wk-h"><span>10:00</span></div><div class="wk-h"><span>11:00</span></div><div class="wk-h"><span>12:00</span></div><div class="wk-h"><span>13:00</span></div><div class="wk-h"><span>14:00</span></div><div class="wk-h"><span>15:00</span></div><div class="wk-h"><span>16:00</span></div><div class="wk-h"><span>17:00</span></div></div><section class="wk-col" aria-label="Monday 21 September"><ul><li><button class="ev" style="--c:#039be5;top:220px;height:64px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Design review, 13:00 to 14:30, Room 4, Work calendar"><span class="ev-t">Design review</span><span class="ev-m">13:00–14:30 · Room 4</span></button></li></ul></section><section class="wk-col" aria-label="Tuesday 22 September"><ul><li><button class="ev" style="--c:#039be5;top:132px;height:42px;left:calc(0 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="1:1 Joep, 11:00 to 12:00, Work calendar"><span class="ev-t">1:1 Joep</span><span class="ev-m">11:00–12:00</span></button></li><li><button class="ev" style="--c:#33b679;top:154px;height:42px;left:calc(1 * 100% / 2);width:calc(100% / 2 - 3px)" aria-label="Dentist, 11:30 to 12:30, Oudegracht 112, Personal calendar"><span class="ev-t">Dentist</span><span class="ev-m">11:30–12:30 · Oudegracht 112</span></button></li><li><button class="ev" style="--c:#039be5;top:352px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Sync with New York office, 16:00 to 17:00, Video call, Work calendar"><span class="ev-t">Sync with New York office</span><span class="ev-m">16:00–17:00 · Video call</span></button></li></ul></section><section class="wk-col" aria-label="Wednesday 23 September"><ul><li><button class="ev" style="--c:#f4511e;top:88px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Roadmap workshop, 10:00 to 12:00, Utrecht, Team offsite calendar"><span class="ev-t">Roadmap workshop</span><span class="ev-m">10:00–12:00 · Utrecht</span></button></li></ul></section><section class="wk-col is-today" aria-label="Thursday 24 September"><div class="now" style="top:279px" aria-hidden="true"></div><ul><li><button class="ev ev-edited" style="--c:#039be5;top:88px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Plugin design review, 10:00 to 11:00, Room 2, Work calendar, edited here, not sent yet"><span class="ev-dot" aria-hidden="true"></span><span class="ev-t">Plugin design review</span><span class="ev-m">10:00–11:00 · Room 2</span></button></li><li><button class="ev" style="--c:#33b679;top:264px;height:42px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Invoice run, 14:00 to 15:00, Personal calendar, conflict"><span class="ev-badge" aria-hidden="true">!</span><span class="ev-t">Invoice run</span><span class="ev-m">14:00–15:00</span></button></li><li><button class="ev ev-short" style="--c:#33b679;top:330px;height:9px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Call Anna, 15:30 to 15:45, Personal calendar"><span class="ev-t">Call Anna</span></button></li></ul></section><section class="wk-col" aria-label="Friday 25 September"><ul><li><button class="ev" style="--c:#f4511e;top:308px;height:86px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Offsite retro, 15:00 to 17:00, Utrecht, Team offsite calendar"><span class="ev-t">Offsite retro</span><span class="ev-m">15:00–17:00 · Utrecht</span></button></li></ul></section><section class="wk-col" aria-label="Saturday 26 September"><ul><li><button class="ev" style="--c:#33b679;top:88px;height:108px;left:calc(0 * 100% / 1);width:calc(100% / 1 - 3px)" aria-label="Farmers market, 10:00 to 12:30, Vredenburg, Personal calendar"><span class="ev-t">Farmers market</span><span class="ev-m">10:00–12:30 · Vredenburg</span></button></li></ul></section><section class="wk-col" aria-label="Sunday 27 September"><ul></ul></section></div>
+    </div>
+        </main>
+        
+    <aside class="drawer" role="dialog" aria-labelledby="dv-title">
+      <div class="dr-hd"><i class="sw lg" style="--c:#039be5"></i><span class="dr-cal">Work</span><button class="icon-btn" aria-label="Close">✕</button></div>
+      <h2 id="dv-title">Sync with New York office</h2>
+      <dl class="dr-f">
+        <div><dt>When</dt><dd>Tuesday 22 September<br><b>16:00 – 17:00</b><span class="muted">10:00 – 11:00 in New York (EDT)</span></dd></div>
+        <div><dt>Where</dt><dd>Video call</dd></div>
+        <div><dt>Notes</dt><dd>Agenda: proxy migration, calendar plugin design, Q4 planning.</dd></div>
+      </dl>
+      <p class="dr-hint">Guests, reminders and video links are edited in Google Calendar.</p>
+      <div class="dr-ft"><a class="btn btn-ghost" href="#">Open in Google Calendar ↗</a><button class="btn btn-primary">Edit</button></div>
+    </aside>
+      </div>
+    </div></div><p class="frame-cap">1120px · detail drawer over week</p></div><div class="fw"><div class="frame" style="width:380px"><div class="app ">
+    <aside class="drawer static" role="dialog" aria-labelledby="de-title">
+      <div class="dr-hd"><i class="sw lg" style="--c:#039be5"></i><span class="dr-cal">Work</span><button class="icon-btn" aria-label="Close">✕</button></div>
+      <h2 id="de-title" class="sr-only">Edit event</h2>
+      <form class="form" onsubmit="return false">
+        <label class="fld"><span>Title</span><input id="e-title" value="Plugin design review"></label>
+        <label class="sw-row"><input id="e-allday" type="checkbox" role="switch"><span>All day</span></label>
+        <div class="fld-2">
+          <label class="fld"><span>Starts</span><input id="e-sd" type="text" value="Thu 24 Sep 2026"><input id="e-st" type="text" value="10:00" class="t"></label>
+          <label class="fld"><span>Ends</span><input id="e-ed" type="text" value="Thu 24 Sep 2026"><input id="e-et" type="text" value="09:30" class="t is-bad" aria-invalid="true" aria-describedby="e-err"></label>
+        </div>
+        <p class="err" id="e-err">End must be after start.</p>
+        <label class="fld"><span>Location</span><input id="e-loc" value="Room 2"></label>
+        <label class="fld"><span>Description</span><textarea id="e-desc" rows="3">Walk through the calendar mockups; decide on month view.</textarea></label>
+        <p class="dr-hint">Times are in your zone (Amsterdam, GMT+2). Guests, reminders and video links are edited in Google Calendar.</p>
+        <div class="dr-ft"><button class="btn btn-ghost" type="button">Cancel</button><button class="btn btn-primary" disabled>Save here</button></div>
+      </form>
+    </aside></div></div><p class="frame-cap">380px · edit with a validation error</p></div><div class="fw"><div class="frame" style="width:380px"><div class="app "><div class="drawer static">
+      <div class="dr-hd"><i class="sw lg" style="--c:#039be5"></i><span class="dr-cal">Work</span><button class="icon-btn" aria-label="Close">✕</button></div>
+      <h2>Plugin design review</h2>
+    <div class="saved">
+      <span class="dot-accent" aria-hidden="true"></span>
+      <div><b>Saved here · not sent to Google yet</b><span>Location changed from Room 4 to Room 2.</span></div>
+      <button class="btn btn-sm btn-primary">Review changes</button>
+    </div><dl class="dr-f"><div><dt>When</dt><dd>Thursday 24 September<br><b>10:00 – 11:00</b></dd></div><div><dt>Where</dt><dd>Room 2</dd></div></dl></div></div></div><p class="frame-cap">380px · after saving</p></div></div></section>
+<section class="st" id="s5-10"><div class="st-hd"><h2><span>5.10</span>Review changes before sending</h2><p>Maps to <code>preview()</code> → <code>planEdit()</code> → <code>applyEdit()</code> with the preview-time ETag. Rows report individually; a 412 fails only its own row.</p></div><div class="row"><div class="fw"><div class="frame" style="width:560px"><div class="app ">
+          <div class="sheet" role="dialog" aria-labelledby="rv1">
+            <div class="sheet-hd"><div><h2 id="rv1">Send 2 changes to Google Calendar</h2><p>Only the fields shown change. Everything else on these events is left as it is in Google.</p></div><button class="icon-btn" aria-label="Close">✕</button></div>
+            <ul class="chg">
+              <li><div class="chg-hd"><i class="sw" style="--c:#039be5"></i><b>Plugin design review</b><span class="when">Thu 24 Sep · 10:00</span></div>
+                <dl class="diff"><dt>Location</dt><dd><del>Room 4</del>→<ins>Room 2</ins></dd></dl>
+                <div class="chg-ft"><button class="btn btn-sm btn-ghost">Discard</button></div></li>
+              <li><div class="chg-hd"><i class="sw" style="--c:#33b679"></i><b>Farmers market</b><span class="when">Sat 26 Sep</span></div>
+                <dl class="diff"><dt>Starts</dt><dd><del>10:00</del>→<ins>09:30</ins></dd><dt>Ends</dt><dd><del>12:30</del>→<ins>12:00</ins></dd></dl>
+                <div class="chg-ft"><button class="btn btn-sm btn-ghost">Discard</button></div></li>
+            </ul>
+            <div class="sheet-ft"><span class="fine">Guests on these events may be notified by Google.</span><button class="btn btn-primary">Send 2 changes</button></div>
+          </div></div></div><p class="frame-cap">560px · ready to send</p></div><div class="fw"><div class="frame" style="width:560px"><div class="app ">
+          <div class="sheet">
+            <div class="sheet-hd"><div><h2>1 of 2 changes sent</h2><p>Farmers market was changed in Google after you reviewed it, so it was not overwritten.</p></div><button class="icon-btn" aria-label="Close">✕</button></div>
+            <ul class="chg">
+              <li><div class="chg-hd"><i class="sw" style="--c:#039be5"></i><b>Plugin design review</b><span class="rs ok">✓ Sent</span></div></li>
+              <li><div class="chg-hd"><i class="sw" style="--c:#33b679"></i><b>Farmers market</b><span class="rs fail">! Changed in Google</span></div>
+                <div class="chg-ft"><button class="btn btn-sm btn-primary">Review again</button></div></li>
+            </ul>
+          </div></div></div><p class="frame-cap">560px · after sending, one row changed in Google meanwhile (412)</p></div></div></section>
+<section class="st" id="s5-11"><div class="st-hd"><h2><span>5.11</span>Conflicts</h2><p>From <code>preview().conflicts</code>. Nothing is preselected. A missing Google event never deletes the local row; removing it is a separate, explicit, local action.</p></div><div class="row"><div class="fw"><div class="frame" style="width:560px"><div class="app ">
+          <div class="sheet" role="dialog" aria-labelledby="cf1">
+            <div class="sheet-hd"><div><h2 id="cf1">2 events need a decision</h2><p>These changed both here and in Google since the last sync.</p></div><button class="icon-btn" aria-label="Close">✕</button></div>
+            <ul class="chg">
+              <li><div class="chg-hd"><i class="sw" style="--c:#33b679"></i><b>Invoice run</b><span class="when">Thu 24 Sep</span></div>
+                <div class="cf">
+                  <div class="cf-row"><span>Starts</span>
+                    <label class="opt on"><input type="radio" name="c1" checked><small>KEEP MINE</small>14:00</label>
+                    <label class="opt"><input type="radio" name="c1"><small>USE GOOGLE'S</small>15:00</label></div>
+                  <div class="cf-row"><span>Title</span>
+                    <label class="opt"><input type="radio" name="c2"><small>KEEP MINE</small>Invoice run</label>
+                    <label class="opt"><input type="radio" name="c2"><small>USE GOOGLE'S</small>Invoices + VAT</label></div>
+                </div>
+                <div class="chg-ft"><button class="btn btn-sm btn-primary" disabled>Resolve</button></div></li>
+              <li><div class="chg-hd"><i class="sw" style="--c:#f4511e"></i><b>Venue walkthrough</b><span class="when">Wed 23 Sep</span></div>
+                <p class="cf-lost">This event is no longer in Google Calendar — it was cancelled, became recurring, or you lost access. Your copy here was not deleted.</p>
+                <div class="chg-ft"><button class="btn btn-sm btn-neg">Remove local copy</button><button class="btn btn-sm">Keep as local event</button></div></li>
+            </ul>
+          </div></div></div><p class="frame-cap">560px</p></div></div></section>
+<section class="st" id="s5-12"><div class="st-hd"><h2><span>5.12</span>Errors and reconnect</h2><p>Inline banners above still-valid content, one recovery action each, raw status behind Details. 401/403 use <code>role="alert"</code>.</p></div><div class="row"><div class="fw"><div class="frame" style="width:360px">
+    <div class="app narrow force-light">
+      
+    <header class="hd">
+      <div class="hd-id"><span class="mark" aria-hidden="true"><svg viewBox="0 0 20 20" width="20" height="20"><rect x="2.5" y="4" width="15" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 8h15M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6" y="10.5" width="3" height="3" rx=".6" fill="currentColor"/></svg></span><h1>Calendar</h1></div>
+      <div class="hd-chips"><button class="chip"><span class="sw-stack"><i style="--c:#039be5"></i><i style="--c:#33b679"></i><i style="--c:#f4511e"></i></span>3 calendars</button></div>
+      <div class="hd-act" role="status"><span class="pill pill-neg">Reconnect needed</span></div>
+      <button class="btn btn-primary btn-sm">Review 1</button>
+    </header>
+    <div class="cbar">
+      <span class="gmark" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="14" height="14" rx="3" fill="#fff" stroke="#dadce0"/><rect x="1" y="1" width="14" height="4" rx="2" fill="#4285f4"/><text x="8" y="13" text-anchor="middle" font-size="7" font-weight="700" fill="#4285f4" font-family="system-ui">31</text></svg></span>
+      <span class="cbar-acc">Google Calendar · <b>michiel@example.org</b></span>
+      <span class="cbar-sep">·</span>
+      <span class="cbar-last">Last synced 14:16</span>
+      <button class="icon-btn" aria-label="Connection menu"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg></button>
+    </div>
+      <main class="main">
+        <div class="banner b-neg" role="alert"><span class="bi">!</span><span class="bt"><b>Google access has expired.</b><span>Nothing here was changed.</span></span><button class="btn btn-sm btn-primary">Reconnect</button></div>
+        <div class="tb tb-narrow"><h2 class="tb-title">September 2026</h2><div class="segs"><button class="seg on">Agenda</button><button class="seg">Week</button></div></div>
+        <div class="strip" role="group" aria-label="Week of 21 September"><button class="st-d"><span>M</span><b>21</b><i></i></button><button class="st-d"><span>T</span><b>22</b><i></i></button><button class="st-d"><span>W</span><b>23</b><i></i></button><button class="st-d on"><span>T</span><b>24</b><i></i></button><button class="st-d"><span>F</span><b>25</b><i></i></button><button class="st-d"><span>S</span><b>26</b><i></i></button><button class="st-d"><span>S</span><b>27</b><i class=off></i></button></div>
+        <div class="agenda"><section class="ag-day"><h3 class="ag-dh is-today">Today<span>Thu 24 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 2 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">10:00<small>11:00</small></span><i class="sw" style="--c:#039be5"></i><span class="ag-main"><b>Plugin design review</b><span>Room 2</span><span class="tagline accent">Not sent yet</span></span></button></li><li><button class="ag-row"><span class="ag-time">14:00<small>15:00</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Invoice run</b><span>Personal</span><span class="tagline warn">Conflict</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:30<small>15:45</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Call Anna</b><span>Personal</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Tomorrow<span>Fri 25 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">All day</span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Team offsite · Utrecht</b><span>Day 3 of 3</span></span></button></li><li><button class="ag-row"><span class="ag-time">15:00<small>17:00</small></span><i class="sw" style="--c:#f4511e"></i><span class="ag-main"><b>Offsite retro</b><span>Utrecht</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Saturday<span>Sat 26 Sep</span></h3><ul><li><button class="ag-row"><span class="ag-time">10:00<small>12:30</small></span><i class="sw" style="--c:#33b679"></i><span class="ag-main"><b>Farmers market</b><span>Vredenburg</span></span></button></li></ul></section><section class="ag-day"><h3 class="ag-dh">Sunday<span>Sun 27 Sep</span></h3><ul><li class="ag-none">No events</li></ul></section></div>
+      </main>
+    </div></div><p class="frame-cap">360px · 401 over agenda</p></div><div class="fw"><div class="frame" style="width:620px"><div class="app "><div class="banners">
+      <div class="banner b-neg" role="alert"><span class="bi">!</span><span class="bt"><b>Google access has expired.</b><span>Nothing here was changed.</span></span><button class="btn btn-sm btn-primary">Reconnect</button></div>
+      <div class="banner b-neg"><span class="bi">!</span><span class="bt"><b>Google refused access to Team offsite.</b><span>You may have lost access to this calendar. Nothing here was changed.</span></span><button class="btn btn-sm">Choose calendars</button></div>
+      <div class="banner b-warn" role="status"><span class="bi">!</span><span class="bt"><b>Google is limiting requests. Retrying in 40 s.</b><span>Nothing here was changed.</span></span><button class="btn btn-sm">Retry now</button></div>
+      <div class="banner b-info" role="status"><span class="bi">i</span><span class="bt"><b>Couldn't reach Google.</b><span>Nothing here was changed.</span><details><summary>Details</summary><code>GET /calendars/work/events → network error (proxy timeout after 30 s)</code></details></span><button class="btn btn-sm">Retry</button></div></div></div></div><p class="frame-cap">620px · banner variants</p></div></div></section>
+</div></body></html>
