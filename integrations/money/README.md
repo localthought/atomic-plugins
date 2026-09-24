@@ -1,5 +1,12 @@
 # Bank statements (MT940 and camt.053)
 
+> **No entry point at the current pin.** The steps in the next paragraph used
+> atomic-server's upload dialog (`ImportMT940`), which atomic-server
+> `4bab16ee6` removed. The pinned host (`.atomic-server-ref`) offers no way to
+> install this bundle or hand it a file; restoring one is
+> [#95](https://github.com/ontola/atomic-plugins/issues/95). See
+> [`../READINESS.md`](../READINESS.md).
+
 Open Integrations → Bank statements → Set up connection. Choose an MT940 or
 camt.053 (ISO 20022 XML) file, preview, and approve. The format is detected
 from the file contents: XML is read as camt.053, anything else as MT940. Reopen the installed Bank statements importer for later
@@ -62,8 +69,9 @@ offline peers still need collision resolution after synchronization.
 - No live bank access, payments, CSV/PDF, counterparty extraction or categorization.
 - Amount columns cannot yet use numeric table aggregation; an exact decimal
   datatype/table formatter is a follow-up.
-- A supplied real bunq statement with 272 transactions passed preview, apply and
-  zero-change reimport locally on 2026-09-11. Private bank data is not committed. Synthetic fixtures
+- Historical: a supplied real bunq statement with 272 transactions passed
+  preview, apply and zero-change reimport locally on 2026-09-11, through the
+  since-removed `ImportMT940` upload dialog. Private bank data is not committed. Synthetic fixtures
   test format behavior; this does not establish compatibility with every bank's
   dialect.
 - The default importer, table and view reuse durable setup identities after lost
@@ -76,4 +84,6 @@ Reference: https://bankrec.westpac.com.au/docs/statements/mt940/
 Tests: `./browser/node_modules/.bin/vitest run --config integrations/money/vitest.config.ts`
 (`parser.test.ts` for MT940, `camt053.test.ts` for camt.053 and format detection).
 Bundle: `./browser/node_modules/.bin/esbuild integrations/money/plugin.ts --preserve-symlinks --bundle --format=esm --platform=neutral --target=es2022 > integrations/money/plugin.js`
-Browser: `browser/e2e/tests/money.spec.ts` (synthetic MT940 and camt.053 files, real runtime/persistence).
+Browser: none at the current pin. atomic-server's `browser/e2e/tests/mt940.spec.ts`
+(synthetic MT940 and camt.053 files, real runtime/persistence) was removed in
+`4bab16ee6` together with the dialog it drove.

@@ -6,7 +6,7 @@
     ],
     "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/ontology",
     "https://atomicdata.dev/properties/shortname": "integrations-catalog",
-    "https://atomicdata.dev/properties/description": "The store's plugin gate: which of the bundled integrations in this folder are shown to every visitor of the Integrations page, and which stay hidden until a visitor enables 'Show experimental plugins'. Also owns the card copy for the bundled ones (`browser/data-browser/src/chunks/PluginRuns/IntegrationDiscovery.tsx` only keeps the one field JSON can't hold: a live reference to a LocalThought extension module). `shortname` on each PluginCatalogEntry matches a `BundledIntegration.id`. `enabled: false`, same as an id with no entry at all, makes it dark matter: its module is still compiled into the server as a static asset, but it is never offered, even with 'Show experimental plugins' on. Flip `experimental` to `false` once its package.json `atomicCertification.support` has left \"experimental\" — see integrations/README.md. This file is served as a static asset at `/integrations/catalog.json`; the data-browser fetches it from the connected server at runtime rather than bundling it at build time.",
+    "https://atomicdata.dev/properties/description": "The plugin catalog for this repository's integrations: visibility flags and card copy per entry. The data-browser fetches this file at runtime from GitHub Pages (https://ontola.github.io/atomic-plugins/integrations/catalog.json by default, configurable in Settings > Integration), not from the connected server. At the pinned atomic-server it reads only `shortname`, `experimental`, `enabled` and `requires-api-plugins`, to decide whether to offer the 'Show experimental plugins' toggle; it renders no card from this file (see integrations/READINESS.md). Where `shortname` equals a package directory under integrations/ (money, notion, pets), the entry's `version` must equal that package's (integrations/README.md, 'Version and catalog entry'). Flip `experimental` to `false` once its package.json `atomicCertification.support` has left \"experimental\" — see integrations/README.md.",
     "https://atomicdata.dev/properties/classes": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
     ],
@@ -70,7 +70,7 @@
     "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
     "https://atomicdata.dev/properties/shortname": "enabled",
     "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/boolean",
-    "https://atomicdata.dev/properties/description": "Whether this integration can be reached at all. False, same as omitting the entry entirely, makes it dark matter: its module is still compiled into the server as a static asset, but the Integrations page never offers it, even with 'Show experimental plugins' on."
+    "https://atomicdata.dev/properties/description": "Whether this integration can be offered at all. False, same as omitting the entry entirely, means the Integrations page never offers it, even with 'Show experimental plugins' on."
   },
   {
     "@id": "https://atomicdata.dev/integrations/properties/capabilities",
@@ -120,7 +120,7 @@
     "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
     "https://atomicdata.dev/properties/shortname": "requires-api-plugins",
     "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/boolean",
-    "https://atomicdata.dev/properties/description": "True if this integration's card only appears once a visitor also enables 'Show API plugins', on top of any `experimental` gating."
+    "https://atomicdata.dev/properties/description": "True if this integration's card was meant to appear only once a visitor also enabled 'Show API plugins'. atomic-server removed that toggle with the LocalThought flow (c707ca4ed); at the pin, entries with this flag are not offered and do not count towards showing the 'Show experimental plugins' toggle."
   },
   {
     "@id": "https://atomicdata.dev/integrations/properties/platform",

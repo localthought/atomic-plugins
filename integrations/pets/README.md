@@ -16,9 +16,12 @@ touch points a real API plugin needs: an ontology, an import mapping into the
 shared sandbox, an installable connection, and a table a document or an LLM
 can query afterwards.
 
-Open Integrations → Pets → Set up connection. This creates a Pets table
-beneath the installed connection and imports the five demo pets. Re-running
-reconciles: unchanged pets are skipped, same as every other importer here.
+Historically, Integrations → Pets → Set up connection created a Pets table
+beneath the installed connection and imported the five demo pets; re-running
+skipped unchanged pets. atomic-server `4bab16ee6` removed that dialog
+(`ConnectPets`), so at the current pin nothing installs or runs this bundle.
+The catalog's `pets` card still describes this demo rather than the drive
+app.
 
 ## Architecture
 
