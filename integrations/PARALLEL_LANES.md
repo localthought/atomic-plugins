@@ -145,7 +145,8 @@ frontend. That must not run once per lane.
   about a minute. It builds from source (about 15 minutes, since the cargo
   cache doesn't carry over between PRs) only when no image exists for the
   pin. That is almost only a PR that bumps it, and only until the PR's own
-  `publish-image` job has pushed one.
+  `publish-image` job has pushed one. The `CI` gate does not wait for
+  `publish-image`: if it fails, later runs fall back to that source build.
 - **`lane`** is `strategy: matrix: lane: ${{ fromJSON(needs.changes.outputs.lanes) }}`
   with **`fail-fast: false`**. That is the change that makes a run report every
   broken plugin instead of the first one.

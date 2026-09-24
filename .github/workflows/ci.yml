@@ -41,7 +41,8 @@ name: CI
 #
 #   changes -> build-server -> { lane (matrix), hosting-surface, e2e-plugin-system }
 #           -> shared-checks
-#           -> publish-image (same-repo PRs that change .atomic-server-ref)
+#           -> publish-image (same-repo PRs that change .atomic-server-ref;
+#                             not required by the `CI` gate)
 #
 # `build-server` exists because `cargo build --profile e2e` plus build.rs's
 # embedded frontend is the entire cost of this pipeline (about 15 minutes
@@ -835,6 +836,9 @@ jobs:
   # same-repo branch this grants nothing its author couldn't already do by
   # pushing a workflow of their own. The reusable workflow never overwrites
   # an existing tag, so a PR can't replace an image main already built.
+  #
+  # Not a dependency of the `CI` gate (see its `needs`): a failure here
+  # doesn't block a merge, because build-server falls back to a source build.
   publish-image:
     name: Publish the e2e image for the new pin
     needs: changes
@@ -867,7 +871,11 @@ jobs:
       - lane
       - hosting-surface
       - e2e-plugin-system
-      - publish-image
+      # Deliberately not `publish-image`: it only warms a cache. If it fails,
+      # `build-server` on later runs finds no image for the pin and builds
+      # from source, so nothing this gate vouches for is lost. Listing it
+      # would also hold the gate for the whole ~15-minute image build.
+      # workflow.test.mjs names it as the one allowed exception.
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
