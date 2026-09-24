@@ -20,8 +20,9 @@
       "id": "remotestorage",
       "index": 10,
       "platforms": [],
-      "tiers": ["contract"],
-      "note": "remoteStorage server scaffold: validates planning metadata and explicit host dependencies only; no protocol implementation or live interoperability is claimed."
+      "tiers": ["node"],
+      "nodeTests": ["integrations/remotestorage/plugin.test.mjs"],
+      "note": "QuickJS-targeted reviewed text import intents, actual Atomic read adapter, public remoteStorage reads and deterministic bundle checks. Node fixture evidence only; private bearer writes and blobs await host support."
     },
     {
       "id": "issue-tracker",
