@@ -2,10 +2,15 @@
 /**
  * Reads the imported rows back from the app's data table, so the view can
  * show them without leaving the app (DESIGN.md §1, §7). One `query` for the
- * table's children, then one `getResource` per row: the host's store offers
- * no batched read at this pin.
+ * table's children, then `getMany` in batches of 100 (one round trip each).
+ * A host without `getMany` gets one `getResource` per row, 16 at a time.
  */
-import type { JSONValue, PluginStore } from './store.js';
+import {
+  MAX_GET_MANY,
+  type JSONValue,
+  type PluginResource,
+  type PluginStore,
+} from './store.js';
 import { atomic } from './sync.js';
 import type { Schema } from './record.js';
 
@@ -38,12 +43,20 @@ export async function loadRows(
   );
   const rows: Row[] = [];
 
-  for (let i = 0; i < subjects.length; i += ROW_READ_CONCURRENCY) {
-    const batch = await Promise.all(
-      subjects
-        .slice(i, i + ROW_READ_CONCURRENCY)
-        .map(s => store.getResource(s).catch(() => undefined)),
-    );
+  const many = store.getMany?.bind(store);
+  const size = many ? MAX_GET_MANY : ROW_READ_CONCURRENCY;
+
+  for (let i = 0; i < subjects.length; i += size) {
+    const slice = subjects.slice(i, i + size);
+    const batch: (PluginResource | undefined)[] = many
+      ? // An entry the host could not read (`{ subject, error }`) is skipped,
+        // as a failed `getResource` is.
+        (await many(slice)).map(entry =>
+          entry.error === undefined ? (entry as PluginResource) : undefined,
+        )
+      : await Promise.all(
+          slice.map(s => store.getResource(s).catch(() => undefined)),
+        );
 
     for (const resource of batch) {
       if (!resource) continue;

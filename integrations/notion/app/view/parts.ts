@@ -52,6 +52,8 @@ export interface UiState {
   details: boolean;
   menu: boolean;
   groupBy?: string;
+  /** Asking to confirm "Disconnect Notion". */
+  confirmDisconnect?: boolean;
   /** A link that could not open in a new tab: its row shows it to copy. */
   linkFallback?: { subject: string; href: string };
 }
@@ -505,8 +507,8 @@ export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElem
     ctx.ui.linkFallback?.subject === row.subject &&
       renderCopy(
         doc,
-        ctx.ui.linkFallback.href.replace(/^(mailto|tel):/, ''),
-        'This frame cannot open new tabs. Copy the link instead.',
+        ctx.ui.linkFallback.href,
+        'This host cannot open links from apps. Copy the link instead.',
       ),
     h(doc, 'p', { class: 'nt-peek-db' }, icon(doc, 'db'), row.dataSource),
     h(doc, 'h3', { id: 'nt-peek-title' }, row.name),
@@ -725,6 +727,14 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
   const lastGood = state.last ? ` Your rows are from the last good sync (${when(state.last.at, ctx.now, ctx.locale).replace(/^Today/, 'today').replace(/^Yesterday/, 'yesterday')}).` : '';
 
   switch (state.kind) {
+    case 'disconnected':
+      return renderBanner(doc, {
+        tone: 'warn',
+        title: 'Notion is not connected to this app',
+        text: `${kept}${rows ? ' but won’t update' : ''}. Connect Notion again to sync.`,
+        action: { kind: 'secondary', label: 'Connect Notion', key: 'reconnect', onClick: ctx.connect },
+        alert: ctx.alert,
+      });
     case 'reauth':
       return renderBanner(doc, {
         tone: 'neg',

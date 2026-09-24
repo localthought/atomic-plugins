@@ -18,6 +18,7 @@ import {
   pillElement,
   renderConnbar,
   renderHeader,
+  renderBanner,
   renderMenu,
   updatePill,
   type ChipModel,
@@ -61,6 +62,16 @@ const FLASH_MS = 2500;
 export interface AppActions {
   sync(): void;
   connect(): void;
+  /**
+   * Opens an http(s) link through the host (`store.openExternal`), which
+   * asks the person first. Resolves `false` when the host cannot, so the
+   * app shows the URL to copy instead. Absent: always the copy fallback.
+   */
+  openExternal?(url: string): Promise<boolean>;
+  /** Shows the app's data table in the host (`store.openResource`). */
+  openTable?(): void;
+  /** Stops this app using Notion (`store.proxy.disconnect`). */
+  disconnect?(): void;
 }
 
 export interface AppOptions {
@@ -72,6 +83,8 @@ export interface AppOptions {
 
 export interface App {
   render(state?: ViewState): void;
+  /** The host's light or dark setting (`store.getTheme`, `onThemeChange`). */
+  setColorScheme(scheme: 'light' | 'dark'): void;
   /** Shows a load failure in place of the view. */
   fatal(message: string): void;
   ui(): Readonly<UiState>;
@@ -141,8 +154,19 @@ export function createApp(
   };
 
   const openLink = (href: string, row: Row) => {
-    if (!openExternal(win, href))
+    const fallback = () =>
       update({ selected: row.subject, linkFallback: { subject: row.subject, href } });
+    if (!actions.openExternal) {
+      if (!openExternal(win, href)) fallback();
+
+      return;
+    }
+    actions.openExternal(href).then(
+      handled => {
+        if (!handled) fallback();
+      },
+      fallback,
+    );
   };
 
   // On click, not pointerdown: a re-render between pointerdown and click
@@ -253,11 +277,13 @@ export function createApp(
     return renderConnbar(
       doc,
       [
-        [h(doc, 'span', { class: 'pl-dot', 'aria-hidden': 'true', style: state.kind === 'reauth' ? 'background:var(--pl-neg)' : undefined }), 'Notion'],
+        [h(doc, 'span', { class: 'pl-dot', 'aria-hidden': 'true', style: state.kind === 'reauth' ? 'background:var(--pl-neg)' : state.kind === 'disconnected' ? 'background:var(--pl-muted)' : undefined }), 'Notion'],
         plural(databases, 'database'),
         state.kind === 'reauth'
           ? 'Access revoked'
-          : [icon(doc, 'lock', 'sm'), 'Read-only'],
+          : state.kind === 'disconnected'
+            ? 'Not connected'
+            : [icon(doc, 'lock', 'sm'), 'Read-only'],
       ],
       [
         h(
@@ -280,7 +306,23 @@ export function createApp(
           'More',
           [
             { label: 'Sync details', icon: 'info', disabled: !state.last, onClick: () => update({ details: true }) },
-            { label: 'Choose pages in Notion', icon: 'ext', onClick: actions.connect },
+            ...(state.connectionId
+              ? [{ label: 'Choose pages in Notion', icon: 'ext', onClick: actions.connect }]
+              : []),
+            ...(actions.openTable
+              ? [{ label: 'Open data table', icon: 'table', onClick: actions.openTable }]
+              : []),
+            ...(actions.disconnect && state.connectionId
+              ? [{
+                  label: 'Disconnect Notion…',
+                  icon: 'plug',
+                  disabled: isRunning(state),
+                  onClick: () => {
+                    focusAfter = 'disconnect-cancel';
+                    update({ confirmDisconnect: true });
+                  },
+                }]
+              : []),
           ],
           ui.menu,
           open => update({ menu: open, details: false }),
@@ -396,6 +438,28 @@ export function createApp(
           doc,
           'div',
           { class: 'nt-main' },
+          ui.confirmDisconnect && actions.disconnect
+            ? renderBanner(doc, {
+                tone: 'warn',
+                title: 'Disconnect Notion from this app?',
+                text: `Syncing stops. The ${plural(state.rows.length, 'row')} already here stay${state.rows.length === 1 ? 's' : ''}. The Notion connection itself stays for other apps; connect again to resume.`,
+                action: {
+                  kind: 'danger',
+                  label: 'Disconnect',
+                  key: 'disconnect-confirm',
+                  onClick: () => {
+                    ui.confirmDisconnect = false;
+                    actions.disconnect!();
+                  },
+                },
+                secondary: {
+                  kind: 'secondary',
+                  label: 'Cancel',
+                  key: 'disconnect-cancel',
+                  onClick: () => update({ confirmDisconnect: false }),
+                },
+              })
+            : null,
           stateBanner(ctx),
           ui.details ? renderDetails(ctx) : null,
           ...content(ctx),
@@ -424,6 +488,9 @@ export function createApp(
 
   return {
     render,
+    setColorScheme(scheme) {
+      app.dataset.scheme = scheme;
+    },
     fatal(message) {
       app.replaceChildren(
         renderHeader(doc, { mark: 'N', name: 'Notion' }),

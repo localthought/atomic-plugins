@@ -291,15 +291,37 @@ describe('controller (N2)', () => {
     if (state.kind === 'reauth') expect(state.rows).toHaveLength(3);
   });
 
-  it('goes to reauth on load when the connection is gone but rows exist', async () => {
+  it('shows disconnected, rows kept, when the connection is gone on load', async () => {
     const { store, controller } = setup();
     await controller.load();
     await controller.sync();
     store.proxy!.connections = async () => [];
     const reopened = createController(store, () => {}, () => T0);
     const state = await reopened.load();
-    expect(state).toMatchObject({ kind: 'reauth' });
-    if (state.kind === 'reauth') expect(state.rows).toHaveLength(3);
+    expect(state).toMatchObject({ kind: 'disconnected', last: { created: 3 } });
+    if (state.kind === 'disconnected') expect(state.rows).toHaveLength(3);
+  });
+
+  it('disconnects through store.proxy.disconnect and keeps the rows', async () => {
+    const { store, controller } = setup();
+    await controller.load();
+    await controller.sync();
+    const state = await controller.disconnect!();
+    expect(state).toMatchObject({ kind: 'disconnected' });
+    if (state.kind === 'disconnected') {
+      expect(state.rows).toHaveLength(3);
+      expect(state.connectionId).toBeUndefined();
+    }
+    // Nothing to sync without a connection.
+    expect((await controller.sync()).kind).toBe('disconnected');
+    const reopened = createController(store, () => {}, () => T0);
+    expect((await reopened.load()).kind).toBe('disconnected');
+  });
+
+  it('offers no disconnect on a host without proxy.disconnect', () => {
+    const { disconnect, ...older } = fixtureProxy();
+    void disconnect;
+    expect(createController(fakeStore({ proxy: older })).disconnect).toBeUndefined();
   });
 
   it('goes to rate-limited with the retry time on a 429', async () => {

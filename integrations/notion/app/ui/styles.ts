@@ -10,7 +10,7 @@
  * Kept free of Notion specifics so it can move to a shared kit later.
  */
 export const PL_CSS = `
-.pl-app{--pl-bg:var(--t-color-bg-body,#fafafa);--pl-surface:var(--t-color-bg,#fff);--pl-subtle:var(--t-color-bg-1,#f2f2f2);--pl-border:var(--t-color-bg-2,#ccc);--pl-text:var(--t-color-text,#000);--pl-muted:var(--t-color-text-light,#666);--pl-accent:var(--t-color-main,#1b50d8);--pl-accent-soft:var(--t-color-main-selected-bg,#eef2fd);--pl-neg:var(--t-color-alert,#cf5b5b);--pl-warn:var(--t-color-warning,#f5a623);--pl-pos:#2f8f5b;--pl-radius:var(--t-radius,9px);--pl-hair:color-mix(in srgb,var(--pl-border) 55%,transparent);height:100vh;min-height:20rem;container:pl-app/inline-size;display:flex;flex-direction:column;position:relative;background:var(--pl-bg);color:var(--pl-text);font:14px/1.45 var(--t-font-family,system-ui,sans-serif)}
+.pl-app{--pl-bg:var(--t-color-bg-body,#fafafa);--pl-surface:var(--t-color-bg,#fff);--pl-subtle:var(--t-color-bg-1,#f2f2f2);--pl-border:var(--t-color-bg-2,#ccc);--pl-text:var(--t-color-text,#000);--pl-muted:var(--t-color-text-light,#666);--pl-accent:var(--t-color-main,#1b50d8);--pl-accent-soft:var(--t-color-main-selected-bg,#eef2fd);--pl-neg:var(--t-color-alert,#cf5b5b);--pl-warn:var(--t-color-warning,#f5a623);--pl-pos:var(--t-color-success,#2f8f5b);--pl-radius:var(--t-radius,9px);--pl-hair:color-mix(in srgb,var(--pl-border) 55%,transparent);height:100vh;min-height:20rem;container:pl-app/inline-size;display:flex;flex-direction:column;position:relative;background:var(--pl-bg);color:var(--pl-text);font:14px/1.45 var(--t-font-family,system-ui,sans-serif)}
 .pl-app *{box-sizing:border-box}
 .pl-app :focus-visible{outline:2px solid var(--pl-accent);outline-offset:2px}
 .pl-app .ic{width:16px;height:16px;flex:none}
@@ -92,6 +92,9 @@ export const PL_CSS = `
 .pl-cb-btn[disabled]{color:var(--pl-muted);font-weight:400;cursor:default}
 .pl-cb-btn .ic{width:13px;height:13px}
 .pl-banner .pl-btn{align-self:center}
+.pl-banner-actions{display:flex;gap:8px;align-self:center;flex-wrap:wrap;justify-content:flex-end}
+.pl-app[data-scheme='dark']{color-scheme:dark}
+.pl-app[data-scheme='light']{color-scheme:light}
 .pl-banner details{margin-top:6px;font-size:12.5px;color:var(--pl-muted)}
 .pl-banner summary{cursor:pointer}
 .pl-banner pre{margin:6px 0 0;padding:8px 10px;border-radius:6px;background:var(--pl-surface);white-space:pre-wrap;font:11.5px/1.5 ui-monospace,Menlo,monospace}

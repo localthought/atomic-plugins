@@ -376,7 +376,7 @@ describe('view (DOM)', () => {
     expect(actions.sync).toHaveBeenCalledOnce();
   });
 
-  it('falls back to a copyable URL when the frame cannot open a tab', () => {
+  it('falls back to a copyable URL on a host without openExternal', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     app.render(ready);
     q<HTMLButtonElement>('[data-key="chip:Reading list"]')!.click();
@@ -385,5 +385,99 @@ describe('view (DOM)', () => {
     expect(open).toHaveBeenCalledWith('https://example.org/book', '_blank');
     expect(q('.pl-copy code')?.textContent).toBe('https://example.org/book');
     open.mockRestore();
+  });
+
+  describe('host operations since atomic-server 007869464', () => {
+    const host = {
+      sync: vi.fn(),
+      connect: vi.fn(),
+      openExternal: vi.fn(async (_url: string) => true),
+      openTable: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+    beforeEach(() => {
+      app.destroy();
+      for (const f of Object.values(host)) f.mockClear();
+      host.openExternal.mockImplementation(async () => true);
+      app = createApp(root, host, { now: () => NOW, locale: 'en-GB', width: () => width });
+    });
+
+    it('opens "Open in Notion" and link cells through openExternal, no copy box', async () => {
+      const open = vi.spyOn(window, 'open');
+      app.render(ready);
+      q<HTMLButtonElement>('[data-key="chip:Reading list"]')!.click();
+      all('a.nt-link')[0]!.click();
+      await flush();
+      expect(host.openExternal).toHaveBeenCalledWith('https://example.org/book');
+      q<HTMLElement>('tbody tr')!.click();
+      q<HTMLButtonElement>('[data-key="peek:open"]')!.click();
+      await flush();
+      expect(host.openExternal).toHaveBeenLastCalledWith('https://www.notion.so/row4');
+      expect(open).not.toHaveBeenCalled();
+      expect(q('.pl-copy')).toBeNull();
+      open.mockRestore();
+    });
+
+    it('shows the URL to copy only when openExternal fails', async () => {
+      host.openExternal.mockImplementation(async () => {
+        throw new Error('Only http(s) links');
+      });
+      app.render(ready);
+      q<HTMLButtonElement>('[data-key="chip:Reading list"]')!.click();
+      all('a.nt-link')[0]!.click();
+      await flush();
+      expect(q('.pl-copy code')?.textContent).toBe('https://example.org/book');
+    });
+
+    it('offers "Open data table" in the menu', () => {
+      app.render(ready);
+      q<HTMLButtonElement>('[data-key="menu:More"]')!.click();
+      const item = all('[role=menuitem]').find(b => b.textContent === 'Open data table')!;
+      item.click();
+      expect(host.openTable).toHaveBeenCalledOnce();
+    });
+
+    it('asks before disconnecting, and Cancel does nothing', () => {
+      app.render(ready);
+      q<HTMLButtonElement>('[data-key="menu:More"]')!.click();
+      all('[role=menuitem]').find(b => b.textContent === 'Disconnect Notion…')!.click();
+      expect(q('.pl-banner')?.textContent).toContain('Disconnect Notion from this app?');
+      expect(document.activeElement?.getAttribute('data-key')).toBe('disconnect-cancel');
+      q<HTMLButtonElement>('[data-key=disconnect-cancel]')!.click();
+      expect(q('.pl-banner')).toBeNull();
+      expect(host.disconnect).not.toHaveBeenCalled();
+      q<HTMLButtonElement>('[data-key="menu:More"]')!.click();
+      all('[role=menuitem]').find(b => b.textContent === 'Disconnect Notion…')!.click();
+      q<HTMLButtonElement>('[data-key=disconnect-confirm]')!.click();
+      expect(host.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('shows a disconnected app with its rows and one Connect action', () => {
+      app.render({ kind: 'disconnected', rows, last });
+      expect(q('[role=status]')?.textContent).toBe('Not connected');
+      expect(q('.pl-banner')?.textContent).toContain('Your 5 rows are kept but won’t update');
+      expect(all('.pl-banner button').map(b => b.textContent)).toEqual(['Connect Notion']);
+      expect(q('[data-key=sync-now]')).toBeNull();
+      expect(all('tbody tr')).toHaveLength(5);
+      q<HTMLButtonElement>('[data-key=reconnect]')!.click();
+      expect(host.connect).toHaveBeenCalledOnce();
+    });
+
+    it('follows the host’s colour scheme, not a guess from the background', () => {
+      app.setColorScheme('dark');
+      expect(q('.pl-app')?.getAttribute('data-scheme')).toBe('dark');
+      app.setColorScheme('light');
+      expect(q('.pl-app')?.getAttribute('data-scheme')).toBe('light');
+    });
+  });
+});
+
+describe('theme tokens', () => {
+  it('takes the success colour from the host', async () => {
+    const { PL_CSS } = await import('./ui/styles.js');
+    expect(PL_CSS).toContain('--pl-pos:var(--t-color-success,#2f8f5b)');
+    expect(PL_CSS).toMatch(/\.pl-app\[data-scheme='dark'\]\{color-scheme:dark\}/);
   });
 });

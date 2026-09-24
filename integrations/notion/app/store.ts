@@ -78,7 +78,36 @@ export interface HostProxy {
    * settles.
    */
   connect(args: { platform: string }): Promise<ConnectResult>;
+  /**
+   * Takes this app's delegation off its `platform` connections at the proxy;
+   * the connections themselves stay. Feature-detected: hosts before
+   * atomic-server 007869464 lack it.
+   */
+  disconnect?(args: { platform: string }): Promise<ProxyDisconnectResult>;
 }
+
+/*
+ * The results below mirror `@tomic/plugin`'s types of the same names
+ * (atomic-server `browser/plugin/src/types.ts` at the pin). They are copied,
+ * like the rest of this file, so the plugin builds without that package.
+ */
+
+/** `store.openExternal`: the host asks the person first, naming the host. */
+export type OpenExternalResult = { status: 'opened' | 'cancelled' };
+export type OpenResourceResult = { status: 'opened'; subject: string };
+export type ProxyDisconnectResult = {
+  status: 'disconnected';
+  platform: string;
+  connectionIds: string[];
+};
+/** One `getMany` entry, in the order asked. */
+export type GetManyEntry =
+  | (PluginResource & { error?: undefined })
+  | { subject: string; error: string };
+export type ColorScheme = 'light' | 'dark';
+
+/** The host refuses `getMany` batches larger than this. */
+export const MAX_GET_MANY = 100;
 
 export interface PluginStore {
   getApp(): Promise<string>;
@@ -93,6 +122,18 @@ export interface PluginStore {
   /** `handler` takes no argument; re-fetch via getResource for the new data. */
   subscribe(subject: string, handler: () => void): () => void;
   proxy?: HostProxy;
+  /*
+   * Since atomic-server 007869464; each is feature-detected, and the app
+   * keeps a fallback for a host without it.
+   */
+  /** Up to `MAX_GET_MANY` resources in one round trip, in order. */
+  getMany?(subjects: string[]): Promise<GetManyEntry[]>;
+  /** Opens an http(s) link in a new tab after the person confirms it. */
+  openExternal?(url: string): Promise<OpenExternalResult>;
+  /** Shows a resource in the host page, leaving the app. */
+  openResource?(subject: string): Promise<OpenResourceResult>;
+  getTheme?(): { colorScheme: ColorScheme };
+  onThemeChange?(handler: (theme: { colorScheme: ColorScheme }) => void): () => void;
 }
 
 export interface ViewArgs {

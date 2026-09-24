@@ -279,6 +279,8 @@ export interface BannerModel {
   title: string;
   text: Child | Child[];
   action?: ActionModel;
+  /** A second, quieter action next to `action` (Cancel on a confirmation). */
+  secondary?: ActionModel;
   /** Status, path and time for bug reports, behind a disclosure. */
   technical?: string;
   /** `role=alert`: only when the banner appears in answer to an action. */
@@ -309,7 +311,17 @@ export function renderBanner(doc: Document, model: BannerModel): HTMLElement {
           h(doc, 'pre', {}, model.technical),
         ),
     ),
-    model.action ? button(doc, model.action) : h(doc, 'span'),
+    model.action
+      ? model.secondary
+        ? h(
+            doc,
+            'div',
+            { class: 'pl-banner-actions' },
+            button(doc, model.secondary),
+            button(doc, model.action),
+          )
+        : button(doc, model.action)
+      : h(doc, 'span'),
   );
 }
 

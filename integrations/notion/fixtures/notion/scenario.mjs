@@ -443,9 +443,13 @@ export default {
   title: 'Notion',
   // overlays/catalog.json's notion entry as the proxy composes it; see
   // catalog/generate.py.
-  document: JSON.parse(
-    readFileSync(new URL('../../catalog/notion.json', import.meta.url), 'utf8'),
-  ),
+  // Read on first use, so importing this module (fakeStore.ts, in a jsdom
+  // test too) does not touch the file system.
+  get document() {
+    return JSON.parse(
+      readFileSync(new URL('../../catalog/notion.json', import.meta.url), 'utf8'),
+    );
+  },
   jsonBody: true,
   create: () => notionFixture(),
   drivers: ['setScenario', 'renameOption'],

@@ -51,6 +51,8 @@ export type ViewState =
   /** Connected, but Notion shares no database with the integration. */
   | ({ kind: 'no-databases' } & Connected)
   | ({ kind: 'reauth'; technical?: string } & Connected)
+  /** No connection for this app, but rows from an earlier one are kept. */
+  | ({ kind: 'disconnected' } & Connected)
   | ({
       kind: 'rate-limited';
       retryAt: number;
@@ -85,6 +87,11 @@ export interface Controller {
    */
   connect(): Promise<ViewState>;
   sync(): Promise<ViewState>;
+  /**
+   * Stops this app using Notion (`store.proxy.disconnect`): the delegation
+   * goes, the rows and the sync record stay. Absent on older hosts.
+   */
+  disconnect?(): Promise<ViewState>;
   /** Re-reads the rows (after the table changed elsewhere). */
   refreshRows(): Promise<ViewState>;
 }
@@ -156,15 +163,12 @@ export function createController(
         ...(drive.last ? { last: drive.last } : {}),
       };
 
+      // Disconnected on purpose, or the delegation was removed elsewhere:
+      // either way the rows stay, and connecting again resumes syncing.
       if (!connection)
         return set(
           drive.rows.length || drive.last
-            ? {
-                kind: 'reauth',
-                ...kept,
-                technical:
-                  'The host lists no Notion connection for this app in this browser.',
-              }
+            ? { kind: 'disconnected', ...kept }
             : { kind: 'not-connected' },
         );
 
@@ -190,6 +194,19 @@ export function createController(
 
       return result?.status === 'connected' ? this.load() : set(before);
     },
+
+    ...(store.proxy?.disconnect
+      ? {
+          async disconnect() {
+            const proxy = store.proxy;
+            if (!proxy?.disconnect || running || !isConnected(current))
+              return current;
+            await proxy.disconnect({ platform: PLATFORM });
+
+            return this.load();
+          },
+        }
+      : {}),
 
     async refreshRows() {
       if (!isConnected(current) || running || !schema) return current;

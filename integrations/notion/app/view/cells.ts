@@ -140,14 +140,10 @@ export function renderValue(
     case 'email':
     case 'phone_number': {
       if (typeof value !== 'string' || !value) return null;
+      // The host opens http(s) links only (`store.openExternal`), so email
+      // addresses and phone numbers are selectable text, not links.
       const href =
-        column.type === 'email'
-          ? `mailto:${value}`
-          : column.type === 'phone_number'
-            ? `tel:${value}`
-            : /^https?:\/\//i.test(value)
-              ? value
-              : undefined;
+        column.type === 'url' && /^https?:\/\//i.test(value) ? value : undefined;
       if (!href) return doc.createTextNode(value);
 
       return h(

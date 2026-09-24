@@ -28,6 +28,44 @@ describe('loadRows (N4)', () => {
     expect(launch.values[notionFieldShortname('BJXS')]).toBe(false);
   });
 
+  it('reads rows with getMany in batches of 100 when the host has it', async () => {
+    const store = fakeStore({ hostApis: true });
+    const schema = (await loadSchema(store))!;
+    const pageId = await store.newResource({
+      parent: 'atomic:ontology',
+      propVals: { [atomic.shortname]: 'notion-page-id' },
+    });
+    schema.columns.set('notion-page-id', {
+      subject: pageId.subject,
+      shortname: 'notion-page-id',
+      name: 'Notion page id',
+      datatype: '',
+    });
+    for (let i = 0; i < 250; i++)
+      store.resources.set(`atomic:row-${i}`, {
+        [PARENT]: TABLE,
+        [atomic.name]: `Row ${i}`,
+        [pageId.subject]: `page-${i}`,
+      });
+    // One the host cannot read: skipped, not fatal.
+    const query = store.query.bind(store);
+    store.query = async args => [...(await query(args)), 'atomic:gone'];
+    let singles = 0;
+    const get = store.getResource.bind(store);
+    store.getResource = s => {
+      singles++;
+
+      return get(s);
+    };
+    const rows = await loadRows(store, schema);
+    expect(rows).toHaveLength(250);
+    expect(rows[0]!.name).toBe('Row 0');
+    expect(store.hostCalls.filter(c => c.op === 'getMany').map(c => c.args)).toEqual([
+      100, 100, 51,
+    ]);
+    expect(singles).toBe(0);
+  });
+
   it('ignores children of the table the sync did not make', async () => {
     const store = fakeStore();
     await store.newResource({ parent: TABLE, propVals: { [atomic.name]: 'Hand-made' } });

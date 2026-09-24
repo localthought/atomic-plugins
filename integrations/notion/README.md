@@ -96,9 +96,13 @@ What it does not do, and what is not verified:
   Without it, the app says so and fetches nothing.
 - The e2e runs against the mock proxy (see below). Nothing here has run against live Notion
   or a real proxy.
-- Links ("Open in Notion", URL and email values) try a new tab. The host's
-  app frame is sandboxed without `allow-popups` at the pin, so that fails
-  and the app shows the URL to copy instead.
+- Links ("Open in Notion", URL values) open through `store.openExternal`,
+  which asks the person first; "Open data table" uses `store.openResource`;
+  "Disconnect Notion…" uses `store.proxy.disconnect` (rows are kept); rows
+  load with `store.getMany` in batches of 100; the host's `colorScheme` sets
+  the app's `color-scheme`. All since atomic-server 007869464, and each is
+  feature-detected: on an older host the app falls back (copyable URL, no
+  menu entry, one `getResource` per row).
 - View choices (database, view, sort) are kept in memory only: the frame is
   null-origin, where `localStorage` throws.
 

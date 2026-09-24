@@ -212,6 +212,15 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await expect(peek).toContainText('Launch plan');
     await expect(peek).toContainText('Read-only copy');
     await shot('s7-peek');
+    // "Open in Notion" goes through store.openExternal: the host names the
+    // destination and asks first. Cancel, so the test opens no tab.
+    await peek.getByRole('button', { name: 'Open in Notion' }).click();
+    const linkBar = page.getByRole('group', { name: 'Open a link' });
+    await expect(linkBar).toContainText('www.notion.so');
+    await shot('s7-open-link');
+    await linkBar.getByRole('button', { name: 'Cancel' }).click();
+    await expect(linkBar).toBeHidden();
+    await expect(app.locator('.pl-copy')).toHaveCount(0);
     await peek.press('Escape');
     await expect(peek).toBeHidden();
 
@@ -275,6 +284,31 @@ async function statesTour(page: Page, testInfo: TestInfo) {
       banner.getByRole('button', { name: 'Reconnect Notion' }),
     ).toBeVisible();
     await shot('s11-reauth');
+
+    // "Open data table" (store.openResource) shows the table in the host.
+    await driver('setScenario', ['default']);
+    const appUrl = page.url();
+    await app.getByRole('button', { name: 'More' }).click();
+    await app.getByRole('menuitem', { name: 'Open data table' }).click();
+    await expect(page).not.toHaveURL(appUrl);
+    await expect(
+      page.getByRole('main').getByText('Launch plan', { exact: true }).first(),
+    ).toBeVisible();
+    await page.goto(appUrl);
+
+    // "Disconnect Notion…" (store.proxy.disconnect), after a confirmation:
+    // the rows stay, and the app offers to connect again.
+    await expect(status).toContainText('Synced', { timeout: 60_000 });
+    await app.getByRole('button', { name: 'More' }).click();
+    await app.getByRole('menuitem', { name: 'Disconnect Notion…' }).click();
+    await expect(banner).toContainText('Disconnect Notion from this app?');
+    await banner.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    await expect(banner).toContainText('Notion is not connected to this app', {
+      timeout: 30_000,
+    });
+    await expect(status).toHaveText('Not connected');
+    await expect(table.getByRole('cell', { name: 'Launch plan', exact: true })).toBeVisible();
+    await shot('disconnected');
   } finally {
     await driver('setScenario', ['default']);
     await driver('renameOption', [DONE_OPTION, 'Done']).catch(() => {});

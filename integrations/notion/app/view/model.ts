@@ -341,6 +341,8 @@ export function pill(state: ViewState, now: number, locale?: string): PillModel 
       return { tone: 'warn', text: 'No databases shared' };
     case 'reauth':
       return { tone: 'neg', text: 'Reconnect needed' };
+    case 'disconnected':
+      return { tone: 'muted', text: 'Not connected' };
     case 'rate-limited':
       return { tone: 'warn', text: `Paused until ${clock(state.retryAt, locale)}` };
     case 'failed':
@@ -358,7 +360,8 @@ export function pill(state: ViewState, now: number, locale?: string): PillModel 
 
 /** Whether the header's "Sync now" is offered, and enabled. */
 export function syncAction(state: ViewState): { shown: boolean; enabled: boolean } {
-  if (!('rows' in state) || state.kind === 'reauth') return { shown: false, enabled: false };
+  if (!('rows' in state) || state.kind === 'reauth' || state.kind === 'disconnected')
+    return { shown: false, enabled: false };
 
   return {
     shown: true,

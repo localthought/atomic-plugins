@@ -33,8 +33,11 @@ read, not run):
   `--t-font-family-header` (Montserrat stack), `--t-size-1`..`15`, three
   box shadows, and an `.atomic-button` class. Dark mode is the host swapping
   these values; the frame does not need `prefers-color-scheme`.
-- There is no green/success token. The design uses one fallback literal for
-  it (section 8).
+- There was no green/success token. Since atomic-server 007869464 the host
+  sends `--t-color-success`; the design keeps a fallback literal for older
+  hosts (section 8). The theme message also carries `colorScheme`
+  (`store.getTheme()`, `store.onThemeChange()`), so the app sets its
+  `color-scheme` from the host's setting rather than guessing.
 - "One module, no stylesheet": the drive plugin ships one JS file, so its CSS
   must be injected by `view()` as a `<style>` element.
 
@@ -162,8 +165,11 @@ in its own folder. Extracting a shared `pl-` kit is a maintainer decision
   unchanged, skipped properties by type, pages whose formatted text was not
   imported, archived pages kept.
 - **⋯ menu**: "Choose pages in Notion" (re-runs the connect flow, see
-  section 12), "Open data table" (host navigation to the drive table),
-  "Disconnect" (later; the relay has no disconnect operation today).
+  section 12), "Open data table" (`store.openResource`, host navigation to
+  the drive table), "Disconnect Notion…" (`store.proxy.disconnect`, after a
+  confirmation; it removes only this app's delegation, and the rows stay).
+  The last two exist since atomic-server 007869464 and are hidden on an
+  older host.
 
 ## 6. Screens and states
 
@@ -211,10 +217,12 @@ HTTP status and request path go behind "Technical details", for bug reports.
 - **Large tables**: render the first 200 rows, then "Show 200 more". No
   virtualisation in the first version. The row count at which the frame gets
   slow is not measured.
-- **Links**: "Open in Notion" and url/email values open in a new tab
-  (`target=_blank rel=noopener`). Whether the host frame's sandbox allows
-  that is not verified; if not, the value is shown as selectable text with a
-  copy button.
+- **Links**: "Open in Notion" and url values open through
+  `store.openExternal` (atomic-server 007869464): the host names the
+  destination, asks, and opens it with no opener. The frame itself has no
+  popup rights. Only http(s) opens, so email addresses and phone numbers are
+  selectable text. On a host without `openExternal`, or when it refuses, the
+  URL is shown as selectable text with a copy button.
 - **Two-way (later)**: an edit marks the cell (accent dot) and adds it to the
   pending bar; nothing is sent until "Send to Notion". A row whose Notion
   page changed since our baseline goes to the conflict panel instead of
@@ -238,13 +246,13 @@ user's main colour follow the host:
 | `--pl-accent-soft` | `--t-color-main-selected-bg` | selected row and chip                 |
 | `--pl-neg`         | `--t-color-alert`            | error, reauth                         |
 | `--pl-warn`        | `--t-color-warning`          | warnings, rate limit                  |
-| `--pl-pos`         | none; literal `#2f8f5b`      | synced dot, check marks               |
+| `--pl-pos`         | `--t-color-success`          | synced dot, check marks               |
 | `--pl-radius`      | `--t-radius`                 | 9px                                   |
 
 Each is declared with a fallback (`var(--t-color-bg, #fff)`), so the app is
-legible before the host's style message arrives. `--pl-pos` has no host
-source; `#2f8f5b` passes 3:1 against both white and black grounds for a dot
-and a check mark, but is not used for text.
+legible before the host's style message arrives. `--pl-pos` falls back to
+`#2f8f5b` on hosts before 007869464; it passes 3:1 against both white and
+black grounds for a dot and a check mark, but is not used for text.
 
 **Notion option colours**: pills use Notion's ten colour names (default,
 gray, brown, orange, yellow, green, blue, purple, pink, red) as a fixed
