@@ -2,25 +2,66 @@
   "schemaVersion": 3,
   "name": "open-cloud-mesh",
   "namespace": "ontola",
-  "capabilities": [{ "name": "storage", "reason": "Proposes operator-reviewed share receipts under selected existing Atomic documents." }],
+  "capabilities": [
+    {
+      "name": "storage",
+      "reason": "Proposes operator-reviewed share receipts under selected existing Atomic documents."
+    }
+  ],
   "config": {
     "key": "open-cloud-mesh",
     "properties": {
-      "publicOrigin": { "type": "string", "description": "HTTPS origin of the drive-host discovery mount." },
-      "mode": { "type": "string", "description": "import-reviewed-share enables the manual metadata import job." },
-      "peerOrigin": { "type": "string", "description": "Operator-verified originating peer; not inferred from incoming JSON." },
-      "allowedPeers": { "type": "array", "description": "Operator-approved HTTPS peer origins." },
-      "recipient": { "type": "string", "description": "Expected OCM recipient identity." },
-      "document": { "type": "string", "description": "Existing accessible Document or DocumentV2 subject receiving the receipt." },
-      "shareJson": { "type": "string", "description": "Operator-reviewed share metadata JSON. Remove all protocol credentials before configuring." }
+      "publicOrigin": {
+        "type": "string",
+        "description": "HTTPS origin of the drive-host discovery mount."
+      },
+      "mode": {
+        "type": "string",
+        "description": "import-reviewed-share enables the manual metadata import job."
+      },
+      "peerOrigin": {
+        "type": "string",
+        "description": "Operator-verified originating peer; not inferred from incoming JSON."
+      },
+      "allowedPeers": {
+        "type": "object",
+        "description": "Object mapping operator-approved HTTPS peer origins to true."
+      },
+      "recipient": {
+        "type": "string",
+        "description": "Expected OCM recipient identity."
+      },
+      "document": {
+        "type": "string",
+        "description": "Existing accessible Document or DocumentV2 subject receiving the receipt."
+      },
+      "shareJson": {
+        "type": "string",
+        "description": "Operator-reviewed share metadata JSON. Remove all protocol credentials before configuring."
+      }
     },
     "required": ["publicOrigin"]
   },
   "http": {
     "mount": "drive-host",
     "routes": [
-      { "id": "discovery", "path": "/ocm-provider", "methods": ["GET", "HEAD"], "principal": "anonymous", "auth": "none" },
-      { "id": "shares-unavailable", "path": "/ocm/shares", "methods": ["POST"], "principal": "anonymous", "auth": "none", "maxBodyBytes": 16384 }
+      {
+        "id": "discovery",
+        "path": "/ocm-provider",
+        "methods": ["GET", "HEAD"],
+        "principal": "anonymous",
+        "auth": "none"
+      },
+      {
+        "id": "shares-unavailable",
+        "path": "/ocm/shares",
+        "methods": ["POST"],
+        "principal": "anonymous",
+        "auth": "none",
+        "maxBodyBytes": 16384,
+        "body": "json",
+        "accept": ["application/json"]
+      }
     ],
     "reason": "Disabled OCM discovery and explicit unavailable receipt response until authenticated route writes and durable deliveries exist. No route writes or credentials."
   }

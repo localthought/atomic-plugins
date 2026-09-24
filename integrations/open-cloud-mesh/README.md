@@ -55,7 +55,7 @@ and remove credentials before putting share JSON into configuration:
   "publicOrigin": "https://atomic.example",
   "mode": "import-reviewed-share",
   "peerOrigin": "https://cloud.example",
-  "allowedPeers": ["https://cloud.example"],
+  "allowedPeers": { "https://cloud.example": true },
   "recipient": "bob@atomic.example",
   "document": "https://atomic.example/documents/project",
   "shareJson": "{\"name\":\"Design.md\",\"providerId\":\"share-123\",\"owner\":\"alice@cloud.example\",\"sender\":\"alice@cloud.example\",\"shareWith\":\"bob@atomic.example\",\"shareType\":\"user\",\"resourceType\":\"file\",\"protocol\":{\"name\":\"multi\",\"webdav\":{\"uri\":\"share-123\",\"permissions\":[\"read\"]}}}"
@@ -78,7 +78,7 @@ network shares or issuing accept/reject notifications. There is no supported
 QuickJS API for importing remote blob bytes or editing a document's Loro state.
 
 Every public route requires Cargo feature `plugin-routes`, operator switch
-`--plugin-routes read-only` (sufficient for these non-writing responses), and
+`--plugin-routes read-write` (required by the host for the POST route, even though it returns an error without writing), and
 Installation consent. atomic.place builds omit the feature. No unauthenticated
 write fallback exists. The manifest's anonymous POST route only explains the
 unavailable service; installing it does not enable OCM receiving.
