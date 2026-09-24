@@ -472,6 +472,9 @@ textarea.m-input { min-height: 64px; resize: vertical; }
   .m-checklist [data-status='now'] .m-st { animation: none; border-top-color: var(--pl-accent); }
 }
 
+.m-imports caption { padding-top: 12px; }
+.m-line { display: block; white-space: nowrap; }
+
 /* First run */
 .m-drop {
   justify-self: stretch;

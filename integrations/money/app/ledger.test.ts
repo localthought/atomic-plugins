@@ -7,6 +7,7 @@ import {
   categories,
   defaultPeriod,
   filterExceptAccount,
+  importedStatements,
   noFilters,
   periodRange,
   sortNewestFirst,
@@ -212,5 +213,29 @@ describe('display helpers', () => {
     expect(groupAccount('12345678/EUR')).toBe('12345678/EUR');
     expect(shortAccount('ACC-9')).toBe('ACC-9');
     expect(shortAccount('00012345678901234')).toBe('…9012 34');
+  });
+});
+
+describe('imported statements (Imports tab)', () => {
+  it('groups rows by format, account, currency and statement number, newest first', () => {
+    const rows = [
+      txn('-1', '2026-08-03', { statement: '30/1' }),
+      txn('-2', '2026-09-02', { statement: '31/1' }),
+      txn('-3', '2026-09-22', { statement: '31/1' }),
+      txn('-4', '2026-09-16', {
+        statement: '9/1',
+        account: 'NL18RABO0301224456',
+      }),
+      txn('-5', '2026-09-20', { statement: '31/1', format: 'camt053' }),
+    ];
+    const list = importedStatements(rows);
+    expect(
+      list.map(s => [s.key.statement, s.key.format, s.entries, s.start, s.end]),
+    ).toEqual([
+      ['31/1', 'mt940', 2, '2026-09-02', '2026-09-22'],
+      ['31/1', 'camt053', 1, '2026-09-20', '2026-09-20'],
+      ['9/1', 'mt940', 1, '2026-09-16', '2026-09-16'],
+      ['30/1', 'mt940', 1, '2026-08-03', '2026-08-03'],
+    ]);
   });
 });

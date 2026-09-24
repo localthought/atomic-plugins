@@ -292,3 +292,35 @@ describe('Money view: import sheet', () => {
     expect(root.querySelector('[role="dialog"]')).toBeNull();
   });
 });
+
+describe('Money view: imports tab', () => {
+  it('lists statements and opens one as a filter on Transactions', async () => {
+    const root = await open(fakeStore({ rows: sampleRows() }));
+    [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find(t => text(t).startsWith('Imports'))!
+      .click();
+    const table = root.querySelector('table.m-imports')!;
+    expect(text(table.querySelector('caption'))).toMatch(
+      /imported statements, newest first$/,
+    );
+    const rabo = [...table.querySelectorAll<HTMLElement>('.m-rowbtn')].find(b =>
+      text(b).startsWith('NL18 RABO'),
+    )!;
+    rabo.click();
+    expect(
+      root.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
+    ).toMatch(/^Transactions/);
+    expect(root.querySelectorAll('.m-row')).toHaveLength(1);
+    expect(text(root.querySelector('[data-key="statement"]'))).toBe(
+      'Statement 9/1 ✕',
+    );
+  });
+
+  it('shows an empty state before the first import', async () => {
+    const root = await open(fakeStore());
+    [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find(t => text(t).startsWith('Imports'))!
+      .click();
+    expect(text(root.querySelector('.pl-empty h2'))).toBe('No imports yet');
+  });
+});

@@ -218,3 +218,63 @@ export function categories(rows: Txn[]): string[] {
     .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
     .map(([name]) => name);
 }
+
+export interface ImportedStatement {
+  key: StatementKey;
+  entries: number;
+  /** Earliest and latest booking date among its rows. */
+  start: string;
+  end: string;
+  rows: Txn[];
+}
+
+/**
+ * The statements the table's rows came from, newest first. Built from the
+ * rows' `bank-statement`, account, currency and format: the importer does
+ * not store statements themselves yet (issues.md M-7), so there is no
+ * opening or closing balance and no import date here.
+ */
+export function importedStatements(rows: Txn[]): ImportedStatement[] {
+  const map = new Map<string, ImportedStatement>();
+
+  for (const row of rows) {
+    const id = JSON.stringify([
+      row.format ?? '',
+      row.account,
+      row.currency,
+      row.statement,
+    ]);
+    let entry = map.get(id);
+
+    if (!entry) {
+      entry = {
+        key: {
+          account: row.account,
+          currency: row.currency,
+          statement: row.statement,
+          format: row.format,
+        },
+        entries: 0,
+        start: row.bookingDate,
+        end: row.bookingDate,
+        rows: [],
+      };
+      map.set(id, entry);
+    }
+
+    entry.entries++;
+    entry.rows.push(row);
+    if (row.bookingDate < entry.start) entry.start = row.bookingDate;
+    if (row.bookingDate > entry.end) entry.end = row.bookingDate;
+  }
+
+  return [...map.values()].sort((a, b) =>
+    a.end === b.end
+      ? a.key.account < b.key.account
+        ? -1
+        : 1
+      : a.end < b.end
+        ? 1
+        : -1,
+  );
+}

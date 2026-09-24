@@ -7,7 +7,7 @@
  */
 import type { Tab } from './controller.js';
 import { count, shortDate } from './format.js';
-import { latestDate } from './ledger.js';
+import { importedStatements, latestDate } from './ledger.js';
 import {
   accountSwitcher,
   firstRun,
@@ -27,8 +27,9 @@ import {
 } from './ui/components.js';
 import { h, icons } from './ui/dom.js';
 import { importSheet, importStatus, type ImportActions } from './viewImport.js';
+import { imports, type ImportsActions } from './viewImports.js';
 
-export interface Actions extends LedgerActions, ImportActions {
+export interface Actions extends LedgerActions, ImportActions, ImportsActions {
   setTab(tab: Tab): void;
   reload(): void;
 }
@@ -139,7 +140,7 @@ function body(ctx: Ctx, actions: Actions): Node[] {
         'Loading transactions…',
       ),
     ];
-  if (state.tab === 'imports') return [h('p', { class: 'm-pad' }, 'Imports')];
+  if (state.tab === 'imports') return imports(ctx, actions);
   if (view.kind === 'empty') return [firstRun(ctx, actions)];
 
   return transactions(ctx, actions);
@@ -165,7 +166,13 @@ export function renderApp(ctx: Ctx, actions: Actions): Node[] {
           label: 'Transactions',
           count: populated ? count(state.rows.length, locale) : undefined,
         },
-        { id: 'imports', label: 'Imports' },
+        {
+          id: 'imports',
+          label: 'Imports',
+          count: populated
+            ? count(importedStatements(state.rows).length, locale)
+            : undefined,
+        },
         { id: 'sources', label: 'Sources' },
       ],
       state.tab,

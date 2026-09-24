@@ -197,6 +197,12 @@ export const SCENARIOS: Record<
       await type(root, '[data-key="search"]', 'Eneco');
     },
   },
+  imports: {
+    rows: true,
+    run: async root => {
+      await click(root, '[role="tab"]', 'Imports');
+    },
+  },
   sources: {
     rows: true,
     run: async root => {
