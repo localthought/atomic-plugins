@@ -18,7 +18,10 @@ describe('calendar drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    expect(bytes).toBeLessThan(160 * 1024);
+    // Measured 101,723 bytes (about 99 KiB) with minified JS and CSS
+    // (2026-09-24, the #89 designed UI). The limit is that plus about 10%,
+    // so a real growth fails here instead of passing silently.
+    expect(bytes).toBeLessThan(110 * 1024);
   });
 
   it('carries no credential handling or network access of its own', () => {
