@@ -3,9 +3,10 @@
  * Injects the plugin stylesheet once and keeps `data-pl-theme` on the
  * document in step with the host's theme. Part of the shared chrome in `ui/`.
  *
- * The host sends no "dark" flag, only its `--t-*` colours (into
- * `<style id="__atomic_theme">`, re-sent on every theme switch). The page
- * is dark when `--pl-bg`, which reads `--t-color-bg-body`, is dark.
+ * Hosts from pin 007869464 say whether they are light or dark
+ * (`colorScheme` in the theme message, read through `store.getTheme()`).
+ * Older hosts send only their `--t-*` colours; then the page is dark when
+ * `--t-color-bg-body` is dark.
  */
 
 /** Relative luminance of an `rgb()`/`rgba()` or `#rrggbb` colour, 0–1. */
@@ -49,7 +50,24 @@ export function mix(color: string, percent: number, over: string): string {
   return `#${out.map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function installTheme(root: HTMLElement, css: string): () => void {
+export interface ThemeSource {
+  getTheme?(): { colorScheme: 'light' | 'dark' };
+  onThemeChange?(
+    handler: (theme: { colorScheme: 'light' | 'dark' }) => void,
+  ): () => void;
+}
+
+/**
+ * Injects the stylesheet and keeps `data-pl-theme` in step with the host.
+ * A host that says its colour scheme (`store.getTheme()`,
+ * `store.onThemeChange()`) is followed exactly; an older host is read from
+ * the luminance of its `--t-color-bg-body`.
+ */
+export function installTheme(
+  root: HTMLElement,
+  css: string,
+  source: ThemeSource = {},
+): () => void {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
   let style = doc.getElementById('pl-styles') as HTMLStyleElement | null;
@@ -61,6 +79,17 @@ export function installTheme(root: HTMLElement, css: string): () => void {
     doc.head.appendChild(style);
   }
 
+  const apply = (scheme: 'light' | 'dark' | undefined) => {
+    if (scheme) doc.documentElement.setAttribute('data-pl-theme', scheme);
+    else doc.documentElement.removeAttribute('data-pl-theme');
+  };
+
+  if (source.getTheme && source.onThemeChange) {
+    apply(source.getTheme().colorScheme);
+
+    return source.onThemeChange(theme => apply(theme.colorScheme));
+  }
+
   const sync = () => {
     if (!win) return;
     // Read the host variable itself: `--pl-bg` would follow our own flag.
@@ -68,12 +97,7 @@ export function installTheme(root: HTMLElement, css: string): () => void {
       .getComputedStyle(doc.documentElement)
       .getPropertyValue('--t-color-bg-body');
     const l = host ? luminance(host.trim()) : undefined;
-    if (l === undefined) doc.documentElement.removeAttribute('data-pl-theme');
-    else
-      doc.documentElement.setAttribute(
-        'data-pl-theme',
-        l < 0.3 ? 'dark' : 'light',
-      );
+    apply(l === undefined ? undefined : l < 0.3 ? 'dark' : 'light');
   };
 
   sync();

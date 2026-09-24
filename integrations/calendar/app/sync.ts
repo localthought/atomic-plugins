@@ -113,6 +113,13 @@ export const SPECS: Record<string, Spec> = {
     description: 'The event version last read from Google Calendar.',
     column: false,
   },
+  'google-link': {
+    name: 'Google Calendar link',
+    datatype: `${DT}/string`,
+    description:
+      'The event’s page in Google Calendar (its htmlLink), as last read. Display only.',
+    column: false,
+  },
   'sync-baseline': {
     name: 'Sync baseline',
     datatype: `${DT}/string`,
@@ -642,6 +649,7 @@ export async function refresh(
           [props!['google-event-id']]: change.id,
           [props!['google-etag']]: change.etag ?? '',
           [props!['sync-baseline']]: baseline,
+          ...(change.link ? { [props!['google-link']]: change.link } : {}),
         },
       });
       summary.added++;
@@ -650,13 +658,16 @@ export async function refresh(
 
     const row = rows.bound.get(change.subject)!;
     const updated = writeRow(row, props!, change.desired);
+    const link = change.link ?? '';
     const bookkeeping =
       row.get(props!['google-etag']) !== (change.etag ?? '') ||
-      row.get(props!['sync-baseline']) !== baseline;
+      row.get(props!['sync-baseline']) !== baseline ||
+      (row.get(props!['google-link']) ?? '') !== link;
     if (bookkeeping)
       row
         .set(props!['google-etag'], change.etag ?? '')
-        .set(props!['sync-baseline'], baseline);
+        .set(props!['sync-baseline'], baseline)
+        .set(props!['google-link'], link);
     if (updated || bookkeeping) await row.save();
     if (updated) summary.updated++;
     else summary.unchanged++;
@@ -805,8 +816,8 @@ export async function readEvents(
   conflicts: Conflict[] = [],
 ): Promise<CalEvent[]> {
   const where = await layout(store);
-  const props = await properties(store, where, false);
-  if (!props) return [];
+  // Creates a Property an older install lacks (as a refresh would).
+  const props = (await properties(store, where, true))!;
   const inConflict = new Set(conflicts.map(c => c.subject));
   const out: CalEvent[] = [];
   const readOnly = isReadOnly(meta.accessRole);
@@ -818,12 +829,14 @@ export async function readEvents(
     const row = await store.getResource(subject);
     const card = cardOf(row, props);
     const baseline = baselineOf(row, props);
+    const link = row.get(props['google-link']);
 
     out.push({
       ...card.value,
       subject,
       ...(card.id ? { id: card.id } : {}),
       ...(baseline ? { baseline } : {}),
+      ...(typeof link === 'string' && /^https:\/\//.test(link) ? { link } : {}),
       pending:
         !!card.id &&
         !!baseline &&
@@ -947,6 +960,11 @@ export async function keepAsLocal(
     .remove(props['google-etag'])
     .remove(props['sync-baseline'])
     .save();
+}
+
+/** The app's table, for handing off to the host's own views. */
+export async function tableOf(store: PluginStore): Promise<string> {
+  return (await layout(store)).table;
 }
 
 /** "Remove local copy": the only delete path, and it is local. */

@@ -26,6 +26,7 @@ import {
   saveLocal,
   saveMeta,
   send,
+  tableOf,
   type CalendarMeta,
   type Choice,
   type Conflict,
@@ -308,6 +309,8 @@ export interface Snapshot {
   pending: number;
   /** Local changes since the last preview: Review needs a fresh one first. */
   stale: boolean;
+  /** Host operations this host has (pin 007869464 and later). */
+  can: { openExternal: boolean; openResource: boolean; disconnect: boolean };
 }
 
 export interface Pill {
@@ -477,6 +480,11 @@ export function createController(
         ...(last ? { summary: last.summary, at: last.at } : {}),
         pending: events.filter(e => e.pending).length,
         stale,
+        can: {
+          openExternal: typeof store.openExternal === 'function',
+          openResource: typeof store.openResource === 'function',
+          disconnect: typeof store.proxy?.disconnect === 'function',
+        },
       };
     },
 
@@ -660,6 +668,44 @@ export function createController(
 
       await reload();
       touch();
+    },
+
+    /** "Open in Google Calendar": the host asks, then opens it in a new tab. */
+    async openLink(
+      event: CalEvent,
+    ): Promise<'opened' | 'cancelled' | 'unavailable'> {
+      if (!event.link || !store.openExternal) return 'unavailable';
+
+      return (await store.openExternal(event.link)).status;
+    },
+
+    /**
+     * Shows this app's table in the host (Month, DESIGN.md §11 decision 1:
+     * the host table's own Calendar view draws the month), or one row of it.
+     */
+    async openInHost(subject?: string): Promise<boolean> {
+      if (!store.openResource) return false;
+      await store.openResource(subject ?? (await tableOf(store)));
+
+      return true;
+    },
+
+    /**
+     * Stops this app using Google Calendar: only this app's delegation is
+     * taken off; the connection stays for other apps, and the rows stay.
+     */
+    async disconnect(): Promise<void> {
+      const proxy = store.proxy;
+      if (!proxy?.disconnect) return;
+
+      try {
+        await proxy.disconnect({ platform: PLATFORM });
+      } catch (error) {
+        return fail(error);
+      }
+
+      connections = [];
+      set({ kind: 'disconnected' });
     },
 
     async resolve(

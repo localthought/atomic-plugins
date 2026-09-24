@@ -76,12 +76,15 @@ export function detail(
     onEdit,
     onReview,
     onConflicts,
+    onOpenLink,
   }: {
     narrow: boolean;
     onClose: () => void;
     onEdit: () => void;
     onReview: () => void;
     onConflicts: () => void;
+    /** Present when the event has a Google link and the host can open it. */
+    onOpenLink?: () => void;
   },
 ): HTMLElement {
   const { doc } = ctx;
@@ -169,6 +172,18 @@ export function detail(
       doc,
       'div',
       { class: 'dr-ft' },
+      onOpenLink
+        ? h(
+            doc,
+            'button',
+            {
+              class: 'btn btn-ghost',
+              'data-key': 'drawer-open-google',
+              onclick: onOpenLink,
+            },
+            'Open in Google Calendar ↗',
+          )
+        : null,
       event.readOnly
         ? h(
             doc,
@@ -178,7 +193,9 @@ export function detail(
               ? 'This calendar is read-only for you: edit this event in Google Calendar.'
               : 'Made in this table: it is not sent to Google (creating events isn’t supported).',
           )
-        : h(doc, 'span', {}),
+        : onOpenLink
+          ? null
+          : h(doc, 'span', {}),
       event.readOnly
         ? null
         : h(

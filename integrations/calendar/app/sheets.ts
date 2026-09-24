@@ -334,6 +334,7 @@ export function conflicts(
     onKeep,
     onRemove,
     onConfirm,
+    onOpenRow,
   }: {
     list: Conflict[];
     color: string;
@@ -346,6 +347,8 @@ export function conflicts(
     onKeep: (c: Conflict) => void;
     onRemove: (c: Conflict) => void;
     onConfirm: (c: Conflict | undefined) => void;
+    /** Present when the host can show a row or the table. */
+    onOpenRow?: (c: Conflict) => void;
   },
 ): HTMLElement {
   const { doc, zone } = ctx;
@@ -526,6 +529,23 @@ export function conflicts(
         { class: 'cf-lost' },
         `The row this Google event was imported into is missing or bound to another event${c.id ? ` (Google event id ${c.id})` : ''}. Nothing was changed automatically; fix the row in the table, then sync again.`,
       ),
+      onOpenRow
+        ? h(
+            doc,
+            'div',
+            { class: 'chg-ft' },
+            h(
+              doc,
+              'button',
+              {
+                class: 'btn btn-sm',
+                'data-key': `open-row-${index}`,
+                onclick: () => onOpenRow(c),
+              },
+              c.subject ? 'Open row in table' : 'Open the table',
+            ),
+          )
+        : null,
     );
   };
 
@@ -555,6 +575,7 @@ export const SHORTCUTS: Array<[string[], string]> = [
   [['k', 'j'], 'Previous or next period'],
   [['a'], 'Agenda'],
   [['w'], 'Week'],
+  [['m'], 'Month, in the table’s Calendar view (opens in Atomic)'],
   [['Enter'], 'Open the focused event'],
   [['e'], 'Edit the open or focused event'],
   [['Esc'], 'Close the drawer, sheet or menu'],

@@ -485,3 +485,50 @@ suite('controller: errors keep what is on screen', () => {
     expect(controller.state().kind).toBe('disconnected');
   });
 });
+
+suite('controller: host operations of pin 007869464', () => {
+  it('keeps Google’s htmlLink on import and opens it only through the host', async () => {
+    const { controller, store } = await imported();
+    const timed = byTitle(controller, 'Calendar timed fixture');
+    expect(timed.link).toBe(
+      'https://www.google.com/calendar/event?eid=dGltZWQgc3ludGhldGlj',
+    );
+    expect(await controller.openLink(timed)).toBe('opened');
+    expect(store.opened.external).toEqual([timed.link]);
+  });
+
+  it('hands Month and a row off to the host with openResource', async () => {
+    const { controller, store } = await imported();
+    expect(await controller.openInHost()).toBe(true);
+    expect(await controller.openInHost('did:ad:row')).toBe(true);
+    expect(store.opened.resources).toEqual([TABLE, 'did:ad:row']);
+  });
+
+  it('Disconnect takes off only this app’s delegation and keeps the rows', async () => {
+    const { controller, store } = await imported();
+    const rows = () =>
+      [...store.resources.values()].filter(p => p[PARENT] === TABLE).length;
+    expect(rows()).toBe(2);
+    await controller.disconnect();
+    expect(controller.state().kind).toBe('disconnected');
+    expect(
+      await store.proxy!.connections({ platform: 'google-calendar' }),
+    ).toEqual([]);
+    expect(rows()).toBe(2);
+  });
+
+  it('on an older host, says the operations are missing and does nothing', async () => {
+    const { controller, store } = await imported(fakeStore({ hostOps: false }));
+    expect(controller.snapshot().can).toEqual({
+      openExternal: false,
+      openResource: false,
+      disconnect: false,
+    });
+    const timed = byTitle(controller, 'Calendar timed fixture');
+    expect(await controller.openLink(timed)).toBe('unavailable');
+    expect(await controller.openInHost()).toBe(false);
+    await controller.disconnect();
+    expect(controller.state().kind).toBe('ready');
+    expect(store.opened).toEqual({ external: [], resources: [] });
+  });
+});

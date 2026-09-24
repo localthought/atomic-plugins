@@ -15,9 +15,9 @@
  * The host re-sends its `--t-*` variables into `<style id="__atomic_theme">`
  * when the person switches theme (atomic-server `plugin_ui.rs`); since every
  * rule reads them through `var()`, the view restyles without a reload.
- * `theme.ts` sets `data-pl-theme` from the host's background so the few
- * values the host has no variable for (tint strength, success green, text on
- * the accent colour) follow too. The `prefers-color-scheme` fallbacks only
+ * `theme.ts` sets `data-pl-theme` from the host's colour scheme so the few
+ * values the host has no variable for (tint strength, text on the accent
+ * colour) follow too. `--pl-pos` reads the host's `--t-color-success`. The `prefers-color-scheme` fallbacks only
  * matter outside the host (tests, a standalone preview).
  */
 
@@ -30,7 +30,7 @@ const LIGHT = `
   --pl-accent: var(--t-color-main, #1a6ef5);
   --pl-neg: var(--t-color-alert, #c62828);
   --pl-warn: var(--t-color-warning, #9a6200);
-  --pl-pos: #1f7a45;
+  --pl-pos: var(--t-color-success, #1f7a45);
   --pl-on-accent: #ffffff;
   --pl-tint: 14%;
   --pl-shadow: rgb(0 0 0 / 0.12);
@@ -46,7 +46,7 @@ const DARK = `
   --pl-accent: var(--t-color-main, #6ea3ff);
   --pl-neg: var(--t-color-alert, #ff7b72);
   --pl-warn: var(--t-color-warning, #e3b341);
-  --pl-pos: #56c98a;
+  --pl-pos: var(--t-color-success, #56c98a);
   --pl-on-accent: #0c1320;
   --pl-tint: 22%;
   --pl-shadow: rgb(0 0 0 / 0.4);

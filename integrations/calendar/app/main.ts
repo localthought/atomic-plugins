@@ -97,7 +97,7 @@ const EMPTY_SUMMARY: ImportSummary = {
 export async function view({ root, store }: ViewArgs): Promise<void> {
   const doc = root.ownerDocument;
   const win = doc.defaultView!;
-  installTheme(root, `${PLUGIN_CSS}\n${CALENDAR_CSS}`);
+  installTheme(root, `${PLUGIN_CSS}\n${CALENDAR_CSS}`, store);
   root.classList.add('pl-app');
   const zone = viewerZone();
   const today = () => wall(Date.now(), zone).date;
@@ -190,6 +190,11 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     focusSoon(
       from ? `[data-key="${CSS.escape(from)}"]` : '[data-key="primary"]',
     );
+  }
+
+  /** Month: the table's own Calendar view, in the host. */
+  async function openMonth() {
+    await controller.openInHost().catch(() => {});
   }
 
   async function openReview() {
@@ -334,6 +339,15 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
           label: 'Keyboard shortcuts',
           onSelect: () => openSheet('shortcuts'),
         },
+        ...(snap.can.disconnect
+          ? [
+              {
+                label: 'Disconnect',
+                hint: 'This app stops using the connection. Your rows stay here.',
+                onSelect: () => void controller.disconnect(),
+              },
+            ]
+          : []),
       ],
     });
   }
@@ -392,7 +406,12 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
     );
   }
 
-  function toolbar(narrow: boolean, from: string, days: number): HTMLElement {
+  function toolbar(
+    narrow: boolean,
+    from: string,
+    days: number,
+    canOpen: boolean,
+  ): HTMLElement {
     const nav = h(
       doc,
       'span',
@@ -445,15 +464,18 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
           ),
       nav,
       h(doc, 'h2', { class: 'tb-title', 'aria-live': 'polite' }, title),
-      segmented(
+      segmented<'agenda' | 'week' | 'month'>(
         doc,
         'View',
         [
           { value: 'agenda', label: 'Agenda' },
           { value: 'week', label: 'Week' },
+          // Month is the host table's own Calendar view (DESIGN.md §11
+          // decision 1): this opens the table in the host.
+          ...(canOpen ? [{ value: 'month' as const, label: 'Month ↗' }] : []),
         ],
         ui.view,
-        v => ctx().setView(v),
+        v => (v === 'month' ? void openMonth() : ctx().setView(v)),
       ),
     );
   }
@@ -532,7 +554,7 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       doc,
       'div',
       { class: 'main' },
-      toolbar(narrow, from, days),
+      toolbar(narrow, from, days, snap.can.openResource),
       ui.view === 'agenda' ? dayStrip(c, events, ui.anchor) : null,
       ui.view === 'week' && !(empty && snap.summary)
         ? body
@@ -589,6 +611,9 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       },
       onReview: () => void openReview(),
       onConflicts: () => openSheet('conflicts'),
+      ...(event.link && snap.can.openExternal
+        ? { onOpenLink: () => void controller.openLink(event) }
+        : {}),
     });
   }
 
@@ -651,6 +676,12 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
           void controller.removeLocal(conflict);
         },
         onConfirm: conflict => set({ confirming: conflict }),
+        ...(snap.can.openResource
+          ? {
+              onOpenRow: (conflict: Conflict) =>
+                void controller.openInHost(conflict.subject),
+            }
+          : {}),
       });
 
     return undefined;
@@ -847,6 +878,14 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
         break;
       case 'w':
         ctx().setView('week');
+        break;
+      case 'm':
+        if (!snap.can.openResource) {
+          handled = false;
+          break;
+        }
+
+        void openMonth();
         break;
       case '?':
         openSheet('shortcuts');

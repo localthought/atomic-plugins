@@ -7,7 +7,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TEAM } from '../fixtures/google-calendar/scenario.mjs';
-import { fakeStore } from './fakeStore.js';
+import { fakeStore, TABLE } from './fakeStore.js';
+import { conflicts } from './sheets.js';
 import { view } from './main.js';
 
 type Store = ReturnType<typeof fakeStore>;
@@ -364,5 +365,100 @@ describe('Calendar views: conflicts and errors', () => {
     const banner = root.querySelector('.banner')!;
     expect(banner.getAttribute('role')).toBe('status');
     expect(banner.textContent).toContain('Couldn’t reach Google.');
+  });
+});
+
+describe('Calendar views: host operations of pin 007869464', () => {
+  it('C8: the drawer opens the event in Google Calendar through the host', async () => {
+    const { root, store } = await chosen(1120);
+    await click(one(root, 'button', /^Calendar timed fixture, /));
+    await click(
+      one(one(root, 'dialog'), 'button', 'Open in Google Calendar ↗'),
+    );
+    expect(store.opened.external).toEqual([
+      'https://www.google.com/calendar/event?eid=dGltZWQgc3ludGhldGlj',
+    ]);
+  });
+
+  it('C7: Month opens the table in the host, from the segment and from m', async () => {
+    const { root, store } = await chosen(1120);
+    await click(one(root, 'button', 'Month ↗'));
+    key('m');
+    await settle();
+    expect(store.opened.resources).toEqual([TABLE, TABLE]);
+    // The app's own view does not change.
+    expect(root.querySelector('.wk')).toBeTruthy();
+  });
+
+  it('Disconnect in the connection menu returns to the first-run card', async () => {
+    const { root, store } = await chosen(1120);
+    await click(one(root, 'button', 'Connection menu'));
+    await click(one(root, 'menuitem', /^Disconnect/), 6);
+    expect(one(root, 'button', 'Connect Google Calendar')).toBeTruthy();
+    expect(
+      await store.proxy!.connections({ platform: 'google-calendar' }),
+    ).toEqual([]);
+  });
+
+  it('follows the host’s colour scheme, not a guess from its background', async () => {
+    const store = fakeStore();
+    store.setTheme('dark');
+    await mount(store);
+    expect(document.documentElement.getAttribute('data-pl-theme')).toBe('dark');
+    store.setTheme('light');
+    expect(document.documentElement.getAttribute('data-pl-theme')).toBe(
+      'light',
+    );
+  });
+
+  it('C10: a missing or rebound row can be opened in the table', async () => {
+    const root = document.createElement('div');
+    const opened: Array<string | undefined> = [];
+    root.append(
+      conflicts(
+        {
+          doc: document,
+          zone: 'UTC',
+          today: '2026-09-24',
+          now: Date.now(),
+          width: 720,
+          open: () => {},
+          goTo: () => {},
+          setView: () => {},
+        },
+        {
+          list: [
+            {
+              subject: 'did:ad:row',
+              id: 'timed',
+              title: 'Calendar timed fixture',
+              fields: ['Missing or rebound local card'],
+              kind: 'missing-local',
+            },
+          ],
+          color: '#9fe1e7',
+          choices: new Map(),
+          errors: new Map(),
+          onClose: () => {},
+          onChoose: () => {},
+          onResolve: () => {},
+          onKeep: () => {},
+          onRemove: () => {},
+          onConfirm: () => {},
+          onOpenRow: c => opened.push(c.subject),
+        },
+      ),
+    );
+    await click(one(root, 'button', 'Open row in table'));
+    expect(opened).toEqual(['did:ad:row']);
+  });
+
+  it('an older host shows none of these controls', async () => {
+    const { root } = await chosen(1120, fakeStore({ hostOps: false }));
+    expect(byRole(root, 'button', 'Month ↗')).toEqual([]);
+    await click(one(root, 'button', /^Calendar timed fixture, /));
+    expect(byRole(root, 'button', 'Open in Google Calendar ↗')).toEqual([]);
+    await click(one(root, 'button', 'Connection menu'));
+    expect(byRole(root, 'menuitem', /^Disconnect/)).toEqual([]);
   });
 });

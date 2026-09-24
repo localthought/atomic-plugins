@@ -13,6 +13,7 @@
  */
 import { calendarFixture } from '../fixtures/google-calendar/scenario.mjs';
 import type {
+  ColorScheme,
   HostProxy,
   HostProxyRequest,
   JSONValue,
@@ -44,12 +45,25 @@ export interface FakeStore extends PluginStore {
   answerNext(status: number, headers?: Record<string, string>): void;
   /** The next relay call throws, as a failed fetch in the page would. */
   throwNext(message: string): void;
+  /** What the app asked the host to open (`openExternal`, `openResource`). */
+  readonly opened: { external: string[]; resources: string[] };
+  /** The person switches the host between light and dark. */
+  setTheme(scheme: ColorScheme): void;
 }
 
 export function fakeStore({
   connected = true,
   relay = true,
-}: { connected?: boolean; relay?: boolean } = {}): FakeStore {
+  hostOps = true,
+}: {
+  connected?: boolean;
+  relay?: boolean;
+  /** The operations of pin 007869464: open links and resources, theme, disconnect. */
+  hostOps?: boolean;
+} = {}): FakeStore {
+  const opened: FakeStore['opened'] = { external: [], resources: [] };
+  let scheme: ColorScheme = 'light';
+  const themeListeners = new Set<(t: { colorScheme: ColorScheme }) => void>();
   const resources = new Map<string, Record<string, JSONValue>>([
     [APP, { [NAME]: 'New app' }],
     [ONTOLOGY, { [PARENT]: APP, [PROPERTIES]: [] }],
@@ -174,6 +188,15 @@ export function fakeStore({
       return connections.map(connectionId => ({ connectionId, platform }));
     },
     connect: () => new Promise(() => {}),
+    ...(hostOps
+      ? {
+          async disconnect({ platform }: { platform: string }) {
+            const connectionIds = connections.splice(0);
+
+            return { status: 'disconnected' as const, platform, connectionIds };
+          },
+        }
+      : {}),
   };
 
   return {
@@ -219,5 +242,30 @@ export function fakeStore({
     },
     subscribe: () => () => {},
     ...(relay ? { proxy } : {}),
+    opened,
+    setTheme: chosen => {
+      scheme = chosen;
+      for (const listener of themeListeners) listener({ colorScheme: chosen });
+    },
+    ...(hostOps
+      ? {
+          async openExternal(url: string) {
+            opened.external.push(url);
+
+            return { status: 'opened' as const };
+          },
+          async openResource(subject: string) {
+            opened.resources.push(subject);
+
+            return { status: 'opened' as const, subject };
+          },
+          getTheme: () => ({ colorScheme: scheme }),
+          onThemeChange(handler: (t: { colorScheme: ColorScheme }) => void) {
+            themeListeners.add(handler);
+
+            return () => themeListeners.delete(handler);
+          },
+        }
+      : {}),
   };
 }

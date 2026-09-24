@@ -18,6 +18,8 @@ export interface CalEvent extends Projection {
   id?: string;
   /** Edited here and not sent yet: the row differs from its sync baseline. */
   pending: boolean;
+  /** Google Calendar's page for the event, when it gave one. */
+  link?: string;
   /** What both sides last agreed on, when the row is bound. */
   baseline?: Projection;
   /** Listed as a conflict by the last preview. */
