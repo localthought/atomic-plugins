@@ -58,9 +58,13 @@ in [`integrations/READINESS.md`](integrations/READINESS.md).
    provider integrations. One ES module built by `app/build.mjs` that
    exports `view({ root, store })`. atomic-server runs it as an App's entry
    point in a null-origin iframe (`sandbox="allow-scripts allow-modals"`).
-   It never holds a credential: every provider call goes through the host relay
-   `store.proxy.request`/`.connections`/`.connect` (ontola/atomic-server#1657),
-   and the top page holds the integration-proxy connection. Reading uses
+   It never holds a credential: every provider call goes through
+   `store.proxy.request`/`.connections`/`.connect`. Since #54 phase 2
+   (ontola/atomic-server#1697) the connection lives at the integration
+   proxy, owned by the user's agent and delegated to the app's; the frame
+   calls the proxy itself with a short-lived capability from the page and a
+   key only it holds (`integrations/README.md`, "The host's proxy
+   access"). Reading uses
    the npm `syncables/browser` package where an OpenAPI document drives the
    paging, and optionally a lens from the npm `devonian` package for the
    mapping. `pets/app/` (syncables), `notion/app/` (syncables plus a
@@ -81,8 +85,8 @@ in [`integrations/READINESS.md`](integrations/READINESS.md).
 3. **Unhosted libraries** — mapping code, Devonian lenses and bridges with
    no runtime of their own: `calendar/adapter.ts` and
    `calendar/devonian/google-calendar/`, `issue-tracker/todoist.ts`, the
-   GitHub issues lens and bridge in `issue-tracker/devonian/github-issues/`,
-   and `BrowserIntegrations` (`localthought/browser.ts`). Their former
+   and the GitHub issues lens and bridge in
+   `issue-tracker/devonian/github-issues/`. Their former
    hosts in atomic-server's data-browser (the LocalThought connect dialog
    and sync panel, the Devonian demo) were removed; the data-browser no
    longer imports anything from `integrations/`. A library reaches users
@@ -165,9 +169,10 @@ has been removed from this repo entirely — `atomic-server`'s WASM build
 depends on it, so it belongs there, not here. See the "Building a
 LocalThought" section of
 [`integrations/README.md`](integrations/README.md#building-a-localthought-reflectorsyncablesdevonian-connector)
-for the fuller architecture note, and the `describeIntegration`/
-`fetchIntegration` machinery that depended on it, likewise removed from
-[`integrations/localthought/browser.ts`](integrations/localthought/browser.ts).
+for the fuller architecture note. The `describeIntegration`/
+`fetchIntegration` machinery that depended on it was removed from
+`integrations/localthought/browser.ts`, and that file itself was deleted in
+#54 phase 2 with the proxy's rotating connection codes.
 
 ## overlays/
 

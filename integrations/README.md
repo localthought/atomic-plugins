@@ -513,8 +513,9 @@ data-browser, built on `BrowserIntegrations` (`localthought/browser.ts`),
 with catalog `platform` entries, lens hooks and the generic sandbox mapper
 `localthought/plugin.ts`. atomic-server removed that flow (`f3efedf65`,
 `c707ca4ed`), and the data-browser no longer imports anything from this
-repo. [`localthought/README.md`](localthought/README.md) still documents
-it, as history.
+repo. `browser.ts` and `settings.ts` spoke the proxy's rotating connection
+codes, which #54 retired; they were deleted in #54 phase 2.
+[`localthought/README.md`](localthought/README.md) says what is left.
 
 ### The stack, top to bottom
 
@@ -522,29 +523,54 @@ it, as history.
   provider credentials (never the frame, the drive or AtomicServer),
   publishes a **catalog** of supported platforms, and serves each platform's
   OpenAPI document, already patched with the overlays it needs (see below).
-- **The host relay** — atomic-server's top page holds the proxy connection
-  (a rotating connection code in its own `localStorage`, bound to the proxy
-  origin, drive, agent and app) and answers the frame's
+- **The host's proxy access** (#54 phase 2; ontola/atomic-server#1696
+  and #1697, in the pin). The proxy account is the user's Atomic agent. A
+  **connection** (platform + sealed provider token) lives at the proxy and
+  belongs to the agent that redeemed it; a **delegation** says "this app's
+  agent may use connection C". The app's frame keeps using
   `store.proxy.request({ platform, connectionId, path, method, query, body, ifMatch })`
-  with `{ status, headers, body }` only. `store.proxy.connections` lists the
-  app's connections, and `store.proxy.connect` asks the host to draw a
-  consent bar and start the PKCE handoff. This is
-  ontola/atomic-server#1657 (`helpers/proxyConnections.ts`, a port of
-  `localthought/browser.ts`), in the pin. It is an interim shape: #40/#54
-  and atomic-server#1624 are meant to replace the rotating code with a
-  scoped capability without changing the apps.
-  **The connection code never reaches the frame or the graph.** Never
-  write it into an Atomic resource, not an App resource, config or row: a
-  resource syncs, its drive can be shared, and the proxy has no per-code
-  revocation ([#21](https://github.com/ontola/atomic-plugins/issues/21)).
-  `localthought/no-credentials-in-graph.test.mjs` (`node --test`, run by
-  CI's "Tooling unit tests" step) fails the build if any shipped source
-  under `integrations/` contains a `…/properties/…connection-code` URL, or
-  mentions `x-connection-code` outside `browser.ts`. It is a text scan, not
-  data-flow analysis.
+  and gets `{ status, headers, body }`; what changed is underneath:
+  - `store.proxy.connect({ platform })` draws the host's consent bar. If
+    the person already has a connection for the platform, the bar offers
+    "Use existing connection": the page delegates it to the app and
+    `connect` resolves `{ status: 'connected', connectionId, platform }`,
+    with no reload. Otherwise the page sends the tab to the proxy's
+    `/connect` (no login, no `user_id`), and back to `/app/integrations`,
+    where it redeems the handoff with a request signed by the user's key
+    (the signer becomes the owner) and delegates the connection to the
+    app's agent (`GET /app-agent`); the view reloads and `connect` never
+    settles. A cancel resolves `{ status: 'cancelled' }`.
+  - `store.proxy.connections({ platform })` lists the connections the
+    person delegated to this app, from the proxy's `GET /connections`.
+  - For `request`, view-client.js makes a non-extractable Ed25519 key in
+    the frame's memory, asks the page for a **capability** for it (signed
+    by the user's key after the page checked the delegation; at most
+    10 minutes at the pin, 15 at the proxy), and calls
+    `{proxy}/proxy/{connection_id}/{platform}{path}` itself, with
+    `Authorization: Capability …` and an Atomic v2 request signature by the
+    frame key (method, full URL, timestamp, body hash). It mints a new
+    capability once on `401 capability_expired`.
+  - The proxy's own refusals come back as responses, `{ error, message }`
+    with an `integration-proxy/src/api_error.rs` code (`not_delegated`,
+    `unknown_connection`, …). Each app's transport throws them rather than
+    treating them as the provider's answer (`proxyRefusal` in
+    `pets/app/transport.ts` and its siblings); a lost delegation or a
+    deleted connection says "Connect again".
+    **Nothing credential-like reaches the frame's own code or the graph.**
+    The page's localStorage holds only a PKCE verifier for the ten minutes of
+    a handoff. Never write a connection code, capability or verifier into an
+    Atomic resource: a resource syncs and its drive can be shared
+    ([#21](https://github.com/ontola/atomic-plugins/issues/21)).
+    `localthought/no-credentials-in-graph.test.mjs` (`node --test`, run by
+    CI's "Tooling unit tests" step) fails the build if shipped source under
+    `integrations/` contains a property URL naming a connection code,
+    capability or code verifier, mentions the retired `x-connection-code`
+    header, or signs requests itself (`x-atomic-signature`, the capability
+    prefix): that is the host's job. It is a text scan, not data-flow
+    analysis.
 - **Syncables** — the npm `syncables` package, used in the frame as
   `syncables/browser` (`readPlatform`, `describePlatform`, a `Transport`
-  over the relay). It reads an OpenAPI document plus its
+  over `store.proxy.request`). It reads an OpenAPI document plus its
   [CRUD Causality Extension](https://github.com/pondersource/openapi-extensions/tree/main/spec/crud-causality)
   (`components.crudResources`) block, discovers the resource model and
   pages through it, so the app carries no provider-specific paging code.
@@ -564,7 +590,8 @@ it, as history.
 ### Two shapes, pick one
 
 **(a) Read-only import.** Model it on `pets/app/`: a `transport.ts` that
-turns syncables' requests into relay calls and refuses any URL outside the
+turns syncables' requests into `store.proxy.request` calls, throws the
+proxy's own refusals, and refuses any URL outside the
 document's `servers[0].url`; a `sync.ts` that creates one Property per field
 under the app's ontology, adds them to the row class's `recommends`, and
 upserts rows under the app's table keyed by a provider id; a `controller.ts`
@@ -592,8 +619,32 @@ Give every native resource a stable identity independent of matching text
 title/body equality), journal writes before sending them (the provider side
 has no idempotent create, so an uncertain/lost response must stop rather
 than retry blindly), and treat a missing record as a conflict to resolve,
-never an implicit deletion. The relay passes `method` and `ifMatch`, so
-conditional `PATCH` requests are possible from a frame.
+never an implicit deletion. `store.proxy.request` passes `method` and
+`ifMatch`, so conditional `PATCH` requests are possible from a frame. A
+thrown request (a lost response or a timeout) may have reached the
+provider; a proxy refusal (`{ error }` with a proxy code) did not.
+
+### Sandbox plugins and the proxy
+
+A server-executed sandbox plugin (shape 1 in
+[Plugin runtimes](../AGENTS.md#plugin-runtimes)) reaches the proxy with
+`ctx.http`, not `store.proxy`. The pin has the host side
+(ontola/atomic-server#1702, #1710, #1725): a manifest declares
+`proxy: ["clockify"]`, its operations name `atomic-proxy:/clockify/<path>`
+URLs, and the host resolves one to
+`{--integration-proxy-url}/proxy/{connection_id}/clockify/<path>` for the
+connection delegated to the installation (`ctx.connections`), signing it as
+this node's agent for the installation. An `atomic-proxy:` request must
+still match a declared operation.
+
+**No plugin in this repo uses it yet.** The calendar, issue-tracker and
+Notion sandbox adapters call the provider directly with a plugin secret
+(`secrets`), and moving them to proxy connections is #54 decision 11's
+later step. It also needs the page to register a node's agent as a runtime
+of the installation (`POST /runtimes`), which #1700 lists as still to do.
+The mock proxy accepts runtime-signed requests (`POST /runtimes`, then a
+request signed by the runtime agent), and `serve.mjs` passes the mock's
+origin as `ATOMIC_INTEGRATION_PROXY_URL`, but no lane exercises that path.
 
 ### OpenAPI overlays and the pondersource extensions
 

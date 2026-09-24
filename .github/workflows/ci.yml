@@ -34,8 +34,9 @@ name: CI
 #     dev-server.mjs for why it no longer proxies).
 #   - `integrations/localthought/mock-proxy.mjs` (the same fixture
 #     atomic-server's own dagger e2e pipeline runs) stands in for the real
-#     LocalThought integration proxy, so the Integrations-page flow can run
-#     without live provider credentials.
+#     integration proxy (`integration-proxy/`): it checks the proxy's 0.2
+#     signatures, capabilities and delegations the same way, with
+#     per-platform provider fixtures instead of live credentials.
 #
 # ## Job graph
 #
@@ -68,9 +69,8 @@ name: CI
 #
 # No Rust/WASM tests run here: not the sandboxTests declared in each
 # package's atomicCertification (those are atomic-server's own `cargo test`
-# suite, run by its CI), and not localthought's browser-smoke.mjs (it
-# needs a full Vite app). Building the atomic-server binary itself is unavoidable
-# infrastructure, not a test.
+# suite, run by its CI). Building the atomic-server binary itself is
+# unavoidable infrastructure, not a test.
 
 on:
   pull_request:

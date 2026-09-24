@@ -49,12 +49,10 @@ README) with this lens's error classification.
   per connection). Pass the IndexedDB database that already holds the bridge
   snapshot and transport journal, so every context sees the same schedule.
 - Every pass holds a lease (`navigator.locks` by default, so it is shared by
-  tabs and the service worker and released when a context dies). The
-  rotating proxy code is single-use, so everything else that spends it —
-  a manual "Sync now", an interactive write — must go through
-  `sync.withLock(fn)` or `sync.syncNow()`. `proxyTransport`'s
-  `getCode`/`setCode` may be async so the code can live in that same
-  IndexedDB database. `sessionStorage` is invisible to a service worker.
+  tabs and the service worker and released when a context dies). Run a
+  manual "Sync now" or an interactive write through `sync.withLock(fn)` or
+  `sync.syncNow()` too, so two contexts never write the same connection at
+  once. `sessionStorage` is invisible to a service worker.
 - Transient failures back off exponentially: `intervalMs`, then 2×, 4×, …,
   up to `maxBackoffMs` (default: one hour, or `intervalMs` if that is
   longer). Failures that need a person pause the schedule until `resume()`:
@@ -62,8 +60,9 @@ README) with this lens's error classification.
   `Missing … record`, `State belongs to another connection`, `Duplicate …`;
   the Atomic port's `Recovered Atomic create was edited` and
   `Atomic write rejected`; and the transport's `Uncertain GitHub write`,
-  `Operation identity reused`, a missing or unexposed connection code, and
-  GitHub `401`. The list is `permanentSyncErrors`. Nothing is retried in a
+  `Operation identity reused`, a connection that is no longer delegated to
+  the app (`No … connection … is delegated to this app`), and GitHub
+  `401`. The list is `permanentSyncErrors`. Nothing is retried in a
   loop, and neither side is modified while paused.
 
 A browser host wires three triggers into the same `BackgroundSync`:
@@ -269,8 +268,11 @@ The current host is the issue-tracker **drive app**
 ([`../../app/`](../../app/), see the plugin README's "Drive app"). It runs
 this Bridge unchanged in the host's null-origin frame:
 
-- `proxyTransport` with `dispatch` over the host relay
-  (`store.proxy.request`), so the frame never holds a connection code.
+- `proxyTransport` with `dispatch` over the host's `store.proxy.request`.
+  Since ontola/atomic-plugins#54 phase 2 the frame calls the integration
+  proxy itself, with a short-lived capability from the host page and a key
+  only the host's frame client holds; this lens never sees a credential.
+  `proxyTransport` has no other transport any more.
 - `AtomicPort` over an adapter (`app/frameStore.ts`) that gives the frame's
   `PluginStore` the store predicates `target.mjs` reads, and corrects for
   the host's reads lagging the app's own writes.

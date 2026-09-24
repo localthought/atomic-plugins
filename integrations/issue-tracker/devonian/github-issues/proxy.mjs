@@ -2,30 +2,25 @@ import { endpoint, request } from './adapter.js';
 import { trackerAction } from './tracker-actions.js';
 
 /**
- * Direct browser transport. Codes stay in browser storage, never in Atomic
- * resources. `getCode`/`setCode` may be async, so a host can keep the code in
- * IndexedDB shared with a service worker; every spend must then run under one
- * cross-context lease (see background.mjs), because each code is single-use.
+ * GitHub issue actions over the integration proxy, through `dispatch`.
+ *
+ * `dispatch(path, { method, body })` makes one proxy call for a GitHub API
+ * path (`/repos/{owner}/{name}/issues…`, query included) and resolves to
+ * `{ status, body }`. In the drive app it is the host's
+ * `store.proxy.request` (see `app/transport.ts`): since
+ * ontola/atomic-plugins#54 phase 2 the plugin frame calls the proxy itself
+ * with a capability from the page and a key only it holds, so this module
+ * never sees a credential. The direct transport this used to have, which
+ * spent a rotating connection code per request (`getCode`/`setCode`), went
+ * with the proxy's connection codes.
+ *
+ * Writes are journalled before they leave (`journal[id]`, persisted by
+ * `save`), so a write whose outcome is unknown is never resent. Calls are
+ * serialised, one at a time.
  */
-export function proxyTransport({
-  url,
-  repository,
-  getCode,
-  setCode,
-  journal,
-  save,
-  fetcher = fetch,
-  dispatch,
-}) {
-  const origin = new URL(url);
-  if (
-    origin.protocol !== 'https:' &&
-    !(
-      origin.protocol === 'http:' &&
-      ['localhost', '127.0.0.1'].includes(origin.hostname)
-    )
-  )
-    throw new Error('Use an HTTPS proxy or loopback HTTP');
+export function proxyTransport({ repository, journal, save, dispatch }) {
+  if (typeof dispatch !== 'function')
+    throw new Error('proxyTransport needs a dispatch function');
   const root = endpoint(repository);
   let pending = Promise.resolve();
 
@@ -71,71 +66,33 @@ export function proxyTransport({
       }
 
       const target = new URL(intent.url);
-      let receipt;
-      let next = true;
-
-      if (dispatch) {
-        receipt = await dispatch(`${target.pathname}${target.search}`, {
-          method: intent.method,
-          ...(intent.body ? { body: intent.body } : {}),
-        }).catch(async error => {
-          // A dispatcher that knows the request never left (e.g. the host
-          // refused it before spending a connection code) says so with
-          // `notSent`; only then is the journal entry dropped, so the write
-          // is not stuck as uncertain. Anything else stays uncertain.
-          if (error?.notSent) {
-            if (writes) {
-              delete journal[id];
-              await save();
-            }
-
-            throw error;
+      const receipt = await dispatch(`${target.pathname}${target.search}`, {
+        method: intent.method,
+        ...(intent.body ? { body: intent.body } : {}),
+      }).catch(async error => {
+        // A dispatcher that knows the request never left (e.g. the host
+        // refused to mint a capability, or the browser cannot make the
+        // frame key) says so with `notSent`; only then is the journal entry
+        // dropped, so the write is not stuck as uncertain. Anything else
+        // stays uncertain.
+        if (error?.notSent) {
+          if (writes) {
+            delete journal[id];
+            await save();
           }
 
-          throw new Error(
-            `Proxy request failed (${error?.message ?? error}). Check CORS and reconnect; an uncertain write will not be resent.`,
-          );
-        });
-      } else {
-        const code = await getCode();
-        if (!code)
-          throw new Error(
-            'Connect to the proxy or supply a fresh connection code',
-          );
-        await setCode('');
-        const destination = new URL(
-          `/proxy/github-issues${target.pathname}${target.search}`,
-          origin,
+          throw error;
+        }
+
+        throw new Error(
+          `Proxy request failed (${error?.message ?? error}). Check CORS and reconnect; an uncertain write will not be resent.`,
         );
-        const response = await fetcher(destination.href, {
-          method: intent.method,
-          redirect: 'error',
-          credentials: 'omit',
-          headers: {
-            Authorization: `Bearer ${code}`,
-            Accept: 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-          },
-          ...(intent.body ? { body: intent.body } : {}),
-        }).catch(() => {
-          throw new Error(
-            'Proxy request failed. Check CORS and reconnect; an uncertain write will not be resent.',
-          );
-        });
-        next = response.headers.get('X-Connection-Code');
-        if (next) await setCode(next);
-        receipt = { status: response.status, body: await response.text() };
-      }
+      });
 
       if (writes && receipt.status >= 200 && receipt.status < 300) {
         journal[id].receipt = receipt;
         await save();
       }
-
-      if (!next)
-        throw new Error(
-          'Proxy did not expose X-Connection-Code. Enable CORS exposure and reconnect.',
-        );
 
       return receipt;
     };

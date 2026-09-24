@@ -1,7 +1,7 @@
 // @wc-ignore-file
 /**
- * The shared mock proxy's Clockify fixture, reached the way the host relay
- * reaches the real proxy: `{ platform, connectionId, path, query }` in,
+ * The shared mock proxy's Clockify fixture, reached the way the host's frame
+ * client reaches the real proxy: `{ platform, connectionId, path, query }` in,
  * `{ status, body }` out. Test-only; not bundled.
  */
 import {

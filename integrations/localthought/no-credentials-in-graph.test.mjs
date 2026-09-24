@@ -1,25 +1,34 @@
 /**
- * Guard for ontola/atomic-plugins#21: a LocalThought rotating connection code
- * is a live bearer credential and must never become Atomic graph data.
+ * Guard for ontola/atomic-plugins#21 and #54: nothing that grants access to a
+ * provider through the integration proxy may become Atomic graph data, and
+ * plugin code must not do the host's signing.
  *
- * `browser.ts` is the one sanctioned owner of the code: it keeps it in the
- * browser's `Storage` (localStorage), outside the synced graph, and never
- * returns it to callers. An unmerged Phase 2 of the Clockify drive plugin
- * (branch `claude/hopeful-hawking-kqlrdy`, `integrations/clockify/app/src/
- * App.tsx:14,47-50`) instead read the rotated `x-connection-code` header
- * (`proxyClient.ts:51`) and saved it as a `.../properties/connection-code`
- * property on the plugin's App resource, i.e. into a commit that syncs and
- * can later be shared with the drive. This test fails if either half of that
- * pattern appears in shipped source under `integrations/`.
+ * Since #54 phase 2 there are no rotating connection codes any more. The
+ * proxy account is the user's Atomic agent; a connection lives at the proxy;
+ * the data browser page signs its own calls with the user key; a plugin
+ * frame gets a short-lived capability from the page and signs each request
+ * with a key only it holds (atomic-server's `view-client.js`). None of that
+ * belongs in a plugin's source or in the drive. The rules:
+ *
+ * 1. **No credential-shaped graph property.** A property URL that names a
+ *    connection code, a capability or a PKCE code verifier. (An unmerged
+ *    Clockify drive plugin once saved the rotated code as
+ *    `.../properties/connection-code`, into a commit that syncs.) A
+ *    connection *id* is a reference, not a credential, and is allowed.
+ * 2. **No retired rotation header.** `x-connection-code` carried the next
+ *    rotating code; nothing may read or send it any more.
+ * 3. **No request signing or capability minting in plugin code.** The
+ *    `x-atomic-signature` header and the capability's signed prefix
+ *    (`integration-proxy-capability-v2`) belong to the host (atomic-server's
+ *    page and `view-client.js`) and to the proxy. The mock proxy's own
+ *    verifier (`mock-proxy-auth.mjs`) is a `mock-*` file and skipped.
  *
  * Scope and limits, stated exactly: this is a line-by-line text scan of
- * `.ts`/`.tsx`/`.js`/`.mjs` files, not a data-flow analysis. It catches a
- * property URL naming a connection code and any mention of the rotation
- * header outside `browser.ts`; it does not catch a code saved under an
- * unrelated property name after being obtained some other way. Tests
- * (`*.test.*`, `*.spec.*`), `e2e/` directories, `mock-*` servers,
- * `node_modules` and `dist` are skipped, since they legitimately emit or
- * inspect the header.
+ * `.ts`/`.tsx`/`.js`/`.mjs` files, not a data-flow analysis. It does not
+ * catch a credential saved under an unrelated property name after being
+ * obtained some other way. Tests (`*.test.*`, `*.spec.*`), `e2e/`
+ * directories, `mock-*` servers, `node_modules` and `dist` are skipped,
+ * since they legitimately emit or inspect these values.
  *
  * Plain `node --test`, no dependencies, so it runs in this repo's own CI
  * ("Tooling unit tests" in .github/workflows/ci.yml) without an
@@ -35,29 +44,6 @@ import { fileURLToPath } from 'node:url';
 
 const integrationsRoot = fileURLToPath(new URL('..', import.meta.url));
 
-/** The primary owner of the rotated code (posix path relative to `integrations/`). */
-const CODE_OWNER = 'localthought/browser.ts';
-
-/**
- * Files allowed to handle the rotated code besides `CODE_OWNER`, each with the
- * reason. They must hand the code only to host-provided storage (session or
- * IndexedDB), never to a synced resource.
- */
-const OTHER_CODE_HANDLERS = new Map([
-  [
-    // The Devonian GitHub issues proxy client rotates the code through the
-    // host's `getCode`/`setCode` (moved here from devonian/ in the
-    // plugin-folder containment change).
-    'issue-tracker/devonian/github-issues/proxy.mjs',
-    'rotates via host-provided getCode/setCode',
-  ],
-  [
-    // Only matches proxy.mjs's error message to classify it as needing a person.
-    'issue-tracker/devonian/github-issues/background.mjs',
-    'matches an error message, holds no code',
-  ],
-]);
-
 const SKIPPED_DIRS = new Set([
   'node_modules',
   'dist',
@@ -67,32 +53,29 @@ const SKIPPED_DIRS = new Set([
 const SOURCE = /\.(ts|tsx|js|mjs)$/;
 const NOT_SHIPPED = /(\.test\.|\.spec\.|(^|\/)mock-[^/]*$)/;
 
-/** A graph property whose name says it holds a connection code. */
-const CODE_PROPERTY = /\/properties\/[^\s'"`]*connection[-_]?code/i;
-/** The proxy's rotation header, whose value is the next live code. */
-const ROTATION_HEADER = /x-connection-code/i;
+const RULES = [
+  {
+    rule: 'credential-shaped property',
+    /** A graph property whose name says it holds a code, capability or verifier. */
+    pattern:
+      /\/properties\/[^\s'"`]*(connection[-_]?code|capabilit|code[-_]?verifier)/i,
+  },
+  {
+    rule: 'retired rotation header',
+    pattern: /x-connection-code/i,
+  },
+  {
+    rule: 'host signing in plugin code',
+    pattern: /x-atomic-signature|integration-proxy-capability-v2/i,
+  },
+];
 
 export function findCredentialLeaks(file, source) {
   const leaks = [];
   source.split('\n').forEach((text, index) => {
-    if (CODE_PROPERTY.test(text))
-      leaks.push({
-        file,
-        line: index + 1,
-        rule: 'connection-code property',
-        text: text.trim(),
-      });
-    if (
-      file !== CODE_OWNER &&
-      !OTHER_CODE_HANDLERS.has(file) &&
-      ROTATION_HEADER.test(text)
-    )
-      leaks.push({
-        file,
-        line: index + 1,
-        rule: 'rotation header outside browser.ts',
-        text: text.trim(),
-      });
+    for (const { rule, pattern } of RULES)
+      if (pattern.test(text))
+        leaks.push({ file, line: index + 1, rule, text: text.trim() });
   });
 
   return leaks;
@@ -109,7 +92,7 @@ function shippedSources(dir) {
   });
 }
 
-test('flags the Phase 2 Clockify App.tsx/proxyClient.ts pattern', () => {
+test('flags the old Clockify App.tsx/proxyClient.ts pattern', () => {
   const phase2 = [
     "  connectionCode: 'https://atomicdata.dev/integrations/clockify/properties/connection-code',",
     "  const nextCode = response.headers.get('x-connection-code');",
@@ -121,30 +104,31 @@ test('flags the Phase 2 Clockify App.tsx/proxyClient.ts pattern', () => {
       l.rule,
     ]),
     [
-      [1, 'connection-code property'],
-      [2, 'rotation header outside browser.ts'],
+      [1, 'credential-shaped property'],
+      [2, 'retired rotation header'],
     ],
   );
 });
 
-test('flags the underscore spelling of the property', () => {
-  assert.equal(
-    findCredentialLeaks(
-      'x/app.ts',
-      "set('https://example.com/properties/proxy_connection_code', c)",
-    ).length,
-    1,
-  );
+test('flags the underscore spelling, a capability and a verifier property', () => {
+  for (const line of [
+    "set('https://example.com/properties/proxy_connection_code', c)",
+    "set('https://example.com/properties/proxy-capability', token)",
+    "set('https://example.com/properties/code_verifier', v)",
+  ])
+    assert.equal(findCredentialLeaks('x/app.ts', line).length, 1, line);
 });
 
-test('lets browser.ts read the rotation header', () => {
-  assert.deepEqual(
-    findCredentialLeaks(
-      CODE_OWNER,
-      "const next = response.headers.get('x-connection-code');",
-    ),
-    [],
-  );
+test('flags a plugin that signs requests or mints capabilities itself', () => {
+  for (const line of [
+    "headers['x-atomic-signature'] = await sign(message);",
+    "const prefix = 'integration-proxy-capability-v2\\n';",
+  ])
+    assert.deepEqual(
+      findCredentialLeaks('pets/app/transport.ts', line).map(l => l.rule),
+      ['host signing in plugin code'],
+      line,
+    );
 });
 
 test('allows a non-secret connection reference', () => {
@@ -157,17 +141,17 @@ test('allows a non-secret connection reference', () => {
   );
 });
 
-test('the walk reaches the code owner, so it is not silently empty', () => {
-  assert.ok(shippedSources(integrationsRoot).includes(CODE_OWNER));
-});
-
-test('every allow-listed code handler still exists', () => {
+test('the walk reaches plugin sources, so it is not silently empty', () => {
   const sources = shippedSources(integrationsRoot);
-  for (const file of OTHER_CODE_HANDLERS.keys())
-    assert.ok(sources.includes(file), `${file} is allow-listed but not found`);
+  for (const file of [
+    'pets/app/transport.ts',
+    'issue-tracker/devonian/github-issues/proxy.mjs',
+  ])
+    assert.ok(sources.includes(file), file);
+  assert.ok(!sources.includes('localthought/mock-proxy-auth.mjs'));
 });
 
-test('no shipped source persists or handles a rotating connection code outside browser.ts', () => {
+test('no shipped source persists a credential, uses the rotation header or signs for the host', () => {
   const leaks = shippedSources(integrationsRoot).flatMap(file =>
     findCredentialLeaks(
       file,

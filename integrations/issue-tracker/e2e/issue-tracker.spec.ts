@@ -15,10 +15,11 @@
  * 4. Conflict recovery: the same title edited in the table and on GitHub
  *    pauses sync; "Keep GitHub's version" settles it.
  *
- * GitHub-side reads and edits go straight to the mock proxy with the
- * connection this browser holds (the host page's localStorage, under its
- * Web Lock), standing in for someone working on GitHub. The app never sees
- * that code.
+ * GitHub-side reads and edits go through the mock's test drivers for the
+ * github-issues fixture (`POST /fixture/github-issues/<driver>`), standing
+ * in for someone working on GitHub. The connection itself lives at the
+ * proxy (#54 phase 2): the page redeems and delegates it, and the frame
+ * calls the proxy with a capability and its own key.
  *
  * Needs an atomic-server with the host relay (atomic-server#1657, in the
  * pin). Run it the way CI does:
@@ -74,7 +75,7 @@ test.describe('GitHub issues drive app', () => {
     ).toBeVisible();
     await page
       .getByRole('button', {
-        name: 'Use LocalThought to sync GitHub Issues with your Atomic Data Hub',
+        name: 'Use LocalThought to sync GitHub Issues with this destination',
         exact: true,
       })
       .click();
@@ -116,7 +117,7 @@ test.describe('GitHub issues drive app', () => {
       'Update #1: status Todo → Done (close it)',
       { timeout: 30_000 },
     );
-    expect((await github(page, 'GET', '/issues/1')).state).toBe('open');
+    expect((await github('GET', '/issues/1')).state).toBe('open');
     await review
       .getByRole('button', { name: 'Send 1 change to GitHub' })
       .click();
@@ -124,13 +125,13 @@ test.describe('GitHub issues drive app', () => {
       '1 sent to GitHub',
       { timeout: 30_000 },
     );
-    expect((await github(page, 'GET', '/issues/1')).state).toBe('closed');
+    expect((await github('GET', '/issues/1')).state).toBe('closed');
     await expect(review).toBeHidden();
 
     // 4. Conflict: #2's title edited on both sides since the last sync.
     const second = await subjectOf(app, '#2 ');
     await setName(page, second, 'Export as CSV (edited here)');
-    await github(page, 'PATCH', '/issues/2', {
+    await github('PATCH', '/issues/2', {
       title: 'Export as CSV (edited on GitHub)',
     });
     await app.getByRole('button', { name: 'Sync now' }).click();
@@ -144,17 +145,21 @@ test.describe('GitHub issues drive app', () => {
       { timeout: 30_000 },
     );
     await expect(issues).toContainText('#2 Export as CSV (edited on GitHub)');
-    expect((await github(page, 'GET', '/issues/2')).title).toBe(
+    expect((await github('GET', '/issues/2')).title).toBe(
       'Export as CSV (edited on GitHub)',
     );
 
-    // The frame never saw the rotating code; the page holds it, the drive does not.
-    const stored = await page.evaluate(() =>
-      Object.keys(localStorage).filter(k =>
-        k.startsWith('atomic-proxy-connection-v1:'),
-      ),
+    // The connection lives at the proxy, owned by the signed-in user and
+    // delegated to this app; the page keeps nothing credential-like.
+    const connections = await proxyConnections('github-issues');
+    expect(connections).toHaveLength(1);
+    expect(connections[0].owner).toBe(await signedInAgent(page));
+    expect(connections[0].delegations).toHaveLength(1);
+    expect(await page.evaluate(() => Object.keys(localStorage))).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^atomic-proxy-connect|connection-v1/),
+      ]),
     );
-    expect(stored).toHaveLength(1);
   });
 });
 
@@ -213,48 +218,65 @@ async function setStatus(page: Page, subject: string, shortname: string) {
 }
 
 /**
- * One GitHub call straight to the mock proxy, spending and rotating the
- * connection code the host page holds, under the same Web Lock the host's
- * relay takes. Stands in for someone working on GitHub directly.
+ * Someone working on GitHub directly: the github-issues fixture's test
+ * drivers on the mock proxy (`snapshot`, `updateIssue`), not the app's
+ * connection.
  */
 async function github(
-  page: Page,
   method: 'GET' | 'PATCH',
   path: string,
   body?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  return page.evaluate(
-    async ({ verb, route, payload, repository }) => {
-      const key = Object.keys(localStorage).find(k => {
-        if (!k.startsWith('atomic-proxy-connection-v1:')) return false;
-        const c = JSON.parse(localStorage.getItem(k)!);
+  const number = Number(/^\/issues\/(\d+)$/.exec(path)?.[1]);
+  if (!number) throw new Error(`Unsupported GitHub path ${path}`);
 
-        return c.ready && c.platform === 'github-issues';
-      });
-      if (!key) throw new Error('No github-issues connection in this page');
+  const call = async (name: string, args: unknown[]) => {
+    const response = await fetch(
+      `${process.env.INTEGRATION_PROXY_URL}/fixture/github-issues/${name}`,
+      { method: 'POST', body: JSON.stringify(args) },
+    );
+    if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
 
-      return navigator.locks.request(key, async () => {
-        const c = JSON.parse(localStorage.getItem(key)!);
-        const response = await fetch(
-          `${c.origin}/proxy/github-issues/repos/${repository}${route}`,
-          {
-            method: verb,
-            headers: {
-              Authorization: `Bearer ${c.code}`,
-              ...(payload ? { 'Content-Type': 'application/json' } : {}),
-            },
-            ...(payload ? { body: JSON.stringify(payload) } : {}),
-          },
-        );
-        const next = response.headers.get('x-connection-code');
-        if (!next) throw new Error('The mock proxy did not rotate the code');
-        localStorage.setItem(key, JSON.stringify({ ...c, code: next }));
+    return response.json();
+  };
 
-        return response.json();
-      });
-    },
-    { verb: method, route: path, payload: body, repository: REPOSITORY },
+  if (method === 'PATCH')
+    return call('updateIssue', [REPOSITORY, number, body ?? {}]);
+  const { issues } = (await call('snapshot', [REPOSITORY])) as {
+    issues: { number: number }[];
+  };
+  const issue = issues.find(i => i.number === number);
+  if (!issue) throw new Error(`No issue #${number}`);
+
+  return issue;
+}
+
+interface MockConnection {
+  connection_id: string;
+  platform: string;
+  owner: string;
+  delegations: { agent: string; label: string | null }[];
+}
+
+/** The mock proxy's connections for `platform` (test-side introspection). */
+async function proxyConnections(platform: string): Promise<MockConnection[]> {
+  const response = await fetch(
+    `${process.env.INTEGRATION_PROXY_URL}/__mock/connections`,
   );
+  const { connections } = (await response.json()) as {
+    connections: MockConnection[];
+  };
+
+  return connections.filter(c => c.platform === platform);
+}
+
+/** The signed-in agent as the proxy names it: `atomic:agent:<base64url>`. */
+async function signedInAgent(page: Page): Promise<string> {
+  const key = await page.evaluate(() =>
+    window.store!.getAgent()!.getPublicKey(),
+  );
+
+  return `atomic:agent:${Buffer.from(key, 'base64').toString('base64url')}`;
 }
 
 /**

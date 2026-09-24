@@ -71,11 +71,13 @@ export function createController(
     async connect() {
       if (current.kind !== 'not-connected' || !store.proxy) return current;
       set({ kind: 'connecting' });
-      // Resolves only if the user cancels; on Connect the page navigates
-      // away and comes back to a fresh view.
-      await store.proxy.connect({ platform: PLATFORM });
+      // Connecting a new account navigates away and comes back to a fresh
+      // view; picking an existing one resolves `connected`, with no reload.
+      const result = await store.proxy.connect({ platform: PLATFORM });
 
-      return set({ kind: 'not-connected' });
+      return result?.status === 'connected'
+        ? this.load()
+        : set({ kind: 'not-connected' });
     },
 
     async sync() {

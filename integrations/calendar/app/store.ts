@@ -6,11 +6,16 @@
  * sync with that file by hand; if they disagree, view-client.js is ground
  * truth.
  *
- * A copy of `integrations/pets/app/store.ts` (the relay ops of
- * atomic-server#1657, in the pinned `feat/plugin-debug`). Calendar is the
- * first app to use `ifMatch`: view-client.js passes it through, and the
- * page (`helpers/proxyConnections.ts`) sends it as `If-Match`. Kept per
- * plugin on purpose (strict per-plugin containment).
+ * A copy of `integrations/pets/app/store.ts`. Calendar is the first app to
+ * use `ifMatch`: view-client.js sends it to the proxy as `If-Match`. Kept
+ * per plugin on purpose (strict per-plugin containment).
+ *
+ * `proxy` (ontola/atomic-plugins#54 phase 2): the frame names a platform and
+ * a connection id, never a credential. view-client.js makes an Ed25519 key in
+ * the frame's memory, gets a short-lived capability for it from the page
+ * (signed with the user's key, after the page checked the connection is
+ * delegated to this app), and calls the integration proxy directly, signing
+ * each request with that key. It is feature-detected, never assumed.
  */
 
 export type JSONValue =
@@ -37,13 +42,13 @@ export interface PluginResource {
   destroy(): Promise<void>;
 }
 
-/** One proxy call relayed by the host. Carries a connection reference, never a credential. */
+/** One proxy call, made by the host's frame client. Carries a connection reference, never a credential. */
 export interface HostProxyRequest {
   platform: string;
   connectionId: string;
-  /** Provider path after the proxy's `/proxy/<platform>` prefix; may carry `?query`. */
+  /** Provider path after the proxy's `/proxy/<connection>/<platform>` prefix; may carry `?query`. */
   path: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string>;
   /** JSON text. */
   body?: string;
@@ -64,11 +69,22 @@ export interface ConnectionReference {
   platform: string;
 }
 
+/** What `proxy.connect` resolves to, when it resolves. */
+export type ConnectResult =
+  | { status: 'cancelled' }
+  | { status: 'connected'; connectionId: string; platform: string };
+
 export interface HostProxy {
   request(request: HostProxyRequest): Promise<HostProxyResponse>;
   connections(args: { platform: string }): Promise<ConnectionReference[]>;
-  /** Settles only when the person cancels; on consent the page navigates away. */
-  connect(args: { platform: string }): Promise<{ status: 'cancelled' }>;
+  /**
+   * Shows the host's consent bar. Resolves `connected` when the person picks
+   * a connection they already have (the host delegates it to this app; no
+   * reload), `cancelled` when they cancel. Connecting a new account sends the
+   * page to the proxy and back, which reloads this view, so then it never
+   * settles.
+   */
+  connect(args: { platform: string }): Promise<ConnectResult>;
 }
 
 export interface PluginStore {
@@ -82,7 +98,7 @@ export interface PluginStore {
     propVals?: Record<string, JSONValue>;
   }): Promise<PluginResource>;
   subscribe(subject: string, handler: () => void): () => void;
-  /** Feature-detected: hosts without the relay (atomic-server#1624) lack it. */
+  /** Feature-detected: hosts without integration-proxy support lack it. */
   proxy?: HostProxy;
 }
 

@@ -197,17 +197,9 @@ function bridgeFor(options: PassOptions) {
     commentsFolder: tracker.commentsFolder,
   });
   const transport = proxyTransport({
-    // Only checked for shape: every request goes through `dispatch`.
-    url: 'https://api.github.com',
     repository,
     journal: state.state.journal,
     save: () => state.saveJournal(),
-    getCode: () => {
-      throw new Error('The host holds the connection code');
-    },
-    setCode: () => {
-      throw new Error('The host holds the connection code');
-    },
     dispatch:
       options.dispatch ?? relayDispatch(options.proxy, options.connectionId),
   });

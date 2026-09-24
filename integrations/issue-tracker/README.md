@@ -129,10 +129,13 @@ replace them.
 read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
 `app/frameStore.ts` has the detail):
 
-- The rotating connection code never reaches the frame: the bridge's
-  `proxyTransport` runs with a `dispatch` over `store.proxy.request`, and its
+- No credential reaches the app's code: the bridge's `proxyTransport` runs
+  with a `dispatch` over `store.proxy.request` (since #54 phase 2 the host's
+  frame client calls the proxy with a capability and its own key), and its
   write journal still guards uncertain writes. Host refusals that happen
-  before anything is sent are recognised by message and are not uncertain.
+  before anything is sent (no capability, no Ed25519 in this browser) are
+  recognised by message, and the proxy's own refusals by their `error`
+  code; neither is uncertain.
 - A resolved `save`/`newResource` is an acknowledged `/app-write` commit.
 - The frame's reads come from the host page's cache, which did **not** show
   the app's own save within 5 s in the e2e. The adapter corrects its reads

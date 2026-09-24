@@ -332,9 +332,9 @@
     "https://atomicdata.dev/integrations/properties/events": "Connect once, then Sync now whenever you want the latest pets. Nothing runs in the background.",
     "https://atomicdata.dev/integrations/properties/limitation": "Demo provider only, not a real account. Import only: nothing is written back. Keep the browser open while syncing.",
     "https://atomicdata.dev/integrations/properties/keywords": "pets demo example sample drive app ontology test touch points localthought",
-    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
-    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/pets/0.1.0/ui.js",
-    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-yzC96dzMDYdRJBZy7O5/wGDfMx7FoyPMmer51AQJ9M7IL9IfhMFbVOsbQR3Mw4pD",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.1",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/pets/0.1.1/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-41Lz+YXgQJNRqGsiGtduk4wE6fVURecH8sK68Rkwz6GS/EvcG974e69xvj3hEN8i",
     "https://atomicdata.dev/integrations/properties/app-row-name": "Pet",
     "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pets"
   }

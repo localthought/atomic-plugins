@@ -63,8 +63,8 @@ export interface Controller {
 
 const RECONNECT = [
   /^GitHub \S+ returned 401$/,
-  /connection for this app/,
-  /^Reconnect before retrying an uncertain request/,
+  /is delegated to this app/,
+  /^The integration proxy refused this connection/,
 ];
 const PAUSED = [
   /^Uncertain GitHub write/,
@@ -240,8 +240,9 @@ export function createController(
         await session.state.flush();
       } else if (current.kind !== 'not-connected') return current;
       set({ kind: 'connecting' });
-      // Resolves only if the person cancels; on Connect the page navigates
-      // away and the view comes back fresh.
+      // Resolves when the person cancels or picks an existing connection;
+      // connecting a new account navigates away and the view comes back
+      // fresh. Either way, the connections decide what shows next.
       await store.proxy.connect({ platform: PLATFORM });
 
       return this.load();

@@ -515,6 +515,22 @@ that is live); builds at the time of writing fall back to
 `VITE_INTEGRATION_PROXY_URL=https://proxy.example.org` to make your proxy the
 default for everyone who uses that build.
 
+What the data browser does with it, when a user clicks *Connect* for a
+drive app (atomic-server#1697): it sends the whole tab to the proxy's
+`/connect` (no login, no `user_id`); the proxy's page shows the platform and
+the data browser's origin, and goes to the provider (or asks for the API
+key); the proxy returns the tab to the data browser's `/app/integrations`
+with a single-use handoff code. The data browser then redeems it at `POST
+/connect/redeem`, signed with the user's Atomic key, which makes the user
+the connection's owner, and delegates the connection to the app's agent
+(`POST /connections/{id}/agents`). From then on, the app's null-origin frame
+calls `/proxy/{connection_id}/{platform}/…` on your proxy directly, with a
+capability the data browser signed and a key only the frame holds. Your
+proxy therefore has to answer CORS for the data browser's origin and for
+`Origin: null`; it does, for any origin and without cookies. If a user
+already has a connection for that platform, the data browser offers to
+reuse it, which only adds a delegation.
+
 Connections are stored in the proxy that created them. Pointing Atomic at a
 different proxy does not move them: users connect again on the new one.
 
@@ -626,11 +642,13 @@ needs:
 - The Atomic Server option (atomic-server#1702) was unmerged when this was
   written. The data-browser setting was described from the atomic-server
   source on its `feat/plugin-debug` branch
-  (`browser/data-browser/src/components/Settings/IntegrationSettings.tsx`,
-  `browser/data-browser/src/helpers/integrationProxy.ts`, and this
-  repository's
-  [`integrations/localthought/browser.ts`](../integrations/localthought/browser.ts)
-  for the fallback default), not from a release.
+  (`browser/data-browser/src/components/Settings/IntegrationSettings.tsx`
+  and `browser/data-browser/src/helpers/integrationProxy.ts`), not from a
+  release. The connect flow above was read from atomic-server#1697 and run
+  against this repository's mock proxy
+  (`integrations/localthought/mock-proxy.mjs`, which re-implements the
+  proxy's signature, capability and delegation checks) in the drive apps'
+  e2e tests, not against a running `integration-proxy`.
 
 Questions and corrections:
 [ontola/atomic-plugins issues](https://github.com/ontola/atomic-plugins/issues).

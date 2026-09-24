@@ -54,15 +54,18 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
 - **Connecting.** "Connect Clockify" calls
   `store.proxy.connect({ platform: 'clockify' })`. The host, not the frame,
   draws a consent bar; only a click there starts the PKCE handoff to the
-  integration proxy, where the person enters their Clockify API key. The
-  host redeems the handoff, keeps the rotating connection code in its own
-  `localStorage`, bound to this app, and navigates back. The app finds the
-  connection with `store.proxy.connections({ platform: 'clockify' })`. The
-  frame and the drive never hold a code, token or connection id (#21).
-  Connections live in one browser: another browser shows "Not connected"
-  until the person connects there too.
+  integration proxy, where the person enters their Clockify API key; the
+  proxy keeps it, sealed. The host redeems the handoff (signed with the
+  user's key, so the user owns the connection), delegates it to this app
+  and navigates back. The app finds the connection with
+  `store.proxy.connections({ platform: 'clockify' })`. The app's code and
+  the drive never hold a key, token or capability (#21); the frame's
+  requests are signed by the host's frame client.
+  Connections live at the proxy under the user's agent, so another browser
+  signed in as the same user finds the same connection (not tried in the
+  e2e, which uses one browser).
 - **Setup.** Once connected, the frame reads the account (`/api/v1/user`)
-  and its workspaces (`/api/v1/workspaces`) through the relay and asks for
+  and its workspaces (`/api/v1/workspaces`) through the proxy and asks for
   a workspace and a 7- or 30-day look-back. It stores only the workspace id,
   the account id and the look-back on the App resource, as three Properties
   (`clockify-workspace`, `clockify-account`, `clockify-lookback-days`).
@@ -161,8 +164,9 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
   refolding, any permutation folds the same, snapshot + tail equals the
   full fold, two devices' diffs fold the same, fields equal the latest read.
 - **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
-  against the pinned atomic-server (`.atomic-server-ref`, which includes the
-  relay from atomic-server#1657) and the local mock proxy: connect through
+  against the pinned atomic-server (`.atomic-server-ref`, which includes
+  frame capabilities from atomic-server#1697) and the local mock proxy,
+  which checks the proxy's 0.2 signatures: connect through
   the consent bar, setup in the frame, Property and row writes through the
   real `/app-write`, 2 completed entries imported (running timer and break
   not), reopen with no duplicates, a changed entry updated in place, the

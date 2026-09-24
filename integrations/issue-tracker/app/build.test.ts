@@ -28,9 +28,9 @@ describe('GitHub issues drive-app bundle', async () => {
     expect(text).not.toMatch(/\bfetch\(/);
     expect(text).not.toMatch(/navigator\.locks/);
     expect(text).not.toMatch(/node:/);
-    // proxyTransport's own code-spending branch is bundled but unreachable:
-    // sync.ts always passes `dispatch`, and its getCode/setCode throw.
-    expect(text).toMatch(/The host holds the connection code/);
+    // No connection codes any more (#54 phase 2): proxyTransport only
+    // dispatches through the host.
+    expect(text).not.toMatch(/x-connection-code|getCode|setCode/i);
   });
 
   it("bundles devonian's Atomic Data API and reconcileRecord only", () => {

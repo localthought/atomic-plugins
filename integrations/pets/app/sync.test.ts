@@ -114,6 +114,33 @@ describePlatform('relayTransport', () => {
     });
     expect(store.calls.at(-1)!.path).toBe('/pets?page=2');
   });
+
+  it("throws the integration proxy's own refusals instead of passing them on as Pets' answer", async () => {
+    const answer = (status: number, body: unknown) =>
+      relayTransport(
+        {
+          request: async () => ({ status, headers: {}, body }),
+          connections: async () => [],
+          connect: async () => ({ status: 'cancelled' as const }),
+        },
+        { platform: 'pets', connectionId: 'c1' },
+        'https://pets.example/v1',
+      )({
+        url: new URL('https://pets.example/v1/pets'),
+        method: 'GET',
+        headers: {},
+      });
+    await expect(
+      answer(403, { error: 'not_delegated', message: 'no delegation' }),
+    ).rejects.toThrow(
+      'The integration proxy refused this connection (not_delegated: no delegation). Connect again.',
+    );
+    await expect(answer(401, { error: 'stale_timestamp' })).rejects.toThrow(
+      'The integration proxy refused the request (stale_timestamp).',
+    );
+    // A provider's own error body is Pets' answer, passed on as is.
+    expect((await answer(404, { error: 'Not found' })).status).toBe(404);
+  });
 });
 
 describePlatform('controller', () => {

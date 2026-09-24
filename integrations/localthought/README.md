@@ -1,145 +1,101 @@
-# LocalThought browser integrations
+# LocalThought: the shared mock proxy and what is left of the old flow
 
-> **Historical.** Most of this file describes the LocalThought connect
-> dialog, sync panel and lens hooks that atomic-server's data-browser used
-> to have. atomic-server removed them (`f3efedf65`, `c707ca4ed`), and the
-> pinned host (`.atomic-server-ref`) no longer imports anything from this
-> folder; its relay (`helpers/proxyConnections.ts`) is a port of `browser.ts`.
-> The UI steps, Settings, the Calendar and Todoist behaviour and the
-> browser-only regression below refer to that retired runtime, and the
-> verification notes were made against it. What this folder still provides
-> is the shared mock proxy (`mock-proxy.mjs`) every e2e lane uses, and the
-> `no-credentials-in-graph` check. Current provider integrations are drive
-> apps; see
-> [`../READINESS.md`](../READINESS.md).
+This folder holds:
 
-The LocalThought flow runs entirely in the browser: catalog discovery, OAuth
-consent, PKCE-protected return handling, paginated Syncables reads, ontology
-creation and local Store/OPFS writes. Installation validates access once, creates
-a folder, and starts an automatic inbound import without a proposal dialog. No AtomicServer HTTP
-instance is needed. LocalThought remains the remote OAuth and API proxy.
-Of that, `BrowserIntegrations` (`browser.ts`, this directory) provides only
-catalog discovery, OAuth/PKCE and the rotating-code authenticated proxy call
-— see [Building a LocalThought connector](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector)
-in the parent README for exactly where that boundary sits. The paginated
-Syncables read and ontology creation are done by a sync engine that
-`atomic-server` composes on top of it; that engine's code does not live in
-this repo.
+- **`mock-proxy.mjs`**, the local-only integration proxy every e2e lane
+  runs (`integrations/tooling/serve.mjs` starts it on the lane's
+  `mockProxy` port). Never deploy it.
+- **`mock-proxy-auth.mjs`**, its copy of the real proxy's 0.2
+  authentication checks, plus a test signer.
+- **`no-credentials-in-graph.test.mjs`**, the text scan that keeps
+  credentials out of shipped plugin source and the graph.
+- `plugin.ts`/`schema.ts`, the generic sandbox mapper and platform schema
+  from the retired runtime (below); `issue-tracker/` still imports
+  `schema.ts`.
 
-Open Integrations, select a platform and choose **Install and connect**. The
-browser creates a PKCE verifier and opens LocalThought's consent page, where
-the selected platform is shown before you approve access. OAuth returns to the
-same frontend `/app/integrations` page, and the browser redeems the one-time
-handoff with the verifier. No tenant secret is entered in the browser. The
-short-lived return is bound to the agent, drive and proxy; its code is removed
-from the address bar immediately. A ten-minute, non-secret session marker resumes
-setup if removing those parameters remounts the page; completing installation or
-closing its setup dialog clears the marker.
-Connection codes are stored in this browser's localStorage, outside the synced
-graph, and may be read by code running on this frontend origin. They must never
-be written into an Atomic resource, including a drive plugin's own App resource
-(ontola/atomic-plugins#21). `node --test
-integrations/localthought/no-credentials-in-graph.test.mjs` enforces this for
-shipped source under `integrations/`. Clearing site
-data requires reconnecting. Existing server-held connections require reconnecting.
-Web Locks serialize rotating codes across tabs; a request consumes its code
-before dispatch and saves the replacement before processing data. Uncertain
-requests cannot silently replay credentials.
+Current provider integrations are drive apps; see
+[`../README.md`](../README.md#building-a-localthought-reflectorsyncablesdevonian-connector)
+and [`../READINESS.md`](../READINESS.md).
 
-The pure import mapper produces the existing reviewed intents from what the
-sync engine reads; user-edited plugin source is not executed on this path.
-Local edits and repeated imports retain the existing reconciliation behavior.
-(This paragraph used to describe a Rust `syncables` crate vendored under
-`integrations/localthought/syncables/` and exposed to the browser via
-`atomic-server`'s `wasm/src/integrations.rs` — that vendoring has been
-removed from this repo; see the parent README's note on where the engine
-now lives. The standalone TypeScript `syncables` package is unrelated and
-lives at [`syncables/`](../../syncables/) in this repo's root.)
+## The mock proxy
 
-## Installation and browser refresh
+It speaks the protocol of `integration-proxy` 0.2 (ontola/atomic-plugins#54,
+[`../../integration-proxy/`](../../integration-proxy/)) on every route a
+client uses, and checks every signature the way the real proxy does, so a
+host that signs wrongly fails the e2e:
 
-After connecting, choose the scope and select **Complete installation**. The
-browser checks one catalog-selected provider API URL (HTTP success and a JSON
-response), without following pagination or saving that response. This is an
-access check, not a guarantee that every collection can be imported. Catalog
-metadata requests are separate from that one provider request. This access
-check is performed by the sync engine `atomic-server` composes over
-`BrowserIntegrations.request()`, not by anything in this repo.
+| Route                                                                                                                                                                    | What the mock does                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /connect?platform&redirect_uri&code_challenge&code_challenge_method=S256`                                                                                           | Consent page. No login and no `user_id`; the retired `user_id`/`credentials` parameters are refused. `redirect_uri` must be the lane's own `/app/integrations` (stricter than the real proxy). An API-key platform (a catalog document with an `apiKey` security scheme: `clockify`) shows an "API key" field and "Connect Clockify"; others show "Use LocalThought to sync {title} with this destination", as `integration-proxy/src/templates.rs` does. |
+| `POST /connect/authorize`                                                                                                                                                | The consent form. Stands in for the provider's OAuth and returns `redirect_uri?connection_code=<handoff>` (single use, 5 min), or `?error=access_denied` on Cancel.                                                                                                                                                                                                                                                                                       |
+| `POST /connect/redeem`                                                                                                                                                   | Signed (v2). `{code, code_verifier}`; the signer becomes the owner. Answers `{connection_id, platform, owner}`.                                                                                                                                                                                                                                                                                                                                           |
+| `GET /connections`, `DELETE /connections/{id}`, `POST /connections/{id}/agents`, `DELETE /connections/{id}/agents/{agent}`, `POST /runtimes`, `DELETE /runtimes/{agent}` | Signed (v2) management, owner only, with the real proxy's response shapes.                                                                                                                                                                                                                                                                                                                                                                                |
+| `ANY /proxy/{connection_id}/{platform}/{path}`                                                                                                                           | A frame's `Authorization: Capability <payload>.<sig>` plus a v2 signature by the capability's `cnf` key; or a request signed by the owner, a delegated app, or a registered runtime of a delegated app. Then the platform's fixture answers.                                                                                                                                                                                                              |
+| `GET /catalog`, `/catalog/<platform>.yaml`, `.selection.json`                                                                                                            | The fixtures' catalog documents.                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-Installation immediately creates a normal folder and offers **Open folder**.
-The full, paginated import runs in the background and creates typed tables and
-views inside it. There is no JSON preview or Apply step for inbound records.
-Opening the folder or a table refreshes it automatically, including after a
-reload. While it remains open, a visible, online tab refreshes every five
-minutes; returning to the tab or reconnecting the network also triggers refresh.
-**Sync now** is available alongside **Syncing…**, the last successful sync time,
-and any error. An import already started continues when navigating elsewhere
-within the app. Closing the page stops it; reopening retries from the provider.
+Checks, in the real proxy's order and with its `{error, message}` codes
+(`integration-proxy/src/api_error.rs`): v2 request signatures (headers
+`x-atomic-agent`, `x-atomic-public-key`, `x-atomic-timestamp`,
+`x-atomic-signature`, `x-atomic-signature-version: 2`; message
+`atomic-request-v2\nMETHOD\nURL\ntimestamp\nsha256(body)`; ±5 min; each
+signed request accepted once), agent ids (`atomic:agent:` or
+`did:ad:agent:`, either base64 alphabet; stored as
+`atomic:agent:<base64url>`), and capabilities (owner signature over
+`integration-proxy-capability-v2\n` + the JSON claims, exact claim set,
+`aud` = the mock's origin, `exp` at most 900 s ahead, connection and
+platform against the route, the `app`'s delegation, then the request
+signature by `cnf`).
 
-Settings, connection identifiers and sync status are saved only in this browser,
-scoped to the installing agent and drive. The folder and imported records are
-normal Atomic data. Another browser can read those records but needs its own
-connection to refresh them. No server runner or closed-tab schedule is created.
-A Web Lock covers the whole fetch/map/apply cycle, so simultaneous folder opens
-across tabs cannot independently import the same snapshot.
+**The signed URL.** Signatures cover the full URL, so every client must
+use exactly the mock's origin, `MOCK_PROXY_BASE_URL` (the real proxy's
+`BASE_URL`). `serve.mjs` sets it, `INTEGRATION_PROXY_URL` (the browser's
+proxy setting) and `ATOMIC_INTEGRATION_PROXY_URL` (the server's) to the
+same `http://127.0.0.1:<port>`. A request signed for `localhost` instead
+fails with `bad_signature`.
 
-Refresh uses the shared import baselines: stable source IDs reuse existing rows,
-Atomic-only fields and local edits are preserved, and conflicts stop application
-with a visible error. Missing rows do not imply deletion. Failed fetches leave
-existing records readable and retain the last success time. A partial local
-write is retried through the same stable identities on the next refresh.
-Provider writes are still explicitly reviewed; opening a folder never sends
-edits back to a provider.
+**What it does not have:** Postgres (state is in memory, per process),
+real OAuth, sealed credentials (it holds none; a pasted API key is checked
+for being non-empty and dropped), the 90-day idle sweep, the refresh lease,
+and the SaaS access policy (every agent is admitted).
 
-Existing manual installations remain readable. Completing installation with an
-existing connection creates a new browser-refresh folder; it does not move or
-silently take over the old plugin tables.
+**Shared vectors.** `mock-proxy.test.mjs` verifies the golden v2 request
+vectors (`integration-proxy/tests/fixtures/atomic-request-v2-vectors.json`,
+a copy of atomic-server's `lib/src/authentication_v2_vectors.json`) and
+atomic-server's pinned capability vector against `mock-proxy-auth.mjs`, and
+re-derives each vector's signature with the test signer.
 
-## Build and proxy requirements
+**Test-side routes** (no signature; the mock only listens locally):
 
-- Build `atomic-wasm` using `cd browser/data-browser && pnpm build:wasm`.
-- Open **Settings → Integration** to select the integration-proxy URL. The
-  preference is saved in this browser and applies without rebuilding. Connections
-  are isolated by proxy origin; switching back restores that proxy’s connections.
-  HTTPS or loopback HTTP origins only. **Reset to default** uses the deployment’s
-  `VITE_INTEGRATION_PROXY_URL`, or `https://localthought.io` when unset.
-- Existing bundled GitHub, Notion and MT940 plugins remain available
-  independently. Clockify is a LocalThought lens (`integrations/timesheets/`). Proxy cards have an accent border and a “Via integration proxy” label.
-- Deploy the companion integration-proxy CORS change. It handles preflights for
-  explicit Authorization headers and exposes `X-Connection-Code`, `Link`,
-  pagination/count headers, `ETag` and `Retry-After`. Cookie credentials are not
-  enabled; login and consent use top-level navigation. The browser sends
-  `platform`, `redirect_uri`, `user_id`, `code_challenge`,
-  `code_challenge_method=S256` and `credentials=connection` to `/connect`, then
-  redeems the callback code at `/connect/redeem` with its PKCE verifier.
-- Native AtomicServer's `TENANT_SECRET`, `ATOMIC_INTEGRATION_PROXY_URL` and
-  `ATOMIC_INTEGRATION_FRONTEND_ORIGIN` no longer configure this flow. Its
-  `/integration-proxy/*` handlers and Syncables dependency have been removed.
+- `POST /__fixture/<platform>`: a fixture's `control(command)` (Clockify's
+  failure injection and data changes).
+- `POST /fixture/<platform>/<driver>`: one of the drivers a fixture lists
+  (`drivers`), with a JSON array of arguments.
+- `GET /__mock/connections`: every connection with its owner, delegations
+  and `last_used_at`, and every runtime. No credential: the mock holds
+  none.
+- `POST /__mock/revoke` `{connection_id, agent?}`: drops one delegation, or
+  the whole connection, as the owner would from another device.
 
-Consumer limits are 10,000 requests, 5,000 records, 10 MB per page/document
-and 30 minutes per import, with a 30-second timeout per provider request. Calendar imports require explicit UTC date bounds.
-Closed tabs do not run schedules. Other legacy integrations,
-server plugin execution, actions and schedules are outside this migration.
+Fixtures live in their plugin folders; see
+[`fixtures/index.mjs`](fixtures/index.mjs). They still see provider paths
+under `/proxy/<platform>/…`: the mock strips the connection id first.
 
-## Checks
-
-```sh
-cargo check -p atomic-wasm --target wasm32-unknown-unknown
-browser/node_modules/.bin/vitest run --config integrations/localthought/vitest.config.ts
-```
-
-For the browser-only mock journey (no AtomicServer on port 19999):
+Run it alone, and its tests:
 
 ```sh
 MOCK_PROXY_PORT=19091 MOCK_FRONTEND_ORIGIN=http://localhost:6748 node integrations/localthought/mock-proxy.mjs
-# Separate terminal, browser/data-browser:
-VITE_INTEGRATION_PROXY_URL=http://127.0.0.1:19091 VITE_ATOMIC_SERVER_URL=http://127.0.0.1:19999 pnpm exec vite --host 127.0.0.1 --port 6748
-# Repository root:
-node integrations/localthought/browser-smoke.mjs
+node --test integrations/localthought/mock-proxy.test.mjs integrations/localthought/no-credentials-in-graph.test.mjs
 ```
 
-The mock is test-only. It uses a synthetic signed-in identity and data; never
-deploy it.
+## Deleted in #54 phase 2
+
+`browser.ts` (`BrowserIntegrations`: catalog discovery, OAuth/PKCE and the
+rotating-code proxy call), `settings.ts` (the proxy-origin setting and
+per-origin connection keys), their tests and `browser-smoke.mjs`. They
+spoke the proxy's retired connection codes (`Authorization: Bearer`,
+`X-Connection-Code`), and nothing imported them: atomic-server's
+`helpers/proxyConnections.ts` replaced them. The sections below describe
+the runtime they belonged to, as history.
 
 ## Historical server-flow verification
 

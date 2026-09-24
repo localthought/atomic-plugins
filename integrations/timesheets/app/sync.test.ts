@@ -14,6 +14,7 @@ import {
 import { atomic, NAME } from './ontology.js';
 import { ensureSchema, findSchema } from './schema.js';
 import { GENERATED_TABLE_NOTE, syncClockify } from './sync.js';
+import { saysDeleted } from './clockifyObserve.js';
 import { relayTransport, type ProxyTransport } from './transport.js';
 
 const NOW = Date.parse('2026-09-23T12:00:00Z');
@@ -278,5 +279,28 @@ describe('syncClockify against the shared Clockify mock', () => {
 
     expect(pages).toEqual(['1', '2']);
     expect(result.created).toBe(53);
+  });
+});
+
+describe('relayTransport and the integration proxy', () => {
+  it("throws the proxy's own refusal instead of reading it as Clockify's answer", async () => {
+    const transport = relayTransport(
+      {
+        request: async () => ({
+          status: 404,
+          headers: {},
+          body: { error: 'unknown_connection', message: 'no such connection' },
+        }),
+        connections: async () => [],
+        connect: async () => ({ status: 'cancelled' as const }),
+      },
+      CONNECTION,
+    );
+    await expect(transport.request('/v1/user')).rejects.toThrow(
+      'The integration proxy refused this connection (unknown_connection: no such connection). Connect again.',
+    );
+    // The proxy's own 404 must never read as "this entry was deleted".
+    const refused = await transport.request('/v1/user').catch(e => e);
+    expect(saysDeleted(refused)).toBe(false);
   });
 });

@@ -150,4 +150,6 @@ export default {
   title: 'GitHub Issues',
   jsonBody: true,
   create: githubTracker,
+  // For the drive app's e2e: someone reading and editing on GitHub itself.
+  drivers: ['snapshot', 'updateIssue'],
 };

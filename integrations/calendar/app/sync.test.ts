@@ -291,7 +291,7 @@ suite('Calendar drive app: supported path', () => {
     expect(store.google.writes).toEqual([]);
   });
 
-  it('a lost write response is reported as unknown, stops the batch, and the next preview after reconnecting shows what Google has', async () => {
+  it('a lost write response is reported as unknown, stops the batch, and the next preview shows what Google has', async () => {
     const { store, controller } = await imported();
     editRow(store, 'all-day', { [NAME]: 'All-day here' });
     editRow(store, 'timed', { [NAME]: 'Timed here' });
@@ -309,7 +309,19 @@ suite('Calendar drive app: supported path', () => {
     // Google did apply the first; the second was never dispatched.
     expect(store.google.writes.map(w => w.id)).toEqual(['all-day']);
 
-    // The spent connection can't be used again; the app asks to reconnect.
+    // Nothing was spent (no connection codes since #54 phase 2): the same
+    // connection previews again straight away.
+    await controller.refresh();
+    const after = ready(controller.state());
+    // Google has the first change: it now agrees, nothing to send for it.
+    expect(after.summary.conflicts).toEqual([]);
+    expect(after.summary.review.map(r => r.edit.id)).toEqual(['timed']);
+    expect(store.calls.at(-1)!.connectionId).toBe('c1');
+  });
+
+  it('a delegation revoked at the proxy asks to connect again', async () => {
+    const { store, controller } = await imported();
+    store.revoke('c1');
     await controller.refresh();
     expect(controller.state()).toMatchObject({
       kind: 'error',
@@ -319,10 +331,7 @@ suite('Calendar drive app: supported path', () => {
     await (
       await controller.load()
     ).refreshing;
-    const after = ready(controller.state());
-    // Google has the first change: it now agrees, nothing to send for it.
-    expect(after.summary.conflicts).toEqual([]);
-    expect(after.summary.review.map(r => r.edit.id)).toEqual(['timed']);
+    ready(controller.state());
     expect(store.calls.at(-1)!.connectionId).toBe('c2');
   });
 

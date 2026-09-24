@@ -3,9 +3,12 @@
  * The Calendar drive app (`../app/`) end to end, in its null-origin plugin
  * frame on the pinned atomic-server: connect Google Calendar through the
  * host's consent bar and the mock integration proxy, choose one calendar,
- * import it through the host's proxy relay, refresh after a Google-side
- * edit, then preview and send a local edit — including an ETag conflict and
- * a write whose response is lost.
+ * import it, refresh after a Google-side edit, then preview and send a local
+ * edit — including an ETag conflict and a write whose response is lost.
+ *
+ * The frame calls the proxy itself (#54 phase 2): a capability from the page,
+ * each request signed with the frame's own key, `If-Match` passed through.
+ * The mock proxy checks every signature the way the real one does.
  *
  * The provider is the mock proxy's stateful google-calendar fixture
  * (`../fixtures/google-calendar/scenario.mjs`). Its Google-side edits are
@@ -138,10 +141,10 @@ test.describe('calendar drive app', () => {
     expect((await driver('state', [])).writes).toHaveLength(1);
 
     // A lost response: the PATCH reaches the proxy, its answer never
-    // reaches the page. The app says it can't know, and asks to reconnect.
+    // reaches the frame. The app says it can't know.
     await app.getByRole('button', { name: 'Refresh' }).click();
     await expect(review).toContainText('Renamed here → Renamed twice');
-    await page.route('**/proxy/google-calendar/**', async route => {
+    await page.route('**/proxy/*/google-calendar/**', async route => {
       if (route.request().method() !== 'PATCH') return route.continue();
       await route.fetch();
       await route.abort('connectionreset');
@@ -149,27 +152,29 @@ test.describe('calendar drive app', () => {
     await sendOne.click();
     await expect(status).toContainText('may or may not have applied');
     await expect(sent).toContainText('Unknown whether Google applied it');
-    await page.unroute('**/proxy/google-calendar/**');
+    await page.unroute('**/proxy/*/google-calendar/**');
     expect((await driver('state', [])).writes).toHaveLength(2);
 
+    // Nothing was spent (there are no connection codes any more): the same
+    // connection refreshes straight away. Google has the change, so the new
+    // preview agrees: nothing to review.
     await app.getByRole('button', { name: 'Refresh' }).click();
-    await expect(
-      app.getByRole('button', { name: 'Connect Google Calendar' }),
-    ).toBeVisible();
-    await connectThroughHost(page, app);
-    // Google has the change, so the new preview agrees: nothing to review.
     await expect(status).toContainText('Last refreshed', { timeout: 30_000 });
     await expect(status).not.toContainText('to review');
     await expect(status).not.toContainText('conflict');
     expect((await driver('state', [])).writes).toHaveLength(2);
 
-    // The frame never held the rotating code; the page keeps it.
-    const stored = await page.evaluate(() =>
-      Object.keys(localStorage).filter(k =>
-        k.startsWith('atomic-proxy-connection-v1:'),
-      ),
+    // The connection lives at the proxy, owned by the signed-in user and
+    // delegated to this app; the page keeps nothing credential-like.
+    const connections = await proxyConnections('google-calendar');
+    expect(connections).toHaveLength(1);
+    expect(connections[0].owner).toBe(await signedInAgent(page));
+    expect(connections[0].delegations).toHaveLength(1);
+    expect(await page.evaluate(() => Object.keys(localStorage))).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^atomic-proxy-connect|connection-v1/),
+      ]),
     );
-    expect(stored.length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -185,11 +190,39 @@ async function connectThroughHost(page: Page, app: FrameLocator) {
   ).toBeVisible();
   await page
     .getByRole('button', {
-      name: 'Use LocalThought to sync Google Calendar with your Atomic Data Hub',
+      name: 'Use LocalThought to sync Google Calendar with this destination',
       exact: true,
     })
     .click();
   await expect(page).not.toHaveURL(/connection_code=|integration_state=/);
+}
+
+interface MockConnection {
+  connection_id: string;
+  platform: string;
+  owner: string;
+  delegations: { agent: string; label: string | null }[];
+}
+
+/** The mock proxy's connections for `platform` (test-side introspection). */
+async function proxyConnections(platform: string): Promise<MockConnection[]> {
+  const response = await fetch(
+    `${process.env.INTEGRATION_PROXY_URL}/__mock/connections`,
+  );
+  const { connections } = (await response.json()) as {
+    connections: MockConnection[];
+  };
+
+  return connections.filter(c => c.platform === platform);
+}
+
+/** The signed-in agent as the proxy names it: `atomic:agent:<base64url>`. */
+async function signedInAgent(page: Page): Promise<string> {
+  const key = await page.evaluate(() =>
+    window.store!.getAgent()!.getPublicKey(),
+  );
+
+  return `atomic:agent:${Buffer.from(key, 'base64').toString('base64url')}`;
 }
 
 /** Calls a mock-proxy test driver of the google-calendar fixture. */
