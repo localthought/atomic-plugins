@@ -222,3 +222,73 @@ describe('Money view: detail', () => {
     expect(rows[0].tabIndex).toBe(-1);
   });
 });
+
+describe('Money view: import sheet', () => {
+  const choose = async (root: HTMLElement, name: string, body: string) => {
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File([body], name)],
+    });
+    input.dispatchEvent(new Event('change'));
+    for (let i = 0; i < 10; i++) await settle();
+  };
+
+  const mt940Text = (closing = '107,66') =>
+    `:20:SYNTHETIC\n:25:NL42BUNQ0123456789\n:28C:31/1\n:60F:C260901EUR100,00\n:61:2609020902D12,34NTRFNONREF//TEST-1\n:86:Fixture lunch\n:61:2609030903C20,00NTRFNONREF//TEST-2\n:86:Fixture refund\n:62F:C260903EUR${closing}\n`;
+
+  it('previews a file as a modal dialog with a reconciliation card per statement', async () => {
+    const root = await open(fakeStore());
+    await choose(root, 'bunq.sta', mt940Text());
+    const dialog = root.querySelector('[role="dialog"]')!;
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(text(dialog.querySelector('.m-stmt'))).toMatch(
+      /NL42 BUNQ 0123 4567 89 · EUR\s*Statement 31\/1.*€100\.00\s*→\s*€107\.66\s*Balances match/,
+    );
+    expect(
+      text(dialog.querySelector('[role="tab"][aria-selected="true"]')),
+    ).toBe('New 2');
+    const apply = [...dialog.querySelectorAll('button')].find(b =>
+      text(b).startsWith('Import 2'),
+    )!;
+    expect(apply.disabled).toBe(true);
+    expect(apply.getAttribute('aria-describedby')).toBe('money-apply-note');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('moves focus to the banner title when the file fails', async () => {
+    const root = await open(fakeStore());
+    await choose(root, 'bunq.sta', mt940Text('107,67'));
+    const title = root.querySelector('.m-dialog .pl-banner h3')!;
+    expect(text(title)).toBe("Balances in this statement don't add up");
+    expect(document.activeElement).toBe(title);
+    expect(text(root.querySelector('.m-figs'))).toContain('Difference');
+    expect(text(root.querySelector('.m-figs .m-bad'))).toBe('Difference€0.01');
+  });
+
+  it('applies through a host import op when there is one, and closes', async () => {
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    const applied: string[] = [];
+    await mount(root, fakeStore(), {
+      today: () => '2026-09-24',
+      locale: 'en-GB',
+      width: 1200,
+      importer: {
+        apply: async (_text, file) => {
+          applied.push(file.name);
+
+          return { created: 2 };
+        },
+      },
+    });
+    await choose(root, 'bunq.sta', mt940Text());
+    [...root.querySelectorAll<HTMLButtonElement>('.m-dialog button')]
+      .find(b => text(b) === 'Import 2 transactions')!
+      .click();
+    await settle();
+    expect(applied).toEqual(['bunq.sta']);
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+});

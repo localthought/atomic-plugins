@@ -10,6 +10,7 @@
 import { mount } from '../app.js';
 import { fakeStore, seedRow, type FakeStore } from '../fakeStore.js';
 import { sampleRows } from './sample.js';
+import { BUNQ_SEPT, importedRows, mt940, RABO_SEPT } from './statements.js';
 
 /** The host's default theme values (useCreateThemeVars.ts), as in mockups.html. */
 const THEMES: Record<string, Record<string, string>> = {
@@ -100,7 +101,65 @@ export async function chooseFile(root: ParentNode, name: string, text: string) {
 
 export type Scenario = (root: HTMLElement, store: FakeStore) => Promise<void>;
 
-export const SCENARIOS: Record<string, { rows: boolean; run?: Scenario }> = {
+const BOTH = mt940([BUNQ_SEPT, RABO_SEPT]);
+/** The first three bunq rows were imported before, from an earlier export. */
+const EARLIER = importedRows(
+  mt940([{ ...BUNQ_SEPT, lines: BUNQ_SEPT.lines.slice(0, 3) }]),
+);
+
+export const SCENARIOS: Record<
+  string,
+  {
+    rows: boolean | (() => ReturnType<typeof sampleRows>);
+    run?: Scenario;
+    /** Stops the import check after its first step. */
+    pause?: boolean;
+  }
+> = {
+  checking: {
+    rows: () => EARLIER,
+    pause: true,
+    run: async root => chooseFile(root, 'bunq-2026-09.sta', BOTH),
+  },
+  preview: {
+    rows: () => EARLIER,
+    run: async root => chooseFile(root, 'bunq-2026-09.sta', BOTH),
+  },
+  'preview-nothing-new': {
+    rows: () => importedRows(BOTH),
+    run: async root => chooseFile(root, 'bunq-2026-09.sta', BOTH),
+  },
+  'error-balance': {
+    rows: () => EARLIER,
+    run: async root =>
+      chooseFile(
+        root,
+        'rabo-sept.sta',
+        mt940([{ ...RABO_SEPT, closing: '19783' }]),
+      ),
+  },
+  conflict: {
+    rows: () => EARLIER,
+    run: async root =>
+      chooseFile(
+        root,
+        'bunq-2026-09.sta',
+        mt940([
+          {
+            ...BUNQ_SEPT,
+            lines: BUNQ_SEPT.lines.map((l, i) =>
+              i === 0
+                ? {
+                    ...l,
+                    amount: '-65.64',
+                    narrative: 'Adobe Systems Software Ireland Ltd\nCC Plan',
+                  }
+                : l,
+            ),
+          },
+        ]),
+      ),
+  },
   'first-run': { rows: false },
   perf: { rows: false },
   ledger: {
@@ -192,8 +251,22 @@ export async function run(): Promise<void> {
   const root = document.createElement('div');
   document.body.append(root);
   if (name === 'perf') return perf(root);
-  const store = fakeStore({ rows: scenario.rows ? sampleRows() : [] });
-  await mount(root, store, { today: () => '2026-09-24', locale: 'en-GB' });
+  const rows =
+    typeof scenario.rows === 'function'
+      ? scenario.rows()
+      : scenario.rows
+        ? sampleRows()
+        : [];
+  const store = fakeStore({ rows });
+  let ticks = 0;
+  await mount(root, store, {
+    today: () => '2026-09-24',
+    locale: 'en-GB',
+    // "checking": let the first step finish, then hold.
+    tick: scenario.pause
+      ? () => (ticks++ ? new Promise<void>(() => {}) : Promise.resolve())
+      : undefined,
+  });
   await scenario.run?.(root, store);
   await wait(80);
   document.body.dataset.ready = 'true';

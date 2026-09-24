@@ -26,8 +26,9 @@ import {
   type PillState,
 } from './ui/components.js';
 import { h, icons } from './ui/dom.js';
+import { importSheet, importStatus, type ImportActions } from './viewImport.js';
 
-export interface Actions extends LedgerActions {
+export interface Actions extends LedgerActions, ImportActions {
   setTab(tab: Tab): void;
   reload(): void;
 }
@@ -38,6 +39,8 @@ export type { Ctx };
 export function status(ctx: Ctx): { state: PillState; text: string } {
   const { state, locale } = ctx;
   const view = state.view;
+  const importing = importStatus(state);
+  if (importing) return importing;
 
   switch (view.kind) {
     case 'loading':
@@ -170,5 +173,6 @@ export function renderApp(ctx: Ctx, actions: Actions): Node[] {
       'Money views',
     ),
     ...body(ctx, actions),
+    ...(state.importing ? importSheet(ctx, state.importing, actions) : []),
   ];
 }

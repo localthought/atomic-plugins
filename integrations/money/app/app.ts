@@ -4,7 +4,8 @@
  * file handling. `main.ts` exports it to the host as `view()`; the
  * screenshot harness calls it with a pinned date and locale.
  */
-import { createController, type State } from './controller.js';
+import { decodeStatement } from './check.js';
+import { createController, type ImportPort, type State } from './controller.js';
 import { MONEY_CSS } from './styles.js';
 import type { PluginStore } from './store.js';
 import { installStyles } from './ui/components.js';
@@ -18,6 +19,10 @@ export interface MountOptions {
   locale?: string;
   /** A fixed layout width (tests); otherwise the frame's, observed. */
   width?: number;
+  /** Applies an import; the pinned host offers none (issues.md M-8). */
+  importer?: ImportPort;
+  /** Yield between import check steps (the harness holds one). */
+  tick?: () => Promise<void>;
 }
 
 /** Renders the app into `root`. `view()` is this with the browser's defaults. */
@@ -65,7 +70,59 @@ export async function mount(
       fileInput.value = '';
       fileInput.click();
     },
+    closeImport: () => {
+      controller.closeImport();
+      opener?.focus();
+    },
+    setPreviewTab: tab => controller.setPreviewTab(tab),
+    applyImport: () => void controller.applyImport(),
   };
+
+  /** Where focus goes back to when the import sheet closes. */
+  let opener: HTMLElement | undefined;
+
+  const importFile = (file: File) => {
+    const active = doc.activeElement as HTMLElement | null;
+    if (!current?.importing && active && root.contains(active)) opener = active;
+    void controller.importFile({
+      name: file.name,
+      size: file.size,
+      text: async () =>
+        decodeStatement(new Uint8Array(await file.arrayBuffer())),
+    });
+  };
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) importFile(file);
+  });
+
+  // Dropping a file anywhere starts an import; the file button stays the
+  // accessible path.
+  let dragging = 0;
+  const hasFiles = (event: DragEvent) =>
+    [...(event.dataTransfer?.types ?? [])].includes('Files');
+  doc.addEventListener('dragenter', event => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragging++;
+    root.classList.add('m-dropping');
+  });
+  doc.addEventListener('dragover', event => {
+    if (hasFiles(event)) event.preventDefault();
+  });
+  doc.addEventListener('dragleave', () => {
+    dragging = Math.max(0, dragging - 1);
+    if (!dragging) root.classList.remove('m-dropping');
+  });
+  doc.addEventListener('drop', event => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragging = 0;
+    root.classList.remove('m-dropping');
+    const file = event.dataTransfer?.files?.[0];
+    if (file) importFile(file);
+  });
 
   /** The modal (detail drawer or sheet, import sheet) that holds focus. */
   const modal = () =>
@@ -73,6 +130,13 @@ export async function mount(
 
   const draw = (state: State) => {
     const opened = state.selected && state.selected !== current?.selected;
+    const sheet = state.importing;
+    const before = current?.importing;
+    const sheetOpened = sheet && !before;
+    const sheetFailed =
+      sheet &&
+      (sheet.step === 'error' || sheet.step === 'blocked') &&
+      before?.step !== sheet.step;
     current = state;
     replaceKeepingFocus(root, [
       ...renderApp(
@@ -85,6 +149,11 @@ export async function mount(
     // the row, which stays in view beside it.
     if (opened)
       modal()?.querySelector<HTMLElement>('[data-key="detail-close"]')?.focus();
+    // A blocking import error moves focus to the banner's title.
+    if (sheetFailed)
+      root.querySelector<HTMLElement>('.m-dialog .pl-banner h3')?.focus();
+    else if (sheetOpened)
+      root.querySelector<HTMLElement>('[data-key="import-close"]')?.focus();
   };
 
   /** Closes the detail and returns focus to the row that opened it. */
@@ -97,7 +166,11 @@ export async function mount(
       ?.focus();
   };
 
-  const controller = createController(store, draw, { today: options.today });
+  const controller = createController(store, draw, {
+    today: options.today,
+    importer: options.importer,
+    tick: options.tick,
+  });
 
   // Layout follows the frame's width: table or list, docked or modal detail.
   if (options.width === undefined && typeof ResizeObserver !== 'undefined')
@@ -116,6 +189,13 @@ export async function mount(
     if (event.defaultPrevented || event.metaKey || event.ctrlKey) return;
     const open = modal();
     if (open) trapTab(open, event);
+
+    if (event.key === 'Escape' && current?.importing) {
+      event.preventDefault();
+      actions.closeImport();
+
+      return;
+    }
 
     if (event.key === 'Escape' && current?.selected) {
       event.preventDefault();

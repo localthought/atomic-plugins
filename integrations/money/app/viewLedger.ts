@@ -95,7 +95,10 @@ export function derive(state: State, today: string): Derived {
 }
 
 /** The narrative's first line stands in for a counterparty (gap 6). */
-export function titleOf(row: Txn): { title: string; rest: string } {
+export function titleOf(row: { description: string; reference: string }): {
+  title: string;
+  rest: string;
+} {
   const lines = row.description
     .split('\n')
     .map(l => l.trim())

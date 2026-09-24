@@ -97,8 +97,31 @@ export async function resolveFields(
       fields[shortname as Shortname] ??= property!.subject;
   }
 
+  // `bankingSchema()` leaves the fingerprint out of the class (the importer
+  // writes it; nobody fills it in by hand), so find it, and anything else
+  // missing, by shortname: preferably the one in the class's own ontology.
+  const ontology = klass.get(atomic.parent);
+
+  for (const shortname of UNDECLARED) {
+    if (fields[shortname]) continue;
+    const found = await store
+      .query({ property: atomic.shortname, value: shortname })
+      .catch(() => [] as string[]);
+    if (!found.length) continue;
+    const resources = await Promise.all(
+      found.map(s => store.getResource(s).catch(() => undefined)),
+    );
+    const property =
+      resources.find(r => r && r.get(atomic.parent) === ontology) ??
+      resources.find(Boolean);
+    if (property) fields[shortname] = property.subject;
+  }
+
   return fields;
 }
+
+/** Written by the importer but not listed on the row class. */
+const UNDECLARED: Shortname[] = ['bank-fingerprint', 'bank-source-id'];
 
 /** The fields without which a row is not a bank transaction at all. */
 export const REQUIRED: BankField[] = [

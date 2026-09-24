@@ -4,6 +4,17 @@
  * place that talks to the store. Tests drive it with `fakeStore.ts`.
  */
 import {
+  compare,
+  formatOfText,
+  isBlocked,
+  problemOf,
+  read,
+  tooLarge,
+  type FileInfo,
+  type Preview,
+  type Problem,
+} from './check.js';
+import {
   defaultPeriod,
   noFilters,
   WINDOW,
@@ -31,6 +42,44 @@ export type Tab = 'transactions' | 'imports' | 'sources';
 
 export type NoteKey = 'category' | 'note';
 
+export type StepStatus = 'done' | 'now' | 'todo';
+
+/** The import sheet (DESIGN.md 6.2–6.5). */
+export type ImportSheet =
+  | {
+      step: 'checking';
+      file: FileInfo;
+      /** Read file · Check balances · Compare with existing transactions. */
+      lines: [StepStatus, StepStatus, StepStatus];
+      counts?: { statements: number; entries: number };
+    }
+  | {
+      step: 'preview';
+      file: FileInfo;
+      preview: Preview;
+      tab: 'new' | 'already' | 'blocked';
+      applying?: boolean;
+      /** Why applying failed, when it did. */
+      failure?: string;
+    }
+  | { step: 'error' | 'blocked'; file: FileInfo; problem: Problem };
+
+/** A file handed to the app: its name, size, and a way to read it as text. */
+export interface ChosenFile {
+  name: string;
+  size: number;
+  text(): Promise<string>;
+}
+
+/**
+ * Applies a checked statement through the sandbox importer. The pinned host
+ * has no app op for this (issues.md M-8), so `view()` passes none and the
+ * preview says where to import instead; tests pass a fake.
+ */
+export interface ImportPort {
+  apply(text: string, file: FileInfo): Promise<{ created: number }>;
+}
+
 /** A save of one annotation field, kept until the row is closed. */
 export interface Edit {
   value: string;
@@ -56,6 +105,9 @@ export interface State {
   edits: Partial<Record<NoteKey, Edit>>;
   /** What is typed but not yet saved, by field; kept across re-renders. */
   drafts: Partial<Record<NoteKey, string>>;
+  importing?: ImportSheet;
+  /** Whether the host can apply an import from the app (M-8). */
+  canApply: boolean;
 }
 
 export const NOT_A_BANK_TABLE =
@@ -73,6 +125,12 @@ export interface Controller {
   draft(field: NoteKey, value: string): void;
   /** Saves one annotation of the open row (on blur); no-op when unchanged. */
   saveNote(field: NoteKey, value: string): Promise<void>;
+  /** Checks a statement file and shows the import sheet. */
+  importFile(file: ChosenFile): Promise<void>;
+  setPreviewTab(tab: 'new' | 'already' | 'blocked'): void;
+  applyImport(): Promise<void>;
+  /** Closes the import sheet; during a check, abandons it. */
+  closeImport(): void;
   /** ISO date the period filters are relative to. */
   today(): string;
   dispose(): void;
@@ -81,6 +139,9 @@ export interface Controller {
 export interface Options {
   /** ISO date of "today"; the harness and tests pin it. */
   today?: () => string;
+  importer?: ImportPort;
+  /** Yields between check steps so each line can render; tests may pin it. */
+  tick?: () => Promise<void>;
 }
 
 export function localToday(): string {
@@ -96,7 +157,11 @@ export function localToday(): string {
 export function createController(
   store: PluginStore,
   render: (state: State) => void,
-  { today = localToday }: Options = {},
+  {
+    today = localToday,
+    importer,
+    tick = () => new Promise(resolve => setTimeout(resolve, 0)),
+  }: Options = {},
 ): Controller {
   let state: State = {
     view: { kind: 'loading', loaded: 0 },
@@ -107,7 +172,11 @@ export function createController(
     limit: WINDOW,
     edits: {},
     drafts: {},
+    canApply: Boolean(importer),
   };
+  /** Bumped on every new check or close, so a stale check stops. */
+  let run = 0;
+  let pendingText: string | undefined;
   let table: string | undefined;
   let unsubscribe: (() => void) | undefined;
   let refreshing: Promise<void> | undefined;
@@ -285,6 +354,122 @@ export function createController(
             details,
           });
       }
+    },
+    async importFile(file) {
+      const mine = ++run;
+      const info: FileInfo = { name: file.name, size: file.size };
+      const stale = () => mine !== run;
+      const stop = (problem: Problem) =>
+        update({
+          importing: {
+            step: isBlocked(problem) ? 'blocked' : 'error',
+            file: info,
+            problem,
+          },
+        });
+      update({
+        importing: {
+          step: 'checking',
+          file: info,
+          lines: ['now', 'todo', 'todo'],
+        },
+      });
+      const large = tooLarge(file.size);
+      if (large) return stop(large);
+      let text: string;
+
+      try {
+        text = await file.text();
+      } catch (error) {
+        if (!stale()) stop(problemOf(error));
+
+        return;
+      }
+
+      if (stale()) return;
+      info.format = formatOfText(text);
+      update({
+        importing: {
+          step: 'checking',
+          file: info,
+          lines: ['now', 'todo', 'todo'],
+        },
+      });
+      await tick();
+      if (stale()) return;
+      // The readers parse and reconcile in one pass; the checklist shows the
+      // two halves as the design's first two lines.
+      const parsed = read(text);
+      if (!parsed.ok) return stop(parsed.problem);
+      const counts = {
+        statements: parsed.statements.length,
+        entries: parsed.statements.reduce(
+          (n, s) => n + s.transactions.length,
+          0,
+        ),
+      };
+      update({
+        importing: {
+          step: 'checking',
+          file: info,
+          lines: ['done', 'now', 'todo'],
+          counts,
+        },
+      });
+      await tick();
+      if (stale()) return;
+      update({
+        importing: {
+          step: 'checking',
+          file: info,
+          lines: ['done', 'done', 'now'],
+          counts,
+        },
+      });
+      await tick();
+      if (stale()) return;
+      const checked = compare(parsed.format, parsed.statements, state.rows);
+      if (!checked.ok) return stop(checked.problem);
+      pendingText = text;
+      update({
+        importing: {
+          step: 'preview',
+          file: info,
+          preview: checked.preview,
+          tab: checked.preview.fresh.length ? 'new' : 'already',
+        },
+      });
+    },
+    setPreviewTab(tab) {
+      if (state.importing?.step === 'preview')
+        update({ importing: { ...state.importing, tab } });
+    },
+    async applyImport() {
+      const sheet = state.importing;
+      if (sheet?.step !== 'preview' || !importer || !pendingText) return;
+      const mine = run;
+      update({ importing: { ...sheet, applying: true, failure: undefined } });
+
+      try {
+        const { created } = await importer.apply(pendingText, sheet.file);
+        if (mine !== run) return;
+        pendingText = undefined;
+        update({ importing: undefined, arrived: { count: created } });
+      } catch (error) {
+        if (mine === run)
+          update({
+            importing: {
+              ...sheet,
+              applying: false,
+              failure: error instanceof Error ? error.message : String(error),
+            },
+          });
+      }
+    },
+    closeImport() {
+      run++;
+      pendingText = undefined;
+      if (state.importing) update({ importing: undefined });
     },
     today,
     dispose() {
