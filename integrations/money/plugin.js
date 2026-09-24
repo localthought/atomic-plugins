@@ -664,6 +664,88 @@ function parseCamt053(text) {
   return statements;
 }
 
+// integrations/money/schema.ts
+var DATE = "https://atomicdata.dev/datatypes/date";
+var STRING = "https://atomicdata.dev/datatypes/string";
+function bankingSchema() {
+  const fields = [
+    [
+      "bank-account",
+      "Account",
+      "Statement account identifier (MT940 field 25 or camt.053 Acct/Id); not necessarily an IBAN."
+    ],
+    [
+      "bank-currency",
+      "Currency",
+      "ISO 4217 currency code from the statement balance."
+    ],
+    [
+      "bank-amount",
+      "Amount",
+      "Exact signed decimal string in account currency. Negative is money out; positive is money in."
+    ],
+    [
+      "bank-value-date",
+      "Value date",
+      "Bank value date, without an inferred time zone."
+    ],
+    [
+      "bank-booking-date",
+      "Booking date",
+      "Booking date; value date when the statement omits it."
+    ],
+    [
+      "bank-description",
+      "Description",
+      "Original bank narrative: MT940 field 86 including its structured codes, or camt.053 counterparty and remittance information."
+    ],
+    [
+      "bank-reference",
+      "Reference",
+      "Bank reference, or customer reference if absent."
+    ],
+    [
+      "bank-transaction-code",
+      "Transaction code",
+      "Original transaction type code: the MT940 :61: code, or the camt.053 bank transaction code (domain/family/sub-family, or proprietary)."
+    ],
+    ["bank-statement", "Statement", "Source statement number and sequence."],
+    [
+      "bank-source-id",
+      "Source identity",
+      "Account-qualified importer identity for repeat detection."
+    ],
+    [
+      "bank-fingerprint",
+      "Import fingerprint",
+      "Original imported transaction content used to detect conflicting reimports."
+    ]
+  ];
+  return {
+    properties: fields.map(([shortname, name, description]) => ({
+      shortname,
+      name,
+      description,
+      datatype: shortname.endsWith("-date") ? DATE : STRING
+    })),
+    classes: [
+      {
+        shortname: "bank-transaction",
+        name: "Bank transaction",
+        description: "A booked bank statement entry imported from an MT940 or camt.053 statement.",
+        requires: [
+          "bank-account",
+          "bank-currency",
+          "bank-amount",
+          "bank-value-date",
+          "bank-source-id"
+        ],
+        recommends: fields.slice(0, 9).map((f) => f[0])
+      }
+    ]
+  };
+}
+
 // integrations/money/statement.ts
 function detectStatementFormat(text) {
   return text.replace(/^﻿/, "").trimStart().startsWith("<") ? "camt053" : "mt940";
@@ -679,7 +761,11 @@ function parseBankStatement(text) {
 
 // integrations/money/plugin.ts
 var manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  name: "bank-statements",
+  namespace: "atomic-plugins",
+  version: "0.2.0",
+  description: "Import bank transactions from MT940 and camt.053 statement exports.",
   operations: [],
   secrets: [],
   // The host checks this before starting the sandbox, so an importer installed
@@ -701,13 +787,40 @@ var manifest = {
       }
     },
     required: ["table", "rowClass", "properties"]
+  },
+  // The host draws the file picker and hands the decoded text over as
+  // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
+  // stop at 512 KB in parser.ts.
+  accepts: [
+    {
+      extensions: [".mt940", ".sta", ".940", ".txt", ".xml", ".camt", ".053"],
+      mediaTypes: ["text/plain", "application/xml", "text/xml"],
+      as: "text",
+      maxBytes: CAMT053_MAX_BYTES
+    }
+  ],
+  // Created by the host's Set up step, which stores the result as `config`.
+  destination: {
+    schema: bankingSchema(),
+    table: {
+      name: "Bank transactions",
+      rowClass: "bank-transaction",
+      columns: [
+        "bank-booking-date",
+        "bank-description",
+        "bank-amount",
+        "bank-currency",
+        "bank-account",
+        "bank-reference"
+      ]
+    }
   }
 };
 function run(ctx) {
-  const text = ctx.text ?? ctx.trigger?.payload?.text;
+  const text = ctx.upload?.text ?? ctx.text ?? ctx.trigger?.payload?.text;
   if (!text)
     throw new Error(
-      "Open Bank statements in Integrations and choose an MT940 or camt.053 file"
+      "Choose an MT940 or camt.053 file under Import on this importer's page"
     );
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };

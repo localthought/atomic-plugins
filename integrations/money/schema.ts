@@ -1,6 +1,16 @@
 // @wc-ignore-file
-import { Datatype, type SchemaSpec } from '../../browser/lib/src/index.js';
+// Type-only: plugin.ts bundles this file into the sandbox plugin.js, so it
+// must not pull the lib's runtime in. Datatypes are therefore the literal
+// URLs of `Datatype.DATE` and `Datatype.STRING`.
+import type { Datatype, SchemaSpec } from '../../browser/lib/src/index.js';
 
+const DATE = 'https://atomicdata.dev/datatypes/date' as Datatype;
+const STRING = 'https://atomicdata.dev/datatypes/string' as Datatype;
+
+/**
+ * The banking ontology, declared as the manifest's `destination.schema`: the
+ * host creates it in the drive when the importer is set up.
+ */
 export function bankingSchema(): SchemaSpec {
   const fields = [
     [
@@ -61,7 +71,7 @@ export function bankingSchema(): SchemaSpec {
       shortname,
       name,
       description,
-      datatype: shortname.endsWith('-date') ? Datatype.DATE : Datatype.STRING,
+      datatype: shortname.endsWith('-date') ? DATE : STRING,
     })),
     classes: [
       {

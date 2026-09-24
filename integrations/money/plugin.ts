@@ -3,10 +3,17 @@ import {
   importRecords,
   type ImportRecord,
 } from '../../browser/lib/src/import-records.js';
+import { CAMT053_MAX_BYTES } from './camt053.js';
+import { bankingSchema } from './schema.js';
 import { parseBankStatement } from './statement.js';
 
 export const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  name: 'bank-statements',
+  namespace: 'atomic-plugins',
+  version: '0.2.0',
+  description:
+    'Import bank transactions from MT940 and camt.053 statement exports.',
   operations: [],
   secrets: [],
   // The host checks this before starting the sandbox, so an importer installed
@@ -29,6 +36,33 @@ export const manifest = {
     },
     required: ['table', 'rowClass', 'properties'],
   },
+  // The host draws the file picker and hands the decoded text over as
+  // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
+  // stop at 512 KB in parser.ts.
+  accepts: [
+    {
+      extensions: ['.mt940', '.sta', '.940', '.txt', '.xml', '.camt', '.053'],
+      mediaTypes: ['text/plain', 'application/xml', 'text/xml'],
+      as: 'text',
+      maxBytes: CAMT053_MAX_BYTES,
+    },
+  ],
+  // Created by the host's Set up step, which stores the result as `config`.
+  destination: {
+    schema: bankingSchema(),
+    table: {
+      name: 'Bank transactions',
+      rowClass: 'bank-transaction',
+      columns: [
+        'bank-booking-date',
+        'bank-description',
+        'bank-amount',
+        'bank-currency',
+        'bank-account',
+        'bank-reference',
+      ],
+    },
+  },
 };
 export interface Config {
   table: string;
@@ -36,6 +70,8 @@ export interface Config {
   properties: Record<string, string>;
 }
 interface Host {
+  /** What the host hands over for a declared `accepts` file. */
+  upload?: { name?: string; mediaType?: string; size?: number; text?: string };
   text?: string;
   trigger?: { payload?: { text?: string; validate?: boolean } };
   config?: Config;
@@ -44,10 +80,12 @@ interface Host {
 }
 
 export function run(ctx: Host) {
-  const text = ctx.text ?? ctx.trigger?.payload?.text;
+  // `ctx.text` and `trigger.payload.text` are what the removed host dialog
+  // (atomic-server 4bab16ee6^) passed; kept for one release.
+  const text = ctx.upload?.text ?? ctx.text ?? ctx.trigger?.payload?.text;
   if (!text)
     throw new Error(
-      'Open Bank statements in Integrations and choose an MT940 or camt.053 file',
+      "Choose an MT940 or camt.053 file under Import on this importer's page",
     );
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };
