@@ -221,3 +221,21 @@ test('bundle builds reproducibly without broker dependencies', async () => {
   assert.equal(module.ntriples(fixture), ntriples(fixture));
   assert.equal(manifest.http, undefined);
 });
+
+test('manifest declares each consumed installation config field with host-supported types', () => {
+  assert.deepEqual(Object.keys(manifest.config.properties), [
+    'mode',
+    'parent',
+    'id',
+    'name',
+    'result',
+    'sourceSubject',
+  ]);
+  assert.deepEqual(manifest.config.required, ['mode', 'parent', 'id', 'name']);
+
+  for (const field of Object.values(manifest.config.properties)) {
+    assert.ok(['string', 'object'].includes(field.type));
+    assert.equal(typeof field.description, 'string');
+    assert.ok(field.description.length > 0);
+  }
+});

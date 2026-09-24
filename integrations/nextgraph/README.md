@@ -111,9 +111,14 @@ node integrations/tooling/run-lane.mjs nextgraph --tier node
 ```
 
 The build writes `integrations/nextgraph/dist/plugin.js` and `manifest.json`.
-Thirteen Node tests cover standard result parsing, exact RDF term serialization,
+Fourteen Node tests cover standard result parsing, exact RDF term serialization,
 reviewed atom import/export, denied reads, malformed/injected input, blank nodes,
 UTF-8/row bounds, duplicate snapshots and reproducible executable bundles.
 `fixtures/select.json` is a hand-authored standards fixture, not a broker capture.
 No live QuickJS execution, actual Atomic commit, independent SPARQL engine or
 NextGraph broker transfer has been verified; green CI does not establish those.
+
+The manifest declares every consumed installation configuration field using the
+host-supported string/object schema. Conditional fields are checked by the entry
+point: result for import, sourceSubject for export; mode/parent/id/name are
+always required.

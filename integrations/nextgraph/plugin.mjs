@@ -1,5 +1,33 @@
 /** NextGraph SELECT-result interchange adapter; QuickJS, no transport or broker. */
 export const manifest = {
+  config: {
+    key: 'nextgraph',
+    properties: {
+      mode: { type: 'string', description: 'Choose import or export.' },
+      parent: {
+        type: 'string',
+        description: 'Actual Atomic parent for the reviewed output resource.',
+      },
+      id: {
+        type: 'string',
+        description: 'Unique snapshot ID, at most 64 safe ASCII characters.',
+      },
+      name: {
+        type: 'string',
+        description: 'Output resource name, at most 256 characters.',
+      },
+      result: {
+        type: 'string',
+        description: 'SPARQL Results JSON text; required in import mode.',
+      },
+      sourceSubject: {
+        type: 'string',
+        description:
+          'Stored Atomic PlainText snapshot subject; required in export mode.',
+      },
+    },
+    required: ['mode', 'parent', 'id', 'name'],
+  },
   schemaVersion: 3,
   name: 'nextgraph',
   namespace: 'atomic-plugins',
