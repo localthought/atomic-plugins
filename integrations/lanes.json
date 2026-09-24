@@ -53,6 +53,13 @@
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
     {
+      "id": "willow",
+      "index": 14,
+      "platforms": [],
+      "tiers": ["contract"],
+      "note": "Planning contract for a bounded QuickJS bridge to a Willow live engine; no WGPS or bridge implementation. Full live sync belongs in a server extension or sidecar. Existing willow-drop file import has its own lane."
+    },
+    {
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],

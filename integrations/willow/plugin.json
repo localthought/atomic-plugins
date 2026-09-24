@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "willow",
+  "name": "Willow live sync",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Evaluate a bounded QuickJS adapter to a host-owned Willow live-sync engine.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
+  "proposedHostCapabilities": [
+    "peer-transport",
+    "persistent-state",
+    "background-jobs"
+  ],
+  "firstInteropMilestone": "Prove a bounded adapter bridge to a selected Willow engine with authorized dataset access and denied unauthorized access before attempting live synchronization."
+}
