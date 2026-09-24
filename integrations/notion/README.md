@@ -37,10 +37,12 @@ proxy. No credential ever reaches the frame.
     `notionColumns` derives the columns from what was read.
   - It finds or creates one Property per column under the row class's
     ontology and binds the lens to them.
-  - Per page: an existing row (found by the Notion page id column) is seeded
-    into the lens store, the page is `ingest`ed through the data source's
-    Devonian `AtomicLens`, and the lens row's values are written back to the
-    host row, removals included. New pages become new rows.
+  - Per page: an existing row (found by its import identity `localId` =
+    `notion-page:<id>`, or for older rows by the Notion page id column) is
+    seeded into the lens store, the page is `ingest`ed through the data
+    source's Devonian `AtomicLens`, and `app/reconcile.ts` decides what of
+    the lens row reaches the host row (see "Local edits" below). New pages
+    become new rows.
 - `app/build.mjs`: `dist/ui.js`, 98081 bytes at the time of writing,
   including the catalog document, syncables' read path and devonian's Atomic
   Data API. `@tomic/lib` is shimmed, as in timesheets (`Datatype` and
@@ -67,15 +69,16 @@ What it does not do, and what is not verified:
 - It is read-only: nothing is written to Notion. The lens has a reverse
   mapping (`write`), but its connector refuses create, update and delete. A
   page that disappears or is archived is left in place, never deleted.
-- A value cleared in Notion (empty number, URL, select) is removed from its
-  row on the next import. A value the lens cannot read losslessly (formatted
-  text) leaves the row's value as it was, and is listed in the warnings.
+- Local edits are kept; see "Local edits" below. A value the lens cannot
+  read losslessly (formatted text) is not managed for that page: the row's
+  value is left as it was, and the page is listed in the warnings.
 - Select, status and multi-select columns hold Notion option ids, which stay
   stable across renames, rather than option names.
 - All shared data sources go into one table, with their columns merged. A
   "Data source" column says where each row came from.
-- It is not verified that the host lets an app add Properties under its
-  ontology and edit its class's `recommends`. The fake store assumes so.
+- The e2e shows that the pinned host lets the app add Properties under its
+  ontology, edit its class's `recommends`, and write rows that carry an
+  import baseline.
 - It depends on `store.proxy` (`request`, `connections`, `connect`), which
   atomic-server gets from #52's relay (ontola/atomic-server#1657, pinned).
   Without it, the app says so and fetches nothing.
@@ -85,12 +88,53 @@ What it does not do, and what is not verified:
   pending #89, which has no Notion design or implementation issue yet;
   `controller.ts`'s `ViewState` is the data a designed view would render.
 
+## Local edits (#97)
+
+The policy, the same as the timesheets drive app's and the sandbox
+importers': **an edit made in Atomic is kept; Notion only overwrites a value
+nobody changed in Atomic since the last import; a value changed in both
+places is kept as it is in Atomic and reported.** This is a proposal awaiting
+the maintainer's decision (see #97); the alternative is Notion-owned columns.
+
+- Each row stores what it last imported, per column, in the host's import
+  metadata (`importBaseline`, with `localId` as identity), the format the
+  sandbox importers write. The server checks every such write
+  (`validate_baseline`): a write may only change a value that still equals
+  the baseline, so a stale import is refused rather than overwriting an edit
+  made in between.
+- Per column: Notion unchanged → the row's value stays, edited or not.
+  Notion changed and the row not edited → the new value. Both changed → the
+  row's value stays, and the status line says "Kept your edits where Notion
+  also changed: <row> (<columns>)" on every import until the two agree.
+  Cleared in Notion and not edited → removed; cleared and edited → kept and
+  reported.
+- Columns added in Atomic are never read or written.
+- Rows imported before this policy have no baseline: a column that equals
+  Notion is adopted, any other is reported until the two agree.
+- A partial failure converges: every row is written in one save, and a
+  removal goes first, so a retry sees either the old row or the new one.
+- Removing a cleared value needs the host to remove properties for apps.
+  At the pinned atomic-server `resource.remove()` never reaches the server
+  (this was true of the app before #97 too: its "cleared values are removed"
+  held only in the fake store). The app now warns ("Could not clear …") and
+  retries on the next import. atomic-server branch `claude/app-write-refresh`
+  sends the removal, but the timesheets e2e against a build of it still
+  finds the value afterwards; not fixed yet.
+- A second import in the same page after a write can read the page's stale
+  copy of a row and be refused by the server as stale; reopening the app
+  recovers. The same branch refreshes the copy after each app write.
+- Covered by `app/sync.test.ts` (with the server's baseline check ported
+  into the fake store, `app/hostRules.ts`) and, against the real host, by
+  the e2e's edit-then-reimport step. No conflict case runs against the real
+  host: the notion fixture has no way to change a page between imports.
+
 ## E2E
 
 `e2e/notion.spec.ts` drives the drive plugin the same way the pets spec does:
 a test-side install (`setAppSource` with `build().text`), then Connect, the
 host's consent bar and the mock proxy's consent page, then "Last synced" with
-3 rows and their column types. It runs against the shared mock proxy's
+3 rows and their column types, then an edit to one row's Points in the
+table that survives the next import. It runs against the shared mock proxy's
 `notion` fixture (`fixtures/notion/`), so the lane has
 `platforms: ["notion"]` and `tiers: ["live", "e2e"]`. It needs an
 `.atomic-server-ref` with the host relay (ontola/atomic-server#1657, merged

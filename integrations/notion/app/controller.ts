@@ -129,15 +129,20 @@ export function describe(state: ViewState): string {
 
     case 'ready': {
       if (!state.last)
-        return 'Connected. Import copies the pages of every shared Notion database into this table. Nothing is written to Notion.';
+        return 'Connected. Import copies the pages of every shared Notion database into this table. Nothing is written to Notion. Edits made in the table are kept; a value changed in both places is reported.';
       if (!state.last.ok) return `Import failed: ${state.last.error}`;
-      const { created, updated, unchanged, dataSources, warnings } =
+      const { created, updated, unchanged, conflicts, dataSources, warnings } =
         state.last.result;
 
       return (
         `Last synced ${new Date(state.last.at).toLocaleString()}: ` +
         `${created} created, ${updated} updated, ${unchanged} unchanged, from ${dataSources} ` +
         `${dataSources === 1 ? 'database' : 'databases'}.` +
+        (conflicts.length
+          ? ` Kept your edits where Notion also changed: ${conflicts
+              .map(c => `${c.name} (${c.fields.join(', ')})`)
+              .join('; ')}.`
+          : '') +
         (warnings.length ? ` Warnings: ${warnings.join('; ')}` : '')
       );
     }

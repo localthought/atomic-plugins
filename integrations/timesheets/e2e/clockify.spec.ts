@@ -27,6 +27,7 @@ import {
 import { build } from '../app/build.mjs';
 
 const APP_FRAME = 'iframe[title="App"]';
+const NAME = 'https://atomicdata.dev/properties/name';
 
 /** Sends a command to the mock proxy's Clockify fixture. */
 async function fixture(command: Record<string, unknown>) {
@@ -216,8 +217,162 @@ test.describe('timesheets drive app', () => {
       { timeout: 60_000 },
     );
     await expectRows(page, table);
+
+    // #97: edits made in Atomic survive a refresh. The person renames one
+    // row in the table (an ordinary write, not through the app); Clockify
+    // then renames the same entry, changes another one nobody edited, and
+    // clears a third one's project.
+    await editRow(page, table, 'entry-2', {
+      [NAME]: 'Weekly sync (edited in Atomic)',
+    });
+    await fixture({
+      action: 'update',
+      id: 'entry-2',
+      patch: { description: 'Weekly sync (renamed in Clockify)' },
+    });
+    await fixture({
+      action: 'update',
+      id: 'entry-1',
+      patch: { billable: false },
+    });
+    await fixture({
+      action: 'update',
+      id: 'entry-3',
+      patch: { projectId: null },
+    });
+
+    await page.goto(appUrl);
+    const refreshed = status.filter({ hasText: 'Last synced' });
+    await expect(refreshed).toContainText('0 created, 2 updated, 1 unchanged', {
+      timeout: 60_000,
+    });
+    await expect(refreshed).toContainText(
+      'Kept your edits where Clockify also changed: Weekly sync (edited in Atomic) (Name).',
+    );
+    const shown = (await refreshed.textContent()) ?? '';
+
+    const fields = await columnSubjects(page, table);
+    const entry1 = await rowOf(page, table, 'entry-1');
+    const entry2 = await rowOf(page, table, 'entry-2');
+    const entry3 = await rowOf(page, table, 'entry-3');
+    // The edit is kept, the untouched field follows Clockify.
+    expect(entry2[NAME]).toBe('Weekly sync (edited in Atomic)');
+    expect(entry1[fields.Billable]).toBe(false);
+    expect(entry1[NAME]).toBe('Fix plugin source loading (renamed)');
+    // The cleared project: removed where the host can remove values for
+    // apps (atomic-server branch claude/app-write-refresh), reported and
+    // kept for a retry where it cannot (the pinned host at the time of
+    // writing). Both are honest outcomes; the status says which.
+    const canRemove = !shown.includes('does not remove values for apps yet');
+    // Recorded so a run's log shows which host behaviour it saw.
+    console.info(
+      `[#97] cleared Clockify project: ${canRemove ? 'removed' : 'kept; this host cannot remove values for apps'}`,
+    );
+
+    if (!canRemove) {
+      expect(entry3[fields.Project]).toBe('Atomic plugins');
+    } else {
+      expect(entry3[fields.Project]).toBeUndefined();
+      expect(entry3[fields['Clockify project id']]).toBeUndefined();
+    }
+
+    // And again after a reopen: nothing new to write, the conflict is still
+    // reported rather than silently resolved either way.
+    await page.goto(appUrl);
+    await expect(refreshed).toContainText(
+      'Kept your edits where Clockify also changed: Weekly sync (edited in Atomic) (Name).',
+      { timeout: 60_000 },
+    );
+    await expect(refreshed).toContainText('0 created');
+    expect((await rowOf(page, table, 'entry-2'))[NAME]).toBe(
+      'Weekly sync (edited in Atomic)',
+    );
   });
 });
+
+/**
+ * One imported row's values, read from the server by its import identity
+ * (`localId`), not from this page's cache.
+ */
+async function rowOf(
+  page: Page,
+  table: string,
+  entryId: string,
+): Promise<Record<string, unknown>> {
+  return page.evaluate(
+    async ({ subject, localId }) => {
+      const store = window.store!;
+      const found = await store.findByLocalId(
+        store.getDrive()!,
+        subject,
+        localId,
+      );
+      if (!found) throw new Error(`no row for ${localId}`);
+      // Replace, not merge, this page's copy: a merge keeps removed values.
+      const row = await store.fetchResourceFromServer(found.subject, {
+        forceOverride: true,
+      });
+
+      return row.getPropVals() as Record<string, unknown>;
+    },
+    { subject: table, localId: `clockify-time-entry:${entryId}` },
+  );
+}
+
+/** Edits a row as the signed-in person, the way the table would. */
+async function editRow(
+  page: Page,
+  table: string,
+  entryId: string,
+  values: Record<string, unknown>,
+) {
+  await page.evaluate(
+    async ({ subject, localId, edits }) => {
+      const store = window.store!;
+      const row = await store.findByLocalId(
+        store.getDrive()!,
+        subject,
+        localId,
+      );
+      if (!row) throw new Error(`no row for ${localId}`);
+      for (const [property, value] of Object.entries(edits))
+        await row.set(property, value as never);
+      await row.save();
+    },
+    {
+      subject: table,
+      localId: `clockify-time-entry:${entryId}`,
+      edits: values,
+    },
+  );
+}
+
+/** Column Property subject by display name. */
+async function columnSubjects(
+  page: Page,
+  table: string,
+): Promise<Record<string, string>> {
+  return page.evaluate(async (subject: string) => {
+    const store = window.store!;
+    const tableResource = await store.getResource(subject);
+    const klass = await store.getResource(
+      tableResource.get(
+        'https://atomicdata.dev/properties/classtype',
+      ) as string,
+    );
+    const fields = klass.get(
+      'https://atomicdata.dev/properties/recommends',
+    ) as string[];
+    const properties = await Promise.all(fields.map(s => store.getResource(s)));
+
+    return Object.fromEntries(
+      properties.map(p => [
+        p.get('https://atomicdata.dev/properties/name') as string,
+        p.subject,
+      ]),
+    );
+  }, table);
+}
 
 async function expectRows(page: Page, table: string) {
   await page.goto(

@@ -5,8 +5,17 @@
  * class and a table; and a host proxy relay that answers from the mock
  * proxy's notion fixture the way #52's relay would: provider path in, parsed
  * body out.
+ *
+ * Writes follow the host with atomic-server branch `claude/app-write-refresh`:
+ * properties dropped with `remove()` are removed first, in their own write,
+ * then `save` sets the rest (`pinnedRemove` models the pinned host, where
+ * removals never arrive). A write carrying an import baseline must pass the
+ * server's `validate_baseline` (`hostRules.ts`) and gets a fresh `approval`;
+ * `(parent, localId)` is unique.
  */
 import { notionFixture } from '../fixtures/notion/scenario.mjs';
+import { stamp, validateBaseline } from './hostRules.js';
+import { IMPORT_LOCAL_ID } from './reconcile.js';
 import type {
   HostProxy,
   HostProxyRequest,
@@ -26,10 +35,13 @@ export const TABLE = 'atomic:table';
 
 export interface FakeStore extends PluginStore {
   readonly resources: Map<string, Record<string, JSONValue>>;
-  readonly writes: { op: 'create' | 'save'; subject: string }[];
+  readonly writes: { op: 'create' | 'save' | 'remove'; subject: string }[];
 }
 
-export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
+export function fakeStore({
+  proxy,
+  pinnedRemove = false,
+}: { proxy?: HostProxy; pinnedRemove?: boolean } = {}): FakeStore {
   const resources = new Map<string, Record<string, JSONValue>>([
     [APP, {}],
     [ONTOLOGY, { [PARENT]: APP }],
@@ -39,11 +51,27 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
   const writes: FakeStore['writes'] = [];
   let next = 0;
 
+  /** One write, checked the way the server checks a commit. */
+  const commit = (subject: string, value: Record<string, JSONValue>) => {
+    validateBaseline(resources.get(subject), value);
+    const id = value[IMPORT_LOCAL_ID];
+    if (id !== undefined)
+      for (const [other, props] of resources)
+        if (
+          other !== subject &&
+          props[IMPORT_LOCAL_ID] === id &&
+          props[PARENT] === value[PARENT]
+        )
+          throw new Error('Import identity already exists; preview again');
+    resources.set(subject, value);
+  };
+
   const wrap = (
     subject: string,
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = { ...stored };
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -53,17 +81,26 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
       async save() {
-        // Replaces, so a `remove()` persists, as a host commit's `remove` does.
-        resources.set(subject, { ...props });
+        if (removed.size && !pinnedRemove) {
+          const kept = { ...resources.get(subject) };
+          for (const property of removed) delete kept[property];
+          commit(subject, kept);
+          writes.push({ op: 'remove', subject });
+        }
+
+        removed.clear();
+        commit(subject, { ...resources.get(subject), ...stamp(props) });
         writes.push({ op: 'save', subject });
 
         return this;
@@ -92,8 +129,12 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
     },
     async newResource({ parent, isA = [], propVals = {} } = {}) {
       const subject = `atomic:new-${++next}`;
-      const stored = { ...propVals, [PARENT]: parent ?? APP, [IS_A]: isA };
-      resources.set(subject, stored);
+      const stored = {
+        ...stamp(propVals),
+        [PARENT]: parent ?? APP,
+        [IS_A]: isA,
+      };
+      commit(subject, stored);
       writes.push({ op: 'create', subject });
 
       return wrap(subject, stored);

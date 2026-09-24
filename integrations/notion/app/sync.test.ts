@@ -14,7 +14,8 @@ import {
   ROW_CLASS,
   TABLE,
 } from './fakeStore.js';
-import { atomic, NOTION_DOCUMENT, syncNotion } from './sync.js';
+import { IMPORT_BASELINE, IMPORT_LOCAL_ID } from './reconcile.js';
+import { atomic, NOTION_DOCUMENT, sourceId, syncNotion } from './sync.js';
 import { syncablesTransport } from './transport.js';
 
 const upstream = new URL('https://api.notion.com/v1');
@@ -201,6 +202,143 @@ describe('syncNotion', () => {
     const { proxy } = await run();
     expect(new Set(proxy.calls.map(c => c.method))).toEqual(new Set(['POST']));
     expect(NOTION_DOCUMENT).toBeTruthy();
+  });
+});
+
+describe('local edits when Notion data is refreshed (#97)', () => {
+  type Page = { properties: Record<string, Record<string, unknown>> };
+
+  /** A read in which Notion changed the first page. */
+  const changed =
+    (mutate: (page: Page) => void): typeof readPlatform =>
+    async (doc, options) => {
+      const result = await readPlatform(doc, options);
+
+      for (const record of result.records)
+        if (record.id === pages[0]!.id) {
+          const values = structuredClone(record.values) as unknown as Page;
+          mutate(values);
+          record.values = values as unknown as typeof record.values;
+        }
+
+      return result;
+    };
+
+  const setup = async (options: { pinnedRemove?: boolean } = {}) => {
+    const proxy = fixtureProxy();
+    const store = fakeStore({ proxy, ...options });
+    const transport = syncablesTransport(proxy, 'conn-1', upstream);
+    await syncNotion(store, transport);
+    const column = (id: string) =>
+      [...store.resources].find(
+        ([, p]) => p[atomic.shortname] === notionFieldShortname(id),
+      )![0];
+    const subject = (
+      await store.query({
+        property: IMPORT_LOCAL_ID,
+        value: sourceId(pages[0]!.id),
+      })
+    )[0]!;
+    const row = () => store.resources.get(subject)!;
+
+    return { store, transport, column, subject, row };
+  };
+
+  it('keeps an edit made in Atomic while Notion is unchanged', async () => {
+    const { store, transport, column, row } = await setup();
+    row()[column('n%3D1')] = 5;
+
+    const again = await syncNotion(store, transport);
+
+    expect(again).toMatchObject({ updated: 0, conflicts: [] });
+    expect(row()[column('n%3D1')]).toBe(5);
+  });
+
+  it('follows Notion where nobody edited, and reports what both changed', async () => {
+    const { store, transport, column, subject, row } = await setup();
+    row()[column('n%3D1')] = 5;
+    const read = changed(page => {
+      page.properties.Points!.number = 8;
+      page.properties.Done!.checkbox = true;
+    });
+
+    const again = await syncNotion(store, transport, read);
+
+    expect(again.conflicts).toEqual([
+      { subject, name: 'Launch plan', fields: ['Points'] },
+    ]);
+    expect(row()[column('n%3D1')]).toBe(5);
+    expect(row()[column('BJXS')]).toBe(true);
+    // Reported again next time, not silently resolved.
+    expect((await syncNotion(store, transport, read)).conflicts).toHaveLength(
+      1,
+    );
+  });
+
+  it('keeps an edited value that Notion cleared, and reports it', async () => {
+    const { store, transport, column, row } = await setup();
+    row()[column('n%3D1')] = 5;
+    const again = await syncNotion(
+      store,
+      transport,
+      changed(page => {
+        page.properties.Points!.number = null;
+      }),
+    );
+
+    expect(again.conflicts[0]!.fields).toEqual(['Points']);
+    expect(row()[column('n%3D1')]).toBe(5);
+  });
+
+  it('says so where the host cannot remove a cleared value, and retries', async () => {
+    const { store, transport, column, row } = await setup({
+      pinnedRemove: true,
+    });
+    const read = changed(page => {
+      page.properties.Points!.number = null;
+    });
+
+    const again = await syncNotion(store, transport, read);
+
+    expect(again.warnings.at(-1)).toBe(
+      'Could not clear Points of "Launch plan": this host does not remove values for apps yet',
+    );
+    expect(row()[column('n%3D1')]).toBe(3);
+    expect((await syncNotion(store, transport, read)).conflicts).toEqual([]);
+  });
+
+  it('never touches a column added in Atomic', async () => {
+    const { store, transport, row } = await setup();
+    row()['atomic:my-column'] = 'mine';
+
+    await syncNotion(
+      store,
+      transport,
+      changed(page => {
+        page.properties.Done!.checkbox = true;
+      }),
+    );
+
+    expect(row()['atomic:my-column']).toBe('mine');
+  });
+
+  it('adopts rows imported before baselines by page id, without duplicates', async () => {
+    const { store, transport, row } = await setup();
+
+    for (const props of store.resources.values())
+      if (props[PARENT] === TABLE) {
+        delete props[IMPORT_LOCAL_ID];
+        delete props[IMPORT_BASELINE];
+      }
+
+    row()[atomic.name] = 'Edited before the policy existed';
+
+    const again = await syncNotion(store, transport);
+
+    expect(again).toMatchObject({ created: 0 });
+    expect(again.conflicts[0]!.fields).toEqual(['Name']);
+    expect(row()[atomic.name]).toBe('Edited before the policy existed');
+    expect(row()[IMPORT_LOCAL_ID]).toBe(sourceId(pages[0]!.id));
   });
 });
 

@@ -119,6 +119,11 @@ export class NotionRowLenses {
     return this.host.has(property) ? property : undefined;
   }
 
+  /** The host Property a lens property is written to, if the lens owns one. */
+  hostProperty(property: string): string | undefined {
+    return this.host.get(property);
+  }
+
   /** The host properties the lens owns on a row: the name and every bound column. */
   managed(): string[] {
     return [...new Set(this.host.values())];

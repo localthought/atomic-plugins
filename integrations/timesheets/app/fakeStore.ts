@@ -2,8 +2,13 @@
 /**
  * An in-memory `PluginStore` for tests, shaped after view-client.js and
  * atomic-server's `/app-write`:
- * - resources buffer `set` until `save`; `save` is a per-property set, so a
- *   property dropped with `remove()` stays on the stored resource;
+ * - resources buffer `set` until `save`; `save` is a per-property set, and
+ *   properties dropped with `remove()` are removed first, in their own
+ *   write, as the host does with atomic-server branch
+ *   `claude/app-write-refresh` (at the pin they stayed; `pinnedRemove`);
+ * - a write carrying an import baseline must pass the server's
+ *   `validate_baseline` (`hostRules.ts`), gets a fresh `approval`, and
+ *   `(parent, localId)` is unique;
  * - a write naming a property that is not a Property resource (or one of
  *   Atomic's own) fails, as `value_for` in `store_host.rs` does;
  * - `query` is a property/value match across the whole "drive";
@@ -11,7 +16,9 @@
  * `app()` builds what a new App has: the app, an ontology with a row class,
  * and a table of that class. Test-only; not bundled.
  */
+import { stamp, validateBaseline } from './hostRules.js';
 import { atomic } from './ontology.js';
+import { IMPORT_BASELINE, IMPORT_LOCAL_ID } from './reconcile.js';
 import type {
   ConnectionReference,
   HostProxyRequest,
@@ -31,11 +38,13 @@ export const ONTOLOGY = 'did:ad:app/ontology';
 const BUILT_IN = new Set<string>([
   ...Object.values(atomic),
   'https://atomicdata.dev/properties/classtype',
+  IMPORT_BASELINE,
+  IMPORT_LOCAL_ID,
 ]);
 
 export interface FakeStore extends PluginStore {
   readonly resources: Map<string, Record<string, JSONValue>>;
-  readonly writes: { op: 'create' | 'save'; subject: string }[];
+  readonly writes: { op: 'create' | 'save' | 'remove'; subject: string }[];
   /** Fails the next `n` saves of rows (children of the table). */
   failRowSaves(n: number): void;
 }
@@ -44,10 +53,13 @@ export function fakeStore({
   proxy,
   connections = [{ platform: 'clockify', connectionId: 'conn-1' }],
   withTable = true,
+  pinnedRemove = false,
 }: {
   proxy?: (request: HostProxyRequest) => Promise<HostProxyResponse>;
   connections?: ConnectionReference[];
   withTable?: boolean;
+  /** The pinned host: `remove()` never reaches the stored resource. */
+  pinnedRemove?: boolean;
 } = {}): FakeStore {
   const resources = new Map<string, Record<string, JSONValue>>([[APP, {}]]);
 
@@ -73,11 +85,31 @@ export function fakeStore({
     }
   };
 
+  const unique = (subject: string, value: Record<string, JSONValue>) => {
+    const id = value[IMPORT_LOCAL_ID];
+    if (id === undefined) return;
+    for (const [other, props] of resources)
+      if (
+        other !== subject &&
+        props[IMPORT_LOCAL_ID] === id &&
+        props[PARENT] === value[PARENT]
+      )
+        throw new Error('Import identity already exists; preview again');
+  };
+
+  /** One write, checked the way the server checks a commit. */
+  const commit = (subject: string, value: Record<string, JSONValue>) => {
+    validateBaseline(resources.get(subject), value);
+    unique(subject, value);
+    resources.set(subject, value);
+  };
+
   const wrap = (
     subject: string,
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = { ...stored };
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -87,11 +119,13 @@ export function fakeStore({
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
@@ -102,7 +136,19 @@ export function fakeStore({
         }
 
         check(props);
-        resources.set(subject, { ...(resources.get(subject) ?? {}), ...props });
+
+        if (removed.size && !pinnedRemove) {
+          const kept = { ...(resources.get(subject) ?? {}) };
+          for (const property of removed) delete kept[property];
+          commit(subject, kept);
+          writes.push({ op: 'remove', subject });
+        }
+
+        removed.clear();
+        commit(subject, {
+          ...(resources.get(subject) ?? {}),
+          ...stamp(props),
+        });
         writes.push({ op: 'save', subject });
 
         return this;
@@ -136,8 +182,12 @@ export function fakeStore({
     async newResource({ parent, isA = [], propVals = {} } = {}) {
       check(propVals);
       const subject = `did:ad:new-${++next}`;
-      const stored = { ...propVals, [PARENT]: parent ?? APP, [IS_A]: isA };
-      resources.set(subject, stored);
+      const stored = {
+        ...stamp(propVals),
+        [PARENT]: parent ?? APP,
+        [IS_A]: isA,
+      };
+      commit(subject, stored);
       writes.push({ op: 'create', subject });
 
       return wrap(subject, stored);

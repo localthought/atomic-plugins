@@ -18,8 +18,12 @@ import {
   type NotionColumn,
   type Term,
 } from '../devonian/notion/index.js';
-import type { PluginResource, PluginStore } from './store.js';
+import { IMPORT_LOCAL_ID, planRow } from './reconcile.js';
+import type { JSONValue, PluginResource, PluginStore } from './store.js';
 import { PLATFORM } from './transport.js';
+
+/** A page's source identity in the host's import metadata (`localId`). */
+export const sourceId = (pageId: string) => `notion-page:${pageId}`;
 
 /** The composed catalog document (catalog/notion.json), bundled. */
 export const NOTION_DOCUMENT = document as unknown as OpenApiDocument;
@@ -35,10 +39,20 @@ export const atomic = {
   propertyClass: 'https://atomicdata.dev/classes/Property',
 } as const;
 
+/** A row whose Atomic value was kept although Notion has another one. */
+export interface RowConflict {
+  subject: string;
+  name: string;
+  /** Column names, e.g. `Status`. */
+  fields: string[];
+}
+
 export interface SyncResult {
   created: number;
   updated: number;
   unchanged: number;
+  /** Rows with local edits that differ from Notion; the edits were kept. */
+  conflicts: RowConflict[];
   dataSources: number;
   /** Non-fatal: unprojected formatted text, archived pages, a partial read. */
   warnings: string[];
@@ -201,10 +215,18 @@ async function ensureColumns(
 /**
  * Read every shared data source's pages through the proxy, run them through
  * the Notion row lens (Devonian `AtomicLens.ingest`), and reconcile the lens's
- * rows into the app's data table by Notion page id. Import only: nothing is
- * written to Notion, and a page that is gone from Notion (or archived) is
- * left in place, never deleted. A value cleared in Notion is removed from its
- * row; one the lens cannot read losslessly is left as it was.
+ * rows into the app's data table. Import only: nothing is written to Notion,
+ * and a page that is gone from Notion (or archived) is left in place, never
+ * deleted.
+ *
+ * Rows are matched by the host's import identity (`localId` =
+ * `notion-page:<id>`, unique per table on the server), or, for rows imported
+ * before it was written, by the page-id column. What a sync may change in an
+ * existing row is `reconcile.ts`'s policy: local edits are kept, only fields
+ * nobody edited follow Notion (a value cleared in Notion is removed), and a
+ * field changed on both sides is reported in `conflicts`. A property the lens
+ * cannot read losslessly (formatted text) is not managed for that page: it is
+ * neither written nor removed.
  */
 export async function syncNotion(
   store: PluginStore,
@@ -223,24 +245,38 @@ export async function syncNotion(
   if (!pageId) throw new Error('No column to key rows by Notion page id');
 
   const lenses = new NotionRowLenses({ columns, bound });
-  const managed = lenses.managed();
   const result: SyncResult = {
     created: 0,
     updated: 0,
     unchanged: 0,
+    conflicts: [],
     dataSources,
     warnings,
   };
   const own = new Set(
     await store.query({ property: atomic.parent, value: data.table }),
   );
+  const columnName = new Map<string, string>([[atomic.name, 'Name']]);
+
+  for (const column of columns) {
+    const subject = bound.get(column.shortname);
+    if (subject) columnName.set(subject, column.name);
+  }
+
+  const find = async (property: string, value: string) =>
+    (await store.query({ property, value })).find(s => own.has(s));
+  const host = (properties: Iterable<string>) =>
+    [...properties]
+      .map(p => lenses.hostProperty(p))
+      .filter((p): p is string => !!p);
 
   for (const source of sources) {
     const lens = lenses.lens(source.dataSource, source.title, source.pages);
 
     for (const page of source.pages) {
-      const matches = await store.query({ property: pageId, value: page.id });
-      const subject = matches.find(s => own.has(s));
+      const id = sourceId(page.id);
+      const subject =
+        (await find(IMPORT_LOCAL_ID, id)) ?? (await find(pageId, page.id));
       const existing = subject ? await store.getResource(subject) : undefined;
 
       // The row's current values go into the lens store first, so the read's
@@ -249,35 +285,63 @@ export async function syncNotion(
 
       const row = lenses.store.get(await lens.ingest(page));
       if (!row) throw new Error(`The lens produced no row for ${page.id}`);
-      const propVals = lenses.toHost(row);
+      const hostValues = lenses.toHost(row);
+      // What this read says about each column: a value, cleared, or nothing
+      // (formatted text the lens cannot read, left alone).
+      const projection = lenses.read(page, source.title);
+      const readable = host(Object.keys(projection.set ?? {}));
+      const managed = [...readable, ...host(projection.unset ?? [])];
+      const plan = planRow({
+        sourceId: id,
+        source: Object.fromEntries(
+          readable.map(p => [p, hostValues[p]]),
+        ) as Record<string, JSONValue>,
+        managed,
+        row: existing?.props,
+      });
 
-      if (!existing) {
+      if (plan.op === 'create') {
         const created = await store.newResource({
           parent: data.table,
           isA: [data.rowClass],
-          propVals,
+          propVals: plan.set,
         });
         own.add(created.subject);
         result.created++;
         continue;
       }
 
-      const changed = managed.filter(
-        property =>
-          JSON.stringify(existing.get(property)) !==
-          JSON.stringify(propVals[property]),
-      );
+      if (plan.conflicts.length)
+        result.conflicts.push({
+          subject: existing!.subject,
+          name: String(existing!.get(atomic.name) ?? page.name),
+          fields: plan.conflicts.map(
+            c => columnName.get(c.property) ?? c.property,
+          ),
+        });
 
-      if (!changed.length) {
+      if (plan.op === 'unchanged') {
         result.unchanged++;
         continue;
       }
 
-      for (const property of changed)
-        if (propVals[property] === undefined) existing.remove(property);
-        else existing.set(property, propVals[property]);
-      await existing.save();
-      result.updated++;
+      for (const property of plan.remove) existing!.remove(property);
+      for (const [property, value] of Object.entries(plan.set))
+        existing!.set(property, value);
+      await existing!.save();
+      if (plan.changesValues) result.updated++;
+      else result.unchanged++;
+
+      if (plan.remove.length) {
+        // A host without removal for apps keeps the value; say so rather
+        // than report a clear that did not happen. The next run retries.
+        const after = await store.getResource(existing!.subject);
+        const kept = plan.remove.filter(p => after.get(p) !== undefined);
+        if (kept.length)
+          warnings.push(
+            `Could not clear ${kept.map(p => columnName.get(p) ?? p).join(', ')} of "${page.name}": this host does not remove values for apps yet`,
+          );
+      }
     }
   }
 

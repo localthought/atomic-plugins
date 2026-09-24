@@ -103,6 +103,7 @@ describe('syncClockify against the shared Clockify mock', () => {
       created: 2,
       updated: 0,
       unchanged: 0,
+      conflicts: [],
       warnings: [],
     });
     expect(rows().map(([, r]) => r[schema.row.entryId])).toEqual([

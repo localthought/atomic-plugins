@@ -19,5 +19,5 @@
     "host/browser-sync.ts",
     "app/*.ts"
   ],
-  "exclude": ["app/*.test.ts", "app/fakeStore.ts"]
+  "exclude": ["app/*.test.ts", "app/fakeStore.ts", "app/hostRules.ts"]
 }

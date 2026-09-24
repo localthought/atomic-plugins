@@ -26,9 +26,11 @@ catalog document; `localthought.ts` and the lens it re-exports from
   Duration, per-day totals and an "All entries" list — the same views the
   built-in Time Tracker template creates.
 
-Refresh, conflict handling, limits and storage follow the generic LocalThought
-flow (see `../localthought/README.md`): import only, local edits preserved,
-nothing written back to Clockify.
+Refresh, conflict handling, limits and storage of this LocalThought path
+follow the generic LocalThought flow (see `../localthought/README.md`):
+import only, nothing written back to Clockify. For the drive app below, what
+happens to edits made in Atomic is its own policy, described under "Local
+edits".
 
 ## Not covered (v1 reductions, see `planning/timesheets.md`)
 
@@ -79,10 +81,13 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
   `sync.ts` fetches the rolling look-back window (`clockifyImportQuery`,
   recomputed on every run, never stored), plus projects and users for
   naming, runs the one Clockify lens (`devonian/clockify/`) and reconciles
-  rows into the app's table by `clockify-entry-id`, restricted to children
-  of that table. Running timers and breaks are skipped by the lens. Import
-  only: nothing is written back to Clockify, and a vanished entry is never
-  deleted. Requests are sequential; each is one relay round trip.
+  rows into the app's table by their import identity (`localId` =
+  `clockify-time-entry:<id>`; older rows by `clockify-entry-id`), restricted
+  to children of that table. Running timers and breaks are skipped by the
+  lens. What a refresh may change in an existing row is the "Local edits"
+  policy below. Import only: nothing is written back to Clockify, and a
+  vanished entry is never deleted. Requests are sequential; each is one
+  relay round trip.
 - **Errors.** A proxy or Clockify error fails the sync before anything is
   written ("Import failed: …. Rows already in the table are kept."). The
   next "Sync now", or reopening the app, retries. A 403/404 on projects or
@@ -94,6 +99,38 @@ node integrations/tooling/run-lane.mjs timesheets               # typecheck + un
 node integrations/tooling/run-lane.mjs timesheets --tier e2e    # real host + mock proxy
 node integrations/timesheets/app/build.mjs                      # -> app/dist/ui.js (git-ignored)
 ```
+
+### Local edits (#97)
+
+The policy, the same as the Notion drive app's and the sandbox importers':
+**an edit made in Atomic is kept; Clockify only overwrites a value nobody
+changed in Atomic since the last import; a value changed in both places is
+kept as it is in Atomic and reported.** This is a proposal awaiting the
+maintainer's decision (see #97); the alternative is Clockify-owned columns.
+
+- Each row stores what it last imported, per column, in the host's import
+  metadata (`importBaseline`, with `localId` as identity), the format the
+  sandbox importers write through `importRecords`. The server checks every
+  such write (`validate_baseline`): a write may only change a value that
+  still equals the baseline, so a stale import is refused rather than
+  overwriting an edit made in between. `app/reconcile.ts` plans each row.
+- Per column: Clockify unchanged → the row's value stays, edited or not.
+  Clockify changed and the row not edited → the new value. Both changed →
+  the row's value stays, and the status line says "Kept your edits where
+  Clockify also changed: <row> (<columns>)" on every sync until the two
+  agree. Cleared in Clockify (for example the project removed from an
+  entry) and not edited → removed; cleared and edited → kept and reported.
+- Project and member names are left alone, not cleared, on a sync that
+  could not read the projects or users list.
+- Columns added in Atomic are never read or written.
+- Rows imported before this policy have no baseline: a column that equals
+  Clockify is adopted, any other is reported until the two agree.
+- A partial failure converges: every row is written in one save, and a
+  removal goes first, so a retry sees either the old row or the new one.
+- Removing a cleared value needs the host to remove properties for apps,
+  which no host build does yet (see "Known host limits"). The app then warns
+  ("Could not clear …") and retries on the next sync; the baseline keeps the
+  old value so the leftover is not mistaken for a local edit.
 
 ### What is verified, and how
 
@@ -109,9 +146,16 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
   not), reopen with no duplicates, a changed entry updated in place, the
   window start moving forward between runs (from the mock's request log),
   7 → 30 days adding exactly the older entry, and a 503 that leaves the
-  three rows readable in the table and recovers on reopen. Provider changes
-  and failures are driven through the mock proxy's local-only
+  three rows readable in the table and recovers on reopen. Then local
+  edits: a row renamed in the table keeps its name while Clockify renames
+  the entry too (reported), an unedited row follows a changed billable
+  flag, a cleared project is removed or, at a host that cannot remove,
+  reported for retry, and a reopen reports the conflict again. Provider
+  changes and failures are driven through the mock proxy's local-only
   `POST /__fixture/clockify`.
+- **Unit, local edits** (`app/reconcile.test.ts`): every case above, with
+  the server's `validate_baseline` ported into the fake store
+  (`app/hostRules.ts`), so a plan the host would refuse fails the test.
 - **Not verified:** a real integration proxy or a real Clockify account.
   The `/api/v1/...` paths match the mock fixture, not a recorded live
   response. No live evidence is recorded, so every capability here is
@@ -124,16 +168,21 @@ Read from the pinned atomic-server, and reproduced by the e2e where noted.
 - **Stale reads after an app write** (reproduced). The host writes through
   `/app-write`, but the page's store keeps its cached copy of the row, so a
   second sync in the same page reads its own previous write as missing and
-  re-saves it (counted as "updated"). Harmless for this app's current
-  overwrite behaviour; the e2e reopens the app between syncs to avoid it.
-  Fixed on atomic-server branch `claude/app-write-refresh` (not yet a PR).
+  re-saves it. With import baselines the server then refuses that write as
+  stale, so the sync fails until the app is reopened; the e2e reopens
+  between syncs. atomic-server branch `claude/app-write-refresh` (not yet a
+  PR) refreshes the page's copy after each app write; the e2e passes against
+  a build of it, but the reopen has not been removed and re-tested there.
 - **Local-first reads on open** (reproduced, intermittently). The host
   reads memory, then its local database, then the server, so right after a
   reload the App can come back without settings saved moments before. The
   app subscribes to the App and, while it is still asking for settings,
   re-reads them when the host reports a change.
-- **`resource.remove()` does not reach the server.** view-client.js drops
-  the property locally and `save` only sets. Fixed on the same branch.
+- **Removing a value does not work for apps** (reproduced). At the pin,
+  view-client.js drops the property locally and `save` only sets. The same
+  branch sends it as an `/app-write` `remove`, but against a build of it the
+  e2e still finds the value on the server afterwards; the server side needs
+  a look. The app reports this ("Could not clear …") and retries.
 - App writes are signed by the node that holds the app's key, so they work
   on one node only for now (#41).
 

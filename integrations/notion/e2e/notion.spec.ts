@@ -51,6 +51,7 @@ test.describe('notion drive plugin', () => {
     });
     await setAppSource(page, text);
     await page.reload();
+    const appUrl = page.url();
 
     const app = page.frameLocator(APP_FRAME);
     await app.getByRole('button', { name: 'Connect Notion' }).click();
@@ -130,6 +131,60 @@ test.describe('notion drive plugin', () => {
       Status: 'https://atomicdata.dev/datatypes/string',
       'Last edited in Notion': 'https://atomicdata.dev/datatypes/timestamp',
     });
+
+    // #97: an edit made in the table survives the next import while Notion
+    // has not changed that value. The person edits "Launch plan"'s Points
+    // (an ordinary write, not through the app); reopening the app imports
+    // again and keeps it.
+    const table = new URL(page.url()).searchParams.get('subject')!;
+    const points = async (value?: number) =>
+      page.evaluate(
+        async ({ subject, next }) => {
+          const store = window.store!;
+          const tableResource = await store.getResource(subject);
+          const klass = await store.getResource(
+            tableResource.get(
+              'https://atomicdata.dev/properties/classtype',
+            ) as string,
+          );
+          const columns = await Promise.all(
+            (
+              klass.get(
+                'https://atomicdata.dev/properties/recommends',
+              ) as string[]
+            ).map(s => store.getResource(s)),
+          );
+          const column = columns.find(
+            c => c.get('https://atomicdata.dev/properties/name') === 'Points',
+          )!.subject;
+          const found = await store.findByLocalId(
+            store.getDrive()!,
+            subject,
+            'notion-page:1a2b3c4d-0000-4000-8000-000000000001',
+          );
+          if (!found) throw new Error('no row for Launch plan');
+          const row = await store.fetchResourceFromServer(found.subject, {
+            forceOverride: true,
+          });
+
+          if (next !== undefined) {
+            await row.set(column, next);
+            await row.save();
+          }
+
+          return row.get(column) as number;
+        },
+        { subject: table, next: value },
+      );
+
+    expect(await points()).toBe(3);
+    await points(7);
+    await page.goto(appUrl);
+    await expect(
+      app.getByRole('status').filter({ hasText: 'Last synced' }),
+    ).toContainText('0 created, 0 updated, 3 unchanged', { timeout: 60_000 });
+    await expect(app.getByRole('status')).not.toContainText('Kept your edits');
+    expect(await points()).toBe(7);
   });
 });
 

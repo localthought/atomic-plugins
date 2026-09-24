@@ -276,15 +276,21 @@ export function describe(state: ViewState): string {
 
     case 'ready': {
       if (!state.last)
-        return `Ready to import the last ${state.settings.lookbackDays} days of Clockify entries.`;
+        return `Ready to import the last ${state.settings.lookbackDays} days of Clockify entries. Edits made in the table are kept; a value changed in both places is reported.`;
       if (!state.last.ok)
         return `Import failed: ${state.last.error}. Rows already in the table are kept.`;
-      const { created, updated, unchanged, warnings } = state.last.result;
+      const { created, updated, unchanged, conflicts, warnings } =
+        state.last.result;
 
       return (
         `Last synced ${new Date(state.last.at).toLocaleTimeString()}: ` +
         `${created} created, ${updated} updated, ${unchanged} unchanged, ` +
         `last ${state.settings.lookbackDays} days.` +
+        (conflicts.length
+          ? ` Kept your edits where Clockify also changed: ${conflicts
+              .map(c => `${c.name} (${c.fields.join(', ')})`)
+              .join('; ')}.`
+          : '') +
         (warnings.length ? ` Warnings: ${warnings.join('; ')}` : '')
       );
     }
