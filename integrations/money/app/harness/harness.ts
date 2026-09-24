@@ -26,6 +26,7 @@ const THEMES: Record<string, Record<string, string>> = {
     '--t-color-text-light': '#666666',
     '--t-color-alert': '#cf5b5b',
     '--t-color-warning': '#f5a623',
+    '--t-color-success': '#237a42',
     '--t-radius': '9px',
     '--t-font-family':
       "'Open Sans', 'Helvetica Neue', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
@@ -44,6 +45,7 @@ const THEMES: Record<string, Record<string, string>> = {
     '--t-color-text-light': '#999999',
     '--t-color-alert': '#cf5b5b',
     '--t-color-warning': '#f5a623',
+    '--t-color-success': '#4cc27a',
     '--t-radius': '9px',
     '--t-font-family':
       "'Open Sans', 'Helvetica Neue', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
@@ -227,7 +229,9 @@ async function perf(root: HTMLElement): Promise<void> {
       },
     ),
   );
-  const store = fakeStore({ rows });
+  const store = fakeStore({
+    rows,
+  });
   const t0 = performance.now();
   await mount(root, store, { today: () => '2026-09-24', locale: 'en-GB' });
   const first = performance.now() - t0;
@@ -263,7 +267,10 @@ export async function run(): Promise<void> {
       : scenario.rows
         ? sampleRows()
         : [];
-  const store = fakeStore({ rows });
+  const store = fakeStore({
+    rows,
+    scheme: params.get('theme') === 'dark' ? 'dark' : 'light',
+  });
   let ticks = 0;
   await mount(root, store, {
     today: () => '2026-09-24',

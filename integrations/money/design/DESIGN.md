@@ -154,11 +154,13 @@ The sibling designs give `--pl-pos` a fixed `#2f8f5b`. Money shows green
 figures on every row, in both themes, so it proposes deriving it instead:
 `--pl-pos: color-mix(in oklab, #2f8f5b 75%, var(--pl-text))` darkens it on
 a white ground and lightens it on black without knowing the mode. The other
-designs can adopt this without changing their markup. Measured in Chromium
-with the host's default tokens (M-13, `app/harness/screenshots.mjs`): it
-resolves to `rgb(29, 96, 59)` at 7.53:1 on `#fff` and `rgb(106, 171, 130)`
-at 7.76:1 on `#000`, above the 4.5:1 target; `--pl-muted` is 5.74:1 and
-7.37:1.
+designs can adopt this without changing their markup. Since the 007869464
+pin the host sends `--t-color-success` (`#237a42` light, `#4cc27a` dark), and
+`--pl-pos` uses it, keeping the mix as the fallback for older hosts.
+Measured in Chromium with the host's default tokens (M-13,
+`app/harness/screenshots.mjs`): 5.34:1 on `#fff` and 9.31:1 on `#000`, above
+the 4.5:1 target (the fallback mix measured 7.53:1 and 7.76:1);
+`--pl-muted` is 5.74:1 and 7.37:1.
 Money-local derived tints (`--pl-tint`, `--pl-hair` for row hairlines lighter
 than `--pl-border`, `--pl-neg-soft`, `--pl-warn-soft`, `--pl-pos-soft`) are
 `color-mix` of the above.

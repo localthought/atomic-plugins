@@ -358,3 +358,38 @@ describe('Money view: keyboard', () => {
     expect(picked).toBe(1);
   });
 });
+
+describe('Money view: host theme and navigation (007869464 pin)', () => {
+  it("follows the host's colour scheme, including a switch", async () => {
+    const store = fakeStore({ scheme: 'dark' });
+    const root = await open(store);
+    expect(root.dataset.colorScheme).toBe('dark');
+    store.setScheme('light');
+    expect(root.dataset.colorScheme).toBe('light');
+  });
+
+  it("offers to open the importer from the preview's note", async () => {
+    const store = fakeStore();
+    const root = await open(store);
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const statement =
+      ':20:S\n:25:NL42BUNQ0123456789\n:28C:31/1\n:60F:C260901EUR100,00\n:61:2609020902D12,34NTRFNONREF//T-1\n:86:Lunch\n:62F:C260902EUR87,66\n';
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File([statement], 'bunq.sta')],
+    });
+    input.dispatchEvent(new Event('change'));
+    for (let i = 0; i < 10; i++) await settle();
+    const button = [
+      ...root.querySelectorAll<HTMLButtonElement>('#money-apply-note button'),
+    ].find(b => text(b) === 'Open the importer')!;
+    button.click();
+    await settle();
+    expect(store.opened).toEqual(['did:ad:importer']);
+  });
+
+  it('leaves the button out on a host without openResource', async () => {
+    const root = await open(fakeStore({ host: 'legacy' }));
+    expect(root.dataset.colorScheme).toBeUndefined();
+  });
+});

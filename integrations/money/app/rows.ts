@@ -6,7 +6,12 @@
  * class the table names: its `requires` and `recommends` list the property
  * subjects, and each property carries its shortname.
  */
-import type { JSONValue, PluginResource, PluginStore } from './store.js';
+import {
+  GET_MANY_MAX,
+  type JSONValue,
+  type PluginResource,
+  type PluginStore,
+} from './store.js';
 
 export const atomic = {
   parent: 'https://atomicdata.dev/properties/parent',
@@ -186,9 +191,10 @@ export function readRow(
 }
 
 /**
- * Reads `subjects` with at most `concurrency` requests in flight, reporting
- * progress. Unreadable rows are skipped, not fatal: one broken resource
- * should not hide a ledger.
+ * Reads `subjects`, reporting progress. With the host's `getMany`, in
+ * batches of `GET_MANY_MAX`, a few in flight; otherwise one `getResource`
+ * each, `concurrency` in flight. Unreadable rows are skipped, not fatal: one
+ * broken resource should not hide a ledger.
  */
 export async function readRows(
   store: PluginStore,
@@ -198,23 +204,52 @@ export async function readRows(
   concurrency = 16,
 ): Promise<Txn[]> {
   const out: (Txn | undefined)[] = new Array(subjects.length);
-  let next = 0;
   let loaded = 0;
+  const getMany = store.getMany?.bind(store);
 
-  const worker = async () => {
-    while (next < subjects.length) {
-      const index = next++;
-      const resource = await store
-        .getResource(subjects[index])
-        .catch(() => undefined);
-      out[index] = resource ? readRow(resource, fields) : undefined;
-      onProgress?.(++loaded);
-    }
-  };
+  if (getMany) {
+    const batches: number[] = [];
+    for (let at = 0; at < subjects.length; at += GET_MANY_MAX) batches.push(at);
+    let next = 0;
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, subjects.length) }, worker),
-  );
+    const worker = async () => {
+      while (next < batches.length) {
+        const at = batches[next++];
+        const entries = await getMany(
+          subjects.slice(at, at + GET_MANY_MAX),
+        ).catch(() => []);
+        entries.forEach((entry, i) => {
+          out[at + i] =
+            'error' in entry && entry.error !== undefined
+              ? undefined
+              : readRow(entry as PluginResource, fields);
+        });
+        loaded += Math.min(GET_MANY_MAX, subjects.length - at);
+        onProgress?.(loaded);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(4, batches.length) }, worker),
+    );
+  } else {
+    let next = 0;
+
+    const worker = async () => {
+      while (next < subjects.length) {
+        const index = next++;
+        const resource = await store
+          .getResource(subjects[index])
+          .catch(() => undefined);
+        out[index] = resource ? readRow(resource, fields) : undefined;
+        onProgress?.(++loaded);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, subjects.length) }, worker),
+    );
+  }
 
   return out.filter((row): row is Txn => row !== undefined);
 }

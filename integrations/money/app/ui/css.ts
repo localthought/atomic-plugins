@@ -26,9 +26,10 @@ export const PLUGIN_CSS = `
   --pl-on-accent: var(--t-color-bg, #ffffff);
   --pl-neg: var(--t-color-alert, #cf5b5b);
   --pl-warn: var(--t-color-warning, #f5a623);
-  /* The host has no success token: mixed toward the text colour, so it
-     darkens on a white ground and lightens on a black one. */
-  --pl-pos: color-mix(in oklab, #2f8f5b 75%, var(--pl-text));
+  /* The host's success colour (since the 007869464 pin); before that, a
+     green mixed toward the text colour, so it darkens on a white ground and
+     lightens on a black one. */
+  --pl-pos: var(--t-color-success, color-mix(in oklab, #2f8f5b 75%, var(--pl-text)));
   --pl-radius: var(--t-radius, 9px);
   --pl-font: var(--t-font-family, system-ui, sans-serif);
   --pl-font-header: var(--t-font-family-header, var(--pl-font));
@@ -47,6 +48,8 @@ export const PLUGIN_CSS = `
   min-height: 100vh;
   box-sizing: border-box;
 }
+.pl-app[data-color-scheme='light'] { color-scheme: light; }
+.pl-app[data-color-scheme='dark'] { color-scheme: dark; }
 .pl-app *, .pl-app *::before, .pl-app *::after { box-sizing: border-box; }
 .pl-app button, .pl-app input, .pl-app select, .pl-app textarea {
   font: inherit;

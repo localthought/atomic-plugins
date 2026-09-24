@@ -5,7 +5,7 @@ import {
   NOT_A_BANK_TABLE,
   type State,
 } from './controller.js';
-import { fakeStore, seedRow as row, TABLE } from './fakeStore.js';
+import { fakeStore, IMPORTER, seedRow as row, TABLE } from './fakeStore.js';
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -196,5 +196,61 @@ describe('Money controller: annotations', () => {
     expect(controller.state().drafts.note).toBe('half-typed');
     controller.select(undefined);
     expect(controller.state().drafts).toEqual({});
+  });
+});
+
+describe('Money controller: host APIs from the 007869464 pin', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => row(`-${i + 1}`, '2026-09-01'));
+
+  it('loads rows through getMany, at most 100 per call', async () => {
+    const store = fakeStore({ rows: many(250) });
+    const { controller } = harness(store);
+    const before = store.calls.get;
+    await controller.load();
+    expect(controller.state().view).toEqual({ kind: 'populated', count: 250 });
+    expect([...store.calls.getMany].sort((a, b) => b - a)).toEqual([
+      100, 100, 50,
+    ]);
+    // Only the table, its class and properties go one by one.
+    expect(store.calls.get - before).toBeLessThan(20);
+  });
+
+  it('skips a row getMany could not read, and keeps the rest', async () => {
+    const store = fakeStore({ rows: many(3) });
+    const original = store.getMany!;
+
+    store.getMany = async subjects => {
+      const entries = await original(subjects);
+
+      return entries.map((e, i) =>
+        i === 1 ? { subject: e.subject, error: 'Unauthorized' } : e,
+      );
+    };
+
+    const { controller } = harness(store);
+    await controller.load();
+    expect(controller.state().rows).toHaveLength(2);
+  });
+
+  it('falls back to one getResource per row on an older host', async () => {
+    const store = fakeStore({ rows: many(30), host: 'legacy' });
+    const { controller } = harness(store);
+    await controller.load();
+    expect(store.getMany).toBeUndefined();
+    expect(controller.state().rows).toHaveLength(30);
+    expect(store.calls.get).toBeGreaterThanOrEqual(30);
+  });
+
+  it('knows the importer to open, only where the host can open it', async () => {
+    const store = fakeStore({ rows: many(1) });
+    const { controller } = harness(store);
+    await controller.load();
+    expect(controller.state().importer).toBe(IMPORTER);
+    await controller.openImporter();
+    expect(store.opened).toEqual([IMPORTER]);
+    const legacy = harness(fakeStore({ rows: many(1), host: 'legacy' }));
+    await legacy.controller.load();
+    expect(legacy.controller.state().importer).toBeUndefined();
   });
 });

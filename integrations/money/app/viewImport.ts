@@ -29,6 +29,7 @@ export interface ImportActions {
   chooseFile(): void;
   setPreviewTab(tab: 'new' | 'already' | 'blocked'): void;
   applyImport(): void;
+  openImporter(): void;
 }
 
 const fileLine = (sheet: ImportSheet) => {
@@ -293,6 +294,13 @@ function preview(
           tone: 'info',
           title: 'Import this file from the Bank statements importer',
           text: `Apps can't run the importer yet, so this check changes nothing. Open the importer's Import tab and choose ${sheet.file.name} there: it proposes the same ${plural(fresh.length, 'new transaction', 'new transactions', locale)}.`,
+          action: state.importer
+            ? button('Open the importer', {
+                onClick: actions.openImporter,
+                key: 'open-importer',
+              })
+            : undefined,
+          details: state.openFailure,
         }),
       ),
     );

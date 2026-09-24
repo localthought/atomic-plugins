@@ -35,6 +35,15 @@ export async function mount(
   const win = doc.defaultView ?? window;
   installStyles(doc, 'money-app-styles', MONEY_CSS);
   root.classList.add('pl-app');
+
+  // The host's light/dark setting, for native controls and scrollbars; the
+  // colours themselves arrive as --t-* variables.
+  const scheme = (theme?: { colorScheme: string }) => {
+    if (theme) root.dataset.colorScheme = theme.colorScheme;
+  };
+
+  scheme(store.getTheme?.());
+  store.onThemeChange?.(scheme);
   const locale = options.locale ?? win.navigator?.language;
   let width = options.width ?? (root.clientWidth || win.innerWidth || 1024);
   let current: State | undefined;
@@ -76,6 +85,7 @@ export async function mount(
     },
     setPreviewTab: tab => controller.setPreviewTab(tab),
     applyImport: () => void controller.applyImport(),
+    openImporter: () => void controller.openImporter(),
     toggleHelp: open => {
       controller.toggleHelp(open);
       if (!controller.state().help) helpOpener?.focus();

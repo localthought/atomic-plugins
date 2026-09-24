@@ -163,15 +163,20 @@ importer, imports the synthetic MT940, installs the built app test-side as
 a new App that renders bank transactions, adds it as a view of the Bank
 transactions table through Add view, and checks the ledger, the detail,
 the refused category save and the in-app check (nothing new; a changed
-transaction blocks). What the pinned host does not let the app do yet:
+transaction blocks). Since the 007869464 pin the app also uses the host's `getMany` (rows in
+batches of 100), `getTheme`/`onThemeChange` (`color-scheme` for native
+controls), `--t-color-success` (money in) and `openResource` (the preview's
+"Open the importer"), each feature-detected so an older host still works.
+What the pinned host does not let the app do yet:
 
 - **Apply an import.** There is no app bridge op that runs a sandbox
   importer (issues.md M-8). The preview says to choose the same file on the
   importer's Import tab, which proposes the same rows; new rows then appear
-  in the app through its table subscription.
+  in the app through its table subscription. (atomic-server#1739)
 - **Save a category or note on the importer's table.** `hostStore.ts`
   refuses writes outside the app's own subtree, and the importer's table
   lives under the importer. The detail keeps the typed text and says so.
+  (atomic-server#1740)
 - **Install from the catalog.** There is no catalog entry for this app.
 
 Build: `node integrations/money/app/build.mjs` (writes `app/dist/ui.js`,

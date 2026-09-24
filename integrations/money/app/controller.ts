@@ -110,6 +110,13 @@ export interface State {
   canApply: boolean;
   /** The keyboard shortcuts popover (`?`). */
   help?: boolean;
+  /**
+   * The importer that owns the table (the table's parent), when the host
+   * can open it for the person (`store.openResource`).
+   */
+  importer?: string;
+  /** Why opening the importer failed, when it did. */
+  openFailure?: string;
 }
 
 export const NOT_A_BANK_TABLE =
@@ -134,6 +141,8 @@ export interface Controller {
   /** Closes the import sheet; during a check, abandons it. */
   closeImport(): void;
   toggleHelp(open?: boolean): void;
+  /** Leaves the app for the importer's page, where Import applies (M-8). */
+  openImporter(): Promise<void>;
   /** ISO date the period filters are relative to. */
   today(): string;
   dispose(): void;
@@ -263,6 +272,13 @@ export function createController(
         const fields = await resolveFields(store, data.rowClass);
         if (!isBankTable(fields)) return fail(NOT_A_BANK_TABLE);
         table = data.table;
+        const owner = store.openResource
+          ? await store
+              .getResource(table)
+              .then(r => r.get(atomic.parent))
+              .catch(() => undefined)
+          : undefined;
+        if (typeof owner === 'string') update({ importer: owner });
         const subjects = await store.query({
           property: atomic.parent,
           value: table,
@@ -473,6 +489,17 @@ export function createController(
       run++;
       pendingText = undefined;
       if (state.importing) update({ importing: undefined });
+    },
+    async openImporter() {
+      if (!state.importer || !store.openResource) return;
+
+      try {
+        await store.openResource(state.importer);
+      } catch (error) {
+        update({
+          openFailure: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
     toggleHelp(open = !state.help) {
       update({ help: open });

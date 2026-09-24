@@ -18,10 +18,11 @@ describe('money drive-app bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    // Measured 82,579 bytes minified (JS and embedded CSS) on 2026-09-24;
-    // the limit is that plus about 10%, rounded up. It includes both
-    // statement readers (MT940 and camt.053), which the in-app check runs.
-    expect(bytes).toBeLessThan(91_000);
+    // Measured 83,637 bytes minified (JS and embedded CSS) on 2026-09-24,
+    // at the 007869464 pin; the limit is that plus about 10%, rounded up.
+    // It includes both statement readers (MT940 and camt.053), which the
+    // in-app check runs.
+    expect(bytes).toBeLessThan(92_000);
   });
 
   it('embeds its stylesheets minified', () => {

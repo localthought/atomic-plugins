@@ -11,7 +11,13 @@
  * Bank transaction class and an empty table. Test-only; not bundled.
  */
 import { atomic, BANK_FIELDS, NOTE_FIELDS, type Shortname } from './rows.js';
-import type { JSONValue, PluginResource, PluginStore } from './store.js';
+import {
+  GET_MANY_MAX,
+  type ColorScheme,
+  type JSONValue,
+  type PluginResource,
+  type PluginStore,
+} from './store.js';
 
 export const APP = 'did:ad:money-app';
 export const IMPORTER = 'did:ad:importer';
@@ -73,6 +79,12 @@ export interface FakeStore extends PluginStore {
   hold(): () => void;
   /** Subjects with a live subscription. */
   readonly subscribed: Set<string>;
+  /** Calls made, by op, for asserting batching. */
+  readonly calls: { get: number; getMany: number[] };
+  /** Subjects the app asked the host to open. */
+  readonly opened: string[];
+  /** Switches the host between light and dark, as `__atomic_style` does. */
+  setScheme(scheme: ColorScheme): void;
 }
 
 export function fakeStore({
@@ -80,7 +92,12 @@ export function fakeStore({
   notes = true,
   rowsWritable = false,
   data = 'bank',
+  host = 'current',
+  scheme = 'light',
 }: {
+  /** `legacy`: a host before 007869464, without getMany, theme or openResource. */
+  host?: 'current' | 'legacy';
+  scheme?: ColorScheme;
   rows?: SeedRow[];
   /** Whether the class declares money-category and money-note (M-5). */
   notes?: boolean;
@@ -208,10 +225,22 @@ export function fakeStore({
     };
   };
 
+  const calls = { get: 0, getMany: [] as number[] };
+  const opened: string[] = [];
+  const themeListeners = new Set<(t: { colorScheme: ColorScheme }) => void>();
+  let colorScheme = scheme;
+
   const store: FakeStore = {
     resources,
     saves,
     subscribed,
+    calls,
+    opened,
+    setScheme(to) {
+      if (to === colorScheme) return;
+      colorScheme = to;
+      for (const listener of themeListeners) listener({ colorScheme });
+    },
     addRows(seed) {
       const subjects = seed.map(row => {
         const subject = `${TABLE}/row-${++next}`;
@@ -251,6 +280,7 @@ export function fakeStore({
             rowClass: resources.get(TABLE)?.[atomic.classtype] as string,
           },
     async getResource(subject) {
+      calls.get++;
       if (held) await held;
       const stored = resources.get(subject);
       if (!stored) throw new Error(`No resource ${subject}`);
@@ -285,6 +315,40 @@ export function fakeStore({
       };
     },
   };
+
+  if (host === 'current') {
+    store.getMany = async subjects => {
+      if (subjects.length > GET_MANY_MAX)
+        throw new Error(
+          `getMany reads at most ${GET_MANY_MAX} subjects at a time; ask in batches`,
+        );
+      calls.getMany.push(subjects.length);
+      if (held) await held;
+
+      return subjects.map(subject => {
+        const stored = resources.get(subject);
+
+        return stored
+          ? wrap(subject, stored)
+          : { subject, error: `No resource ${subject}` };
+      });
+    };
+
+    store.getTheme = () => ({ colorScheme });
+
+    store.onThemeChange = handler => {
+      themeListeners.add(handler);
+
+      return () => themeListeners.delete(handler);
+    };
+
+    store.openResource = async subject => {
+      if (!resources.has(subject)) throw new Error(`No resource ${subject}`);
+      opened.push(subject);
+
+      return { status: 'opened' as const, subject };
+    };
+  }
 
   if (rows.length) store.addRows(rows);
 
