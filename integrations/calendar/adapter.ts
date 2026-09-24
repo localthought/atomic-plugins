@@ -59,7 +59,17 @@ export interface Preview {
   calendarId: string;
   revision: number;
   changes: Change[];
-  conflicts: Array<{ subject?: string; id?: string; fields: string[] }>;
+  conflicts: Array<{
+    subject?: string;
+    id?: string;
+    fields: string[];
+    /** Both-changed conflicts only: the three sides, and the ETag read, so a
+     * person can choose per field (the choice is sent later, reviewed). */
+    local?: Projection;
+    remote?: Projection;
+    base?: Projection;
+    etag?: string;
+  }>;
   /** Events read but not imported, by reason. A cancelled instance of a
    * series counts as recurring. */
   skipped: { recurring: number; cancelled: number };
@@ -374,6 +384,12 @@ export async function preview(
         subject: card?.subject,
         id,
         fields: decision.conflicts.map(c => c.property),
+        ...(card ? { local: card.value } : {}),
+        remote,
+        ...(binding?.baseline
+          ? { base: binding.baseline as unknown as Projection }
+          : {}),
+        ...(etags.has(id) ? { etag: etags.get(id) } : {}),
       });
       continue;
     }

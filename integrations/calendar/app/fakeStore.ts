@@ -40,6 +40,10 @@ export interface FakeStore extends PluginStore {
   reconnect(): void;
   /** The delegation of `connectionId` revoked at the proxy, elsewhere. */
   revoke(connectionId: string): void;
+  /** The next relay call answers with this status instead of reaching the fixture. */
+  answerNext(status: number, headers?: Record<string, string>): void;
+  /** The next relay call throws, as a failed fetch in the page would. */
+  throwNext(message: string): void;
 }
 
 export function fakeStore({
@@ -57,6 +61,10 @@ export function fakeStore({
   const google = calendarFixture(DAY);
   let next = 0;
   let loseResponse = false;
+  let canned:
+    | { status: number; headers: Record<string, string> }
+    | { throws: string }
+    | undefined;
   const connections = connected ? ['c1'] : [];
   const revoked = new Set<string>();
 
@@ -65,6 +73,7 @@ export function fakeStore({
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = { ...stored };
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -74,16 +83,21 @@ export function fakeStore({
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
       async save() {
-        resources.set(subject, { ...(resources.get(subject) ?? {}), ...props });
+        const merged = { ...(resources.get(subject) ?? {}), ...props };
+        for (const property of removed) delete merged[property];
+        removed.clear();
+        resources.set(subject, merged);
         writes.push({ op: 'save', subject });
 
         return this;
@@ -110,6 +124,19 @@ export function fakeStore({
             message: 'the signing agent has no delegation for this connection',
           },
         };
+
+      if (canned) {
+        const answer = canned;
+        canned = undefined;
+        if ('throws' in answer) throw new Error(answer.throws);
+
+        return {
+          status: answer.status,
+          headers: answer.headers,
+          body: { error: { code: answer.status, message: 'Canned' } },
+        };
+      }
+
       const url = new URL(
         `/proxy/${request.platform}${request.path}`,
         'http://mock-proxy.test',
@@ -162,6 +189,12 @@ export function fakeStore({
     },
     revoke: connectionId => {
       revoked.add(connectionId);
+    },
+    answerNext: (status, headers = {}) => {
+      canned = { status, headers };
+    },
+    throwNext: message => {
+      canned = { throws: message };
     },
     getApp: async () => APP,
     getData: async () => ({ table: TABLE, rowClass: ROW_CLASS }),

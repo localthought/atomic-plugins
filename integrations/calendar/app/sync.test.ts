@@ -95,8 +95,20 @@ suite('Calendar drive app: supported path', () => {
   it('lists calendars through the relay, never naming a credential', async () => {
     const store = fakeStore();
     expect(await listCalendars(store.proxy!, 'c1')).toEqual([
-      { id: PRIMARY, summary: 'Synthetic', primary: true, accessRole: 'owner' },
-      { id: TEAM, summary: 'Team', primary: false, accessRole: 'reader' },
+      {
+        id: PRIMARY,
+        summary: 'Synthetic',
+        primary: true,
+        accessRole: 'owner',
+        backgroundColor: '#9fe1e7',
+      },
+      {
+        id: TEAM,
+        summary: 'Team',
+        primary: false,
+        accessRole: 'reader',
+        backgroundColor: '#f691b2',
+      },
     ]);
     expect(store.calls).toEqual([
       {
@@ -284,7 +296,16 @@ suite('Calendar drive app: supported path', () => {
     await controller.refresh();
     const state = ready(controller.state());
     expect(state.summary.conflicts).toEqual([
-      { title: 'Here', fields: ['title'] },
+      expect.objectContaining({
+        id: 'timed',
+        title: 'Here',
+        fields: ['title'],
+        kind: 'both',
+        local: expect.objectContaining({ title: 'Here' }),
+        remote: expect.objectContaining({ title: 'There' }),
+        base: expect.objectContaining({ title: 'Calendar timed fixture' }),
+        etag: expect.stringMatching(/^"v\d+"$/),
+      }),
     ]);
     expect(state.summary.review).toEqual([]);
     expect(rows(store).get('timed')!.title).toBe('Here');
@@ -342,7 +363,10 @@ suite('Calendar drive app: supported path', () => {
     const state = ready(controller.state());
     expect(state.summary.conflicts).toEqual([
       {
+        subject: rows(store).get('timed')!.subject,
+        id: 'timed',
         title: 'Calendar timed fixture',
+        kind: 'missing-remote',
         fields: [
           'Event cancelled, recurring or inaccessible; no deletion inferred',
         ],

@@ -36,7 +36,8 @@ import {
   type Preview,
   type Projection,
 } from '../adapter.js';
-import { relay, UncertainWriteError } from './relay.js';
+import type { CalEvent } from './events.js';
+import { relay, UncertainWriteError, type Relayed } from './relay.js';
 import type {
   HostProxy,
   JSONValue,
@@ -125,7 +126,29 @@ export const SPECS: Record<string, Spec> = {
     description: 'The one Google calendar this table imports (on the table).',
     column: false,
   },
+  'google-calendar-meta': {
+    name: 'Google calendar details',
+    datatype: `${DT}/string`,
+    description:
+      'JSON of the imported calendar’s name, colour, access role and account, as Google listed them (on the table; display only).',
+    column: false,
+  },
 };
+
+/** What the app shows about the imported calendar; kept on the table. */
+export interface CalendarMeta {
+  summary: string;
+  /** Google's `backgroundColor`, e.g. `#9fe1e7`. */
+  color: string;
+  accessRole: string;
+  /** The account's e-mail address: the primary calendar's id. */
+  account?: string;
+}
+
+export const DEFAULT_COLOR = '#4986e7';
+
+export const isReadOnly = (accessRole: string) =>
+  accessRole === 'reader' || accessRole === 'freeBusyReader';
 
 export type Props = Record<keyof typeof SPECS, string>;
 
@@ -213,25 +236,69 @@ export async function properties(
   return props;
 }
 
-/** The calendar this table imports, once chosen. */
+/** Existing Properties by shortname, without creating any. */
+async function existing(
+  store: PluginStore,
+  where: Layout,
+): Promise<Map<string, string>> {
+  const ontology = await store.getResource(where.ontology);
+  const found = new Map<string, string>();
+
+  for (const subject of asList(ontology.get(PROPERTIES))) {
+    const shortname = (await store.getResource(subject)).get(SHORTNAME);
+    if (typeof shortname === 'string') found.set(shortname, subject);
+  }
+
+  return found;
+}
+
+function parseMeta(raw: JSONValue): CalendarMeta | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+
+  try {
+    const meta = JSON.parse(raw) as Partial<CalendarMeta>;
+    if (typeof meta.summary !== 'string') return undefined;
+
+    return {
+      summary: meta.summary,
+      color: typeof meta.color === 'string' ? meta.color : DEFAULT_COLOR,
+      accessRole:
+        typeof meta.accessRole === 'string' ? meta.accessRole : 'reader',
+      ...(typeof meta.account === 'string' ? { account: meta.account } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The calendar this table imports, once chosen, and what was kept about it. */
 export async function chosenCalendar(
   store: PluginStore,
-): Promise<string | undefined> {
+): Promise<{ id: string; meta?: CalendarMeta } | undefined> {
   const where = await layout(store);
-  const props = await properties(store, where, false);
-  if (!props) return undefined;
-  const value = (await store.getResource(where.table)).get(
-    props['google-calendar-id'],
-  );
+  const found = await existing(store, where);
+  const idProp = found.get('google-calendar-id');
+  if (!idProp) return undefined;
+  const table = await store.getResource(where.table);
+  const id = table.get(idProp);
+  if (typeof id !== 'string' || !id) return undefined;
+  const metaProp = found.get('google-calendar-meta');
+  const meta = metaProp ? parseMeta(table.get(metaProp)) : undefined;
 
-  return typeof value === 'string' && value ? value : undefined;
+  return { id, ...(meta ? { meta } : {}) };
 }
 
 /** Binds the table to one calendar. A table never switches calendars. */
 export async function chooseCalendar(
   store: PluginStore,
-  calendar: { id: string; summary: string },
-): Promise<void> {
+  calendar: {
+    id: string;
+    summary: string;
+    backgroundColor?: string;
+    accessRole?: string;
+  },
+  account?: string,
+): Promise<CalendarMeta> {
   const where = await layout(store);
   const props = (await properties(store, where, true))!;
   const table = await store.getResource(where.table);
@@ -240,10 +307,19 @@ export async function chooseCalendar(
     throw new Error(
       'This table already imports another calendar. Use a new Calendar app for a second one.',
     );
+  const meta: CalendarMeta = {
+    summary: calendar.summary,
+    color: calendar.backgroundColor ?? DEFAULT_COLOR,
+    accessRole: calendar.accessRole ?? 'reader',
+    ...(account ? { account } : {}),
+  };
   await table
     .set(props['google-calendar-id'], calendar.id)
+    .set(props['google-calendar-meta'], JSON.stringify(meta))
     .set(NAME, calendar.summary)
     .save();
+
+  return meta;
 }
 
 const text = (value: JSONValue): string =>
@@ -336,12 +412,13 @@ function host(
   proxy: HostProxy,
   connectionId: string,
   rows: Rows,
-): Host & { rows: Rows } {
+): Host & { rows: Rows; relayed: Relayed } {
   const relayed = relay(proxy, connectionId);
   const { props } = rows;
 
   return {
     rows,
+    relayed,
     read: intent => relayed.read(intent),
     async cards() {
       const cards: Card[] = [];
@@ -387,6 +464,32 @@ export interface PendingEdit {
   title: string;
   /** Per changed field: what Google has now, and what would be sent. */
   fields: Array<{ field: string; before: string; after: string }>;
+  /** What Google has now (Discard puts this back into the row). */
+  remote: Projection;
+  /** What would be sent. */
+  desired: Projection;
+}
+
+/** Why an event is listed as a conflict, from `preview().conflicts`. */
+export type ConflictKind =
+  /** The same field changed here and in Google. */
+  | 'both'
+  /** Imported, then cancelled, made recurring or made inaccessible in Google. */
+  | 'missing-remote'
+  /** Bound to a row that is gone or bound to another row. */
+  | 'missing-local';
+
+export interface Conflict {
+  subject?: string;
+  id?: string;
+  title: string;
+  /** Field keys (`title`, `start`, …) for `both`; the adapter's reason otherwise. */
+  fields: string[];
+  kind: ConflictKind;
+  local?: Projection;
+  remote?: Projection;
+  base?: Projection;
+  etag?: string;
 }
 
 export interface ImportSummary {
@@ -396,13 +499,13 @@ export interface ImportSummary {
   updated: number;
   unchanged: number;
   skipped: Preview['skipped'];
-  conflicts: Array<{ title: string; fields: string[] }>;
+  conflicts: Conflict[];
   localOnly: number;
   invalid: Array<{ title: string; reason: string }>;
   review: PendingEdit[];
 }
 
-const LABELS: Record<keyof Projection, string> = {
+export const LABELS: Record<keyof Projection, string> = {
   title: 'Title',
   description: 'Description',
   location: 'Location',
@@ -460,7 +563,11 @@ export async function refresh(
   store: PluginStore,
   proxy: HostProxy,
   connectionId: string,
-  options: { maxPages?: number } = {},
+  options: {
+    maxPages?: number;
+    /** Called after each page of events is read, with the page count. */
+    onPage?: (pages: number) => void;
+  } = {},
 ): Promise<ImportSummary> {
   const where = await layout(store);
   const props = await properties(store, where, true);
@@ -470,7 +577,19 @@ export async function refresh(
     throw new Error('Choose a calendar first.');
   const rows = await readRows(store, where, props!);
   const h = host(proxy, connectionId, rows);
-  const result = await preview(h, calendarId, options);
+  let pages = 0;
+  const read = h.read;
+
+  h.read = async intent => {
+    const receipt = await read(intent);
+    if (intent.operation === 'list') options.onPage?.(++pages);
+
+    return receipt;
+  };
+
+  const result = await withStatus(h.relayed, () =>
+    preview(h, calendarId, { maxPages: options.maxPages }),
+  );
   const titles = new Map(
     [...rows.bound.values()].map(r => [r.subject, text(r.get(NAME))]),
   );
@@ -481,10 +600,29 @@ export async function refresh(
     updated: 0,
     unchanged: 0,
     skipped: result.skipped,
-    conflicts: result.conflicts.map(c => ({
-      title: (c.subject && titles.get(c.subject)) || c.id || '(untitled)',
-      fields: c.fields,
-    })),
+    conflicts: result.conflicts.map(c => {
+      const kind: ConflictKind = c.remote
+        ? 'both'
+        : /no deletion inferred/.test(c.fields[0] ?? '')
+          ? 'missing-remote'
+          : 'missing-local';
+
+      return {
+        ...(c.subject ? { subject: c.subject } : {}),
+        ...(c.id ? { id: c.id } : {}),
+        title:
+          (c.subject && titles.get(c.subject)) ||
+          c.remote?.title ||
+          c.id ||
+          '(untitled)',
+        fields: c.fields,
+        kind,
+        ...(c.local ? { local: c.local } : {}),
+        ...(c.remote ? { remote: c.remote } : {}),
+        ...(c.base ? { base: c.base } : {}),
+        ...(c.etag ? { etag: c.etag } : {}),
+      };
+    }),
     localOnly: rows.localOnly,
     invalid: [...rows.invalid.values()],
     review: [],
@@ -535,6 +673,8 @@ export async function refresh(
         etag: change.etag,
         title: change.remote.title,
         fields: fieldsOf(change.remote, change.desired),
+        remote: change.remote,
+        desired: change.desired,
       });
   }
 
@@ -564,6 +704,7 @@ export async function send(
   connectionId: string,
   calendarId: string,
   review: PendingEdit[],
+  progress?: (index: number, outcome?: Outcome) => void,
 ): Promise<Outcome[]> {
   const where = await layout(store);
   const props = (await properties(store, where, false))!;
@@ -577,8 +718,11 @@ export async function send(
 
     if (stop) {
       outcomes.push({ status: 'not-sent', title });
+      progress?.(outcomes.length - 1, outcomes.at(-1));
       continue;
     }
+
+    progress?.(outcomes.length);
 
     try {
       const event = await applyEdit(
@@ -611,9 +755,198 @@ export async function send(
           message: error instanceof Error ? error.message : String(error),
         });
     }
+
+    progress?.(outcomes.length - 1, outcomes.at(-1));
   }
 
   return outcomes;
+}
+
+/**
+ * Runs a read and, when it fails on a provider status, attaches that status
+ * and the `retry-after` header to the error, so the view can say what went
+ * wrong (401 reconnect, 429 wait) without parsing the adapter's message.
+ */
+async function withStatus<T>(
+  relayed: Relayed,
+  op: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await op();
+  } catch (error) {
+    const last = relayed.last;
+    if (error instanceof Error && last && last.status >= 400)
+      Object.assign(error, {
+        status: last.status,
+        ...(last.headers?.['retry-after']
+          ? { retryAfter: last.headers['retry-after'] }
+          : {}),
+        ...(typeof last.body === 'object' && last.body
+          ? { detail: JSON.stringify(last.body) }
+          : typeof last.body === 'string' && last.body
+            ? { detail: last.body }
+            : {}),
+      });
+    throw error;
+  }
+}
+
+/** The rows as the views draw them. */
+export async function readEvents(
+  store: PluginStore,
+  meta: CalendarMeta,
+  conflicts: Conflict[] = [],
+): Promise<CalEvent[]> {
+  const where = await layout(store);
+  const props = await properties(store, where, false);
+  if (!props) return [];
+  const inConflict = new Set(conflicts.map(c => c.subject));
+  const out: CalEvent[] = [];
+  const readOnly = isReadOnly(meta.accessRole);
+
+  for (const subject of await store.query({
+    property: PARENT,
+    value: where.table,
+  })) {
+    const row = await store.getResource(subject);
+    const card = cardOf(row, props);
+    const baseline = baselineOf(row, props);
+
+    out.push({
+      ...card.value,
+      subject,
+      ...(card.id ? { id: card.id } : {}),
+      pending:
+        !!card.id &&
+        !!baseline &&
+        (Object.keys(LABELS) as Array<keyof Projection>).some(
+          k => baseline[k] !== card.value[k],
+        ),
+      conflict: inConflict.has(subject),
+      readOnly: readOnly || !card.id,
+      calendar: { name: meta.summary, color: meta.color },
+    });
+  }
+
+  return out;
+}
+
+/** Stores what the calendar list says about the imported calendar. */
+export async function saveMeta(
+  store: PluginStore,
+  meta: CalendarMeta,
+): Promise<void> {
+  const where = await layout(store);
+  const props = (await properties(store, where, true))!;
+  await (
+    await store.getResource(where.table)
+  )
+    .set(props['google-calendar-meta'], JSON.stringify(meta))
+    .save();
+}
+
+/**
+ * A local edit from the event drawer: the five mapped fields (and Day),
+ * stored as exact strings. Nothing is sent; the next preview lists it for
+ * review because the row now differs from its baseline.
+ */
+export async function saveLocal(
+  store: PluginStore,
+  subject: string,
+  value: Projection,
+): Promise<void> {
+  const where = await layout(store);
+  const props = (await properties(store, where, true))!;
+  const row = await store.getResource(subject);
+  if (writeRow(row, props, value)) await row.save();
+}
+
+/** Discard in the review sheet: the row takes Google's current value again. */
+export async function discard(
+  store: PluginStore,
+  pending: PendingEdit,
+): Promise<void> {
+  if (!pending.edit.subject) return;
+  const where = await layout(store);
+  const props = (await properties(store, where, true))!;
+  const row = await store.getResource(pending.edit.subject);
+  writeRow(row, props, pending.remote);
+  await row
+    .set(props['google-etag'], pending.etag)
+    .set(props['sync-baseline'], JSON.stringify(pending.remote))
+    .save();
+}
+
+export type Choice = 'mine' | 'google';
+
+/**
+ * Resolves a both-changed conflict field by field. "Use Google's" takes
+ * Google's value; "Keep mine" keeps the row's. The baseline becomes what
+ * Google has now, so a kept field is a local edit the next preview lists for
+ * review: nothing is sent from here.
+ */
+export async function resolveConflict(
+  store: PluginStore,
+  conflict: Conflict,
+  choices: Partial<Record<keyof Projection, Choice>>,
+): Promise<void> {
+  const { subject, local, remote, base } = conflict;
+  if (conflict.kind !== 'both' || !subject || !local || !remote)
+    throw new Error('Only a both-changed conflict can be resolved per field.');
+  const keys = Object.keys(LABELS) as Array<keyof Projection>;
+
+  for (const field of conflict.fields)
+    if (!choices[field as keyof Projection])
+      throw new Error(`Choose a value for ${field}.`);
+
+  const merged = Object.fromEntries(
+    keys.map(k => {
+      const choice = choices[k];
+      if (choice) return [k, choice === 'mine' ? local[k] : remote[k]];
+      // Not in conflict: keep a local-only edit, otherwise take Google's.
+      const editedHere = base ? base[k] !== local[k] : false;
+
+      return [k, editedHere ? local[k] : remote[k]];
+    }),
+  ) as Projection;
+  // Start and end move together with all-day; a mixed pick is invalid.
+  const reason = invalid(merged);
+  if (reason) throw new Error(`That combination can’t be saved: ${reason}.`);
+  const where = await layout(store);
+  const props = (await properties(store, where, true))!;
+  const row = await store.getResource(subject);
+  writeRow(row, props, merged);
+  row
+    .set(props['sync-baseline'], JSON.stringify(remote))
+    .set(props['google-etag'], conflict.etag ?? '');
+  await row.save();
+}
+
+/**
+ * "Keep as local event": the row stops being bound to the Google event that
+ * is gone, and is counted as made here from now on. Nothing is deleted.
+ */
+export async function keepAsLocal(
+  store: PluginStore,
+  subject: string,
+): Promise<void> {
+  const where = await layout(store);
+  const props = (await properties(store, where, true))!;
+  await (
+    await store.getResource(subject)
+  )
+    .remove(props['google-event-id'])
+    .remove(props['google-etag'])
+    .remove(props['sync-baseline'])
+    .save();
+}
+
+/** "Remove local copy": the only delete path, and it is local. */
+export async function removeLocal(
+  store: PluginStore,
+  subject: string,
+): Promise<void> {
+  await (await store.getResource(subject)).destroy();
 }
 
 function never(): never {
