@@ -27,7 +27,7 @@ import {
   createFromCatalog,
 } from '../../../browser/e2e/tests/test-utils';
 // @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build } from '../app/build.mjs';
+import { build, cssRawPlugin } from '../app/build.mjs';
 
 const APP_FRAME = 'iframe[title="App"]';
 /** The fixture's workspace (`../fixtures/clockify/scenario.mjs`). */
@@ -536,6 +536,7 @@ async function previewScript(): Promise<string> {
         new URL('../app/tomic-lib-shim.ts', import.meta.url),
       ),
     },
+    plugins: [cssRawPlugin(esbuild)],
     logLevel: 'silent',
   });
 
