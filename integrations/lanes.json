@@ -61,6 +61,13 @@
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
+      "id": "nextgraph",
+      "index": 15,
+      "platforms": [],
+      "tiers": ["contract"],
+      "note": "Planning contract only: bounded QuickJS adapter feasibility. The NextGraph ngd broker belongs in an operator-managed sidecar; no protocol implementation or live interoperability is verified."
+    },
+    {
       "id": "timesheets",
       "index": 6,
       "platforms": ["clockify"],

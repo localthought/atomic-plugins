@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "nextgraph",
+  "name": "NextGraph",
+  "status": "scaffold",
+  "runtime": "quickjs",
+  "scope": "Evaluate a bounded QuickJS data adapter to an operator-managed NextGraph broker.",
+  "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
+  "proposedHostCapabilities": [
+    "peer-transport",
+    "persistent-state",
+    "background-jobs"
+  ],
+  "firstInteropMilestone": "After scoped host broker access exists, transfer one explicitly mapped document of at most 64 KiB from Atomic to an authorized NextGraph test broker and read it back with field-for-field equality."
+}
