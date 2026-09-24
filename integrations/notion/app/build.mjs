@@ -6,9 +6,9 @@
  *   node integrations/notion/app/build.mjs [--outfile path]
  *
  * Needs an atomic-server checkout's `browser/` beside `integrations/` (see
- * AGENTS.md), for esbuild. `syncables/browser` resolves to this repo's
- * `syncables/src/browser.ts` until the npm release with that entry point is
- * published; the catalog document is bundled as JSON.
+ * AGENTS.md), for esbuild, and `pnpm install --frozen-lockfile` in
+ * integrations/notion/ for the npm `syncables` and `devonian` it bundles.
+ * The catalog document is bundled as JSON.
  */
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -17,9 +17,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
-
-/** Where `syncables/browser` resolves; also in tsconfig.json and vitest.config.ts. */
-export const SYNCABLES_BROWSER = path('../../../syncables/src/browser.ts');
 
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
@@ -37,7 +34,6 @@ export async function build({ outfile } = {}) {
     outfile: outfile ?? path('dist/ui.js'),
     alias: {
       '@tomic/lib': path('tomic-lib-shim.ts'),
-      'syncables/browser': SYNCABLES_BROWSER,
     },
     logLevel: 'silent',
   });

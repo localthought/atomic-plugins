@@ -4,9 +4,10 @@ Everything Notion-specific lives in this folder. atomic-server keeps no
 Notion code (branch `claude/remove-notion-code`). There are two paths, and
 neither has an entry point in the atomic-server data-browser today:
 
-- **Drive plugin on syncables** (`app/`, read-only, new). This is the
-  direction for #8 and #68: an iframe plugin that reads Notion through
-  `syncables/browser` over the host's integration-proxy relay.
+- **Drive plugin on syncables and Devonian** (`app/`, read-only, new). This
+  is the direction for #8 and #68: an iframe plugin that reads Notion through
+  `syncables/browser` over the host's integration-proxy relay, and maps it to
+  Atomic rows through a Devonian lens (`devonian/notion/`).
 - **Sandbox plugin** (`plugin.ts`, two-way, the pilot). It runs in atomic-server's
   QuickJS/WASM plugin runtime. It is still the only two-way path.
 
@@ -26,20 +27,34 @@ proxy. No credential ever reaches the frame.
 - `app/transport.ts`: syncables' `Transport` over `store.proxy.request`. It
   sends the provider path (`/v1/search`), the method and the JSON body, and
   refuses any URL outside the document's `https://api.notion.com/v1`.
-- `app/sync.ts`: `readPlatform` over the bundled `catalog/notion.json`.
-  - It lists every data source shared with the connection
-    (`POST /v1/search`), then pages through each one's pages
-    (`POST /v1/data_sources/{id}/query`, `start_cursor` in the body).
-  - Pages go through the read-only lens (`devonian/notion/`) one data source at
-    a time.
-  - It makes one Property per Notion property under the row class's ontology,
-    named after the Notion property and keyed by its stable id. Page id, data
-    source, URL and last-edited columns are added too.
-  - Rows are reconciled into the app's data table by Notion page id.
-- `app/build.mjs`: `dist/ui.js`, about 75 KB including the catalog document
-  and syncables' read path. `@tomic/lib` is shimmed, as in timesheets.
-  `syncables/browser` resolves to this repo's `syncables/src/browser.ts`
-  (#83), and so do `tsconfig.json` and `vitest.config.ts`.
+- `app/sync.ts`: host I/O only; every Notion-to-Atomic mapping is in the
+  lens (see [Lens](#lens-devoniannotion) below).
+  - `readPlatform` over the bundled `catalog/notion.json` lists every data
+    source shared with the connection (`POST /v1/search`), then pages through
+    each one's pages (`POST /v1/data_sources/{id}/query`, `start_cursor` in
+    the body).
+  - Pages go through `notionProjection` one data source at a time, and
+    `notionColumns` derives the columns from what was read.
+  - It finds or creates one Property per column under the row class's
+    ontology and binds the lens to them.
+  - Per page: an existing row (found by the Notion page id column) is seeded
+    into the lens store, the page is `ingest`ed through the data source's
+    Devonian `AtomicLens`, and the lens row's values are written back to the
+    host row, removals included. New pages become new rows.
+- `app/build.mjs`: `dist/ui.js`, 98081 bytes at the time of writing,
+  including the catalog document, syncables' read path and devonian's Atomic
+  Data API. `@tomic/lib` is shimmed, as in timesheets (`Datatype` and
+  `validateDatatype` only; `build.test.ts` pins both to the real library).
+- Dependencies: `syncables@0.18.0` and `devonian@0.6.1` from npm, exact
+  versions in `package.json`, locked in `pnpm-lock.yaml`, installed into this
+  folder's `node_modules/` (`pnpm install --frozen-lockfile` here; CI's
+  "Install plugin npm dependencies" step does it for every
+  `integrations/*/pnpm-lock.yaml`). This repo's `syncables/` and `devonian/`
+  sources are not used. Only devonian's `src/atomic/` is imported, by path
+  (`devonian/notion/lens/devonian-atomic.ts`): the package root also exports
+  `DevonianClient`/`DevonianTable`, which import `node:events` and Automerge
+  and cannot go into the bundle, and 0.6.1's `exports` has no subpath for
+  `src/atomic/`.
 - `catalog/`: the composed catalog document, its provenance and
   `generate.py`. The overlays themselves are in
   `overlays/notion.com/2026-03-11/`; see [`catalog/README.md`](catalog/README.md).
@@ -49,10 +64,14 @@ proxy. No credential ever reaches the frame.
 
 What it does not do, and what is not verified:
 
-- It is read-only: nothing is written to Notion. A page that disappears or
-  is archived is left in place, never deleted. Select, status and
-  multi-select columns hold Notion option ids, which stay stable across
-  renames, rather than option names.
+- It is read-only: nothing is written to Notion. The lens has a reverse
+  mapping (`write`), but its connector refuses create, update and delete. A
+  page that disappears or is archived is left in place, never deleted.
+- A value cleared in Notion (empty number, URL, select) is removed from its
+  row on the next import. A value the lens cannot read losslessly (formatted
+  text) leaves the row's value as it was, and is listed in the warnings.
+- Select, status and multi-select columns hold Notion option ids, which stay
+  stable across renames, rather than option names.
 - All shared data sources go into one table, with their columns merged. A
   "Data source" column says where each row came from.
 - It is not verified that the host lets an app add Properties under its
@@ -62,6 +81,9 @@ What it does not do, and what is not verified:
   Without it, the app says so and fetches nothing.
 - The e2e runs against the mock proxy (see below). Nothing here has run against live Notion
   or a real proxy.
+- The view is a heading, a status line and one button. Its design is
+  pending #89, which has no Notion design or implementation issue yet;
+  `controller.ts`'s `ViewState` is the data a designed view would render.
 
 ## E2E
 
@@ -78,8 +100,11 @@ counterpart and were dropped (#68).
 
 ## Lens (`devonian/notion/`)
 
-`notionProjection` maps the data-source pages syncables read
-(`resource: 'page'`) to typed values. Each value is keyed by
+Every Notion-to-Atomic transformation the drive plugin uses is here, in
+three layers. Nothing in it touches the network or the host store.
+
+`lens/projection.ts`, `notionProjection`, maps the data-source pages
+syncables read (`resource: 'page'`) to typed values. Each value is keyed by
 `notionFieldShortname(propertyId)`, a hex encoding of the case-sensitive
 Notion property id.
 
@@ -91,8 +116,35 @@ Notion property id.
 - The raw `properties` object passes through.
 - It throws on a page outside the given data source, or on a property whose
   type changes during one fetch.
+- `notionPropertyValue` is the reverse of `notionFieldValue`: text split into
+  2000-character parts (more than 100 parts throws), options by id, and an
+  absent value as Notion's empty for the type.
 
-`localthought.ts` re-exports it together with `notionDataSourceQuery`.
+`lens/columns.ts` is the schema: `NOTION_FIXED_COLUMNS` (page id, data
+source, URL, last edited), then one column per projected property, named
+after the Notion property (`notionColumns`), and data-source titles.
+
+`lens/atomic.ts`, `NotionRowLenses`, is the Devonian lens proper: one
+`AtomicLens` from the npm `devonian` package per data source, over an
+`AtomicStore` and `AtomicIdentityMap` scoped by the data source's Notion URL
+and keyed by page id.
+
+- `read` (page to row): sets the name, the fixed columns and every projected
+  value; unsets a property Notion holds empty; leaves a property with no
+  lossless plain value alone.
+- `write` (row to page): the page with each bound property replaced by the
+  row's value and every other property passed through. It throws rather
+  than overwrite formatted text it never read, and refuses to create pages.
+  Nothing calls it against Notion yet.
+- The lens store uses its own subjects and property URLs under
+  `https://notion-lens.invalid`. devonian accepts only HTTP(S) and DID
+  identifiers, and atomic-server's are `atomic:...`, so `seed` and `toHost`
+  translate to and from the host's Property subjects. The host row keeps its
+  own identity (the page-id column). The identity map lives for one import
+  and is not persisted.
+
+`localthought.ts` re-exports the projection together with
+`notionDataSourceQuery`.
 
 ## Sandbox plugin (`plugin.ts`, two-way pilot)
 
@@ -106,7 +158,8 @@ moved here from `localthought/` because Notion was its only user.
 Two-way through the drive plugin needs a Devonian bridge that ports
 `model.ts`'s writes (#8 item 2): journalled `PATCH /v1/pages/{id}` through
 the same relay, page-id identity, and a missing page treated as a conflict.
-Retire `plugin.ts` only once that bridge has live evidence.
+The lens's `write` is the mapping half of that, and is not wired to a
+connector. Retire `plugin.ts` only once that bridge has live evidence.
 
 ### Supported subset
 
@@ -144,9 +197,11 @@ Uncertain remote creates use host journals and cannot be blindly retried.
 
 ## Tests
 
-From the repository root, with the AGENTS.md layout:
+From the repository root, with the AGENTS.md layout, after installing this
+folder's npm dependencies once:
 
 ```sh
+(cd integrations/notion && pnpm install --frozen-lockfile)
 ./browser/node_modules/.bin/vitest run --config integrations/notion/vitest.config.ts
 ./browser/node_modules/.bin/tsc -p integrations/notion/tsconfig.json
 node --test integrations/localthought/mock-proxy.test.mjs

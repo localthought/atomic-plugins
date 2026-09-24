@@ -7,16 +7,12 @@ export default {
         import.meta.url,
       ).pathname,
       // Same as integrations/timesheets/vitest.config.ts: the lens in
-      // devonian/notion/ imports devonian's @tomic/lib peer, which resolves to
-      // the atomic-server checkout's source.
+      // devonian/notion/, and the npm `devonian` it imports, use @tomic/lib
+      // (devonian's optional peer, not installed here), which resolves to the
+      // atomic-server checkout's source. `syncables` and `devonian` resolve
+      // from this folder's node_modules (npm; `pnpm install` here).
       '@tomic/lib': new URL('../../browser/lib/src/index.ts', import.meta.url)
         .pathname,
-      // This repo's syncables source until `syncables/browser` is on npm.
-      // Mirrored in tsconfig.json and app/build.mjs.
-      'syncables/browser': new URL(
-        '../../syncables/src/browser.ts',
-        import.meta.url,
-      ).pathname,
     },
   },
   test: {

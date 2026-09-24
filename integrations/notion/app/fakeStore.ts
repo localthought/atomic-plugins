@@ -17,10 +17,12 @@ import type {
 
 export const PARENT = 'https://atomicdata.dev/properties/parent';
 export const IS_A = 'https://atomicdata.dev/properties/isA';
-export const APP = 'did:ad:app';
-export const ONTOLOGY = 'did:ad:ontology';
-export const ROW_CLASS = 'did:ad:class';
-export const TABLE = 'did:ad:table';
+// atomic-server's own subject form (`atomic:<id>`), which is neither HTTP(S)
+// nor a DID: what the lens store must never be handed directly.
+export const APP = 'atomic:app';
+export const ONTOLOGY = 'atomic:ontology';
+export const ROW_CLASS = 'atomic:class';
+export const TABLE = 'atomic:table';
 
 export interface FakeStore extends PluginStore {
   readonly resources: Map<string, Record<string, JSONValue>>;
@@ -60,7 +62,8 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
         return this;
       },
       async save() {
-        resources.set(subject, { ...(resources.get(subject) ?? {}), ...props });
+        // Replaces, so a `remove()` persists, as a host commit's `remove` does.
+        resources.set(subject, { ...props });
         writes.push({ op: 'save', subject });
 
         return this;
@@ -88,7 +91,7 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
         .map(([subject]) => subject);
     },
     async newResource({ parent, isA = [], propVals = {} } = {}) {
-      const subject = `did:ad:new-${++next}`;
+      const subject = `atomic:new-${++next}`;
       const stored = { ...propVals, [PARENT]: parent ?? APP, [IS_A]: isA };
       resources.set(subject, stored);
       writes.push({ op: 'create', subject });
