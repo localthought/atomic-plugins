@@ -307,9 +307,11 @@ integrations/tooling/fixtures/
 ```
 
 - `mock-proxy.mjs` keeps ownership of the parts that are _protocol_, not
-  platform: PKCE, `/connect`, `/connect/redeem`, single-use connection codes,
-  `X-Connection-Code` rotation, `redirect_uri` origin validation. Those are
-  already correct and should not be duplicated per platform.
+  platform: the integration proxy's 0.2 flow (#54 phase 2) — PKCE,
+  `/connect`, `/connect/redeem` signed by the owner, connections,
+  delegations and runtimes, v2 request signatures, frame capabilities —
+  and `redirect_uri` origin validation (`localthought/README.md`). Those
+  should not be duplicated per platform.
 - `MOCK_PROXY_PLATFORMS=github-issues,todoist` restricts which fixtures load,
   so `/catalog` returns exactly that lane's platforms.
 - **"Realistic" has to be enforced, not asserted.** `record.mjs` writes `api/`
@@ -392,16 +394,16 @@ Rules that keep parallel worktrees from fighting:
 
 - **Quarantined e2e.** None of the lane e2e tiers are held back any more.
   `pets` (#52) and `notion` (#68) are back: both drive their drive app in its
-  plugin iframe through the host proxy relay (store.proxy), so they need an
-  `.atomic-server-ref` that contains ontola/atomic-server#1657 (#1624's host
-  relay). The pin does: it is `bae5cdbe3`, the head of atomic-server's
-  `feat/plugin-debug` after #1657 and #1658 (the Notion code removal) were
-  merged there, no longer a PR head. The `e2e-plugin-system` job is required
-  again since #71.
+  plugin iframe through `store.proxy`, which since #54 phase 2 needs an
+  `.atomic-server-ref` with frame capabilities (ontola/atomic-server#1697)
+  and the v2 request signatures (#1696): the mock proxy refuses the older
+  relay's rotating connection codes. The pin, `11264e83e` on
+  `claude/atomic-plugins-pin-phase2`, has both. The `e2e-plugin-system` job
+  is required again since #71.
 - **`timesheets`' e2e is new, not moved.** The upstream Clockify tests were
   deleted in atomic-server `4bab16ee6` (in the pin), together with the UI
   they drove (#44). `integrations/timesheets/e2e/clockify.spec.ts` (#96)
-  drives the timesheets drive app through the host relay instead, with a
+  drives the timesheets drive app through `store.proxy` instead, with a
   test-side install until #94. See
   [`HANDOFF-e2e-split.md`](HANDOFF-e2e-split.md).
 - `integrations/money/` has one tier, `e2e` (#95): `money.spec.ts` drives

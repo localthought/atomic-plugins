@@ -58,19 +58,25 @@ stylesheet.
   `package.json` and `pnpm-lock.yaml` and installed with
   `pnpm install --frozen-lockfile` in this folder; this repo's
   `syncables/src/` is not bundled.
-- **Network.** Every request goes through the host's proxy relay,
+- **Network.** Every request goes through
   `store.proxy.request({ platform, connectionId, path, method, body })`
-  (`app/transport.ts`). The top page holds the LocalThought connection (its
-  rotating code, in its own `localStorage`, bound to this app) and returns
-  only `{ status, headers, body }`. `transport.ts` refuses any URL outside
+  (`app/transport.ts`). The connection lives at the integration proxy,
+  owned by the signed-in user and delegated to this app; the host's frame
+  client calls the proxy with a short-lived capability from the page and a
+  key only it holds, and returns `{ status, headers, body }`. A refusal by
+  the proxy itself is thrown, not read as Pets' answer. `transport.ts` refuses any URL outside
   the document's `servers[0].url`, including provider-sent links. The bundle
   contains no `fetch`, storage or `Authorization` handling
   (`app/build.test.ts` checks this).
 - **Connecting.** "Connect Pets" calls `store.proxy.connect({ platform:
 'pets' })`. The host, not the frame, draws a consent bar. Only a click
   there starts the PKCE handoff to the proxy. The proxy returns to
-  `/app/integrations`, the host redeems the code and navigates back to the
-  app, and the app finds its connection with `store.proxy.connections(...)`.
+  `/app/integrations`, the host redeems the code (signed with the user's
+  key), delegates the connection to the app and navigates back, and the app
+  finds its connection with `store.proxy.connections(...)`. If the person
+  already has a Pets connection, the bar offers "Use existing connection":
+  that only delegates it, and `connect` resolves `connected` without a
+  reload.
   There is no Pets-specific setup code in atomic-server.
 - **Writing.** `app/sync.ts` writes only inside the app's own subtree. It
   adds one Property per API field under the app's ontology, typed from the
@@ -79,12 +85,12 @@ stylesheet.
   upserts one row per pet under the app's table, matched by `id`. A re-sync
   with no remote change writes nothing.
 
-**Host requirement.** This needs the relay ops `proxy`, `proxyConnections`
-and `proxyConnect` in atomic-server (atomic-server#1657, for #1624, merged
-into `feat/plugin-debug` and in the pin). On a host without them the app says
-so and stops. The
-relay is the interim shape. #1624's scoped capability (#40, #54) is meant to
-replace the rotating code without changing this app.
+**Host requirement.** This needs `store.proxy` with frame capabilities
+(atomic-server#1697, #54 phase 2, in the pin; its view ops are
+`proxyCapability`, `proxyConnections` and `proxyConnect`). On a host without
+`store.proxy` the app says so and stops. An older host with the #1657 relay
+still has `store.proxy`, but its rotating connection codes are refused by
+the 0.2 proxy.
 
 **Install.** The `pets` catalog entry is a drive app entry (#94):
 `app-module` is

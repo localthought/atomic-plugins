@@ -77,8 +77,9 @@ What it does not do, and what is not verified:
 - The e2e shows the pinned host lets the app add Properties under its
   ontology and add them to its class's `recommends` (it checks the column
   datatypes). Only the fake store covers later edits to them.
-- It depends on `store.proxy` (`request`, `connections`, `connect`), which
-  atomic-server gets from #52's relay (ontola/atomic-server#1657, pinned).
+- It depends on `store.proxy` (`request`, `connections`, `connect`). Since
+  #54 phase 2 (ontola/atomic-server#1697, pinned) the host's frame client
+  calls the proxy itself with a capability and its own key.
   Without it, the app says so and fetches nothing.
 - The e2e runs against the mock proxy (see below). Nothing here has run against live Notion
   or a real proxy.
@@ -94,8 +95,8 @@ host's consent bar and the mock proxy's consent page, then "Last synced" with
 3 rows and their column types. It runs against the shared mock proxy's
 `notion` fixture (`fixtures/notion/`), so the lane has
 `platforms: ["notion"]` and `tiers: ["live", "e2e"]`. It needs an
-`.atomic-server-ref` with the host relay (ontola/atomic-server#1657, merged
-into `feat/plugin-debug`; the pin `bae5cdbe3` has it). The old
+`.atomic-server-ref` with frame capabilities (ontola/atomic-server#1697; the
+pin `11264e83e` has it). The old
 spec's two-way, PATCH and revoked-access checks have no read-only
 counterpart and were dropped (#68).
 

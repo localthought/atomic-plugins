@@ -103,13 +103,16 @@ Declared, not live-verified (see _Verification_):
   `412` marks only that event "Changed in Google since this preview; not
   sent", and it is reviewed again after a refresh. The baseline advances only
   for events Google confirmed.
-- **Uncertain writes.** The relay can throw after the host has dispatched a
-  write, for example when the response is lost. The page spends its rotating
-  connection code before dispatch, so neither side can know whether Google
-  applied the change. The app reports "Unknown whether Google applied it" and
-  stops sending the rest of the batch. It does not retry. The next refresh
-  asks to reconnect, and the preview after that shows what Google has: if the
-  change landed, the event simply agrees.
+- **Uncertain writes.** `store.proxy.request` can throw after the frame
+  sent a write, for example when the response is lost, so the app cannot
+  know whether Google applied the change. It reports "Unknown whether Google
+  applied it" and stops sending the rest of the batch. It does not retry.
+  Since #54 phase 2 nothing is spent by a lost response (there are no
+  connection codes), so the next refresh works on the same connection and
+  shows what Google has: if the change landed, the event simply agrees. A
+  refusal by the proxy itself (`{ error }` with a proxy code, such as
+  `not_delegated`) was not sent to Google; the app says "Connect again"
+  when the connection is gone or no longer this app's.
 - **Notifications.** Writes use `sendUpdates=none` (`adapter.ts`, and the
   Devonian write-back in `devonian/google-calendar/sync.ts`), so guests are
   not emailed about edits made through the app. The review sheet says so;
@@ -180,8 +183,9 @@ node --test integrations/localthought/mock-proxy.test.mjs
 - **Unit** (`app/sync.test.ts`, `adapter.test.ts`): the whole drive-app path
   against the stateful fixture in
   [`fixtures/google-calendar/scenario.mjs`](fixtures/google-calendar/scenario.mjs),
-  through a fake relay that behaves like the page's. That includes spending a
-  connection when a call throws. Covered: calendar list and selection; the
+  through a fake `store.proxy` that behaves like the host's frame client and
+  the proxy: a lost response spends nothing, a revoked delegation answers
+  `403 not_delegated`. Covered: calendar list and selection; the
   paged import with its page cap; all-day and timed rows; recurring and
   cancelled skips; refresh; review; `If-Match` on send; `412`; both-changed
   conflicts; a lost response followed by a reconnect; cancellation after
