@@ -271,3 +271,67 @@ lanes.
   branch.
 - Delete old SHAs with `git -C ~/gh/ontola/atomic-server worktree remove`
   once no pin refers to them.
+
+#### Or run the published image instead of building
+
+CI publishes the same build once per pinned SHA as
+`ghcr.io/ontola/atomic-server-e2e:<full sha>`
+(`.github/workflows/atomic-server-e2e-image.yml`; the recipe is
+`integrations/tooling/atomic-server-e2e/Dockerfile`). With
+`ATOMIC_SERVER_IMAGE` set, `serve.mjs` (and so `run-lane.mjs`) starts
+atomic-server with `docker run` on the lane's usual port instead of running
+`$DIR/target/e2e/atomic-server`. There's no cargo build and no `target/`, so
+the checkout is about 1 GB of sources plus `browser/node_modules` instead of
+about 11 GB. The lanes still need that checkout for `browser/` (the JS
+workspace, `@tomic/lib`, Playwright), just not built:
+
+```sh
+SHA=$(cat .atomic-server-ref)
+DIR=~/.cache/atomic-plugins/atomic-server/$SHA
+if [ ! -d "$DIR" ]; then
+  git -C ~/gh/ontola/atomic-server fetch origin
+  git -C ~/gh/ontola/atomic-server worktree add --detach "$DIR" "$SHA"
+fi
+export ATOMIC_SERVER_CHECKOUT=$DIR
+export ATOMIC_SERVER_IMAGE=ghcr.io/ontola/atomic-server-e2e:$SHA
+node integrations/tooling/link-atomic-server.mjs
+node integrations/tooling/run-lane.mjs pets --tier e2e
+```
+
+- `serve.mjs` pulls the image the first time (about 100 MB compressed) and
+  warns if its tag isn't the pinned SHA. `docker image rm` old tags yourself.
+- The image exists only once main has built it, or once a same-repo PR that
+  bumps the pin has published it. For any other SHA, `serve.mjs` fails with
+  "could not pull". Use the source build above then.
+- It runs on macOS through Docker Desktop, which can't run the linux binary
+  natively any other way. Images built on main are multi-platform
+  (`linux/amd64` and `linux/arm64`), so Apple Silicon runs them natively.
+  An image a pin-bump PR published is `linux/amd64` only until main rebuilds
+  it, and Docker Desktop runs that under emulation, noticeably slower.
+- The port is published on `127.0.0.1` only, at the same number inside and
+  out, because atomic-server derives its own origin from it. The mock proxy
+  and the dev-server still run on the host. The server never needs to reach
+  them: plugin `ctx.http` refuses loopback addresses anyway.
+- Each lane's store is a named volume, `atomic-plugins-lane-store-<lane>`,
+  instead of `$DIR/.lane-store/<lane>`. Like that directory it persists
+  across tiers and runs. Reset one with
+  `docker volume rm atomic-plugins-lane-store-<lane>`.
+- On Linux you can also copy the binary out and skip Docker at run time:
+  `docker create --name tmp "$ATOMIC_SERVER_IMAGE" && docker cp
+  tmp:/usr/local/bin/atomic-server "$DIR/target/e2e/atomic-server" &&
+  docker rm tmp`. Then leave `ATOMIC_SERVER_IMAGE` unset. The binary is
+  linked against glibc 2.36 (Debian bookworm).
+- Until an org owner makes the package public (a one-time switch in its
+  GitHub package settings), pulls need `docker login ghcr.io` with a token
+  that has `read:packages`.
+
+To check the Dockerfile itself, build it from the checkout. The Dockerfile's
+own ignore file keeps a built `target/` out of the context. About 20 minutes
+on 10 cores; `CARGO_BUILD_JOBS=6` keeps Docker Desktop's default 8 GB VM from
+running out of memory:
+
+```sh
+docker build -f integrations/tooling/atomic-server-e2e/Dockerfile \
+  --build-arg ATOMIC_SERVER_SHA="$SHA" --build-arg CARGO_BUILD_JOBS=6 \
+  -t "ghcr.io/ontola/atomic-server-e2e:$SHA" "$DIR"
+```

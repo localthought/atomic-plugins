@@ -123,10 +123,9 @@ frontend. That must not run once per lane.
         └────┬─────┘
              │
         ┌────▼─────────────┐
-        │ build-server     │  pinned atomic-server → upload target/e2e binary
-        │ (cache key =     │     + browser/data-browser/dist
-        │  .atomic-server- │
-        │  ref + vite env) │
+        │ build-server     │  pull ghcr.io/ontola/atomic-server-e2e:<pin>
+        │                  │  (else build from source) → upload the
+        │                  │  target/e2e binary
         └────┬─────────────┘
              │
    ┌─────────┼──────────┬──────────┬─────────┐
@@ -138,9 +137,15 @@ frontend. That must not run once per lane.
 ```
 
 - **`build-server`** is gated on `changes.outputs.any` only. Its artifact is
-  the `atomic-server` binary and the built `data-browser/dist`. Keyed on
-  `.atomic-server-ref` plus a hash of the `VITE_*` values, it is a cache hit
-  on every PR that does not bump the pin — which is almost all of them.
+  the `atomic-server` binary, with the data-browser frontend and its WASM
+  embedded. It copies that binary out of
+  `ghcr.io/ontola/atomic-server-e2e:<pin>`, which
+  `atomic-server-e2e-image.yml` publishes once per pinned SHA (on push to
+  main, on demand, and from a same-repo PR that bumps the pin). That takes
+  about a minute. It builds from source (about 15 minutes, since the cargo
+  cache doesn't carry over between PRs) only when no image exists for the
+  pin. That is almost only a PR that bumps it, and only until the PR's own
+  `publish-image` job has pushed one.
 - **`lane`** is `strategy: matrix: lane: ${{ fromJSON(needs.changes.outputs.lanes) }}`
   with **`fail-fast: false`**. That is the change that makes a run report every
   broken plugin instead of the first one.
@@ -238,6 +243,10 @@ Two failure modes are reported by cause rather than by symptom:
   whichever process lost the race;
 - a missing `target/e2e/atomic-server` prints the `cargo build` line, instead
   of an async spawn `ENOENT` followed by the full readiness timeout.
+
+With `ATOMIC_SERVER_IMAGE` set, `serve.mjs` runs that image with `docker run`
+on the same port instead of the local binary, and pulls it first if it is
+missing. See AGENTS.md, "Shared pinned atomic-server build".
 
 ## 4. Mock fixtures per platform
 

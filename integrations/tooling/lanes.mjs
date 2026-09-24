@@ -147,6 +147,8 @@ export const SHARED_FILTER = [
   'integrations/tsconfig.e2e.json',
   '.atomic-server-ref',
   '.github/workflows/ci.yml',
+  // ci.yml's publish-image job calls it.
+  '.github/workflows/atomic-server-e2e-image.yml',
 ];
 
 /** The `filters:` block for dorny/paths-filter, generated so it can't drift. */

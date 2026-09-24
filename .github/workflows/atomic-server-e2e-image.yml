@@ -1,0 +1,234 @@
+name: atomic-server e2e image
+
+# Builds the pinned atomic-server's e2e binary once per atomic-server SHA and
+# publishes it as ghcr.io/ontola/atomic-server-e2e:<full SHA>. ci.yml's
+# `build-server` job pulls that image and copies the binary out of it. It
+# builds from source only when no image exists for the pin yet. Local lanes
+# can run the image directly (AGENTS.md, "Shared pinned atomic-server build").
+# The recipe is integrations/tooling/atomic-server-e2e/Dockerfile.
+#
+# Triggers:
+#   - push to main that changes .atomic-server-ref, the Dockerfile or this
+#     workflow. Always rebuilds and overwrites :<sha>, even when an image for
+#     it already exists: a pin-bump PR may have pushed one first (below), and
+#     main's reviewed recipe should have the last word. Also moves
+#     :latest-pin.
+#   - workflow_dispatch, with an optional `sha` (default: main's
+#     .atomic-server-ref) and `force` to rebuild an existing tag.
+#   - workflow_call, from ci.yml's `publish-image` job, for a same-repo PR
+#     that bumps the pin. It builds linux/amd64 only (the platform CI needs),
+#     never overwrites an existing tag and never moves :latest-pin.
+#
+# Platforms: linux/amd64 on ubuntu-latest, and linux/arm64 on the native
+# ubuntu-24.04-arm runner (free for public repositories), so Apple Silicon
+# hosts don't have to run the amd64 image under Rosetta/QEMU emulation. Each
+# platform is built on its own native runner and pushed by digest. The
+# `merge` job then ties the digests into one multi-platform tag. Cross-
+# building arm64 on an amd64 runner under QEMU would take hours for this
+# Rust build, so it isn't an option. arm64 doubles the runner minutes of a
+# publish but not its wall-clock time, and a publish happens once per pin.
+#
+# One-time setup, outside this file: the first push creates the
+# `atomic-server-e2e` package under the ontola org as *private*. An org owner
+# has to switch it to public once (github.com/orgs/ontola/packages ->
+# atomic-server-e2e -> Package settings -> Change visibility). Until then,
+# anonymous `docker pull`s fail. CI still works in the meantime: it logs in
+# with GITHUB_TOKEN before pulling, and falls back to a source build if the
+# pull fails.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .atomic-server-ref
+      - integrations/tooling/atomic-server-e2e/**
+      - .github/workflows/atomic-server-e2e-image.yml
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character atomic-server commit (default: .atomic-server-ref on the selected branch)"
+        required: false
+        type: string
+      force:
+        description: "Rebuild and overwrite the tag even if it already exists"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      sha:
+        description: "Full 40-character atomic-server commit"
+        required: true
+        type: string
+
+env:
+  IMAGE: ghcr.io/ontola/atomic-server-e2e
+
+jobs:
+  resolve:
+    name: Resolve the commit and platforms
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      sha: ${{ steps.decide.outputs.sha }}
+      build: ${{ steps.decide.outputs.build }}
+      latest: ${{ steps.decide.outputs.latest }}
+      matrix: ${{ steps.decide.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .atomic-server-ref
+          sparse-checkout-cone-mode: false
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Inputs travel through env, never interpolated into the script.
+      - name: Decide what to build
+        id: decide
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -eu
+          pinned=$(tr -d '[:space:]' < .atomic-server-ref)
+          sha=${INPUT_SHA:-$pinned}
+          if ! printf '%s' "$sha" | grep -qxE '[0-9a-f]{40}'; then
+            echo "not a full 40-character commit SHA: '$sha'" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+          # Under workflow_call, github.event_name is the *caller's* event, so a
+          # call from ci.yml's publish-image reads as pull_request. A PR only
+          # needs the platform CI runs on, and never touches :latest-pin, which
+          # belongs to main.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            matrix='[{"platform":"linux/amd64","runner":"ubuntu-latest"}]'
+            latest=false
+          else
+            matrix='[{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]'
+            latest=$([ "$sha" = "$pinned" ] && echo true || echo false)
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+          exists=false
+          docker buildx imagetools inspect "$IMAGE:$sha" > /dev/null 2>&1 && exists=true
+          # Push to main always rebuilds (see the header). A dispatch rebuilds
+          # only with force, and a PR never overwrites.
+          if [ "$GITHUB_EVENT_NAME" = push ] || [ "$FORCE" = true ] || [ "$exists" = false ]; then
+            build=true
+          else
+            build=false
+            echo "$IMAGE:$sha already exists; nothing to do"
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha exists=$exists build=$build latest=$latest matrix=$matrix"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: Checkout atomic-plugins (for the Dockerfile)
+        uses: actions/checkout@v4
+        with:
+          path: atomic-plugins
+
+      - name: Checkout atomic-server at the requested commit
+        uses: actions/checkout@v4
+        with:
+          repository: ontola/atomic-server
+          ref: ${{ needs.resolve.outputs.sha }}
+          path: atomic-server
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest only: `merge` below puts the tags on the combined
+      # multi-platform manifest. No layer cache (type=gha). The cargo build
+      # runs once per SHA whatever the cache holds, and only mode=max would
+      # keep the builder stage's toolchain layers. mode=max would also store
+      # the multi-GB source and node_modules layers in the repository's 10 GB
+      # Actions cache, where they'd evict the pnpm caches ci.yml relies on.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: atomic-server
+          file: atomic-plugins/integrations/tooling/atomic-server-e2e/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            ATOMIC_SERVER_SHA=${{ needs.resolve.outputs.sha }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -eu
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+          echo "ARTIFACT_NAME=digest-${PLATFORM//\//-}" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  merge:
+    name: Tag ${{ needs.resolve.outputs.sha }}
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the multi-platform tags
+        working-directory: digests
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+          LATEST: ${{ needs.resolve.outputs.latest }}
+        run: |
+          set -eu
+          tags="-t $IMAGE:$SHA"
+          [ "$LATEST" = true ] && tags="$tags -t $IMAGE:latest-pin"
+          # shellcheck disable=SC2046,SC2086
+          docker buildx imagetools create $tags $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$SHA"
