@@ -157,6 +157,94 @@ offer an update. No host does this at the current pin
 `package.json` `version` (and the matching catalog entry) whenever an
 integration's shipped `plugin.js` changes.
 
+## Publishing a drive app
+
+A drive app (an `integrations/<id>/app/` whose `build.mjs` builds one ES
+module exporting `view({ root, store })`) is installable from the catalog when
+its entry carries:
+
+| Catalog property                      | Meaning                                                                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                             | As above: equals `integrations/<id>/package.json` `version`, or, in a folder with only an app and no certified package, a `private` `app/package.json`. |
+| `app-module`                          | `https://ontola.github.io/atomic-plugins/apps/<id>/<version>/ui.js`: the built module for exactly that version. Not `pluginUrl`, which links to source. |
+| `app-module-integrity`                | `sha384-…` (Subresource Integrity) of those bytes.                                                                                                      |
+| `app-row-name`, `app-row-name-plural` | Optional names for the app's table rows.                                                                                                                |
+
+The host (atomic-server#1689, in the current `.atomic-server-ref` pin, not
+yet merged upstream) lists these entries under **Drive apps** on the
+Integrations page, with the same `enabled`/`experimental`/`requires-api-plugins`
+gates as other entries. **Install** downloads `app-module`, refuses it unless
+its bytes match `app-module-integrity`, and creates an ordinary app from it:
+app, ontology, row class, table, entry point and app identity (`createApp`).
+The app records its catalog id, installed version, module URL and integrity.
+The card then shows **Installed <version>** and **Open**. When the catalog's
+version is newer than the installed one it offers **Update to <version>**,
+which replaces only the entry point's source (`updateApp`), so rows, schema,
+identity and rights stay. It never offers a downgrade.
+
+The module is committed to this repository at `apps/<id>/<version>/ui.js`.
+GitHub Pages publishes `main` from the repository root (legacy build, with
+the root `.nojekyll`, so files are served byte-for-byte), which puts it at the
+`app-module` URL above. There is no separate publish step and no npm
+package. Every released version keeps its own file and URL: installed apps
+recorded that URL, so a version file that is on `main` is never changed or
+deleted.
+
+To release a new version:
+
+```sh
+# 1. change integrations/<id>/app/, then bump the version in both places:
+#    integrations/<id>/package.json and its catalog.json entry
+# 2. build into apps/<id>/<version>/ui.js and record its URL and integrity.
+#    Refuses to overwrite a version that is already on origin/main.
+node integrations/tooling/apps.mjs write <id>
+# 3. confirm, as CI's shared checks do
+node integrations/tooling/apps.mjs check --published origin/main
+# 4. commit apps/<id>/<version>/ui.js with the catalog change
+```
+
+`apps.mjs check` fails when:
+
+- an entry's `app-module` is not the Pages URL of `apps/<id>/<version>/ui.js`,
+  or that file is not committed;
+- the committed file's sha384 is not `app-module-integrity`;
+- a fresh build of `integrations/<id>/app/` differs from the committed file
+  for the current version, including after an atomic-server pin bump that
+  changes esbuild's output (the fix is a new version once the old one is on
+  `main`);
+- anything under `apps/` is not an `<id>/<version>/ui.js` file;
+- with `--published <ref>`: a file under `apps/` at `<ref>` was changed or
+  deleted. CI passes `--published origin/main` on pull requests and in the
+  merge queue. Locally it defaults to `origin/main` when that ref exists.
+
+Builds pin esbuild's `absWorkingDir` to the repository root, so the bytes do
+not depend on the directory the build ran from.
+
+Pages itself is mutable: anyone who can push to `main` can change a file
+there. The host's integrity check is what makes that safe. A module that no
+longer matches the catalog's pin is refused, and nothing is installed or
+updated. The check does not catch a module and its pin changed together.
+For changes that go through a pull request, `--published origin/main`
+covers that case. A direct push to `main` skips it. After each Pages build,
+[`apps-published.yml`](../.github/workflows/apps-published.yml) fetches every
+catalog `app-module` and compares its sha384 with the pin.
+
+Trade-offs, compared with an npm package per app:
+
+- The repository grows by each released version's bundle, which is about
+  50–100 KB (Pets 0.1.0 is 46,830 bytes, about 12 KB gzipped), and old
+  versions are never removed.
+- There is no CDN beyond Pages' own. Pages serves with
+  `cache-control: max-age=600` and `access-control-allow-origin: *`.
+- A merge is live only once Pages has deployed it, usually a minute or two
+  later. Until then, installing the new version fails with a download error
+  and nothing is created.
+
+In the e2e lanes, `dev-server.mjs` stands in for Pages. It serves the
+committed `apps/<id>/<version>/ui.js` files at `/apps/...` and points the
+served catalog's `app-module` there, leaving the integrity as committed. The
+host's check therefore still applies.
+
 ## Building an uploader plugin
 
 A file-upload importer — like **Bank statements** (`integrations/money/`,

@@ -163,7 +163,14 @@ export function filtersYaml(config) {
   return [
     block('shared', SHARED_FILTER),
     ...config.lanes.map(l => block(l.id, laneFilter(l))),
-    block('any', ['integrations/**', ...SHARED_FILTER, ...lanePaths]),
+    // apps/ holds the committed drive app modules; shared-checks' `apps.mjs
+    // check` guards them (and a change there comes with a catalog.json one).
+    block('any', [
+      'integrations/**',
+      'apps/**',
+      ...SHARED_FILTER,
+      ...lanePaths,
+    ]),
   ].join('\n');
 }
 

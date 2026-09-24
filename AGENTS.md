@@ -178,6 +178,17 @@ runs the whole repository through Jekyll, which skips `_`-prefixed paths,
 renders files with front matter instead of serving them as-is, and fails the
 whole publish if any file in the repository breaks the Jekyll build.
 
+## apps/
+
+`apps/<id>/<version>/ui.js` holds the built drive app modules that
+`integrations/catalog.json` entries install from (`app-module`). The same
+Pages publish serves them at
+`https://ontola.github.io/atomic-plugins/apps/<id>/<version>/ui.js`. Never
+edit these files by hand. `node integrations/tooling/apps.mjs write <id>`
+writes them. A file that is already on `main` is never changed or deleted;
+CI's `apps.mjs check --published origin/main` enforces that. See
+[Publishing a drive app](integrations/README.md#publishing-a-drive-app).
+
 ## Style notes for docs and code in `integrations/`
 
 - Prose here is precise and hedged, not marketing copy: state exact limits

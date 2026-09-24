@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hostedAssets, createDevServer, root } from './dev-server.mjs';
@@ -126,6 +132,70 @@ test('serves the catalog with permissive CORS, and answers preflight', async () 
 
 test('createDevServer needs no upstream', () => {
   assert.doesNotThrow(() => createDevServer());
+});
+
+const APP = 'https://atomicdata.dev/integrations/properties/';
+
+test('serves committed drive app modules where Pages does, and points the catalog at them', async () => {
+  await withFixture(async base => {
+    mkdirSync(join(base, 'apps/gamma/1.0.0'), { recursive: true });
+    writeFileSync(
+      join(base, 'apps/gamma/1.0.0/ui.js'),
+      'export async function view() {}',
+    );
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify([
+        {
+          'https://atomicdata.dev/properties/shortname': 'gamma',
+          [`${APP}version`]: '1.0.0',
+          [`${APP}app-module`]:
+            'https://ontola.github.io/atomic-plugins/apps/gamma/1.0.0/ui.js',
+          [`${APP}app-module-integrity`]: 'sha384-pinned',
+        },
+        {
+          'https://atomicdata.dev/properties/shortname': 'elsewhere',
+          [`${APP}app-module`]: 'https://example.com/ui.js',
+        },
+      ]),
+    );
+
+    await withServers(base, async ({ devUrl }) => {
+      const served = await (
+        await fetch(`${devUrl}/integrations/catalog.json`)
+      ).text();
+      // Byte for byte the committed file, apart from the one URL prefix.
+      assert.equal(
+        served,
+        readFileSync(join(base, 'integrations/catalog.json'), 'utf8').replace(
+          '"https://ontola.github.io/atomic-plugins/apps/',
+          `"${devUrl}/apps/`,
+        ),
+      );
+      const [entry, elsewhere] = JSON.parse(served);
+      assert.equal(
+        entry[`${APP}app-module`],
+        `${devUrl}/apps/gamma/1.0.0/ui.js`,
+      );
+      // The pin is left alone: the host still checks the module against it.
+      assert.equal(entry[`${APP}app-module-integrity`], 'sha384-pinned');
+      // Only Pages URLs move.
+      assert.equal(elsewhere[`${APP}app-module`], 'https://example.com/ui.js');
+
+      const module = await fetch(entry[`${APP}app-module`]);
+      assert.equal(module.status, 200);
+      assert.equal(module.headers.get('access-control-allow-origin'), '*');
+      assert.equal(module.headers.get('content-type'), 'text/javascript');
+      assert.equal(await module.text(), 'export async function view() {}');
+
+      for (const missing of [
+        '/apps/gamma/2.0.0/ui.js',
+        '/apps/gamma/1.0.0/other.js',
+        '/apps/gamma/..%2F..%2Fintegrations/ui.js',
+      ])
+        assert.equal((await fetch(`${devUrl}${missing}`)).status, 404, missing);
+    });
+  });
 });
 
 test('hosts the certified integration bundles in this repository', () => {

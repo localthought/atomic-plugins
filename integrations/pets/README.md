@@ -86,11 +86,25 @@ so and stops. The
 relay is the interim shape. #1624's scoped capability (#40, #54) is meant to
 replace the rotating code without changing this app.
 
-**Install.** Declared, not yet built: no catalog install flow for drive apps
-exists yet. The e2e (`e2e/pets.spec.ts`) installs the app test-side. It
-creates a `New app`, replaces its entry point's source with the bundle, then
-connects through the mock proxy and checks the five rows and their
-datatypes.
+**Install.** The `pets` catalog entry is a drive app entry (#94):
+`app-module` is
+`https://ontola.github.io/atomic-plugins/apps/pets/0.1.0/ui.js`, the
+committed `apps/pets/0.1.0/ui.js` (`app/build.mjs`'s output) as GitHub Pages
+serves it, and `app-module-integrity` pins its bytes. Open
+Integrations, turn on "Show experimental plugins", and choose **Install** on
+the Pets card under **Drive apps**. See
+[Publishing a drive app](../README.md#publishing-a-drive-app) for the release
+steps. The host side is atomic-server#1689, in the current pin. Until this
+change is merged to `main` and Pages has deployed it, the Pages URL is a 404,
+so installing from the public catalog fails with a download error and
+creates nothing.
+
+The e2e (`e2e/pets.spec.ts`) goes through the catalog, with the lane's
+dev-server standing in for GitHub Pages: discover the card → install → connect through
+the mock proxy → first import (five rows, typed columns) → reopen from the
+card ("Installed 0.1.0", re-sync unchanged) → update from a rewound "0.0.1"
+back to 0.1.0 with the rows kept. It no longer replaces the app's source
+from the test.
 
 **Shared code.** `app/store.ts` (the host store types) is a copy of
 `integrations/timesheets/app/store.ts` plus the relay ops. The Notion app
