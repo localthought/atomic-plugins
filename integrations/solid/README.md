@@ -1,76 +1,97 @@
-# Solid
+# Solid resource bridge
 
-Status: **scaffold**. No protocol handler, listener or installable bundle is
-implemented here yet. CI checks the planning contract; a green lane is not
-protocol conformance or live verification.
+Status: **partial implementation**, targeting the resource model in
+[Solid Protocol 0.11.0](https://solidproject.org/TR/2024/protocol-20240512).
+This is not a conforming Solid server: Solid-OIDC/DPoP, WAC/ACP, containers,
+Turtle, N3 PATCH, notifications and binary storage are not implemented.
 
-## Scope
+## Runnable behavior
 
-Expose a bounded Atomic resource collection through a Solid-compatible server surface.
+`plugin.mjs` is dependency-free QuickJS JavaScript exporting the host's actual
+schema-version-3 `manifest`, `run(ctx)` and `handle(ctx, request)` entry points.
+No browser globals, Node imports, native libraries or sockets enter the bundle.
 
-## Host requirements
+- A reviewed sandbox job validates one text/plain or expanded application/ld+json
+  document and emits the existing host `create` intent, storing it as an actual
+  Atomic `DocumentV2`. Name, MIME type, local identity, original body in description,
+  and a ProseMirror documentContent projection are real Atomic properties. The
+  host reviews and applies the intent to its atom store; this function does not
+  claim a commit has already happened. RDF bytes are preserved, not falsely
+  flattened into unrelated Atomic predicates. The document is readable by the
+  data browser after the host applies it.
+- An explicitly configured public export is served from **actual `ctx.read`**
+  on GET/HEAD `/_routes/<installation-slug>/resources/<id>`. The anonymous host
+  principal enforces Atomic read ACLs. A private resource and unknown export both
+  return 404. The export mapping grants no access by itself.
+- Reads validate the stored representation, negotiate Accept (including q=0),
+  include the appropriate LDP RDFSource/NonRDFSource Link, support If-None-Match,
+  and omit HEAD bodies. Weak content validators are only cache validators;
+  they cannot satisfy strong If-Match except the existence wildcard `*`.
+- Every mutation fails closed, with no write intents from HTTP handling. An
+  existing import identity blocks subsequent jobs to prevent blind overwrites.
+  Simultaneous reviewed jobs still need host-side identity/concurrency handling;
+  the preflight query is not a transaction.
 
-Target runtime: **QuickJS**, with JavaScript/TypeScript bundled to JavaScript.
-Plugins cannot load native Rust crates or open sockets. The host must expose
-inbound requests through a scoped JavaScript API first.
+The parser accepts expanded JSON-LD arrays of at most 128 named nodes and 512
+statements: absolute IRIs, @type, named-node references, and string literals
+with optional language or datatype. Compact JSON-LD, contexts, blank nodes,
+lists, graphs and numeric values are rejected. Exact numeric lexical strings
+can carry an RDF datatype. Bodies are capped at 32,768 UTF-8 bytes; names at
+256 characters; export/import IDs at 64 ASCII letters, digits, `_` or `-`.
 
-Proposed capabilities: `http-routes`, `outbound-http`, `persistent-state`.
-These are design requirements, not an existing Atomic plugin API. Route and
-transport ownership are specified in the [accepted server route design](../../docs/design/server-plugin-routes.md),
-but have not been implemented at this repository’s pinned host.
-The host must own credentials, authorization, resource limits and lifecycle.
+## Configuration
 
-## First interoperability milestone
+For a reviewed job, set the installation's config to:
 
-Authenticate a test client and read one authorized resource while denying another identity.
-
-## Implementation checklist
-
-- [ ] Choose the initial Solid protocol and authorization profile explicitly.
-- [ ] Define RDF/resource mapping and credential ownership before implementing routes.
-- [ ] Test identity validation, access control, content negotiation and conditional writes.
-
-- [ ] Add protocol fixtures and executable tests here, covering the milestone
-      and denied access before changing the status to `implemented`.
-- [ ] Record the peer/version, command and result when live interoperability
-      has actually been verified.
-
-## CI
-
-From the repository root:
-
-```sh
-node integrations/tooling/run-lane.mjs solid
+```json
+{
+  "parent": "https://your-server.example/folder",
+  "document": {
+    "id": "hello",
+    "name": "Hello",
+    "mediaType": "text/plain",
+    "body": "Hello from Solid"
+  }
+}
 ```
 
-The `Lane: solid (contract)` lane validates `plugin.json`, this README and
-checks that this scaffold stays explicitly unimplemented. Add source, fixtures
-and protocol tests in this folder, then replace the `contract` tier with
-executable implementation checks in the same change.
+After reviewing/applying the create intent, take its actual assigned Atomic
+subject and configure `exports: {"hello": "<actual subject>"}`. Routes serve
+only the exports map, never the pending import config. Grant public read on the
+resource in Atomic only if public access is intended. The route's principal
+is permanently anonymous; request headers cannot upgrade it to an owner.
 
-## Placement and blocked host work
+## Host gaps and storage boundary
 
-The first slice is a resource server (placement C), with a WebID profile
-and a single bounded collection. It is not a Solid identity provider.
-QuickJS-compatible JavaScript RDF parsing must be evaluated within the host
-fuel, memory and response limits before extending that scope. The design's
-possible future Rust/WASI parsing path is not available to this plugin and
-is not a dependency added by this PR.
+Inspected host source: `35504494261f59e922e79d536fd437954451e6a3`.
+`plugin-runtime/src/lib.rs` exposes read/query/http/integration; it exposes no
+blob read/write API. `server/src/plugins/route_exec.rs` explicitly refuses
+route write intents (AS-07/#1717) and auth modes other than none (AS-08/#1718).
+Binary request/response bodies require AS-10/#1720. Its response-header allowlist
+also lacks Allow/Accept-Put/WAC-Allow, so this handler does not emit headers that
+would cause host rejection or claim permissions it cannot verify.
 
-The accepted design requires host gates, routes and well-known discovery
-(atomic-server#1711–#1716), scoped writes (#1717), host-held keys and token
-validation (#1718), and blob bodies (#1720). DPoP validation and broader
-HTTP methods such as PATCH are further phase-3 requirements in the design;
-do not treat generic bearer validation as Solid-OIDC compatibility.
-Notifications and a Solid IdP are outside this initial milestone.
+Consequently inbound Solid PUT/DELETE cannot yet persist atom or blob data.
+The working storage path is an operator-authorized, reviewed sandbox import
+job followed by host-permission-checked public reads. It does not masquerade as
+an authenticated upload. Completing that path needs host-scoped atomic writes,
+conditional commit tokens, authenticated identities, and blob APIs. Public
+routes also require the Cargo plugin-routes feature, operator read-only switch,
+and per-install consent; atomic.place cannot expose them without those gates.
 
-Public routes require all three planned gates: a host built with
-`plugin-routes`, the operator's `--plugin-routes read-write` switch, and
-per-installation consent. A build without the feature, including
-atomic.place's intended build, cannot activate this surface. The plugin
-never receives private signing keys or serves an Atomic login page.
+## Build and verification
 
-Before implementation, choose and record a protocol version, authorization
-profile (WAC or ACP), supported RDF media types and exact byte/record bounds.
-The milestone must test an independent Solid client and denied access, not
-only a mock that repeats the implementation.
+```sh
+node integrations/solid/build.mjs
+node --test integrations/solid/plugin.test.mjs
+node integrations/tooling/run-lane.mjs solid --tier node
+```
+
+The build creates `integrations/solid/dist/plugin.js` and `manifest.json`.
+Fourteen executable Node tests cover RDF/text intent and read round-trips,
+permission denial, path isolation, mutation refusal, lexical preservation,
+parser rejection, bounds, negotiation and conditional reads. Tests use the
+real documented ctx/intent shape with host doubles. **No running Atomic Server,
+actual commit, QuickJS execution, external Solid client or blob round-trip has
+been live verified.** A green lane establishes this bounded implementation's
+unit behavior, not complete protocol interoperability.

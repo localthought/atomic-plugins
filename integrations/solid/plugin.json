@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "solid",
   "name": "Solid",
-  "status": "scaffold",
+  "status": "partial",
   "runtime": "quickjs",
-  "scope": "Expose a bounded Atomic resource collection through a Solid-compatible server surface.",
+  "scope": "Reviewed Atomic DocumentV2 import and public LDP resource reads; inbound writes, auth and blobs blocked by host.",
   "trackingIssue": "https://github.com/ontola/atomic-plugins/issues/88",
   "proposedHostCapabilities": [
     "http-routes",
