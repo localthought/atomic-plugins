@@ -452,6 +452,12 @@ exists off the browser/WASM path.
    `package.json`. For a drive app, see
    [the drive-app shapes](#two-shapes-pick-one) and add its lane tiers to
    `lanes.json`. Update [READINESS.md](READINESS.md) in the same PR.
+   A folder with its own `pnpm-lock.yaml` also gets a copy of
+   [`pets/pnpm-workspace.yaml`](pets/pnpm-workspace.yaml) (its
+   `minimumReleaseAgeExclude` lets pnpm 11+ install our own just-published
+   `syncables`, `devonian` and `@tomic/*`). If pnpm 11+ then reports ignored
+   build scripts, add an `allowBuilds` entry as
+   [`notion/pnpm-workspace.yaml`](notion/pnpm-workspace.yaml) does.
 2. Metadata identifies owner, support tier, pinned API version, supported scope
    and fully qualified Rust sandbox test names. A new package without metadata
    fails CI rather than silently escaping it.

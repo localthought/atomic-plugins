@@ -1,0 +1,17 @@
+# pnpm settings for this folder's own install; CI runs
+# `pnpm install --frozen-lockfile` here. pnpm 11 and later read settings from
+# this file and apply a default minimumReleaseAge, which blocks installing
+# packages we publish ourselves until they are a day old. This exempts exactly
+# those; every other dependency keeps the default delay. pnpm 10 (CI's
+# PNPM_VERSION) ignores both settings below. There is no `packages:` list:
+# this folder is one package, not a workspace.
+minimumReleaseAgeExclude:
+  - syncables
+  - devonian
+  - '@tomic/*'
+# cbor-extract (devonian -> @automerge/automerge-repo -> cbor-x) is an
+# optional native accelerator; cbor-x falls back to JavaScript without it.
+# pnpm 10 skips its build script by default; pnpm 11 and later fail the
+# install until it is allowed or denied. Deny it, matching pnpm 10.
+allowBuilds:
+  cbor-extract: false

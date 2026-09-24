@@ -1,0 +1,11 @@
+# pnpm settings for this folder's own install; CI runs
+# `pnpm install --frozen-lockfile` here. pnpm 11 and later read settings from
+# this file and apply a default minimumReleaseAge, which blocks installing
+# packages we publish ourselves until they are a day old. This exempts exactly
+# those; every other dependency keeps the default delay. pnpm 10 (CI's
+# PNPM_VERSION) ignores the setting. There is no `packages:` list: this folder
+# is one package, not a workspace.
+minimumReleaseAgeExclude:
+  - syncables
+  - devonian
+  - '@tomic/*'
