@@ -36,7 +36,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PAGES_BASE, appEntries, terms } from './apps.mjs';
+import { PAGES_BASE, terms } from './apps.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -65,30 +65,25 @@ export function hostedAssets(base = root) {
   return assets;
 }
 
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/** An `app-module` value that starts with the Pages base, as it is written. */
+const PAGES_MODULE = new RegExp(
+  `("${escapeRegExp(terms.module)}"\\s*:\\s*")${escapeRegExp(PAGES_BASE)}`,
+  'g',
+);
+
 /**
  * The catalog with each drive app's `app-module` moved from GitHub Pages
  * (`PAGES_BASE`) to this server, which serves the same committed file at the
- * same path. The integrity hash is left alone, so the host still refuses a
+ * same path. It is a textual rewrite of just that URL prefix: every other byte
+ * of the file is served as committed (CI's hosting-surface check compares
+ * them), and the integrity hash is left alone, so the host still refuses a
  * module that does not match what the catalog pins — `apps.mjs check` is what
- * keeps the two equal. A URL outside Pages, and anything that is not a
- * catalog array, is served as it is.
+ * keeps the two equal. A URL outside Pages is served as it is.
  */
 export function localCatalog(text, origin) {
-  let catalog;
-
-  try {
-    catalog = JSON.parse(text);
-  } catch {
-    return text;
-  }
-
-  if (!Array.isArray(catalog)) return text;
-  for (const entry of appEntries(catalog))
-    if (entry[terms.module].startsWith(PAGES_BASE))
-      entry[terms.module] =
-        `${origin}/${entry[terms.module].slice(PAGES_BASE.length)}`;
-
-  return `${JSON.stringify(catalog, null, 2)}\n`;
+  return text.replace(PAGES_MODULE, (_, key) => `${key}${origin}/`);
 }
 
 /**

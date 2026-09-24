@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hostedAssets, createDevServer, root } from './dev-server.mjs';
@@ -155,9 +161,18 @@ test('serves committed drive app modules where Pages does, and points the catalo
     );
 
     await withServers(base, async ({ devUrl }) => {
-      const [entry, elsewhere] = await (
+      const served = await (
         await fetch(`${devUrl}/integrations/catalog.json`)
-      ).json();
+      ).text();
+      // Byte for byte the committed file, apart from the one URL prefix.
+      assert.equal(
+        served,
+        readFileSync(join(base, 'integrations/catalog.json'), 'utf8').replace(
+          '"https://ontola.github.io/atomic-plugins/apps/',
+          `"${devUrl}/apps/`,
+        ),
+      );
+      const [entry, elsewhere] = JSON.parse(served);
       assert.equal(
         entry[`${APP}app-module`],
         `${devUrl}/apps/gamma/1.0.0/ui.js`,
