@@ -79,17 +79,37 @@ states end to end, is still to be built.
 ## Drive app (`app/`)
 
 An iframe drive app, the same shape as `pets/app/` and `notion/app/`: one
-ES module (`app/build.mjs` -> `dist/ui.js`, about 86 KB) whose
+ES module (`app/build.mjs` -> `dist/ui.js`, minified, about 123 KB) whose
 `view({ root, store })` runs in the host's null-origin frame. It hosts the
 Devonian bridge from `devonian/github-issues/` for **one repository per app
 install**, two-way for issue title, body (Markdown), Todo/Doing/Done status
 and comments.
 
-**Flow.** "Connect GitHub" asks the host for a connection
+**Flow.** The first screen offers GitHub Issues (Jira and Todoist are shown
+as not available). "Connect" asks the host for a connection
 (`store.proxy.connect`, the host's consent bar, platform `github-issues`).
-The app then asks for the repository as `owner/name` (typed; there is no
-repository picker, see below), creates its columns and binds the repository
-to the app for good. Sync runs when the view opens and on "Sync now".
+The app then lists the repositories the connection can see
+(`GET /user/repos`, up to 5 pages of 100, through `store.proxy.request`),
+with repositories that have issues turned off disabled; if the proxy will
+not list them, it asks for `owner/name` instead. Before import it spells out
+what the board will do on GitHub. Choosing one creates the columns and binds
+the repository to the app for good. Sync runs when the view opens, on "Sync
+now" (or `G` `S`), after each edit made in the app, and after a transient
+failure (4, 8, … up to 60 minutes, while the view is open).
+
+**The view** follows `design/DESIGN.md` and `design/mockups.html` (#89):
+a board (Todo / Doing / Done, Done collapsed to the 20 most recently
+updated) at 720 px and wider, a list below that, and an explicit
+Board/List choice (`B`) that wins at every width; search and a label filter
+shared by both; an issue panel (docked at 1000 px and wider, a drawer from
+600 px, a full-screen sheet below) with the title, status, read-only labels,
+the description (Write / Preview, a safe Markdown preview) and comments;
+"New issue" (`N`); the sync pill and connection bar; one banner per problem;
+and `?` for the keyboard shortcuts. Cards move by drag, by `1`/`2`/`3` on a
+focused card or by their "Move to…" menu. The shared chrome (the `--pl-*`
+aliases of the host's `--t-*` theme variables, pill, banner, empty state,
+buttons) is in `app/ui/`, separate from the issue views, so it can move to a
+shared package later. Layout and filters persist on the app's sync resource.
 
 **What it writes, and where.** Everything goes into the app's own subtree
 (the only place a drive app may write): the Status select (Todo / Doing /
@@ -100,7 +120,10 @@ comments" folder under the app; and one sync resource holding the bound
 repository and the sync state as JSON text.
 
 **Review before provider writes.** A pass never sends a create or update to
-GitHub on its own. Every change the Bridge would send is held
+GitHub on its own. An edit in the app (a moved card, a title, a
+description, a comment, a new issue) is written into the table at once and
+its card shows "Waiting to send"; "Review and send" in the connection bar
+lists what would go out. Every change the Bridge would send is held
 (`devonian/github-issues/review.mjs`) and listed ("Update #1: status Todo →
 Done (close it)"); "Send N changes to GitHub" approves exactly that content
 for one pass. A change edited after review is held again. Imports into the
@@ -111,19 +134,28 @@ replace them.
 
 **Recovery.**
 
-- Same field changed on both sides since the last sync: sync pauses with the
-  fields named; "Keep GitHub's version" / "Keep this table's version"
-  settles only those fields (`Bridge.resolveConflict`) and syncs again. Keeping
-  this table's side becomes a held write, reviewed like any other.
+- Same field changed on both sides since the last sync: sync pauses, the
+  card is marked, and "Review conflict" shows each field's two values
+  (`Bridge.describeConflict`). A side is chosen per field; "Apply and resume
+  sync" settles only those fields (`Bridge.resolveConflict` with a
+  `{ field: side }` choice) and syncs again. Keeping this table's side
+  becomes a held write, reviewed like any other. The Bridge stops at the
+  first conflicting record, so several conflicts are reviewed one at a time.
 - GitHub answers 401, or the host no longer has the connection: "Reconnect
   GitHub". The refused connection is not offered again after the reload.
 - A write whose response was lost: the next pass reads GitHub back first. If
   the write landed, the operation just completes. If not, an update is offered
   for review again, marked as unconfirmed; a create is never resent (the
   transport's journal refuses: "Uncertain GitHub write"), and sync stays
-  paused. There is no in-app way out of that yet (design state 12), nor for a
-  record missing on one side (state 13): both need a person and a follow-up.
-- Anything else fails the pass and "Sync now" retries it.
+  paused. The banner says so and links to GitHub; "Send again" is offered
+  only for an update GitHub does not show. There is no in-app way out for an
+  uncertain create yet (design state 12), nor for a record missing on one
+  side (state 13, "Remove from board" / "Keep here only"): both need Bridge
+  calls, and unbinding needs an `AtomicIdentityMap` unbind in `devonian/`.
+- Atomic Server refusing a write: a banner with "Try again".
+- Anything else (network, 5xx, rate limit) shows on the pill only, with
+  "Retry now", and is retried on a timer while the view is open. While sync
+  is paused or failed the board still shows the table's rows.
 
 **Host behaviour it relies on or works around** (atomic-server `bae5cdbe3`,
 read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
@@ -158,14 +190,21 @@ read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
 - The sync state grows with the write journal; it is not pruned.
 - Comments made in the data-browser's own comment panel on a row are not
   synced: they live outside the app's subtree, which the app cannot write.
-- No repository picker: listing a token's repositories needs
-  `GET /user/repos` in the proxy's GitHub document, which is not verified.
-  Changing the bound repository means a new app.
-- Labels other than `atomic:doing`, assignees, milestones and pull requests
-  are not synced; deletion on either side is never propagated.
-- The view is a status line, the review list, the conflict choice and a
-  plain issue list. The designed board/list/detail views are pending #89
-  (design PR #103, not approved).
+- The repository picker's `GET /user/repos` is not in the proxy's GitHub
+  Issues document (localthought/openapi-directory `github-issues/1.1.4`
+  lists `/repos/{owner}/{repo}/issues…` only), so against the real proxy
+  the app most likely falls back to typing `owner/name`. The mock fixture
+  answers it. Changing the bound repository means a new app.
+- Labels (names and colours, without `atomic:doing`), assignees and
+  GitHub's comment count are read into the row's GitHub source metadata
+  and shown read-only; they are never sent back. Milestones and pull
+  requests are not synced; deletion on either side is never propagated.
+- Editing an existing comment has no control in the view yet (the Bridge
+  syncs such edits made in the table).
+- The frame's sandbox has no `allow-popups`, so "Open on GitHub" links and
+  "Check on GitHub" may be refused by the browser.
+- Search, keyboard and drag were checked in jsdom and the e2e; drag and drop
+  was not exercised in an automated test.
 - **Install.** No catalog install flow for drive apps exists yet (#94), so
   there is no catalog entry: one would advertise a runtime a user cannot
   reach. The e2e installs the app test-side, as pets' and notion's do.
@@ -187,13 +226,22 @@ syncables would only add size.
 node integrations/tooling/run-lane.mjs issue-tracker --tier e2e
 ```
 
-The drive app's unit tests (`app/sync.test.ts`) run against an in-memory
-host (`app/fakeStore.ts`) and the same GitHub fixture the mock proxy
-serves, including a host whose reads never show the app's own saves;
-`app/build.test.ts` checks the bundle and typechecks `app/`. The e2e
-(`e2e/issue-tracker.spec.ts`) covers connect, import, reload with an
-unchanged refresh, one reviewed update (closing #1) and a title conflict
-settled for GitHub's side.
+The drive app's unit tests run against an in-memory host
+(`app/fakeStore.ts`) and the same GitHub fixture the mock proxy serves,
+including a host whose reads never show the app's own saves:
+`app/sync.test.ts` and `app/controller.test.ts` the sync and the
+controller (edits, comments, creates, conflict review, repository list,
+view preferences), `app/model.test.ts` the derived view data (columns,
+filters, pill, banners, markers, breakpoints), and, in jsdom,
+`app/ui/kit.test.ts` the shared chrome and theme tokens and
+`app/views.test.ts` the rendered view (keyboard and menu moves, the live
+region, the detail panel, comments, New issue, focus return, empty states,
+persistence, alerts, the conflict review). `app/build.test.ts` checks the
+bundle and typechecks `app/`. The e2e (`e2e/issue-tracker.spec.ts`) covers
+connect, picking the repository, import, reload with an unchanged refresh,
+a reviewed update (closing #1), a title conflict settled for GitHub's side
+in the review panel, a card moved with the `3` key and a comment, each
+sent after review.
 
 These check `adapter.ts`'s pagination, PR exclusion and mapping, the generic
 event-to-JavaScript starter (`automation.test.ts`), the Todoist projection, and
