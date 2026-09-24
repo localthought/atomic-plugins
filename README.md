@@ -21,6 +21,8 @@ deprecated.
 - `integration-proxy/` — the Rust OAuth/API proxy (LocalThought) that drive
   apps reach through atomic-server's host relay. See its own
   [README](integration-proxy/README.md) and [AGENTS.md](integration-proxy/AGENTS.md).
+  To run your own instance instead of atomic.place's, see
+  [integration-proxy/SELF_HOSTING.md](integration-proxy/SELF_HOSTING.md).
 
 See [AGENTS.md](AGENTS.md) for how to work in each.
 

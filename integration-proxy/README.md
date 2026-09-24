@@ -21,6 +21,12 @@ the single-use record of signed requests.
 Built with [axum](https://github.com/tokio-rs/axum), following the OAuth 2.0
 Authorization Code flow with PKCE towards providers.
 
+**To run your own instance**, see [SELF_HOSTING.md](SELF_HOSTING.md):
+installing (`cargo install`, Docker, systemd), configuration, PostgreSQL TLS,
+a reverse proxy, registering OAuth apps, pointing Atomic Server and the data
+browser at it, upgrades, backups and health checks. This README describes
+the protocol and the code.
+
 ## How it works
 
 ### Identity
@@ -62,8 +68,8 @@ minutes).
 
 **Full URL** is `BASE_URL` followed by the request's path and query exactly as
 received, e.g. `https://localthought.io/proxy/<id>/github-issues/user/repos?page=2`.
-It is never rebuilt from the `Host` header: behind TLS termination (Heroku)
-the process sees plain HTTP. Clients sign the URL they fetch (`new URL(u).href`).
+It is never rebuilt from the `Host` header: behind a TLS-terminating reverse
+proxy or platform router the process sees plain HTTP. Clients sign the URL they fetch (`new URL(u).href`).
 `BASE_URL` must therefore be exactly the public origin clients use.
 
 ### Routes
@@ -188,9 +194,9 @@ Nothing in the process reads `.env` files; export the variables, or load a
 | --- | --- | --- |
 | `BASE_URL` | no | Public URL of the proxy, e.g. `https://localthought.io`. Defaults to `http://localhost:8080`. Used for OAuth callback URLs, as the prefix of every signed URL, and (its origin) as a capability's `aud`. Must be exactly what clients use. |
 | `PORT` | no | Port to listen on. Defaults to `8080`. |
-| `SESSION_SECRET` | no | Secret for the short-lived consent and OAuth-binding cookies. If unset, a random key is generated at startup, and a consent screen open during a restart must be started again. |
+| `SESSION_SECRET` | no; set it in production | Secret for the short-lived consent and OAuth-binding cookies. If unset, a random key is generated at startup (with a warning in the log), and a consent screen open during a restart must be started again. Instances behind one name must share it. |
 | `CATALOG_PATH` | no | Local path or HTTPS URL for the catalog JSON. Defaults to `https://ontola.github.io/atomic-plugins/overlays/catalog.json`, this repository's `overlays/catalog.json` as GitHub Pages publishes it from `main`. |
-| `DATABASE_URL` | yes | PostgreSQL connection URL. |
+| `DATABASE_URL` | yes | PostgreSQL connection URL. See the TLS note below. |
 | `ENCRYPTION_KEY` | yes | Base64url-encoded, random 32-byte key for sealed provider credentials. Changing it makes every stored connection unreadable. |
 | `REVOKED_SUBJECTS` | no | Comma-separated agent ids (any accepted spelling) the default access policy refuses. |
 | `ALLOWED_AGENTS` | no | When set, comma-separated agent ids; the default access policy admits only these owners. |
@@ -207,15 +213,25 @@ The server owns the OAuth endpoints and scopes for every platform in the
 catalog, reading them from that platform's composed OpenAPI document; a
 request cannot supply a provider URL, token URL, or scope.
 
-The PostgreSQL client validates the database TLS certificate. Heroku assigns
-`DATABASE_URL` automatically when its Postgres add-on is attached. Schema
-setup runs in a transaction under an advisory lock, so several instances can
-start against an empty database at once.
+The PostgreSQL client validates the database's TLS certificate against the
+system roots when TLS is used; `sslmode` in `DATABASE_URL` decides whether it
+is (`prefer` by default, which falls back to plaintext against a server
+without TLS). Use `?sslmode=disable` for a PostgreSQL on the same host and
+`?sslmode=require` across any network; see
+[SELF_HOSTING.md](SELF_HOSTING.md#database_url-and-postgresql-tls). A managed
+PostgreSQL may set `DATABASE_URL` for you (Heroku's Postgres add-on does).
+Schema setup runs in a transaction under an advisory lock, so several
+instances can start against an empty database at once.
 
 ## Catalog
 
+Per-platform OAuth app registration for any deployment is in
+[SELF_HOSTING.md](SELF_HOSTING.md#registering-oauth-apps). Every callback is
+`<BASE_URL>/oauth/<platform>/callback`; the examples below use the
+localthought.io deployment's `BASE_URL`.
+
 Discord uses `OAUTH_DISCORD_CLIENT_ID` and `OAUTH_DISCORD_CLIENT_SECRET`,
-with production callback `https://localthought.io/oauth/discord/callback`.
+with callback `https://localthought.io/oauth/discord/callback` on localthought.io.
 Register an OAuth application in the Discord Developer Portal. The initial
 read-only integration uses `identify` and `guilds` to read your profile and
 import server memberships; it does not import messages or require a bot token.
@@ -225,11 +241,12 @@ operation, not an imported collection.
 Discord access tokens expire and use the existing refresh-token flow.
 
 Spotify uses `OAUTH_SPOTIFY_CLIENT_ID` and the callback
-`https://localthought.io/oauth/spotify/callback` in production. Register a
+`<BASE_URL>/oauth/spotify/callback` (on localthought.io,
+`https://localthought.io/oauth/spotify/callback`). Register a
 Spotify Web API app with that exact redirect URI. The integration uses
 Authorization Code with PKCE, so no client secret is required or transmitted;
-set `OAUTH_SPOTIFY_CLIENT_AUTH_METHOD=none` so the proxy does not require or
-send one. It imports playlists with `playlist-read-private` and
+the catalog declares only `none`, so the proxy neither requires nor sends
+one (`OAUTH_SPOTIFY_CLIENT_AUTH_METHOD=none` is equivalent). It imports playlists with `playlist-read-private` and
 `playlist-read-collaborative`; no write scopes are requested. No account ID
 parameter is needed. Development-mode access is subject to Spotify's Premium
 and app-user allowlist requirements. Access tokens refresh automatically;
@@ -238,7 +255,7 @@ expired or revoked refresh tokens require reconnecting through OAuth.
 
 Moneybird uses `OAUTH_MONEYBIRD_CLIENT_ID` and
 `OAUTH_MONEYBIRD_CLIENT_SECRET`, with callback
-`https://localthought.io/oauth/moneybird/callback` in production. Register an
+`<BASE_URL>/oauth/moneybird/callback`. Register an
 external OAuth application, rather than a personal API token. The
 `sales_invoices` scope grants access to contacts (Moneybird has no contacts-only
 scope). The initial integration imports contacts; supply the administration ID
@@ -284,7 +301,9 @@ its overlays are whatever `main` serves when the proxy starts.
 cargo run
 ```
 
-Then open `http://localhost:8080` (or your configured `BASE_URL`).
+Then open `http://localhost:8080` (or your configured `BASE_URL`). For a
+deployment, see [SELF_HOSTING.md](SELF_HOSTING.md); `GET /healthz` is the
+health check.
 
 ## Development
 
@@ -355,9 +374,12 @@ Only `src/`, `static/index.html`, `static/logo.png`, `Cargo.toml`,
 (`cargo package --list` shows the exact list). `tests/` fixtures are not, so
 `cargo test` only works from a checkout of this repository.
 
-### Production deployment (localthought.io)
+### The localthought.io deployment (Heroku)
 
-Production runs on Heroku from the separate repository
+This section is about one deployment, not a requirement: the crate runs on
+any host that provides the environment variables, one HTTP port and
+PostgreSQL ([SELF_HOSTING.md](SELF_HOSTING.md)). localthought.io runs on
+Heroku from the separate repository
 `localthought/integration-proxy`, which today still carries its own full copy
 of this source. The target state is that it contains only the files in
 [`examples/heroku-wrapper/`](examples/heroku-wrapper/) and picks up proxy
@@ -391,12 +413,12 @@ The synced `Procfile` runs `target/release/integration-proxy` (the binary was
 
 0.2 changes the client protocol; deploy it together with the atomic-server
 release that signs requests (Atomic v2) and uses `/proxy/{connection_id}/…`,
-never before it. Heroku config vars:
+never before it. Environment (on Heroku, config vars):
 
 | Variable | Change |
 | --- | --- |
 | `BASE_URL` | **Check**: must be exactly the public origin clients use (for production `https://localthought.io`, no trailing path). Every signature covers it; a mismatch makes every signed request fail with `bad_signature`. |
-| `APP_AUTH_CLIENT_ID`, `APP_AUTH_CLIENT_SECRET`, `APP_AUTH_AUTHORIZATION_URL`, `APP_AUTH_TOKEN_URL`, `APP_AUTH_USERINFO_URL`, `APP_AUTH_LABEL`, `APP_AUTH_IDENTITY_NAMESPACE` | No longer read; unset them (`heroku config:unset …`). 0.1 refused to start without the first five; 0.2 ignores them. |
+| `APP_AUTH_CLIENT_ID`, `APP_AUTH_CLIENT_SECRET`, `APP_AUTH_AUTHORIZATION_URL`, `APP_AUTH_TOKEN_URL`, `APP_AUTH_USERINFO_URL`, `APP_AUTH_LABEL`, `APP_AUTH_IDENTITY_NAMESPACE` | No longer read; unset them (on Heroku, `heroku config:unset …`). 0.1 refused to start without the first five; 0.2 ignores them. |
 | `SERVER_SECRET` | No longer read; unset it. |
 | `REVOKED_SUBJECTS` | Now means agent ids; tenant ids and OIDC subjects listed there no longer match anything. Rewrite or unset it. |
 | `ALLOWED_AGENTS` | New, optional: restrict the proxy to these owners. |
@@ -438,7 +460,7 @@ top-level browser navigation.
 The `todoist` platform imports projects and active tasks through Todoist API v1
 with the read-only `data:read` scope. Configure `OAUTH_TODOIST_CLIENT_ID` and
 `OAUTH_TODOIST_CLIENT_SECRET`, and register
-`https://localthought.io/oauth/todoist/callback` as the OAuth redirect URL.
+`<BASE_URL>/oauth/todoist/callback` as the OAuth redirect URL.
 New Todoist applications issue expiring access tokens and rotating refresh
 tokens; the proxy stores and refreshes these through its existing credential flow.
 Legacy non-expiring access tokens are also supported. No provider writes are exposed.
