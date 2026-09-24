@@ -1,5 +1,5 @@
 // @wc-ignore-file
-import { fetchNamed } from './clockifyApi.js';
+import { fetchAccountContext, fetchNamed } from './clockifyApi.js';
 import {
   absenceCandidates,
   MARGIN_MS,
@@ -30,6 +30,9 @@ export interface SyncResult {
   /** Non-fatal: e.g. project names unavailable, so rows keep raw ids only. */
   warnings: string[];
   log: LogReport;
+  /** The profile time zone used for the window, and the workspace's
+   * forceProjects, as read this pass (absent when unknown). */
+  account: { timeZone?: string; forceProjects?: boolean };
 }
 
 export interface LogReport {
@@ -91,7 +94,10 @@ export function rowValues(
  *    404 confirms the deletion, 200 restores the entry (it was skipped or
  *    moved, not deleted). A failing GET leaves the candidate for next time.
  * 2. Read the look-back window, starting 24 h earlier (the margin), as one
- *    observation; append it as a mask-diff against the mirror.
+ *    observation; append it as a mask-diff against the mirror. The bounds
+ *    are sent as wall-clock time in the user's profile time zone, read
+ *    from `GET /user` each pass along with the workspace's
+ *    `forceProjects`, and recorded as the UTC span they cover.
  * 3. Compact when the tail is long enough, and save the log head.
  * 4. Project the mirror onto the table's rows. The rows are a read-only
  *    projection (#97 answer 2): completed `REGULAR` entries (the lens skips
@@ -117,16 +123,18 @@ export async function syncClockify(
   options: SyncOptions = {},
 ): Promise<SyncResult> {
   const clock = options.clock ?? Date.now;
+  const account = await fetchAccountContext(transport, settings.workspaceId);
   const context: ReadContext = {
     transport,
     workspaceId: settings.workspaceId,
     userId: settings.userId,
+    ...(account.timeZone ? { timeZone: account.timeZone } : {}),
     clock,
     newId: options.newId ?? (() => newObservationId(clock)),
     device: options.device ?? SESSION_DEVICE,
   };
   const log = await ObservationLog.open(store, schema, { clock });
-  const warnings: string[] = [];
+  const warnings: string[] = [...account.warnings];
 
   for (const candidate of absenceCandidates(log.mirror)) {
     try {
@@ -183,6 +191,12 @@ export async function syncClockify(
       snapshotWritten,
       candidates: absenceCandidates(log.mirror).length,
       unknownMs: totalMs(unknownIntervals(log.mirror, settings, window, now)),
+    },
+    account: {
+      ...(account.timeZone ? { timeZone: account.timeZone } : {}),
+      ...(account.forceProjects !== undefined
+        ? { forceProjects: account.forceProjects }
+        : {}),
     },
   };
 }

@@ -1,4 +1,5 @@
 // @wc-ignore-file
+import { isTimeZone } from './timeZone.js';
 import { ProxyError, requestJson, type ProxyTransport } from './transport.js';
 
 /**
@@ -58,6 +59,74 @@ export interface ClockifyUser {
   name?: string;
   email?: string;
   activeWorkspace?: string;
+  settings?: { timeZone?: string };
+}
+
+export interface ClockifyWorkspace extends RawNamed {
+  settings?: { forceProjects?: boolean };
+}
+
+/** What a sync needs to know about the account besides its entries. */
+export interface AccountContext {
+  /** The profile time zone the list's bounds are read in, if known. */
+  timeZone?: string;
+  /**
+   * The workspace setting (checked live): with it on, Clockify refuses a
+   * create or update without `projectId`, so "worked, no project" cannot
+   * be written back there.
+   */
+  forceProjects?: boolean;
+  warnings: string[];
+}
+
+/**
+ * The user's time zone (`GET /user` → `settings.timeZone`) and the
+ * workspace's `forceProjects` (`GET /workspaces`), read on every sync so a
+ * changed profile takes effect. A 403/404 on either is a warning; the time
+ * zone is then unknown and the sync narrows what it claims to have read.
+ */
+export async function fetchAccountContext(
+  transport: ProxyTransport,
+  workspaceId: string,
+): Promise<AccountContext> {
+  const context: AccountContext = { warnings: [] };
+
+  const soft = (error: unknown) => {
+    if (
+      !(error instanceof ProxyError) ||
+      (error.status !== 403 && error.status !== 404)
+    )
+      throw error;
+    context.warnings.push(error.message);
+  };
+
+  try {
+    const user = await requestJson<ClockifyUser>(transport, '/api/v1/user');
+    const zone = user?.settings?.timeZone;
+    if (isTimeZone(zone)) context.timeZone = zone;
+    else
+      context.warnings.push(
+        'Clockify did not name a known time zone for this account; the window is read less precisely.',
+      );
+  } catch (error) {
+    soft(error);
+  }
+
+  try {
+    const workspaces = await requestJson<ClockifyWorkspace[]>(
+      transport,
+      '/api/v1/workspaces',
+    );
+    const workspace = Array.isArray(workspaces)
+      ? workspaces.find(w => w?.id === workspaceId)
+      : undefined;
+    const force = workspace?.settings?.forceProjects;
+    if (typeof force === 'boolean') context.forceProjects = force;
+  } catch (error) {
+    soft(error);
+  }
+
+  return context;
 }
 
 export interface SetupOptions {

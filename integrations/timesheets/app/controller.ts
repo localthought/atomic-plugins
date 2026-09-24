@@ -300,6 +300,9 @@ export function describe(state: ViewState): string {
           ? ` ${log.candidates} missing from Clockify's list, re-checked on the next sync.`
           : '') +
         (log.unknownMs ? ` ${hours(log.unknownMs)} not loaded.` : '') +
+        (state.last.result.account.forceProjects
+          ? ' This workspace requires a project on every entry.'
+          : '') +
         (warnings.length ? ` Warnings: ${warnings.join('; ')}` : '')
       );
     }

@@ -52,8 +52,8 @@ const settings: Settings = {
 };
 const WINDOW = { from: NOW - 7 * DAY, to: NOW };
 
-async function setup() {
-  const proxy = fixtureProxy(NOW);
+async function setup(now = NOW) {
+  const proxy = fixtureProxy(now);
   const store = fakeStore({ proxy: proxy.request });
   const schema = await ensureSchema(store);
   const transport = relayTransport(store.proxy!, CONNECTION);
@@ -61,12 +61,12 @@ async function setup() {
   const newId = () => `obs-${String(++ids).padStart(4, '0')}`;
   /** One sync pass; the observation clock runs `offset` after `NOW`. */
   const run = (offset = 0) =>
-    syncClockify(store, transport, settings, schema, NOW + offset, {
-      clock: () => NOW + offset,
+    syncClockify(store, transport, settings, schema, now + offset, {
+      clock: () => now + offset,
       newId,
       device: 'test',
     });
-  const open = () => ObservationLog.open(store, schema, { clock: () => NOW });
+  const open = () => ObservationLog.open(store, schema, { clock: () => now });
   const app = () => store.resources.get('did:ad:app')!;
   const headSubject = () => app()[schema.log.log] as string;
   const head = () =>
@@ -358,6 +358,7 @@ describe('observation log scenarios (#123 M1)', () => {
         clock: () => NOW + 60_000,
         newId: t.newId,
         device: 'test',
+        timeZone: 'Europe/Amsterdam',
       },
       WINDOW.from - MARGIN_MS - 7 * DAY,
       WINDOW.from - MARGIN_MS,
@@ -492,6 +493,129 @@ describe('observation log scenarios (#123 M1)', () => {
     // No coverage from an incomplete read, and the rows are untouched.
     expect(t.head().lastComplete).toBe('2026-09-23T12:00:00.000Z');
     expect(t.rows()).toEqual(rowsBefore);
+  });
+});
+
+describe('time zones and live-checked answers (#123 findings, 2026-09-24)', () => {
+  const Z = (text: string) => Date.parse(text);
+
+  const listQuery = (t: Awaited<ReturnType<typeof setup>>) => {
+    const request = t.proxy.fixture.state.requests.find(r =>
+      r.includes('/time-entries?'),
+    )!;
+
+    return new URL(request.slice(request.indexOf(' ') + 1), 'http://x')
+      .searchParams;
+  };
+
+  it('across the repeated hour (25 October), claims no coverage it cannot prove and invents no absence', async () => {
+    // Now is the second 02:30 in Amsterdam (CET, 01:30Z).
+    const now = Z('2026-10-25T01:30:00Z');
+    const t = await setup(now);
+    // Started at the first 02:40 (CEST, 00:40Z).
+    t.proxy.fixture.control({
+      action: 'add',
+      entry: clockifyEntry(
+        'early',
+        'Early',
+        Z('2026-10-25T00:40:00Z'),
+        Z('2026-10-25T00:50:00Z'),
+      ),
+    });
+
+    const first = await t.run();
+
+    expect(listQuery(t).get('end')).toBe('2026-10-25T02:30:00Z');
+    // Clockify may read the end bound "02:30" as 00:30Z: the last hour is
+    // not claimed as read, and shows as unknown, not as "not worked".
+    expect(t.incrementals()[0].scope).toMatchObject({
+      to: '2026-10-25T00:30:00Z',
+    });
+    expect(first.log.unknownMs).toBe(HOUR);
+    const { mirror } = await t.open();
+    expect(mirror.records[recordKey(TIME_ENTRY, 'early')]).toBeUndefined();
+
+    // Once the hour has passed, the entry is read and nothing is absent.
+    const later = await t.run(2 * HOUR);
+    expect(later.log).toMatchObject({ candidates: 0, unknownMs: 0 });
+    expect(
+      (await t.open()).mirror.records[recordKey(TIME_ENTRY, 'early')],
+    ).toBeDefined();
+  });
+
+  it('across the skipped hour (29 March), reads entries on both sides with no gap in coverage', async () => {
+    const now = Z('2026-03-29T02:00:00Z'); // 04:00 CEST
+    const t = await setup(now);
+
+    for (const [id, from, to] of [
+      ['before', '2026-03-29T00:30:00Z', '2026-03-29T00:55:00Z'],
+      ['after', '2026-03-29T01:10:00Z', '2026-03-29T01:40:00Z'],
+    ])
+      t.proxy.fixture.control({
+        action: 'add',
+        entry: clockifyEntry(id, id, Z(from), Z(to)),
+      });
+
+    const result = await t.run();
+
+    // 8 days back is still CET (+1); now is CEST (+2).
+    expect(listQuery(t).get('start')).toBe('2026-03-21T03:00:00Z');
+    expect(listQuery(t).get('end')).toBe('2026-03-29T04:00:00Z');
+    expect(t.incrementals()[0].scope).toMatchObject({
+      from: '2026-03-21T02:00:00Z',
+      to: '2026-03-29T02:00:00Z',
+    });
+    expect(result.log.unknownMs).toBe(0);
+    expect(t.rowOf('before')).toBeDefined();
+    expect(t.rowOf('after')).toBeDefined();
+  });
+
+  it('reads the profile time zone from Clockify on every pass', async () => {
+    const t = await setup();
+    t.proxy.fixture.control({
+      action: 'settings',
+      timeZone: 'America/New_York',
+    });
+
+    const result = await t.run();
+
+    expect(result.account.timeZone).toBe('America/New_York');
+    // 2026-09-15T12:00Z is 08:00 in New York (EDT).
+    expect(listQuery(t).get('start')).toBe('2026-09-15T08:00:00Z');
+    expect(result.log.unknownMs).toBe(0);
+  });
+
+  it('notes forceProjects in the result and the status line', async () => {
+    const t = await setup();
+    t.proxy.fixture.control({ action: 'settings', forceProjects: true });
+
+    const result = await t.run();
+
+    expect(result.account.forceProjects).toBe(true);
+    expect(describeState(ready(result))).toContain(
+      'This workspace requires a project on every entry.',
+    );
+  });
+
+  it('treats any other 400 on a re-check as an error: the candidate stays, with a warning', async () => {
+    const t = await setup();
+    await t.run();
+    t.proxy.fixture.control({ action: 'delete', id: 'entry-2' });
+    await t.run(60_000);
+    const serve = t.proxy.fixture.request.bind(t.proxy.fixture);
+    t.proxy.fixture.request = (method, url, body) =>
+      url.pathname.endsWith('/time-entries/entry-2')
+        ? { status: 400, body: { message: 'Something else' } }
+        : serve(method, url, body);
+
+    const result = await t.run(120_000);
+
+    expect(result.removed).toBe(0);
+    expect(result.log.candidates).toBe(1);
+    expect(result.warnings.join(' ')).toMatch(
+      /re-check entry entry-2.*400: Something else/,
+    );
+    expect(t.rowOf('entry-2')).toBeDefined();
   });
 });
 

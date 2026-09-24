@@ -75,6 +75,9 @@ interface ObservationHeader {
   mask: string[];
   /** False when paging stopped early: upserts count, absences do not. */
   complete: boolean;
+  /** The provider query as sent, when it differs from the scope (e.g.
+   * wall-clock bounds in the user's time zone). Provenance only. */
+  query?: Record<string, string>;
 }
 
 /** A read as it happened, before it is diffed against the mirror. */

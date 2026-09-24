@@ -111,6 +111,7 @@ describe('syncClockify against the shared Clockify mock', () => {
         candidates: 0,
         unknownMs: 0,
       },
+      account: { timeZone: 'Europe/Amsterdam', forceProjects: false },
     });
     // Rows are projected from the mirror in start order.
     expect(rows().map(([, r]) => r[schema.row.entryId])).toEqual([
@@ -133,15 +134,19 @@ describe('syncClockify against the shared Clockify mock', () => {
     expect(first[schema.row.memberName]).toBe(USER.name);
     expect(first[schema.row.billable]).toBe(true);
     // Every call carried the reference, and the 7-day window, read from
-    // 24 h earlier (the margin, #123 §2.3).
+    // 24 h earlier (the margin, #123 §2.3), as wall-clock time in the
+    // user's profile time zone (Amsterdam, UTC+2 in September): Clockify
+    // ignores the Z (checked live).
     expect(
       proxy.seen.every(
         r => r.connectionId === 'conn-1' && r.platform === 'clockify',
       ),
     ).toBe(true);
-    expect(proxy.fixture.state.requests[0]).toBe(
+    expect(
+      proxy.fixture.state.requests.find(r => r.includes('/time-entries')),
+    ).toBe(
       `GET /proxy/clockify/api/v1/workspaces/${WORKSPACE.id}/user/${USER.id}/time-entries` +
-        '?start=2026-09-15T12%3A00%3A00Z&end=2026-09-23T12%3A00%3A00Z&page=1&page-size=50',
+        '?start=2026-09-15T14%3A00%3A00Z&end=2026-09-23T14%3A00%3A00Z&page=1&page-size=50',
     );
   });
 
@@ -176,7 +181,7 @@ describe('syncClockify against the shared Clockify mock', () => {
     const starts = proxy.fixture.state.requests
       .filter(r => r.includes('/time-entries'))
       .map(r => new URL(r.slice(4), 'http://x').searchParams.get('start'));
-    expect(starts).toEqual(['2026-09-15T12:00:00Z', '2026-09-16T12:00:00Z']);
+    expect(starts).toEqual(['2026-09-15T14:00:00Z', '2026-09-16T14:00:00Z']);
   });
 
   it('updates a changed entry in place and keeps a property the import does not map', async () => {

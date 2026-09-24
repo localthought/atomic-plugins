@@ -10,6 +10,12 @@ import {
   type Observation,
   type RangeScope,
 } from './observations.js';
+import {
+  instantsOf,
+  MAX_ZONE_OFFSET_MS,
+  wallClock,
+  wallClockParam,
+} from './timeZone.js';
 import { ProxyError, requestJson, type ProxyTransport } from './transport.js';
 
 /**
@@ -17,17 +23,24 @@ import { ProxyError, requestJson, type ProxyTransport } from './transport.js';
  * is canonically, which reads produce which observations, and which spans of
  * time those reads actually cover. Read-only: nothing here writes.
  *
- * Unverified against a live account, and assumed as the mock does:
- * - the list's `start`/`end` filter selects on the entry's *start*, and the
- *   boundaries' inclusivity is unknown (the scope says `[from, to)`; a
- *   boundary entry that is not returned only costs a confirming GET);
+ * Checked against a live account on 2026-09-24 (#123), and modelled by the
+ * mock:
+ * - the list's `start`/`end` are wall-clock time in the user's profile
+ *   time zone (see `timeZone.ts`), and select entries whose *start* is in
+ *   `[start, end)`;
  * - lists come newest start first, so a deletion between pages can make the
- *   next page skip one entry (caught by the confirming GET).
+ *   next page skip one entry (caught by the confirming GET);
+ * - GET by id of a deleted or unknown entry answers 400 "Time entry doesn't
+ *   belong to Workspace", not 404.
+ * Not checked: how a wall-clock bound in a repeated or skipped DST hour is
+ * resolved; the recorded scope assumes the reading that covers least.
  */
 
 export const TIME_ENTRY = 'timeEntry';
 /** integration-proxy's body for a 404 it answers itself (`proxy.rs`). */
 export const PROXY_NOT_IN_CATALOG = 'method or path is not in the catalog';
+/** Clockify's 400 message for GET by id of a deleted or unknown entry. */
+export const NOT_IN_WORKSPACE = "Time entry doesn't belong to Workspace";
 const HOUR = 3_600_000;
 
 /** Every range read starts this much earlier than the window it is for. */
@@ -119,6 +132,13 @@ export interface ReadContext {
   userId: string;
   /** Wall clock in epoch ms; `sentAt`/`receivedAt` come from it. */
   clock: () => number;
+  /**
+   * The user's profile time zone (`GET /user` → `settings.timeZone`), which
+   * Clockify reads the list's bounds in. Unknown: the bounds are sent as UTC
+   * digits and the recorded scope is narrowed by 14 h at each end, since
+   * Clockify may read them in any zone.
+   */
+  timeZone?: string;
   newId: () => string;
   device: string;
 }
@@ -152,6 +172,35 @@ export interface RangeRead {
 }
 
 /**
+ * The query bounds for `[from, to)` (whole seconds), and the UTC span the
+ * read is then known to be complete for: the latest instant the `start`
+ * bound can mean and the earliest the `end` bound can mean.
+ */
+export function rangeBounds(
+  from: number,
+  to: number,
+  timeZone: string | undefined,
+): { query: { start: string; end: string }; from: number; to: number } {
+  const [f, t] = [from, to].map(at => Math.floor(at / 1000) * 1000);
+
+  if (!timeZone)
+    return {
+      query: { start: clockifyInstant(f), end: clockifyInstant(t) },
+      from: f + MAX_ZONE_OFFSET_MS,
+      to: t - MAX_ZONE_OFFSET_MS,
+    };
+
+  return {
+    query: {
+      start: wallClockParam(f, timeZone),
+      end: wallClockParam(t, timeZone),
+    },
+    from: Math.max(...instantsOf(wallClock(f, timeZone), timeZone)),
+    to: Math.min(...instantsOf(wallClock(t, timeZone), timeZone)),
+  };
+}
+
+/**
  * All pages of the user's time entries starting in `[from, to)`, as one
  * observation. A failure on the first page throws and observes nothing. A
  * failure on a later page returns what was read, marked incomplete, with
@@ -163,7 +212,12 @@ export async function readRange(
   from: number,
   to: number,
 ): Promise<RangeRead> {
-  const scope = rangeScope(c, clockifyInstant(from), clockifyInstant(to));
+  const bounds = rangeBounds(from, to, c.timeZone);
+  const scope = rangeScope(
+    c,
+    clockifyInstant(bounds.from),
+    clockifyInstant(Math.max(bounds.from, bounds.to)),
+  );
   const sentAt = iso(c.clock());
   const records: CanonicalRecord[] = [];
   let error: unknown;
@@ -174,8 +228,7 @@ export async function readRange(
 
     try {
       items = await requestJson<RawTimeEntry[]>(c.transport, listPath(c), {
-        start: scope.from,
-        end: scope.to,
+        ...bounds.query,
         page: String(page),
         'page-size': String(PAGE_SIZE),
       });
@@ -210,6 +263,10 @@ export async function readRange(
       receivedAt: iso(c.clock()),
       kind: 'list',
       scope,
+      query: {
+        ...bounds.query,
+        ...(c.timeZone ? { timeZone: c.timeZone } : {}),
+      },
       mask: ENTRY_MASK,
       complete,
       records: dedupe(records),
@@ -223,10 +280,26 @@ const dedupe = (records: CanonicalRecord[]) => [
   ...new Map(records.map(r => [r.id, r])).values(),
 ];
 
+/** Does this failed GET by id say the entry is gone? */
+export function saysDeleted(error: unknown): boolean {
+  if (!(error instanceof ProxyError)) return false;
+  const message =
+    error.body && typeof error.body === 'object' && 'message' in error.body
+      ? (error.body as { message: unknown }).message
+      : undefined;
+
+  // Live, Clockify answers 400 with this message. A 404 is accepted too,
+  // except the proxy's own for an operation missing from its catalog.
+  if (error.status === 400) return message === NOT_IN_WORKSPACE;
+
+  return error.status === 404 && error.body !== PROXY_NOT_IN_CATALOG;
+}
+
 /**
  * One entry by id (`GET /workspaces/{ws}/time-entries/{id}`). 200 observes
- * it; 404 observes that it is gone, which confirms an absence candidate.
- * Anything else throws and observes nothing.
+ * it; `saysDeleted` observes that it is gone, which confirms an absence
+ * candidate. Anything else, any other 400 included, throws and observes
+ * nothing.
  */
 export async function readOne(
   c: ReadContext,
@@ -242,14 +315,7 @@ export async function readOne(
       throw new Error(`Clockify ${path} returned another entry`);
     records = [canonicalEntry(entry)];
   } catch (error) {
-    // The proxy answers an operation missing from its catalog with a 404
-    // too; that says nothing about the entry.
-    if (
-      !(error instanceof ProxyError) ||
-      error.status !== 404 ||
-      error.body === PROXY_NOT_IN_CATALOG
-    )
-      throw error;
+    if (!saysDeleted(error)) throw error;
     records = [];
   }
 

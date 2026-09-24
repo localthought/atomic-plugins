@@ -81,14 +81,23 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
   - `clockifyObserve.ts` reads the rolling look-back window, starting 24 h
     earlier (the margin), as one observation: all pages, with its scope
     (workspace, user, `start` in `[from, to)`) and the fields returned.
+    Clockify reads the list's bounds as wall-clock time in the user's
+    profile time zone, so each pass reads that zone (`GET /user` →
+    `settings.timeZone`, `timeZone.ts`) and the workspace's `forceProjects`
+    (`GET /workspaces`), sends local wall-clock bounds with a `Z`, and
+    records the UTC span they cover. When a bound falls in a repeated DST
+    hour, the span recorded is the smaller of the two readings; if the zone
+    is unknown, 14 h is taken off each end.
     Each entry is kept canonically: exact instant strings, and every field
     the app does not interpret (`timeZone`, `duration`, …) verbatim in
     `extra`.
   - `observations.ts` (generic, pure) diffs it against the mirror (the
     mask-diff) and folds it in, ordered by `(receivedAt, id)`. An entry a
     complete read no longer returns is only an absence _candidate_; the
-    next pass confirms it with `GET /time-entries/{id}`: 404 is a
-    deletion, 200 restores it (it was skipped between pages, or moved).
+    next pass confirms it with `GET /time-entries/{id}`: Clockify's 400
+    "Time entry doesn't belong to Workspace" (or a 404 from Clockify) is a
+    deletion, 200 restores it (it was skipped between pages, or moved), and
+    any other answer leaves the candidate with a warning.
   - `observationLog.ts` stores each non-empty diff as its own resource
     under a log head in the app's subtree, writes a snapshot every 50
     diffs or 256 KB, and keeps everything (nothing is pruned). A pass with
@@ -107,8 +116,10 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
     made in the table are overwritten on the next pass; the table's
     description (if it has none) says so.
   - **Status line.** Created/updated/unchanged as before, plus rows
-    removed, entries waiting for a re-check, and how much of the window is
-    not loaded, when any of these is non-zero.
+    removed, entries waiting for a re-check, how much of the window is not
+    loaded, and whether the workspace requires a project on every entry
+    (`forceProjects`: "worked, no project" cannot be written back there),
+    each only when it applies.
     Nothing is written to Clockify. Requests are sequential; each is one
     relay round trip.
 - **Errors.** If the window's first page fails, the pass fails and rows
@@ -117,13 +128,20 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
   observation (no absences, no coverage) and the pass fails the same way.
   A failing re-check `GET` is a warning; the candidate is re-checked next
   time. A 403/404 on projects or users is a warning, and rows keep raw ids.
-- **Not verified live:** the list filter selecting on an entry's start,
-  its boundary inclusivity, newest-first order, and the skipping this
-  causes on deletion between pages are the mock's reading of Clockify, not
-  observations of a live account. Whether atomic-server accepts a snapshot
-  of ~1 MB (about 2,000 entries) in one commit is not checked. Two devices
-  saving the log head at the same moment can drop one's diff from the head
-  (no compare-and-swap on `/app-write`; M5).
+- **Checked against a live account** (2026-09-24, findings on #123; the
+  mock models them): the list's bounds as wall-clock time in the profile
+  time zone, the filter on an entry's start in `[start, end)`, newest
+  start first with `Last-Page`, a running timer from `PUT` without `end`,
+  400 for GET of a deleted entry and 404 for DELETE of one, overlapping
+  entries allowed, instants truncated to whole seconds, and 400 without a
+  project under `forceProjects`.
+- **Not verified live:** how Clockify resolves a bound inside a repeated or
+  skipped DST hour (the app assumes the reading that covers least), that a
+  deletion between pages really skips an entry (inferred from the order),
+  custom fields, and locked entries. Whether atomic-server accepts a
+  snapshot of ~1 MB (about 2,000 entries) in one commit is not checked.
+  Two devices saving the log head at the same moment can drop one's diff
+  from the head (no compare-and-swap on `/app-write`; M5).
 
 ```sh
 # from an atomic-server checkout with this repo's integrations/ in place (AGENTS.md)
