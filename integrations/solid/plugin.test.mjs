@@ -188,3 +188,18 @@ test('bundle and manifest build reproducibly and emitted ESM executes', async ()
   );
   assert.equal(module.handle(ctx(), req()).body, 'hello');
 });
+
+test('manifest declares each consumed installation config field with host-supported types', () => {
+  assert.deepEqual(Object.keys(manifest.config.properties), [
+    'parent',
+    'document',
+    'exports',
+  ]);
+  assert.deepEqual(manifest.config.required, []);
+
+  for (const field of Object.values(manifest.config.properties)) {
+    assert.ok(['string', 'object'].includes(field.type));
+    assert.equal(typeof field.description, 'string');
+    assert.ok(field.description.length > 0);
+  }
+});

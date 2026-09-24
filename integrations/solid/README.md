@@ -90,10 +90,15 @@ node integrations/tooling/run-lane.mjs solid --tier node
 ```
 
 The build creates `integrations/solid/dist/plugin.js` and `manifest.json`.
-Fifteen executable Node tests cover RDF/text intent and read round-trips,
+Sixteen executable Node tests cover RDF/text intent and read round-trips,
 permission denial, path isolation, mutation refusal, lexical preservation,
 parser rejection, bounds, negotiation, conditional reads and reproducible bundles. Tests use the
 real documented ctx/intent shape with host doubles. **No running Atomic Server,
 actual commit, QuickJS execution, external Solid client or blob round-trip has
 been live verified.** A green lane establishes this bounded implementation's
 unit behavior, not complete protocol interoperability.
+
+The manifest declares every consumed installation configuration field using the
+host-supported string/object schema. Conditional fields are checked by the entry
+point: parent/document for import jobs, exports for public reads. No field is globally
+required because import-only and route-only configurations are both valid.

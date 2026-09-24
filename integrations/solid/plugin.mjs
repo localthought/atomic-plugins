@@ -9,6 +9,27 @@ export const MAX_BYTES = 32768;
 const TYPES = ['text/plain', 'application/ld+json'];
 
 export const manifest = {
+  config: {
+    key: 'solid',
+    properties: {
+      parent: {
+        type: 'string',
+        description:
+          'Atomic destination parent, required for reviewed import jobs.',
+      },
+      document: {
+        type: 'object',
+        description:
+          'Import document: id, name, mediaType and body; required for reviewed import jobs.',
+      },
+      exports: {
+        type: 'object',
+        description:
+          'Public route map from safe document IDs to actual Atomic resource subjects.',
+      },
+    },
+    required: [],
+  },
   schemaVersion: 3,
   name: 'solid',
   namespace: 'atomic-plugins',
