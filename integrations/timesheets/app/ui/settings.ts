@@ -17,6 +17,8 @@ export interface SettingsProps {
   options: SetupOptions;
   choice: { workspaceId: string; lookbackDays: LookbackDays };
   timeZone: string;
+  /** Where `timeZone` comes from, for the sheet's note. */
+  zoneSource: 'profile' | 'browser';
   entryCount: number;
   full: boolean;
   saving: boolean;
@@ -147,7 +149,13 @@ export function settingsSheet(h: H, p: SettingsProps): Overlay {
           'span',
           null,
           p.timeZone,
-          h('span', { class: 'muted' }, ' (this browser)'),
+          h(
+            'span',
+            { class: 'muted' },
+            p.zoneSource === 'profile'
+              ? ' (your Clockify profile)'
+              : ' (this browser)',
+          ),
         ),
       ),
       p.error ? h('p', { role: 'alert', style: 'margin: 0' }, p.error) : null,

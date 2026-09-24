@@ -28,6 +28,8 @@ export async function build({ outfile } = {}) {
     platform: 'browser',
     target: 'es2022',
     splitting: false,
+    // With the #89 views the unminified module passed the 64 KB check.
+    minify: true,
     legalComments: 'none',
     write: false,
     outfile: outfile ?? path('dist/ui.js'),

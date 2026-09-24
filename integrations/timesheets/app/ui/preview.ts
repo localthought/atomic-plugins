@@ -140,6 +140,7 @@ function stub(
     names: () => ({
       userName: 'Mira Janssen',
       workspaceName: 'Studio Veldkamp',
+      timeZone: 'Europe/Amsterdam',
     }),
     sheet: () => sheet,
   };

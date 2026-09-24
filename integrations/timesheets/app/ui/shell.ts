@@ -787,6 +787,7 @@ export function mountShell(
               options: state.options,
               choice,
               timeZone: sheet.timeZone,
+              zoneSource: controller.names().timeZone ? 'profile' : 'browser',
               entryCount: entriesInWindow(sheet),
               full: size !== 'wide',
               saving: state.busy === 'saving',

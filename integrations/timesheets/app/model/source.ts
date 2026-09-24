@@ -164,7 +164,11 @@ export function timesheetFromMirror(input: SourceInput): Timesheet {
     timeZone,
     // M2: both from the timeline sweep (`../timeline/sweep.ts`).
     ...(timeline
-      ? { unknown: timeline.unknown, conflicts: timeline.conflicts }
+      ? {
+          unknown: timeline.unknown,
+          conflicts: timeline.conflicts,
+          timeline: timeline.days,
+        }
       : { unknown: [], conflicts: [] }),
   };
 }

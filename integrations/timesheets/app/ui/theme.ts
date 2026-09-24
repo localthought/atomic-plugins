@@ -232,6 +232,13 @@ select.sel { font: inherit; font-size: 13.5px; padding: 7px 10px; border: 1px so
 .pl[data-size='narrow'] .prow { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 6px; }
 .pl[data-size='narrow'] .prow .track { grid-column: 1 / -1; grid-row: 2; }
 
+/* #123 M2's read-only notes (timeline/render.ts): unknown time, conflicts. */
+.unknown { padding: 9px 12px; border-radius: var(--pl-radius); background: var(--pl-subtle); border: 1px dashed var(--pl-border); font-size: 12.5px; color: var(--pl-muted); }
+.unknown strong { color: var(--pl-text); }
+.conflicts { padding: 11px 14px; border-radius: var(--pl-radius); border: 1px solid color-mix(in srgb, var(--pl-warn) 55%, var(--pl-surface)); background: color-mix(in srgb, var(--pl-warn) 12%, var(--pl-surface)); font-size: 13.5px; }
+.conflicts p { margin: 0 0 4px; }
+.conflicts ul { margin: 0; padding-left: 18px; }
+
 @media (prefers-reduced-motion: reduce) {
   .pill[data-state='syncing']::before, .skel, .drawer { animation: none !important; }
 }

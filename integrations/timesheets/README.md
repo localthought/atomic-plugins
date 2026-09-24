@@ -141,12 +141,12 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
     are 23 or 25 h. A segment is `unknown` where M1's coverage says so
     (absence candidates included; this wins over any claim), `didNotWork`
     where coverage is complete and no entry claims it, `worked`, `worked`
-    + `duplicate` (same project twice), or `conflict`: "unclear which
-    project" (different projects, "no project" included) or "unclear
-    whether worked" (work overlapping a break, holiday or time off). Each
-    segment lists why it would not be editable (running, locked, entry
-    type, custom fields, and `worked(none)` under `forceProjects`).
-    Sorted throughout, so equal mirrors give equal timelines.
+    - `duplicate` (same project twice), or `conflict`: "unclear which
+      project" (different projects, "no project" included) or "unclear
+      whether worked" (work overlapping a break, holiday or time off). Each
+      segment lists why it would not be editable (running, locked, entry
+      type, custom fields, and `worked(none)` under `forceProjects`).
+      Sorted throughout, so equal mirrors give equal timelines.
   - _View model_: `app/model/source.ts` fills the #89 views' `Timesheet`
     hooks from it: `unknown` (the window's unknown spans) and `conflicts`
     (`app/timeline/types.ts` `TimelineConflict`: the views' `Conflict` plus

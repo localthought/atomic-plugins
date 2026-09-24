@@ -69,6 +69,10 @@ interface SheetInput {
   /** Display names from the last sync. */
   userName?: string;
   workspaceName?: string;
+  /** The Clockify profile's zone: days are grouped as Clockify does. */
+  timeZone?: string;
+  /** The workspace's `forceProjects` (#123 M2: read-only reasons). */
+  forceProjects?: boolean;
 }
 
 export interface SettingsChoice {
@@ -96,7 +100,7 @@ export interface Controller {
   canDisconnect(): boolean;
   disconnect(): Promise<ViewState>;
   /** The account and workspace names the last sync read, if any. */
-  names(): { userName?: string; workspaceName?: string };
+  names(): { userName?: string; workspaceName?: string; timeZone?: string };
   /** The timesheet the views show, or undefined before anything was read. */
   sheet(now?: number): Timesheet | undefined;
 }
@@ -327,6 +331,12 @@ export function createController(
           ...(result.account.workspaceName
             ? { workspaceName: result.account.workspaceName }
             : {}),
+          ...(result.account.timeZone
+            ? { timeZone: result.account.timeZone }
+            : {}),
+          ...(result.account.forceProjects !== undefined
+            ? { forceProjects: result.account.forceProjects }
+            : {}),
         };
 
         return set({
@@ -431,6 +441,7 @@ export function createController(
     names: () => ({
       ...(input?.userName ? { userName: input.userName } : {}),
       ...(input?.workspaceName ? { workspaceName: input.workspaceName } : {}),
+      ...(input?.timeZone ? { timeZone: input.timeZone } : {}),
     }),
 
     sheet(at = now()) {
@@ -443,8 +454,13 @@ export function createController(
         ...(input.members ? { members: input.members } : {}),
         ...(settings ? { settings } : {}),
         now: at,
-        timeZone,
+        // Clockify's profile zone once a sync has read it; the browser's
+        // until then (and without a relay).
+        timeZone: input.timeZone ?? timeZone,
         ...(input.weekStart ? { weekStart: input.weekStart } : {}),
+        ...(input.forceProjects !== undefined
+          ? { forceProjects: input.forceProjects }
+          : {}),
       });
     },
   };

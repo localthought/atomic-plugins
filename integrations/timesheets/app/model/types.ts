@@ -6,6 +6,7 @@
  * fill the same shape, plus the `unknown` and `conflicts` hooks below, which
  * the UI renders only as marked stubs for now.
  */
+import type { TimelineDay } from '../timeline/types.js';
 import type { WeekStart } from './time.js';
 
 export interface Project {
@@ -65,4 +66,10 @@ export interface Timesheet {
   unknown: Interval[];
   /** M2 hook: see `Conflict`. */
   conflicts: Conflict[];
+  /**
+   * #123 M2's timeline, per local day in `timeZone`: segments with their
+   * state and read-only reasons. Optional and not rendered by the v1
+   * views; there for later ones (read-only reasons, running timers, breaks).
+   */
+  timeline?: TimelineDay[];
 }
