@@ -6,12 +6,8 @@ export default {
         '../../browser/node_modules/vitest/dist/index.js',
         import.meta.url,
       ).pathname,
-      // The app bundles this repo's syncables/src, not an npm copy; mirrored
-      // by `paths` in tsconfig.json and the alias in app/build.mjs.
-      'syncables/browser': new URL(
-        '../../syncables/src/browser.ts',
-        import.meta.url,
-      ).pathname,
+      // `syncables/browser` resolves from this folder's node_modules: the npm
+      // release pinned in package.json (`pnpm install` here).
     },
   },
   test: { include: ['*.test.ts', 'app/*.test.ts'] },

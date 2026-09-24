@@ -318,6 +318,19 @@ jobs:
         working-directory: atomic-server/browser
         run: pnpm install --frozen-lockfile
 
+      # A plugin that bundles published npm packages (notion: syncables and
+      # devonian; pets: syncables) pins them in its own package.json and
+      # pnpm-lock.yaml and has them installed in its own folder, so the
+      # certification below typechecks, tests and builds against exactly
+      # those versions. Every lockfile, not a list: nothing to keep in sync.
+      - name: Install plugin npm dependencies
+        working-directory: atomic-plugins
+        run: |
+          for lock in integrations/*/pnpm-lock.yaml; do
+            [ -e "$lock" ] || continue
+            (cd "$(dirname "$lock")" && pnpm install --frozen-lockfile)
+          done
+
       - name: Tooling unit tests
         working-directory: atomic-plugins
         run: |
@@ -428,6 +441,15 @@ jobs:
       - name: Install devonian dependencies
         working-directory: atomic-plugins/devonian
         run: pnpm install --frozen-lockfile
+
+      # Same step as in shared-checks: plugins that pin npm packages.
+      - name: Install plugin npm dependencies
+        working-directory: atomic-plugins
+        run: |
+          for lock in integrations/*/pnpm-lock.yaml; do
+            [ -e "$lock" ] || continue
+            (cd "$(dirname "$lock")" && pnpm install --frozen-lockfile)
+          done
 
       - name: Download the server binary
         if: contains(matrix.tiers, 'live') || contains(matrix.tiers, 'e2e')

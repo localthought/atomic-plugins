@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Trivial demo Pets collection; no external provider",
+  "dependencies": {
+    "syncables": "0.18.0"
+  },
   "atomicCertification": {
     "owner": "Ontola",
     "support": "experimental",

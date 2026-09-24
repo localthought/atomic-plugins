@@ -51,9 +51,10 @@ stylesheet.
   OpenAPI document (`app/openapi.json`, the same file the mock proxy serves)
   and follows the `Link: rel="next"` pagination. The document's
   `crudResources` drives it, so there is no Pets-specific paging code.
-  `syncables/browser` is bundled from this repo's `syncables/src/browser.ts`
-  through an alias in `build.mjs`, `tsconfig.json` and `vitest.config.ts`,
-  not from npm.
+  `syncables/browser` is the published npm `syncables@0.18.0`, pinned in
+  `package.json` and `pnpm-lock.yaml` and installed with
+  `pnpm install --frozen-lockfile` in this folder; this repo's
+  `syncables/src/` is not bundled.
 - **Network.** Every request goes through the host's proxy relay,
   `store.proxy.request({ platform, connectionId, path, method, body })`
   (`app/transport.ts`). The top page holds the LocalThought connection (its

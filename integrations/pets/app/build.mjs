@@ -6,10 +6,9 @@
  *   node integrations/pets/app/build.mjs [--outfile path]
  *
  * Needs an atomic-server checkout's `browser/` beside `integrations/` (see
- * AGENTS.md), for esbuild. `syncables/browser` is bundled from this repo's
- * own `syncables/src/browser.ts` rather than from npm, so the app always
- * builds against the syncables in the same commit; switch the alias to the
- * published `syncables@^0.18.0` once a package.json dependency is wanted.
+ * AGENTS.md), for esbuild, and `pnpm install --frozen-lockfile` in
+ * integrations/pets/ for the npm `syncables` (pinned in package.json) that
+ * `syncables/browser` resolves to.
  * No code splitting and no CSS file: "a plugin in the drive is one module".
  */
 import { createHash } from 'node:crypto';
@@ -19,8 +18,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
-
-export const SYNCABLES_BROWSER = path('../../../syncables/src/browser.ts');
 
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
@@ -36,7 +33,6 @@ export async function build({ outfile } = {}) {
     legalComments: 'none',
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
-    alias: { 'syncables/browser': SYNCABLES_BROWSER },
     logLevel: 'silent',
   });
   const text = result.outputFiles[0].text;
