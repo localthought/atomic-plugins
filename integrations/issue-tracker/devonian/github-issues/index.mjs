@@ -22,6 +22,7 @@ export { Bridge } from './bridge.mjs';
 export * from './ports.mjs';
 export * from './proxy.mjs';
 export * from './background.mjs';
+export * from './review.mjs';
 export * from './target.mjs';
 export * from './adapter.ts';
 export * from './tracker-actions.ts';

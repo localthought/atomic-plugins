@@ -133,3 +133,57 @@ it('accepts async code storage, e.g. IndexedDB shared with a service worker', as
   expect(sent).toEqual(['Bearer first', 'Bearer next-1']);
   expect(idb.get('code')).toBe('next-2');
 });
+
+it('dispatches through a host relay without handling a code, and journals its writes', async () => {
+  const journal = {};
+  const sent = [];
+  let failure;
+  const call = proxyTransport({
+    url: 'https://proxy.example',
+    repository: 'owner/repo',
+    journal,
+    save: async () => {},
+    getCode: () => {
+      throw new Error('a relay never reads a code');
+    },
+    setCode: () => {
+      throw new Error('a relay never writes a code');
+    },
+    dispatch: async (path, init) => {
+      sent.push([init.method, path]);
+      if (failure) throw failure;
+
+      return { status: 200, body: '{"number":1}' };
+    },
+  });
+  await call('list_issues', { page: 2 }, 'read');
+  expect(sent[0]).toEqual([
+    'GET',
+    '/repos/owner/repo/issues?state=all&per_page=100&page=2&sort=created&direction=asc',
+  ]);
+  expect(journal).toEqual({});
+
+  // Refused by the host before anything left: not uncertain, may be retried.
+  failure = Object.assign(new Error('No github-issues connection'), {
+    notSent: true,
+  });
+  await expect(call('create_issue', { title: 'T' }, 'c1')).rejects.toThrow(
+    'No github-issues connection',
+  );
+  expect(journal).toEqual({});
+  failure = undefined;
+  await call('create_issue', { title: 'T' }, 'c1');
+  expect(journal.c1.receipt.status).toBe(200);
+
+  // Lost after it may have left: uncertain, never resent.
+  failure = new Error('The host did not answer proxy in time.');
+  await expect(
+    call('update_comment', { id: 5, body: 'x' }, 'u1'),
+  ).rejects.toThrow('Proxy request failed (The host did not answer');
+  failure = undefined;
+  const before = sent.length;
+  await expect(
+    call('update_comment', { id: 5, body: 'x' }, 'u1'),
+  ).rejects.toThrow('Uncertain GitHub write');
+  expect(sent.length).toBe(before);
+});
