@@ -121,19 +121,20 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
 
 Read from the pinned atomic-server, and reproduced by the e2e where noted.
 
-- **Stale reads after an app write** (reproduced). The host writes through
-  `/app-write`, but the page's store keeps its cached copy of the row, so a
-  second sync in the same page reads its own previous write as missing and
-  re-saves it (counted as "updated"). Harmless for this app's current
-  overwrite behaviour; the e2e reopens the app between syncs to avoid it.
-  Fixed on atomic-server branch `claude/app-write-refresh` (not yet a PR).
+- **Stale reads after an app write**: fixed at the current pin. Earlier
+  pins kept the page's pre-write copy of a row after an `/app-write`, so a
+  second sync in the same page re-saved its own last write. The pin
+  (`2f403624e`, with atomic-server#1690) re-reads a resource after an app
+  saves it; the e2e now runs "Sync now" twice in one page without reopening.
 - **Local-first reads on open** (reproduced, intermittently). The host
   reads memory, then its local database, then the server, so right after a
   reload the App can come back without settings saved moments before. The
   app subscribes to the App and, while it is still asking for settings,
   re-reads them when the host reports a change.
-- **`resource.remove()` does not reach the server.** view-client.js drops
-  the property locally and `save` only sets. Fixed on the same branch.
+- **Removing a value.** Earlier pins dropped `resource.remove()` in the
+  frame. The current pin sends it as an `/app-write` `remove`
+  (atomic-server#1690). This app does not remove values, so nothing here
+  verifies that path.
 - App writes are signed by the node that holds the app's key, so they work
   on one node only for now (#41).
 

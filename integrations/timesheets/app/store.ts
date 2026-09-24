@@ -12,10 +12,10 @@
  * `browser/data-browser/src/chunks/AppPage/hostStore.ts` at the pinned
  * atomic-server (`.atomic-server-ref`):
  * - `getApp()` resolves to the app's subject string, not an object.
- * - `resource.remove()` only drops the property from the local buffer;
- *   `save()` sends the remaining properties and the host sets each of them
- *   (`/app-write` `save` is a per-property set). A removed property is not
- *   removed on the server.
+ * - `save()` sends only the properties set since the last save, plus any
+ *   removed with `remove()`; the host writes the removals as an `/app-write`
+ *   `remove` and then sets the rest (atomic-server#1690). Afterwards the
+ *   host re-reads the resource, so the next `get` sees the write.
  * - `proxy` is the relay from atomic-server#1657 (for #1624): `request`,
  *   `connections` and `connect`. Feature-detected, never assumed.
  */

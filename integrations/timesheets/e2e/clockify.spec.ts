@@ -171,18 +171,6 @@ test.describe('timesheets drive app', () => {
     expect(starts.length).toBeGreaterThanOrEqual(3);
     expect(Date.parse(starts.at(-1)!)).toBeGreaterThan(Date.parse(starts[0]));
 
-    // Reopen before the next sync. At the pinned atomic-server the page's
-    // store keeps its pre-write copy of a row the app saved through
-    // `/app-write`, so a second sync in the same page reads the old name
-    // back and rewrites the row ("1 updated"). Fixed on atomic-server branch
-    // claude/app-write-refresh (hostStore refreshes after a save); drop this
-    // reopen once the pin has it.
-    await page.goto(appUrl);
-    await expect(status.filter({ hasText: 'Last synced' })).toContainText(
-      '0 created, 0 updated, 2 unchanged',
-      { timeout: 60_000 },
-    );
-
     // Widening to 30 days brings in the older entry, and only that one.
     await app.getByRole('button', { name: 'Change settings' }).click();
     await app

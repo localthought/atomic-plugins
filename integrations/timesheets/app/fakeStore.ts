@@ -2,13 +2,13 @@
 /**
  * An in-memory `PluginStore` for tests, shaped after view-client.js and
  * atomic-server's `/app-write`:
- * - resources buffer `set` until `save`; `save` is a per-property set, so a
- *   property dropped with `remove()` stays on the stored resource;
+ * - resources buffer `set` until `save`; `save` is a per-property set
+ *   (removals are not modelled: this app never removes a value);
  * - a write naming a property that is not a Property resource (or one of
  *   Atomic's own) fails, as `value_for` in `store_host.rs` does;
  * - `query` is a property/value match across the whole "drive";
  * - `create` defaults `parent` to the app.
- * `app()` builds what a new App has: the app, an ontology with a row class,
+ * It starts with what a new App has: the app, an ontology with a row class,
  * and a table of that class. Test-only; not bundled.
  */
 import { atomic } from './ontology.js';
