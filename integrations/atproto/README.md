@@ -1,87 +1,82 @@
-# AT Protocol
+# AT Protocol handle endpoint
 
-Status: **scaffold**. No protocol handler, listener or installable bundle is
-implemented here yet. CI checks the planning contract; a green lane is not
-protocol conformance or live verification. `plugin.json` is planning metadata,
-not a host installation manifest.
+Status: **implemented handle responder; no live interoperability evidence**.
+This dependency-free QuickJS module implements the HTTPS discovery half of
+[AT Protocol handle resolution](https://atproto.com/specs/handle). It is not
+a Personal Data Server, DID document publisher, OAuth service or firehose.
 
-## Scope
+`plugin.mjs` exports a real schema-version-3 manifest and `handle(ctx, request)`.
+The manifest uses `drive-host`, declares an anonymous GET/HEAD `/atproto-did`
+route, and claims `/.well-known/atproto-did` exclusively. The host's well-known
+registry dispatches the latter to that route. A configured GET returns HTTP 200,
+`Content-Type: text/plain`, and only the DID bytes. HEAD has identical metadata
+and an empty body. Requests perform no Atomic reads/writes or outbound calls.
 
-Serve a configured DID at `/.well-known/atproto-did` for one explicitly configured handle.
+## Configure and deploy
 
-This is the handle-only sandbox route (placement C, phase 1) assessed in the
-[accepted server route design](../../docs/design/server-plugin-routes.md#3-per-protocol-feasibility).
-The response reads already configured identity data; it does not resolve remote
-identities, write records, or make outbound requests during an inbound call.
-A bounded outbound public-record reader (placement B, phase 0) could be an
-independently useful future slice without public-route gates, but is not
-implemented or declared by this scaffold.
+Installation config:
 
-A full Personal Data Server (PDS) and its persistent WebSocket firehose are
-unsuitable for this QuickJS plugin. Signed repository storage, CAR export,
-OAuth and relay coordination belong to the separately assessed phase 4 PDS
-sidecar, with an optional client bridge. No native Rust code, Rust crate,
-sidecar implementation or persistent socket is added here.
-
-## Host requirements
-
-Target runtime: **QuickJS**, with JavaScript/TypeScript bundled to JavaScript.
-The sandbox starts fresh per invocation and cannot open sockets or load native
-Rust crates. Proposed capability: `http-routes`. This names a design dependency,
-not an existing plugin API or a claim that routes run at the current pin.
-
-The handle route depends on the phase 1 host work: gates, manifest v3 and
-install review, route registry and execution, and the exclusive `atproto-did`
-well-known dispatcher (AS-01 through AS-06, tracked in
-[atomic-server#1711](https://github.com/ontola/atomic-server/issues/1711)
-through [#1716](https://github.com/ontola/atomic-server/issues/1716)).
-Gated catalog and certification tooling also needs
-[atomic-plugins#134](https://github.com/ontola/atomic-plugins/issues/134)
-(AP-02), with the host dependencies merged and pinned. Coordinate the exclusive
-claim with the design's `well-known` package (AP-03); two Installations cannot
-own the same handle endpoint. A vanity handle needs the `drive-host` mount and
-drive-owner approval; an API-origin claim requires operator configuration.
-
-All three [public-route gates](../../docs/design/server-plugin-routes.md#0-gating-build-flag-runtime-switch-install-consent)
-are required: a host built with the Cargo feature `plugin-routes`, an operator
-runtime level of at least `read-only` via `--plugin-routes` or
-`ATOMIC_PLUGIN_ROUTES`, and explicit per-Installation consent. atomic.place
-builds exclude the feature. Read-only route execution must not perform writes
-or outbound requests. Until the host dependencies land and are pinned, this
-folder cannot expose a handle endpoint.
-
-## First interoperability milestone
-
-An independent AT Protocol identity resolver resolves one configured handle through its HTTPS well-known endpoint to the configured DID.
-
-Record the resolver implementation/version, configured handle, DID, command and
-result. Test that conflicting exclusive claims are refused, unconfigured
-handles do not leak a DID, and closing any gate prevents public resolution.
-Use a public test hostname and a test identity whose DID document confirms the
-handle, so the resolver can complete identity verification. This milestone does
-not establish PDS compatibility, record round trips or firehose support.
-
-## Implementation checklist
-
-- [ ] Pin the phase 1 host dependencies and gated certification tooling.
-- [ ] Define the handle/DID configuration and exclusive-claim ownership alongside AP-03.
-- [ ] Implement the bounded anonymous read-only route and host installation manifest.
-- [ ] Add fixtures for configured and unconfigured handles, invalid configuration,
-      claim collisions and every closed-gate refusal.
-- [ ] Add executable route and sandbox tests before replacing the contract tier
-      or changing the status to `implemented`.
-- [ ] Record independent resolver evidence before marking a capability verified.
-
-## CI
-
-From the repository root:
-
-```sh
-node integrations/tooling/run-lane.mjs atproto --tier contract
+```json
+{
+  "handle": "user.example.com",
+  "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz"
+}
 ```
 
-The `Lane: atproto (contract)` lane validates `plugin.json`, this README and
-checks that this scaffold stays explicitly unimplemented. It needs no provider
-platform, browser installation or running host. Add executable implementation
-checks in this folder when the route becomes available; this planning lane
-alone is not protocol certification.
+Use your actual identity and hostname; the values above are examples. Handles
+are normalized to lowercase and validated as production DNS names, bounded to
+253 characters. Reserved suffixes, whitespace, IP addresses and invalid labels
+are rejected. DID validation accepts 24-character lowercase base32 `did:plc`
+identifiers and production hostname-only `did:web` identifiers. Other methods,
+paths, ports, query/fragment suffixes and injection strings are rejected. This
+checks syntax, not DID existence or ownership. See the
+[AT Protocol DID rules](https://atproto.com/specs/did).
+
+Deploy only on a drive whose **sole approved hostname matches `config.handle`**,
+with public HTTPS on port 443. The inspected host
+`35504494261f59e922e79d536fd437954451e6a3` binds routes to drive hostnames and
+requires drive-owner approval for the exclusive claim. It requires the
+`plugin-routes` build feature, the operator's `--plugin-routes read-only` switch,
+and installation consent. A competing claim belongs to host registry conflict
+handling; this plugin cannot override it. atomic.place needs those gates too.
+
+**Current host limitation:** `route_exec.rs` passes path/wellKnown/method but
+neither URL nor authority, and filters Host headers. Consequently the plugin
+cannot compare the incoming hostname against the configured handle. All approved
+hostnames on the same drive receive the same DID. Do not install on a multi-host
+drive expecting per-host identities. Strict per-request matching needs a trusted
+host authority field in a future host change. Origin, forwarded headers and
+query parameters are deliberately not treated as host identity.
+
+Configure the DID document at its authoritative publisher to link back to
+`at://<handle>` and independently verify it. This responder supplies only the
+handle-to-DID direction; clients must verify the reverse direction before
+trusting the identity. DID signing keys and PDS records remain outside this
+plugin.
+
+## Failures and limits
+
+Missing or invalid config returns generic 503 without reflecting config data.
+Other routes/paths/well-known names return 404. Unsupported methods return 405
+(defense in depth: the host manifest restricts methods before execution).
+All responses are `no-store`, so an identity change does not retain a plugin
+cache lifetime. No redirects or dynamic headers contain configuration values.
+`run(ctx)` validates config and returns no intents.
+
+## Build and CI
+
+```sh
+node integrations/atproto/build.mjs
+node integrations/tooling/run-lane.mjs atproto --tier node
+```
+
+The build produces `integrations/atproto/dist/plugin.js` and `manifest.json`.
+It copies the self-contained module verbatim; no Node dependency reaches the
+QuickJS payload. Twelve Node tests exercise the host manifest/request shape,
+GET/HEAD, exact DID bytes, dispatch mismatch, invalid configuration, method
+refusal, hostile headers, production handle/DID syntax, and reproducible builds.
+The build test executes the emitted ESM as well as checking its manifest.
+
+No live QuickJS or Atomic HTTP deployment, gate/claim collision integration test,
+or independent public resolver has been run. Record the resolver version, test
+hostname, DID and bidirectional result before claiming live verification.

@@ -39,8 +39,9 @@
       "id": "atproto",
       "index": 12,
       "platforms": [],
-      "tiers": ["contract"],
-      "note": "Planning contract for a QuickJS handle-to-DID route; no protocol implementation or live interoperability is claimed."
+      "tiers": ["node"],
+      "nodeTests": ["integrations/atproto/plugin.test.mjs"],
+      "note": "Executable QuickJS handle-to-DID route checks and reproducible bundle; no live resolver verification."
     },
     {
       "id": "money",
