@@ -242,3 +242,10 @@ test('only a run with a pluginRoutes lane asks for the plugin-routes build', () 
   assert.equal(needsPluginRoutesBuild(both, ['shared']), true);
   assert.equal(needsPluginRoutesBuild(both, []), false);
 });
+
+test('the plugin-routes lane runs its e2e at off and read-only', () => {
+  const routes = config.lanes.find(l => l.id === 'plugin-routes');
+  assert.deepEqual(pluginRoutesLevels(routes), ['off', 'read-only']);
+  assert.equal(laneDir(routes), 'integrations/tooling');
+  assert.deepEqual(routes.platforms, []);
+});

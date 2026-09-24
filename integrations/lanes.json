@@ -75,6 +75,16 @@
       "tiers": ["typecheck", "unit", "e2e"],
       "note": "Willow drop importer (#139), a sandbox job like money: no provider, so no mock proxy (platforms is empty). typecheck and unit are lane tiers rather than certify.mjs's, because certification requires named atomic-server sandbox tests that do not exist for this package; the unit tier also checks that the committed plugin.js is a fresh esbuild bundle. The e2e publishes the bundle and imports fixture drops through the host's generic file entry point (atomic-server#1653, in the pin), so the QuickJS sandbox runs the Ed25519 and WILLIAM3 code and a binary file crosses the text-only hand-over. The fixtures come from willow25 (fixtures/generate/), which CI does not run.",
       "e2e": ["integrations/willow-drop/e2e/willow-drop.spec.ts"]
+    },
+    {
+      "id": "plugin-routes",
+      "index": 8,
+      "dir": "integrations/tooling",
+      "platforms": [],
+      "tiers": ["e2e"],
+      "pluginRoutes": ["off", "read-only"],
+      "note": "A tooling lane (#134), not a plugin: it owns integrations/tooling/ (`dir`), and tests the gates of docs/design/server-plugin-routes.md section 0 against atomic-server built with the `plugin-routes` feature (atomic-server#1726, #1732). pluginRoutes runs the e2e twice, at `--plugin-routes off` and `read-only`, on a fresh server each time. The spec publishes the gated fixture plugin (integrations/tooling/fixtures/gated-plugin/), checks the `requires` and `hostFeatures` /plugin-catalog reports, and that pinning it is refused with host-feature-unavailable at off and allowed at read-only. It does not request a route: no host serves routes yet (AS-04/AS-05). Needs an .atomic-server-ref that includes #1726 and #1732; an older pin can't build the feature.",
+      "e2e": ["integrations/tooling/e2e/plugin-routes.spec.ts"]
     }
   ]
 }
