@@ -178,7 +178,7 @@ export async function applyCalendarEdit(
   await check();
 
   if (Object.keys(edit.patch).length) {
-    const response = await request(`${edit.path}?sendUpdates=all`, {
+    const response = await request(`${edit.path}?sendUpdates=none`, {
       method: 'PATCH',
       body: JSON.stringify(edit.patch),
       ifMatch: edit.etag,

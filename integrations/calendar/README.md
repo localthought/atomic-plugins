@@ -110,9 +110,12 @@ Declared, not live-verified (see _Verification_):
   stops sending the rest of the batch. It does not retry. The next refresh
   asks to reconnect, and the preview after that shows what Google has: if the
   change landed, the event simply agrees.
-- **Notifications.** Writes use `sendUpdates=all`, as `adapter.ts` always
-  has, so Google may notify guests. The review sheet says so. Switching to
-  `none` is an open decision (design #89, §11 decision 3).
+- **Notifications.** Writes use `sendUpdates=none` (`adapter.ts`, and the
+  Devonian write-back in `devonian/google-calendar/sync.ts`), so guests are
+  not emailed about edits made through the app. The review sheet says so;
+  notify guests from Google if an edit should reach them. This settles
+  design #89, §11 decision 3. `app/sync.test.ts`, `adapter.test.ts` and
+  `devonian/google-calendar/sync.test.ts` assert the query parameter.
 - **Out of scope** (separate work, per #101): creating and deleting events,
   editing recurring events, attendees, reminders, conferencing data, and
   multi-calendar product design.
