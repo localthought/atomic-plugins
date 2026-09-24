@@ -93,6 +93,42 @@ suite('classify and banner: DESIGN.md §5.12', () => {
     expect(status(429, { retryAfter: '12.2' }).retryAfter).toBe(13);
   });
 
+  it('maps the integration proxy’s refusals (relay.ts) to reconnect or refused', () => {
+    expect(
+      classify(
+        new Error(
+          'The integration proxy refused this connection (not_delegated: x). Connect again.',
+        ),
+      ).kind,
+    ).toBe('reauth');
+    expect(
+      classify(
+        new Error(
+          'The integration proxy refused the request (capability_expired: x).',
+        ),
+      ).kind,
+    ).toBe('reauth');
+    const refused = classify(
+      new Error('The integration proxy refused the request (bad_signature).'),
+    );
+    expect(refused.kind).toBe('refused');
+    expect(banner(refused)).toMatchObject({
+      role: 'alert',
+      title: 'The integration proxy refused this request.',
+      body: 'Google was not asked. Nothing here was changed.',
+    });
+  });
+
+  it('a delegation revoked at the proxy shows Reconnect needed', async () => {
+    const { controller, store } = await imported();
+    store.revoke('c1');
+    await controller.refresh();
+    const state = controller.state();
+    if (state.kind !== 'error') throw new Error(state.kind);
+    expect(state.problem.kind).toBe('reauth');
+    expect(pill(controller.snapshot()).text).toBe('Reconnect needed');
+  });
+
   it('only 401 and 403 are alerts', () => {
     for (const n of [404, 429, 500])
       expect(banner(status(n)).role).toBe('status');

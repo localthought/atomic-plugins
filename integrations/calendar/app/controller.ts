@@ -44,6 +44,8 @@ export interface Problem {
     | 'network'
     | 'too-many-events'
     | 'uncertain'
+    /** The integration proxy itself refused, before Google was asked. */
+    | 'refused'
     | 'other';
   /** The raw message, shown under "Details". */
   message: string;
@@ -161,8 +163,19 @@ export function classify(error: unknown): Problem {
   const base = { message: text, ...(status ? { status } : {}) };
   if (/may or may not have applied/.test(text))
     return { kind: 'uncertain', ...base };
-  if (e.reconnect === true || spent(error) || status === 401)
+  if (
+    e.reconnect === true ||
+    spent(error) ||
+    status === 401 ||
+    // Proxy refusals relay.ts reports without "Connect again": a capability
+    // that ran out even after the frame's own retry, or a retired scheme.
+    /refused the request \((capability_expired|unsupported_authorization)\b/.test(
+      text,
+    )
+  )
     return { kind: 'reauth', ...base };
+  if (/The integration proxy refused/.test(text))
+    return { kind: 'refused', ...base };
   if (status === 403) return { kind: 'forbidden', ...base };
   if (status === 404 || status === 410) return { kind: 'not-found', ...base };
 
@@ -263,6 +276,14 @@ export function banner(
         title: 'Google may or may not have applied the last change.',
         body: 'The rest were not sent. Sync to see what Google has now.',
         action: { label: 'Sync now', does: 'retry' },
+      };
+    case 'refused':
+      return {
+        tone: 'neg',
+        role: 'alert',
+        title: 'The integration proxy refused this request.',
+        body: `Google was not asked. ${UNCHANGED}`,
+        action: { label: 'Retry', does: 'retry' },
       };
     case 'other':
       return {
