@@ -57,7 +57,7 @@ Screenshots are tracked in
 | 🗓️ **Google Calendar** (Devonian) | Import single (non-recurring) Google Calendar events into calendar views, and preview edits to send back. | Mapping and lens libraries, no host | [`integrations/calendar/`](integrations/calendar/) | [#101](https://github.com/ontola/atomic-plugins/issues/101) |
 | ✅ **Todoist** (Devonian) | Bring Todoist projects and active tasks into a local issue tracker. Read only. | Projection library, no host | [`integrations/issue-tracker/`](integrations/issue-tracker/) | [#99](https://github.com/ontola/atomic-plugins/issues/99) |
 | 🐙 **GitHub issues** (Devonian lens) | Maps GitHub issues and comments to and from Atomic issue-tracker resources. No catalog card. | Lens and bridge libraries, no host since atomic-server#1612 | [`integrations/issue-tracker/devonian/github-issues/`](integrations/issue-tracker/devonian/github-issues/) | [#100](https://github.com/ontola/atomic-plugins/issues/100) |
-| 🐦 **Moneybird** | Import a Moneybird administration's bookkeeping records into typed tables. Read only. | Catalog entry and overlay only; no package here | — | [#102](https://github.com/ontola/atomic-plugins/issues/102) |
+| 🐦 **Moneybird** | Import the contacts of one Moneybird administration, read-only. | Contacts-only drive app over the host relay; tested on a synthetic fixture only | [`integrations/money/moneybird/`](integrations/money/moneybird/) | [#102](https://github.com/ontola/atomic-plugins/issues/102), [#94](https://github.com/ontola/atomic-plugins/issues/94) |
 
 Images will go in `docs/screenshots/<plugin>.png`, taken at 1280×800 in the
 light theme against the pinned atomic-server commit, with synthetic data only.

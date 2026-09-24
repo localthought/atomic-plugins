@@ -401,17 +401,15 @@ Rules that keep parallel worktrees from fighting:
   `certify.mjs --layer js` in `shared-checks` already runs exactly
   `tsc -p integrations/money/tsconfig.json` and
   `vitest run --config integrations/money/vitest.config.ts`, plus bundle
-  reproducibility, on every `integrations/**` change. The lane names
-  `moneybird`, but nothing in `integrations/money/` runs Moneybird code; the
-  `moneybird` entry in `catalog.json` (`requires-api-plugins`) is read by
-  atomic-server's generic API-plugin path. A Moneybird fixture and its
-  recorder go in `integrations/money/fixtures/moneybird/`, not
-  `integrations/localthought/fixtures/`: anything specific to one plugin
-  stays in that plugin's folder. The shared registry,
-  `integrations/localthought/fixtures/index.mjs`, then registers it as
-  `moneybird` by importing `../../money/fixtures/moneybird/scenario.mjs`.
-  Recording one needs a Moneybird account.
-- `todoist` and `moneybird` have no mock fixture, so a lane that names them
-  gets a mock proxy serving only its other platforms (possibly none).
-  Recording them needs live credentials; see §4. `notion` needs none: both
+  reproducibility, on every `integrations/**` change. The same tier runs
+  `moneybird.spec.ts` (#102): the read-only Moneybird contacts drive app in
+  `integrations/money/moneybird/`, against the `moneybird` mock fixture in
+  `integrations/money/fixtures/moneybird/`, registered in
+  `integrations/localthought/fixtures/index.mjs`. That fixture is
+  **synthetic** (hand-written from the public OpenAPI document), not
+  recorded: §4's "enforced, not asserted" rule is not met for it until
+  someone with a Moneybird account records one.
+- `todoist` has no mock fixture, so a lane that names it gets a mock proxy
+  serving only its other platforms (possibly none); `moneybird` has a
+  synthetic one (see above). Recording either needs live credentials; see §4. `notion` needs none: both
   its tiers stub their own proxy (#47).
