@@ -46,10 +46,25 @@ Live account data must never be checked into fixtures.
 
 `app/` is the replacement for the LocalThought extension path above:
 Clockify as an Atomic **App** ("drive plugin"). `app/build.mjs` bundles it
-into one ES module (`app/dist/ui.js`, about 52 KB unminified, no imports) that exports
-only `view({ root, store })`; the host stores it as the App's entry-point
-source and runs it in a null-origin, `allow-scripts`-only iframe
-(`plugin_ui.rs`). Plain DOM, no framework, no stylesheet.
+into one minified ES module (`app/dist/ui.js`, about 89 KB, no imports) that
+exports only `view({ root, store })`; the host stores it as the App's
+entry-point source and runs it in a null-origin, `allow-scripts`-only iframe
+(`plugin_ui.rs`). Plain DOM, no framework; one `<style>` element injected
+into the view root.
+
+- **Views** (#89, design on branch `claude/design-timesheets`). `app/ui/`
+  renders the design's frames from `controller.ts`'s state and a
+  `Timesheet` (`app/model/types.ts`) built from the observation log's
+  mirror (`app/model/source.ts`), never from the table's rows: Week grid
+  (project × day), Entries (by day), Projects (the whole window), a
+  read-only entry drawer, the settings sheet, and the set-up, empty and
+  error states. Below 560px of frame width the week becomes a strip of day
+  tabs. `app/ui/theme.ts` maps every `--pl-*` token from the host's
+  `--t-*` theme variables, so dark mode is the host's. `app/ui/theme.ts`,
+  `components.ts` and `dom.ts` know nothing of Clockify: shared-kit
+  candidates. View, week and open entry live in memory only.
+  `app/ui/preview.ts` renders every frame from the mockup's sample data
+  for the DOM tests and the e2e's screenshot and axe pass.
 
 - **Connecting.** "Connect Clockify" calls
   `store.proxy.connect({ platform: 'clockify' })`. The host, not the frame,
@@ -265,8 +280,10 @@ Read from the pinned atomic-server, and reproduced by the e2e where noted.
    with its entry point, table and ontology, without the test-side
    `setAppSource` the e2e uses.
 2. **Disconnect**: there is no `store.proxy.disconnect()` in the host
-   contract.
-3. **The designed UI** (week grid, entries, projects; branch
-   `claude/design-timesheets`, #89).
+   contract. The settings sheet offers Disconnect only when the host has
+   one, and says so otherwise.
+3. **Links out of the frame**: the sandbox has no `allow-popups`, so the
+   drawer's "Open Clockify" (`target=_blank`) is blocked, and there is no
+   host call to open the row in Atomic, so that link is left out.
 4. **Removal** of the LocalThought-extension Clockify path in
    `data-browser`, and pruning `localthought.ts` to what `app/` imports.
