@@ -18,13 +18,14 @@
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],
-      "tiers": ["unit"],
+      "tiers": ["unit", "e2e"],
       "paths": [
         "devonian/src/**",
         "devonian/package.json",
         "devonian/pnpm-lock.yaml"
       ],
-      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here."
+      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here. The e2e drives the GitHub issues drive app (app/, npm devonian from app/package.json) through the host's proxy relay (atomic-server#1657, in the pin) against the mock proxy's seeded atomic-fixture/tracker repository.",
+      "e2e": ["integrations/issue-tracker/e2e/issue-tracker.spec.ts"]
     },
     {
       "id": "localthought",

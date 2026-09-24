@@ -11,6 +11,11 @@ export default {
       // the same way timesheets aliased its lens. devonian's own dependencies
       // must be installed (`pnpm install` in devonian/; ci.yml's lane job
       // does it).
+      // The drive app (app/) imports the `devonian/atomic` subpath. Same
+      // source, so the app's tests and the lens's agree; app/build.mjs
+      // bundles the npm package (app/package.json) instead. Listed before
+      // `devonian`, which would otherwise match it as a prefix.
+      'devonian/atomic': at('../../devonian/src/atomic/index.ts'),
       devonian: at('../../devonian/src/main.ts'),
       // devonian's @tomic/lib peer, and the host modules the lens was written
       // against (its consumer used to supply them), resolve to the symlinked
@@ -37,6 +42,6 @@ export default {
     },
   },
   test: {
-    include: ['*.test.ts', 'devonian/**/*.test.{ts,mjs}'],
+    include: ['*.test.ts', 'app/*.test.ts', 'devonian/**/*.test.{ts,mjs}'],
   },
 };

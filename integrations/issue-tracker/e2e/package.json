@@ -1,0 +1,5 @@
+{
+  "//": "Only so Playwright loads this folder's spec as an ES module (it imports ../app/build.mjs, which uses import.meta). issue-tracker has no package.json of its own: certify.mjs would treat one as a sandbox package.",
+  "private": true,
+  "type": "module"
+}

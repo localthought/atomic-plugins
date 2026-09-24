@@ -1,0 +1,24 @@
+{
+  // The drive app only. Kept apart from ../tsconfig.json, which notion's
+  // tsconfig extends: `allowJs` here (for the lens's .mjs modules, read but
+  // not checked) must not change notion's typecheck. Run through
+  // build.test.ts, or directly:
+  //   browser/node_modules/.bin/tsc -p integrations/issue-tracker/app/tsconfig.json
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "lib": ["ES2023", "DOM"],
+    "baseUrl": ".",
+    "paths": {
+      // `devonian` comes from npm (package.json here); its optional
+      // @tomic/lib peer is not installed, so it resolves to the checkout.
+      "@tomic/lib": ["../../../browser/lib/src/index.ts"],
+      "@integration-host/plugin-reconcile": [
+        "../../../browser/lib/src/plugin-reconcile.ts"
+      ]
+    }
+  },
+  "include": ["*.ts"],
+  "exclude": ["*.test.ts", "fakeStore.ts"]
+}

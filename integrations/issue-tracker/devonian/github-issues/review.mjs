@@ -28,7 +28,8 @@ export function proposalKey(entity, id, value) {
 export function reviewGate(port, approved = new Set()) {
   const check = (entity, id, value) => {
     const key = proposalKey(entity, id, value);
-    if (!approved.has(key)) throw new ReviewRequired({ key, entity, id, value });
+    if (!approved.has(key))
+      throw new ReviewRequired({ key, entity, id, value });
   };
 
   return {

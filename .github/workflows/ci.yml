@@ -323,10 +323,13 @@ jobs:
       # pnpm-lock.yaml and has them installed in its own folder, so the
       # certification below typechecks, tests and builds against exactly
       # those versions. Every lockfile, not a list: nothing to keep in sync.
+      # A drive app whose plugin folder is not a certified sandbox package
+      # (issue-tracker) keeps its lockfile in app/, where certify.mjs does not
+      # look for a package.json.
       - name: Install plugin npm dependencies
         working-directory: atomic-plugins
         run: |
-          for lock in integrations/*/pnpm-lock.yaml; do
+          for lock in integrations/*/pnpm-lock.yaml integrations/*/app/pnpm-lock.yaml; do
             [ -e "$lock" ] || continue
             (cd "$(dirname "$lock")" && pnpm install --frozen-lockfile)
           done
@@ -446,7 +449,7 @@ jobs:
       - name: Install plugin npm dependencies
         working-directory: atomic-plugins
         run: |
-          for lock in integrations/*/pnpm-lock.yaml; do
+          for lock in integrations/*/pnpm-lock.yaml integrations/*/app/pnpm-lock.yaml; do
             [ -e "$lock" ] || continue
             (cd "$(dirname "$lock")" && pnpm install --frozen-lockfile)
           done

@@ -262,7 +262,7 @@ it('resolves a same-field conflict in favour of either side and keeps other edit
   await f.open().resolveConflict(again.subject, 'local');
   await f.open().sync();
   expect(f.remote.rows.get(1).value.title).toBe('Mine');
-  await expect(
-    f.open().resolveConflict(again.subject, 'both'),
-  ).rejects.toThrow('Keep either');
+  await expect(f.open().resolveConflict(again.subject, 'both')).rejects.toThrow(
+    'Keep either',
+  );
 });

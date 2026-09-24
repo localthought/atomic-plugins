@@ -102,7 +102,7 @@ export class Bridge {
       // A held write never sent anything (the gate throws before any
       // request), so it is planned again from both sides' current state.
       if (record.pending?.held) delete record.pending;
-      else if (record.pending) await this.attempt(subject, record);
+      else if (record.pending) await this.attempt(subject, record, true);
     }
 
     await this.syncEntity('issue');
@@ -120,14 +120,23 @@ export class Bridge {
     }
   }
 
-  /** `finish`, except that a write held for review is recorded, not thrown. */
-  async attempt(subject, record) {
+  /**
+   * `finish`, except that a write held for review is recorded, not thrown.
+   * A saved operation that is held when it resumes had been let through
+   * before and may have reached the provider (its response was lost): the
+   * record stays `unconfirmed` until an operation on it completes, so a
+   * reviewer is told. Creates keep their provider key across re-planning,
+   * so the transport's journal still refuses to resend those.
+   */
+  async attempt(subject, record, resumed = false) {
     try {
       await this.finish(subject, record);
+      delete record.unconfirmed;
       this.held.delete(subject);
     } catch (error) {
       if (error?.name !== 'ReviewRequired') throw error;
       record.pending.held = true;
+      if (resumed) record.unconfirmed = true;
       await this.checkpoint();
       this.held.set(subject, {
         subject,
@@ -136,6 +145,7 @@ export class Bridge {
         before: copy(record.pending.remote),
         after: copy(record.pending.desired),
         key: error.proposal?.key,
+        ...(record.unconfirmed ? { unconfirmed: true } : {}),
       });
     }
   }
@@ -158,7 +168,8 @@ export class Bridge {
 
     for (const side of ['local', 'remote']) {
       const id = this.id(side, record.entity, subject);
-      if (id === undefined) throw new Error(`Missing ${side} record: ${subject}`);
+      if (id === undefined)
+        throw new Error(`Missing ${side} record: ${subject}`);
       rows[side] = await this[side].get(
         record.entity,
         id,

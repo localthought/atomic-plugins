@@ -1,0 +1,10 @@
+{
+  "name": "@atomic-integrations/issue-tracker-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "GitHub issues drive app: bundles the npm devonian package into app/dist/ui.js. Not a certified sandbox package (no atomicCertification); it lives in app/ so certify.mjs does not treat issue-tracker as one.",
+  "dependencies": {
+    "devonian": "0.7.0"
+  }
+}

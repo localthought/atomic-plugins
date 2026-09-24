@@ -265,10 +265,28 @@ share a bridge snapshot or write journal.
 
 ### Host integration
 
-This lens has no host at the moment. atomic-server's browser demo
-(`DevonianDemo/demo.mjs` and `DevonianDemoRoute.tsx`) was removed in
-ontola/atomic-server#1612, and nothing in atomic-server imports devonian now.
-A future host that targets the user's real drive would:
+The current host is the issue-tracker **drive app**
+([`../../app/`](../../app/), see the plugin README's "Drive app"). It runs
+this Bridge unchanged in the host's null-origin frame:
+
+- `proxyTransport` with `dispatch` over the host relay
+  (`store.proxy.request`), so the frame never holds a connection code.
+- `AtomicPort` over an adapter (`app/frameStore.ts`) that gives the frame's
+  `PluginStore` the store predicates `target.mjs` reads, and corrects for
+  the host's reads lagging the app's own writes.
+- Snapshot and journal as JSON text on a resource in the app's own subtree,
+  not IndexedDB (a null-origin frame has none), so neither
+  `provisionTracker`/`buildTable` nor `trackerStateKey` nor `background.mjs`
+  is used there: the app creates its columns itself, one app is one
+  repository, and it syncs only while open.
+- `reviewGate` (`review.mjs`) in front of the GitHub port: provider writes
+  wait for a person's approval, and `bridge.held` lists them.
+  `Bridge.resolveConflict(subject, keep)` settles a same-field conflict.
+
+atomic-server's earlier browser demo (`DevonianDemo/demo.mjs` and
+`DevonianDemoRoute.tsx`) was removed in ontola/atomic-server#1612. A
+data-browser host that targets the user's real drive directly, with
+IndexedDB, would still:
 
 - Call `provisionTracker` on an existing drive, such as `store.getDrive()`,
   instead of creating a new drive and calling `registerLocalOnlyDrive`.
@@ -277,6 +295,27 @@ A future host that targets the user's real drive would:
 
 The earlier demo's design notes are in atomic-server's
 `planning/devonian-reconnect.md`.
+
+### Review and recovery (`review.mjs`, `Bridge`)
+
+- `reviewGate(port, approved)` wraps a provider port. `create`/`update`
+  throw `ReviewRequired` before any request unless
+  `proposalKey(entity, id, value)` is in `approved`. The key covers the
+  content, so an approval survives re-planning but not an edit.
+- `Bridge.sync()` records a held write in `bridge.held` (subject, entity,
+  remote id, before/after) and carries on with the rest of the pass. A held
+  write never sent anything, so the next pass plans it again from both
+  sides. A saved operation that is held when it resumes was let through
+  before and may have reached the provider: it is flagged `unconfirmed`.
+  Creates keep their provider key across re-planning, so the journal still
+  refuses to resend one whose response was lost.
+- Conflict errors carry `subject`, `entity` and `fields`.
+  `resolveConflict(subject, 'local' | 'remote')` moves only those fields'
+  baseline to the other side's current value, writes nothing, and lets the
+  next pass carry the kept side over.
+- `proxyTransport`'s `dispatch` errors keep the host's message. Only an
+  error marked `notSent` drops the journal entry; anything else leaves the
+  write uncertain.
 
 ### Not yet verified or supported
 
