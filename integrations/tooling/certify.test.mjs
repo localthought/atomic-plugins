@@ -18,8 +18,18 @@ import {
   evaluateJs,
   evaluateRust,
   formatFailureSummary,
+  parseArgs,
   summarizeFailure,
 } from './certify.mjs';
+test('the js layer is the default; sandbox and all stay selectable', () => {
+  assert.equal(parseArgs([]).layer, 'js');
+  assert.equal(parseArgs(['--integration', 'notion']).layer, 'js');
+  assert.equal(parseArgs(['--integration', 'notion']).only, 'notion');
+  assert.equal(parseArgs(['--layer', 'all']).layer, 'all');
+  assert.equal(parseArgs(['--layer', 'sandbox']).layer, 'sandbox');
+  assert.throws(() => parseArgs(['--layer']), /--layer defaults to js/);
+  assert.throws(() => parseArgs(['--bogus', 'x']), /Usage/);
+});
 test('zero executed tests cannot certify an integration', () => {
   assert.equal(
     evaluateJs({ success: true, numPassedTests: 0, numFailedTests: 0 }),

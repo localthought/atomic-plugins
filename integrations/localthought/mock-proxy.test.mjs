@@ -320,7 +320,7 @@ test('google-calendar: If-Match reaches the fixture, ETag comes back, CORS allow
     const event = await call('GET', '/calendars/primary/events/timed');
     assert.equal(event.status, 200);
     assert.equal(event.etag, event.body.etag);
-    const path = '/calendars/primary/events/timed?sendUpdates=all';
+    const path = '/calendars/primary/events/timed?sendUpdates=none';
     const patch = { summary: 'Renamed' };
     assert.equal((await call('PATCH', path, { body: patch })).status, 428);
     assert.equal(

@@ -210,7 +210,8 @@ fields with `If-Match`; a changed Google ETag blocks the write. Successful write
 checkpoint the baseline. After a lost checkpoint, preview acknowledges matching
 Google values without another PATCH. Uncertain transport requires reconnection.
 Partial batches retain completed checkpoints and must be previewed again.
-Google guest notifications are enabled (`sendUpdates=all`).
+Writes are sent with `sendUpdates=none`: guests are not emailed about edits
+made through the app. Notify them from Google if an edit should reach them.
 
 New events, deletion, recurrence rules, guests/RSVP, reminders and conferencing
 remain managed in Google. Change Start/End together for timed/all-day conversions;

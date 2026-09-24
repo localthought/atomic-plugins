@@ -1,6 +1,8 @@
 // @wc-ignore-file
 import { describe, it, expect } from 'vitest';
 import {
+  applyEdit,
+  endpoint,
   preview,
   project,
   planEdit,
@@ -155,5 +157,25 @@ describe('Google Calendar package', () => {
     const edit = planEdit('e1', desired, remote)!;
     expect(edit.patch).toEqual({ summary: 'After' });
     expect(planEdit('e1', remote, remote)).toBeUndefined();
+  });
+
+  it('writes edits without emailing guests about them', async () => {
+    const urls: string[] = [];
+    await applyEdit(
+      {
+        read: async intent => {
+          urls.push(intent.url);
+
+          return { status: 200, body: JSON.stringify(timed('e1')) };
+        },
+        cards: async () => [],
+        state: async () => ({ revision: 0, records: {}, cursor: null }),
+      },
+      endpoint('primary'),
+      { id: 'e1', patch: { summary: 'After' } },
+      '"e1"',
+    );
+    expect(urls).toHaveLength(1);
+    expect(new URL(urls[0]).searchParams.get('sendUpdates')).toBe('none');
   });
 });

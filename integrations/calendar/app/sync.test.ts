@@ -232,7 +232,7 @@ suite('Calendar drive app: supported path', () => {
     const patch = store.calls.find(c => c.method === 'PATCH')!;
     expect(patch).toMatchObject({
       path: '/calendar/v3/calendars/synthetic%40example.com/events/timed',
-      query: { sendUpdates: 'all' },
+      query: { sendUpdates: 'none' },
       ifMatch: etag,
       body: JSON.stringify({ summary: 'Renamed here' }),
     });

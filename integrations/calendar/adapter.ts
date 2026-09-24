@@ -460,7 +460,7 @@ export async function applyEdit(
     request(
       'update',
       'PATCH',
-      `${root}/${encodeURIComponent(edit.id)}?sendUpdates=all`,
+      `${root}/${encodeURIComponent(edit.id)}?sendUpdates=none`,
       'write',
       edit.patch,
       etag,

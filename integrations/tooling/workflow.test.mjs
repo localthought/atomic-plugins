@@ -2,7 +2,8 @@
  * The `ci` job in .github/workflows/ci.yml is the single context the branch
  * ruleset requires, and it can only speak for jobs it lists in `needs`. A job
  * added later and not wired in would fail while `CI` still reported success —
- * a green gate over a red run. This asserts it stays exhaustive.
+ * a green gate over a red run. This asserts it stays exhaustive, apart from
+ * the jobs listed in NON_BLOCKING, each with its reason.
  *
  * Parsed with regexes rather than a YAML library: this repo's tooling tests
  * run on plain `node --test` with no dependencies of their own.
@@ -63,16 +64,42 @@ function needsOf(lines, job) {
   return needs;
 }
 
+/**
+ * Jobs the gate deliberately does not wait for, each with the reason a failure
+ * in it cannot make a green gate wrong. Keep this list short and explicit.
+ */
+const NON_BLOCKING = {
+  // Only warms the per-pin image cache. build-server falls back to a source
+  // build when the image is missing, so a failed publish costs time on later
+  // runs, never correctness; waiting for it would hold the gate ~15 minutes.
+  'publish-image': 'build-server falls back to a source build',
+};
+
 test('the ci gate depends on every other job', () => {
   const jobs = jobNames(workflow);
   assert.ok(jobs.includes('ci'), 'no ci job found');
   const needs = needsOf(workflow, 'ci');
-  const uncovered = jobs.filter(j => j !== 'ci' && !needs.includes(j));
+  const uncovered = jobs.filter(
+    j => j !== 'ci' && !needs.includes(j) && !(j in NON_BLOCKING),
+  );
   assert.deepEqual(
     uncovered,
     [],
     "add these to the ci job's needs, or a failure in them reports green",
   );
+});
+
+test('each non-blocking exception is a real job the gate does not wait for', () => {
+  const jobs = jobNames(workflow);
+  const needs = needsOf(workflow, 'ci');
+
+  for (const job of Object.keys(NON_BLOCKING)) {
+    assert.ok(jobs.includes(job), `NON_BLOCKING names "${job}", not a job`);
+    assert.ok(
+      !needs.includes(job),
+      `"${job}" is in ci's needs; drop it from NON_BLOCKING or from needs`,
+    );
+  }
 });
 
 test('every job the ci gate names exists', () => {

@@ -166,7 +166,7 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
         el('h2', 'Review changes before sending'),
         el(
           'p',
-          'Only these fields are sent, and only if the event hasn’t changed in Google since this preview. Guests on these events may be notified by Google.',
+          'Only these fields are sent, and only if the event hasn’t changed in Google since this preview. Guests on these events are not emailed about these changes.',
         ),
         items,
         sendButton,

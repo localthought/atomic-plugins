@@ -61,7 +61,7 @@ Not covered by the script:
   set `ATOMIC_SERVER_IMAGE` to run the published
   `ghcr.io/ontola/atomic-server-e2e:<pin>` image in Docker instead (AGENTS.md,
   "Shared pinned atomic-server build").
-- certify's `--layer sandbox` and `--layer all` (the default). Both run
+- certify's `--layer sandbox` and `--layer all` (the default is `--layer js`). Both run
   `cargo test -p atomic-server` from this repo's root for the Rust tests
   named in each `package.json`'s `atomicCertification.sandboxTests`. That
   has not been verified to work in this symlinked layout, and it cannot pass
@@ -73,18 +73,21 @@ Not covered by the script:
 From the repository root:
 
 ```sh
-node integrations/tooling/certify.mjs --layer js
+node integrations/tooling/certify.mjs            # same as --layer js
 ```
 
 This discovers every integration with a `package.json` (today `money`,
 `notion` and `pets`), validates required metadata/files, checks the committed
-bundle against a fresh build, typechecks and runs fixture tests. Without
-`--layer js` it also runs exact named Rust tests through QuickJS/WASM, which
-the current pin no longer has (see [Local setup](#local-setup)).
+bundle against a fresh build, typechecks and runs fixture tests. `--layer js`
+is the default. `--layer sandbox` or `--layer all` (selected explicitly) also
+runs exact named Rust tests through QuickJS/WASM, which the current pin no
+longer has (see [Local setup](#local-setup)). Store evidence
+(`tooling/evidence.mjs`) accepts only an `all`-layer report, so a default run
+never produces it.
 It fails if a requested test matches nothing. It never rebuilds the shipped file
 in place to make a reproducibility failure disappear.
 
-Options: `--integration notion`, `--layer js|sandbox|all`, and `--output /path`.
+Options: `--integration notion`, `--layer js|sandbox|all` (default `js`), and `--output /path`.
 Default output: `artifacts/integration-certification/report.json` plus logs and
 Vitest JSON. Use separate output directories for concurrent runs. A report is
 marked running until finished; failed validation replaces old successful evidence.
@@ -449,6 +452,12 @@ exists off the browser/WASM path.
    `package.json`. For a drive app, see
    [the drive-app shapes](#two-shapes-pick-one) and add its lane tiers to
    `lanes.json`. Update [READINESS.md](READINESS.md) in the same PR.
+   A folder with its own `pnpm-lock.yaml` also gets a copy of
+   [`pets/pnpm-workspace.yaml`](pets/pnpm-workspace.yaml) (its
+   `minimumReleaseAgeExclude` lets pnpm 11+ install our own just-published
+   `syncables`, `devonian` and `@tomic/*`). If pnpm 11+ then reports ignored
+   build scripts, add an `allowBuilds` entry as
+   [`notion/pnpm-workspace.yaml`](notion/pnpm-workspace.yaml) does.
 2. Metadata identifies owner, support tier, pinned API version, supported scope
    and fully qualified Rust sandbox test names. A new package without metadata
    fails CI rather than silently escaping it.

@@ -7,7 +7,7 @@ This folder lives in the calendar plugin folder (it was
 0.6.1, exported as `devonian/platform-lenses/google-calendar{,/sync,/recurrence,/lens}`).
 It does not import Devonian. It imports `@tomic/lib` from the host; in this
 repo `../../vitest.config.ts` and `../../tsconfig.json` point that at the
-linked atomic-server checkout's `browser/lib/src`. Its tests (`import.test.ts`,
+linked atomic-server checkout's `browser/lib/src`. Its tests (`import.test.ts`, `sync.test.ts`,
 `lens/lens.test.ts`) run in the calendar lane:
 
 ```sh

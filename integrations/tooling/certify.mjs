@@ -130,8 +130,31 @@ export function formatFailureSummary(checks) {
     )
     .join('; ');
 }
+/** `js` by default: the `sandbox` layer (and so `all`) runs exact named Rust
+ * tests that the pinned atomic-server removed in 4bab16ee6, so it cannot pass
+ * there. `--layer all` or `--layer sandbox` still selects it explicitly. */
+export const DEFAULT_LAYER = 'js';
+const USAGE =
+  'Usage: certify.mjs [--layer js|sandbox|all] [--integration id] [--output directory]\n' +
+  `  --layer defaults to ${DEFAULT_LAYER}`;
+
+export function parseArgs(args) {
+  const options = { layer: DEFAULT_LAYER };
+
+  for (let i = 0; i < args.length; i += 2) {
+    const key = {
+      '--layer': 'layer',
+      '--output': 'output',
+      '--integration': 'only',
+    }[args[i]];
+    if (!key || !args[i + 1]) throw new Error(USAGE);
+    options[key] = key === 'output' ? resolve(args[i + 1]) : args[i + 1];
+  }
+
+  return options;
+}
 export function certify({
-  layer = 'all',
+  layer = DEFAULT_LAYER,
   output = resolve(root, 'artifacts/integration-certification'),
   only,
 } = {}) {
@@ -335,22 +358,7 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const args = process.argv.slice(2),
-      options = {};
-
-    for (let i = 0; i < args.length; i += 2) {
-      const key = {
-        '--layer': 'layer',
-        '--output': 'output',
-        '--integration': 'only',
-      }[args[i]];
-      if (!key || !args[i + 1])
-        throw new Error(
-          'Usage: certify.mjs [--layer all|js|sandbox] [--integration id] [--output directory]',
-        );
-      options[key] = key === 'output' ? resolve(args[i + 1]) : args[i + 1];
-    }
-
+    const options = parseArgs(process.argv.slice(2));
     process.exitCode = certify(options).status === 'passed' ? 0 : 1;
   } catch (e) {
     console.error(e.message);
