@@ -11,7 +11,11 @@ import {
   unlanedDirectories,
   danglingLanes,
   laneFilter,
+  laneDir,
   filtersYaml,
+  matrixFor,
+  needsPluginRoutesBuild,
+  pluginRoutesLevels,
   root,
 } from './lanes.mjs';
 
@@ -71,12 +75,12 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
   for (const lane of config.lanes) {
     if (lane.tiers.includes('typecheck'))
       assert.ok(
-        existsSync(resolve(root, `integrations/${lane.id}/tsconfig.json`)),
+        existsSync(resolve(root, `${laneDir(lane)}/tsconfig.json`)),
         `${lane.id} declares typecheck but has no tsconfig.json`,
       );
     if (lane.tiers.includes('unit') || lane.tiers.includes('live'))
       assert.ok(
-        existsSync(resolve(root, `integrations/${lane.id}/vitest.config.ts`)),
+        existsSync(resolve(root, `${laneDir(lane)}/vitest.config.ts`)),
         `${lane.id} declares unit/live but has no vitest.config.ts`,
       );
   }
@@ -85,7 +89,10 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
 test('a lane filter covers its own directory and no other plugin', () => {
   for (const lane of config.lanes) {
     const [own, ...extra] = laneFilter(lane);
-    assert.equal(own, `integrations/${lane.id}/**`);
+    assert.equal(own, `${laneDir(lane)}/**`);
+    // A tooling lane's own directory is shared tooling, never a plugin's.
+    if (lane.dir) assert.match(own, /^integrations\/tooling(\/|\*)/);
+    else assert.equal(own, `integrations/${lane.id}/**`);
     for (const path of extra)
       assert.ok(!path.startsWith('integrations/'), `${lane.id} claims ${path}`);
   }
@@ -165,4 +172,73 @@ test('lane paths are also in the any filter', () => {
   const yaml = filtersYaml(cfg(lane({ paths: ['devonian/src/**'] })));
   const any = yaml.slice(yaml.indexOf('any:'));
   assert.match(any, /- 'devonian\/src\/\*\*'/);
+});
+
+test('a tooling lane owns integrations/tooling or a directory under it', () => {
+  assert.equal(laneDir(lane()), 'integrations/a');
+  assert.equal(
+    laneDir(lane({ dir: 'integrations/tooling' })),
+    'integrations/tooling',
+  );
+  for (const dir of ['integrations/tooling', 'integrations/tooling/fixtures/x'])
+    assert.doesNotThrow(() => validateConfig(cfg(lane({ dir }))));
+  for (const dir of [
+    'integrations/pets',
+    'integrations/toolingx',
+    'integrations/tooling/../pets',
+    7,
+  ])
+    assert.throws(
+      () => validateConfig(cfg(lane({ dir }))),
+      /dir must be integrations\/tooling or a directory under it/,
+    );
+});
+
+test('pluginRoutes takes one level or a list of distinct levels, for live or e2e tiers', () => {
+  const e2e = { tiers: ['e2e'], e2e: ['x.spec.ts'] };
+  assert.deepEqual(pluginRoutesLevels(lane()), []);
+  assert.deepEqual(pluginRoutesLevels(lane({ pluginRoutes: 'read-only' })), [
+    'read-only',
+  ]);
+  assert.deepEqual(
+    pluginRoutesLevels(lane({ pluginRoutes: ['off', 'read-write'] })),
+    ['off', 'read-write'],
+  );
+  for (const pluginRoutes of ['read-only', ['off', 'read-only']])
+    assert.doesNotThrow(() =>
+      validateConfig(cfg(lane({ ...e2e, pluginRoutes }))),
+    );
+  for (const pluginRoutes of ['on', [], ['off', 'off'], ['read-only', 'rw']])
+    assert.throws(
+      () => validateConfig(cfg(lane({ ...e2e, pluginRoutes }))),
+      /pluginRoutes must be one of off, read-only, read-write/,
+    );
+  assert.throws(
+    () =>
+      validateConfig(cfg(lane({ tiers: ['unit'], pluginRoutes: 'read-only' }))),
+    /only affects the live and e2e tiers/,
+  );
+});
+
+test('only a run with a pluginRoutes lane asks for the plugin-routes build', () => {
+  const routes = lane({
+    id: 'routes',
+    index: 1,
+    tiers: ['e2e'],
+    e2e: ['x.spec.ts'],
+    pluginRoutes: 'read-only',
+  });
+  const plain = lane({ id: 'plain', tiers: ['unit'] });
+  const both = cfg(plain, routes);
+
+  assert.deepEqual(matrixFor(both, ['plain']), [
+    { lane: 'plain', tiers: 'unit' },
+  ]);
+  assert.deepEqual(matrixFor(both, ['routes']), [
+    { lane: 'routes', tiers: 'e2e', 'plugin-routes': 'true' },
+  ]);
+  assert.equal(needsPluginRoutesBuild(both, ['plain']), false);
+  assert.equal(needsPluginRoutesBuild(both, ['routes']), true);
+  assert.equal(needsPluginRoutesBuild(both, ['shared']), true);
+  assert.equal(needsPluginRoutesBuild(both, []), false);
 });

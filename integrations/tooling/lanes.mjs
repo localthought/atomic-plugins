@@ -18,6 +18,28 @@ export const NON_LANE_DIRECTORIES = ['tooling'];
 
 export const TIERS = ['typecheck', 'unit', 'live', 'e2e'];
 
+/** `--plugin-routes` values atomic-server accepts (atomic-server#1726). */
+export const PLUGIN_ROUTES_LEVELS = ['off', 'read-only', 'read-write'];
+
+/**
+ * A tooling lane tests shared tooling rather than one plugin, so it owns a
+ * directory here (this one, or one under it) instead of integrations/<id>/
+ * (`dir` in lanes.json).
+ */
+export const TOOLING_LANE_ROOT = 'integrations/tooling';
+
+/** The directory a lane owns: integrations/<id>, or its tooling `dir`. */
+export const laneDir = lane => lane.dir ?? `integrations/${lane.id}`;
+
+/**
+ * The `--plugin-routes` levels a lane's server-backed tiers run at, in order:
+ * `[]` for a lane on the default build. A lane that lists several (the
+ * `plugin-routes` tooling lane: `off` and `read-only`) runs each such tier
+ * once per level, on a fresh server.
+ */
+export const pluginRoutesLevels = lane =>
+  lane.pluginRoutes === undefined ? [] : [lane.pluginRoutes].flat();
+
 export function validateConfig(config) {
   const { lanes } = config;
   if (!Array.isArray(lanes) || !lanes.length)
@@ -57,6 +79,34 @@ export function validateConfig(config) {
       throw new Error(`lane ${lane.id}: an e2e tier needs an e2e spec list`);
     if (lane.tiers.includes('live') && !lane.liveEnv)
       throw new Error(`lane ${lane.id}: a live tier needs a liveEnv name`);
+
+    if (lane.dir !== undefined) {
+      if (
+        typeof lane.dir !== 'string' ||
+        (lane.dir !== TOOLING_LANE_ROOT &&
+          !lane.dir.startsWith(`${TOOLING_LANE_ROOT}/`)) ||
+        lane.dir.includes('..')
+      )
+        throw new Error(
+          `lane ${lane.id}: dir must be ${TOOLING_LANE_ROOT} or a directory under it; a plugin lane owns integrations/${lane.id}/`,
+        );
+    }
+
+    if (lane.pluginRoutes !== undefined) {
+      const levels = pluginRoutesLevels(lane);
+      if (
+        !levels.length ||
+        levels.some(l => !PLUGIN_ROUTES_LEVELS.includes(l)) ||
+        new Set(levels).size !== levels.length
+      )
+        throw new Error(
+          `lane ${lane.id}: pluginRoutes must be one of ${PLUGIN_ROUTES_LEVELS.join(', ')}, or a list of distinct ones`,
+        );
+      if (!lane.tiers.includes('e2e') && !lane.tiers.includes('live'))
+        throw new Error(
+          `lane ${lane.id}: pluginRoutes only affects the live and e2e tiers, and it has neither`,
+        );
+    }
 
     if (lane.paths !== undefined) {
       if (!Array.isArray(lane.paths))
@@ -108,7 +158,7 @@ export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
  * any shared-package `paths` it declares.
  */
 export const laneFilter = lane => [
-  `integrations/${lane.id}/**`,
+  `${laneDir(lane)}/**`,
   ...(lane.paths ?? []),
 ];
 
@@ -131,8 +181,8 @@ export function unlanedDirectories(lanes, base = root) {
 /** Lanes naming a directory that no longer exists. */
 export function danglingLanes(lanes, base = root) {
   return lanes
-    .map(l => l.id)
-    .filter(id => !existsSync(resolve(base, 'integrations', id)));
+    .filter(l => !existsSync(resolve(base, laneDir(l))))
+    .map(l => l.id);
 }
 
 /**
@@ -184,8 +234,21 @@ export function matrixFor(config, changed) {
     l => names.has('shared') || names.has(l.id),
   );
 
-  return lanes.map(l => ({ lane: l.id, tiers: l.tiers.join(',') }));
+  return lanes.map(l => ({
+    lane: l.id,
+    tiers: l.tiers.join(','),
+    // ci.yml downloads the plugin-routes build for these jobs only.
+    ...(pluginRoutesLevels(l).length ? { 'plugin-routes': 'true' } : {}),
+  }));
 }
+
+/**
+ * Whether any lane in this run needs atomic-server built with the
+ * `plugin-routes` feature, so ci.yml's build-server makes that second build
+ * only then.
+ */
+export const needsPluginRoutesBuild = (config, changed) =>
+  matrixFor(config, changed).some(l => l['plugin-routes'] === 'true');
 
 if (
   process.argv[1] &&
@@ -199,6 +262,11 @@ if (
     process.stdout.write(
       JSON.stringify(matrixFor(config, JSON.parse(argument ?? '[]'))) + '\n',
     );
+  else if (mode === 'plugin-routes')
+    process.stdout.write(
+      String(needsPluginRoutesBuild(config, JSON.parse(argument ?? '[]'))) +
+        '\n',
+    );
   else if (mode === 'ports')
     process.stdout.write(
       JSON.stringify(
@@ -208,7 +276,9 @@ if (
       ) + '\n',
     );
   else {
-    console.error('Usage: lanes.mjs filters | matrix <changed-json> | ports');
+    console.error(
+      'Usage: lanes.mjs filters | matrix <changed-json> | plugin-routes <changed-json> | ports',
+    );
     process.exit(1);
   }
 }

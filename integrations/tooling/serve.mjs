@@ -24,13 +24,26 @@
  *     run the published linux image on a Mac. The store is a named Docker
  *     volume per label rather than <checkout>/.lane-store/<label>. Like that
  *     directory, it persists across tiers and runs.
+ *
+ * A lane that declares `pluginRoutes` in lanes.json (see server-build.mjs)
+ * gets a different binary: one built with the `plugin-routes` feature,
+ * started with `--plugin-routes <level>` and `--routes-origin
+ * http://routes.localhost:<port>`. The published image is the default build,
+ * so such a lane never runs it, even with ATOMIC_SERVER_IMAGE set.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadLanes, lanePorts, sharedPorts, root } from './lanes.mjs';
+import {
+  loadLanes,
+  lanePorts,
+  pluginRoutesLevels,
+  sharedPorts,
+  root,
+} from './lanes.mjs';
+import { ensureRoutesBinary } from './server-build.mjs';
 
 export const serverCheckout = () =>
   process.env.ATOMIC_SERVER_CHECKOUT ?? '/tmp/atomic-server';
@@ -65,6 +78,40 @@ export function serverEnv(ports, store) {
     ATOMIC_INTEGRATION_FRONTEND_ORIGIN: `http://localhost:${ports.atomicServer}`,
   };
 }
+
+/**
+ * The origin plugin routes would be served under (`--routes-origin`): a
+ * `*.localhost` name, which atomic-server#1726 accepts over plain http when
+ * the API is on localhost, on the lane's own atomic-server port. It must not
+ * overlap the API or a website origin; `routes.localhost` overlaps neither.
+ * No host serves routes there yet (AS-04), so nothing listens on it.
+ */
+export const routesOrigin = ports =>
+  `http://routes.localhost:${ports.atomicServer}`;
+
+/** atomic-server's arguments for a lane at one `--plugin-routes` level. */
+export const pluginRoutesArgs = (level, ports) =>
+  level === undefined
+    ? []
+    : ['--plugin-routes', level, '--routes-origin', routesOrigin(ports)];
+
+/**
+ * The plugin-routes options atomic-server reads from its environment. A build
+ * without the feature refuses to start when any is set, so a stray one in the
+ * caller's shell never reaches a lane's server: the level comes from
+ * lanes.json only.
+ */
+export const PLUGIN_ROUTES_ENV = [
+  'ATOMIC_PLUGIN_ROUTES',
+  'ATOMIC_ROUTES_ORIGIN',
+  'ATOMIC_PLUGIN_LISTENERS',
+  'ATOMIC_PLUGIN_SIDECARS',
+];
+
+const withoutPluginRoutesEnv = env =>
+  Object.fromEntries(
+    Object.entries(env).filter(([key]) => !PLUGIN_ROUTES_ENV.includes(key)),
+  );
 
 /**
  * The mock proxy's public origin (its BASE_URL): what the browser is told
@@ -205,10 +252,27 @@ async function waitFor(url, what) {
  * never touch the shared mock — does not start the mock at all. See §4 of
  * integrations/PARALLEL_LANES.md.
  */
-export async function bringUp({ ports, platforms, label = 'shared' }) {
+export async function bringUp({
+  ports,
+  platforms,
+  label = 'shared',
+  pluginRoutes,
+}) {
   const config = loadLanes();
-  const image = serverImage();
-  const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
+  let image = serverImage();
+  let binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
+
+  if (pluginRoutes !== undefined) {
+    if (image)
+      console.warn(
+        `warning: ${image} is the default build; lane ${label} needs the plugin-routes feature, so it runs the local plugin-routes build instead`,
+      );
+    image = undefined;
+    binary = await ensureRoutesBinary({
+      checkout: serverCheckout(),
+      pin: readPin(),
+    });
+  }
 
   if (image) {
     const problem = imagePinProblem(image, readPin());
@@ -242,7 +306,7 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
   const start = (name, command, args, env) => {
     const child = spawn(command, args, {
       cwd: root,
-      env: { ...process.env, ...env },
+      env: { ...withoutPluginRoutesEnv(process.env), ...env },
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     child.on('exit', code => {
@@ -270,7 +334,7 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
     start(
       'atomic-server',
       binary,
-      [],
+      pluginRoutesArgs(pluginRoutes, ports),
       serverEnv(ports, resolve(serverCheckout(), `.lane-store/${label}`)),
     );
   }
@@ -352,10 +416,15 @@ if (
   }
 
   const ports = lane ? lanePorts(lane, config) : sharedPorts(config);
+  // A lane with several levels starts at its first; --plugin-routes picks.
+  const pluginRoutes = process.argv.includes('--plugin-routes')
+    ? process.argv[process.argv.indexOf('--plugin-routes') + 1]
+    : lane && pluginRoutesLevels(lane)[0];
   const stop = await bringUp({
     ports,
     platforms: lane?.platforms,
     label: lane?.id ?? 'shared',
+    pluginRoutes,
   });
   console.log(`serving ${JSON.stringify(ports)} — ctrl-c to stop`);
   for (const signal of ['SIGINT', 'SIGTERM'])

@@ -17,12 +17,25 @@
  * reuse one fixed port set behind a lock. atomic-server#1621 made both URLs
  * seedable through Playwright's `storageState` from PLUGIN_CATALOG_URL and
  * INTEGRATION_PROXY_URL, so one unmodified binary now serves any lane.
+ *
+ * A lane that declares `pluginRoutes` (lanes.json) runs its live and e2e
+ * tiers on atomic-server built with the `plugin-routes` feature
+ * (server-build.mjs builds it on first use, ~10 minutes), once per declared
+ * level, each on a fresh server started with `--plugin-routes <level>`. The
+ * tier's tests read the level from PLUGIN_ROUTES_LEVEL.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, symlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadLanes, lanePorts, root, TIERS } from './lanes.mjs';
-import { bringUp, mockProxyOrigin } from './serve.mjs';
+import {
+  laneDir,
+  loadLanes,
+  lanePorts,
+  pluginRoutesLevels,
+  root,
+  TIERS,
+} from './lanes.mjs';
+import { bringUp, mockProxyOrigin, routesOrigin } from './serve.mjs';
 import { layoutProblems } from './link-atomic-server.mjs';
 import {
   installMissing,
@@ -160,72 +173,102 @@ for (const signal of ['SIGINT', 'SIGTERM'])
 // Cheapest first, so a lane fails before paying for a server it won't reach.
 const order = ['typecheck', 'unit', 'live', 'e2e'];
 
+const ports = lanePorts(lane, config);
+// `[undefined]`: one run on the default build.
+const declaredLevels = pluginRoutesLevels(lane);
+const levels = declaredLevels.length ? declaredLevels : [undefined];
+const levelEnv = level =>
+  level === undefined
+    ? {}
+    : {
+        PLUGIN_ROUTES_LEVEL: level,
+        PLUGIN_ROUTES_ORIGIN: routesOrigin(ports),
+      };
+
 for (const tier of order.filter(t => tiers.includes(t))) {
-  const ports = lanePorts(lane, config);
   console.log(`\n=== ${lane.id}: ${tier} ===`);
   let status = 0;
 
   if (tier === 'typecheck') {
     status = run(requireTool(`${bin}/tsc`, 'run pnpm install in browser/'), [
       '-p',
-      `integrations/${lane.id}/tsconfig.json`,
+      `${laneDir(lane)}/tsconfig.json`,
     ]);
   } else if (tier === 'unit') {
     status = run(requireTool(`${bin}/vitest`, 'run pnpm install in browser/'), [
       'run',
       '--config',
-      `integrations/${lane.id}/vitest.config.ts`,
+      `${laneDir(lane)}/vitest.config.ts`,
     ]);
   } else if (tier === 'live') {
-    stop = await bringUp({
-      ports,
-      platforms: lane.platforms,
-      label: lane.id,
-    });
-    status = run(
-      requireTool(`${bin}/vitest`, 'run pnpm install in browser/'),
-      ['run', '--config', `integrations/${lane.id}/vitest.config.ts`],
-      // Straight at atomic-server: @tomic/lib signs the URL it fetches, and
-      // atomic-server verifies against the origin it answers under. Those
-      // agree only when the client talks to it directly.
-      { [lane.liveEnv]: `http://localhost:${ports.atomicServer}` },
-    );
-    await stopStack();
+    for (const level of levels) {
+      if (status !== 0) break;
+      stop = await bringUp({
+        ports,
+        platforms: lane.platforms,
+        label: lane.id,
+        pluginRoutes: level,
+      });
+      status = run(
+        requireTool(`${bin}/vitest`, 'run pnpm install in browser/'),
+        ['run', '--config', `${laneDir(lane)}/vitest.config.ts`],
+        // Straight at atomic-server: @tomic/lib signs the URL it fetches, and
+        // atomic-server verifies against the origin it answers under. Those
+        // agree only when the client talks to it directly.
+        {
+          [lane.liveEnv]: `http://localhost:${ports.atomicServer}`,
+          ...levelEnv(level),
+        },
+      );
+      await stopStack();
+    }
   } else if (tier === 'e2e') {
     linkE2eModules();
-    stop = await bringUp({
-      ports,
-      platforms: lane.platforms,
-      label: lane.id,
-    });
-    status = run(
-      requireTool(`${e2eBin}/playwright`, 'run pnpm install in browser/'),
-      [
-        'test',
-        '--config=integrations/tooling/playwright.config.ts',
-        '--project=chromium',
-        ...lane.e2e,
-      ],
-      {
-        // The SPA and the API are one origin — atomic-server's own — which is
-        // the topology its dagger e2e pipeline uses. Only the plugin catalog
-        // comes from somewhere else, and since atomic-server#1621 that URL is
-        // seeded at runtime instead of compiled in, so it no longer has to be
-        // same-origin with the server.
-        SERVER_URL: `http://localhost:${ports.atomicServer}`,
-        FRONTEND_URL: `http://localhost:${ports.atomicServer}`,
-        PLUGIN_CATALOG_URL: `http://localhost:${ports.devServer}/integrations/catalog.json`,
-        INTEGRATION_PROXY_URL: mockProxyOrigin(ports),
-        ATOMIC_MOCK_INTEGRATION_PROXY: '1',
-      },
-    );
-    await stopStack();
+
+    for (const level of levels) {
+      if (status !== 0) break;
+      if (level !== undefined)
+        console.log(`--- ${lane.id}: e2e at --plugin-routes ${level} ---`);
+      stop = await bringUp({
+        ports,
+        platforms: lane.platforms,
+        label: lane.id,
+        pluginRoutes: level,
+      });
+      status = runE2e(level);
+      await stopStack();
+    }
   }
 
   if (status !== 0) {
     console.error(`\n${lane.id}: ${tier} failed`);
     process.exit(status);
   }
+}
+
+function runE2e(level) {
+  return run(
+    requireTool(`${e2eBin}/playwright`, 'run pnpm install in browser/'),
+    [
+      'test',
+      '--config=integrations/tooling/playwright.config.ts',
+      '--project=chromium',
+      ...lane.e2e,
+    ],
+    {
+      // The SPA and the API are one origin — atomic-server's own — which is
+      // the topology its dagger e2e pipeline uses. Only the plugin catalog
+      // comes from somewhere else, and since atomic-server#1621 that URL is
+      // seeded at runtime instead of compiled in, so it no longer has to be
+      // same-origin with the server.
+      SERVER_URL: `http://localhost:${ports.atomicServer}`,
+      FRONTEND_URL: `http://localhost:${ports.atomicServer}`,
+      PLUGIN_CATALOG_URL: `http://localhost:${ports.devServer}/integrations/catalog.json`,
+      INTEGRATION_PROXY_URL: mockProxyOrigin(ports),
+      ATOMIC_MOCK_INTEGRATION_PROXY: '1',
+      ...levelEnv(level),
+    },
+  );
 }
 
 console.log(`\n${lane.id}: ${tiers.join(', ')} passed`);

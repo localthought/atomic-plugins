@@ -99,6 +99,7 @@ jobs:
       any: ${{ steps.decide.outputs.any }}
       matrix: ${{ steps.decide.outputs.matrix }}
       has-lanes: ${{ steps.decide.outputs.has-lanes }}
+      plugin-routes: ${{ steps.decide.outputs.plugin-routes }}
       pin: ${{ steps.pin.outputs.sha }}
       pin-changed: ${{ steps.pin-filter.outputs.pin || 'false' }}
     steps:
@@ -155,6 +156,9 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "any=$ANY" >> "$GITHUB_OUTPUT"
           echo "has-lanes=$([ "$matrix" = '[]' ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          # true when a lane in the matrix declares `pluginRoutes`, which
+          # starts build-server-plugin-routes.
+          echo "plugin-routes=$(node integrations/tooling/lanes.mjs plugin-routes "$CHANGED")" >> "$GITHUB_OUTPUT"
           echo "changed: $CHANGED"
           echo "matrix:  $matrix"
 
@@ -354,6 +358,104 @@ jobs:
           path: atomic-server/target/e2e/atomic-server
           retention-days: 1
 
+  # The pin built with the `plugin-routes` Cargo feature
+  # (docs/design/server-plugin-routes.md, section 0.2), for the lanes that
+  # declare `pluginRoutes` in lanes.json; see
+  # integrations/tooling/server-build.mjs, which makes the same build locally.
+  # Runs only when such a lane is in this run's matrix. Always from source:
+  # the published e2e image is the default build and stays that way. Its own
+  # job, not steps in build-server, so that job's image-or-source contract
+  # (workflow.test.mjs) is untouched and the two builds run side by side.
+  build-server-plugin-routes:
+    name: Build atomic-server (pinned, plugin-routes feature)
+    needs: changes
+    if: needs.changes.outputs.plugin-routes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout atomic-plugins
+        uses: actions/checkout@v4
+        with:
+          path: atomic-plugins
+
+      - name: Read pinned atomic-server commit
+        id: pin
+        run: echo "sha=$(cat atomic-plugins/.atomic-server-ref)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout atomic-server at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ontola/atomic-server
+          ref: ${{ steps.pin.outputs.sha }}
+          path: atomic-server
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # As in build-server: from inside the checkout, so the targets land in
+      # the toolchain rust-toolchain.toml pins.
+      - name: Add the plugin-runtime target to the pinned toolchain
+        working-directory: atomic-server
+        run: |
+          set -eu
+          rustup target add wasm32-wasip2 wasm32-unknown-unknown
+          rustup target list --installed | grep -qx wasm32-wasip2
+
+      # Its own key: the feature changes what cargo builds, so sharing
+      # build-server's cache would make the two evict each other.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: atomic-server -> target
+          prefix-key: atomic-server-plugin-routes-${{ steps.pin.outputs.sha }}
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ steps.pin.outputs.sha }}-${{ hashFiles('atomic-server/browser/pnpm-lock.yaml') }}
+
+      - name: Install JS dependencies
+        working-directory: atomic-server/browser
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the browser WASM bundle
+        working-directory: atomic-server
+        run: |
+          set -eu
+          sh .dagger/scripts/install-wasm-pack.sh "$HOME/.local/bin"
+          cd wasm
+          CARGO_ENCODED_RUSTFLAGS='--cfg'$'\x1f''getrandom_backend="wasm_js"' \
+            "$HOME/.local/bin/wasm-pack" build --target web --out-dir pkg --no-opt
+          mkdir -p ../browser/data-browser/public/wasm
+          cp pkg/atomic_wasm.js pkg/atomic_wasm_bg.wasm ../browser/data-browser/public/wasm/
+
+      # build-server's build plus `plugin-routes`. A pin without that feature
+      # (older than atomic-server#1726) fails here, naming the feature.
+      - name: Build atomic-server (e2e profile, plugin-routes feature)
+        working-directory: atomic-server
+        env:
+          SKIP_WASM_BUILD: "1"
+          VITE_E2E: "true"
+        run: cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins,plugin-routes
+
+      - name: Upload the server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: atomic-server-binary-plugin-routes
+          path: atomic-server/target/e2e/atomic-server
+          retention-days: 1
+
   # Not gated per lane: certify.mjs discovers and reports every certified
   # package in one pass regardless of what changed, and this layer is local
   # typecheck/bundle/fixture work with no server or browser involved — it is
@@ -439,6 +541,7 @@ jobs:
             integrations/tooling/link-atomic-server.test.mjs \
             integrations/tooling/manifest-http.test.mjs \
             integrations/tooling/serve.test.mjs \
+            integrations/tooling/server-build.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \
             integrations/localthought/no-credentials-in-graph.test.mjs
@@ -500,8 +603,14 @@ jobs:
 
   lane:
     name: "Lane: ${{ matrix.lane }} (${{ matrix.tiers }})"
-    needs: [changes, build-server]
-    if: needs.changes.outputs.has-lanes == 'true'
+    needs: [changes, build-server, build-server-plugin-routes]
+    # build-server-plugin-routes is skipped on most runs, and a skipped need
+    # skips this job too unless the condition names a status check itself.
+    if: >-
+      !cancelled()
+      && needs.changes.outputs.has-lanes == 'true'
+      && needs.build-server.result == 'success'
+      && needs.build-server-plugin-routes.result != 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -580,6 +689,20 @@ jobs:
         if: contains(matrix.tiers, 'live') || contains(matrix.tiers, 'e2e')
         run: chmod +x atomic-server/target/e2e/atomic-server
 
+      # A lane that declares `pluginRoutes` (matrix.plugin-routes, from
+      # lanes.mjs) runs its server tiers on the feature build instead;
+      # serve.mjs finds it through ATOMIC_SERVER_ROUTES_BINARY below.
+      - name: Download the plugin-routes server binary
+        if: matrix.plugin-routes == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: atomic-server-binary-plugin-routes
+          path: atomic-server-plugin-routes
+
+      - name: Make the plugin-routes server binary executable
+        if: matrix.plugin-routes == 'true'
+        run: chmod +x atomic-server-plugin-routes/atomic-server
+
       # plugins.spec.ts resolves `@tomic/lib` to its built `dist/index.cjs`.
       # In the old single-job workflow that file happened to exist because
       # build.rs had already built the frontend in the same job; now the cargo
@@ -603,6 +726,7 @@ jobs:
         working-directory: atomic-plugins
         env:
           ATOMIC_SERVER_CHECKOUT: ${{ github.workspace }}/atomic-server
+          ATOMIC_SERVER_ROUTES_BINARY: ${{ matrix.plugin-routes == 'true' && format('{0}/atomic-server-plugin-routes/atomic-server', github.workspace) || '' }}
         run: node integrations/tooling/run-lane.mjs ${{ matrix.lane }}
 
       - name: Upload Playwright report
@@ -900,6 +1024,7 @@ jobs:
     needs:
       - changes
       - build-server
+      - build-server-plugin-routes
       - shared-checks
       - lane
       - hosting-surface

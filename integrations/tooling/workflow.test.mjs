@@ -269,3 +269,30 @@ test('every tooling test file runs in CI', () => {
     "add these to ci.yml's Tooling unit tests step",
   );
 });
+
+test('the plugin-routes build runs only for lanes that need it, and those lanes get it', () => {
+  const build = jobBlock(workflow, 'build-server-plugin-routes').join('\n');
+  assert.match(build, /if: needs\.changes\.outputs\.plugin-routes == 'true'/);
+  assert.match(
+    build,
+    /--no-default-features --features wasm-plugins,plugin-routes/,
+  );
+  assert.match(build, /name: atomic-server-binary-plugin-routes\n/);
+
+  const changes = jobBlock(workflow, 'changes').join('\n');
+  assert.match(changes, /lanes\.mjs plugin-routes "\$CHANGED"/);
+
+  // A skipped plugin-routes build must not skip every lane.
+  const lane = jobBlock(workflow, 'lane').join('\n');
+  assert.match(
+    lane,
+    /needs: \[changes, build-server, build-server-plugin-routes\]/,
+  );
+  assert.match(lane, /!cancelled\(\)/);
+  assert.match(lane, /needs\.build-server-plugin-routes\.result != 'failure'/);
+  const download = stepsOf(workflow, 'lane').find(s =>
+    s.includes('name: atomic-server-binary-plugin-routes'),
+  );
+  assert.match(download, /if: matrix\.plugin-routes == 'true'/);
+  assert.match(lane, /ATOMIC_SERVER_ROUTES_BINARY: /);
+});
