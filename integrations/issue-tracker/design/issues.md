@@ -141,7 +141,7 @@ Acceptance:
 
 - Unit tests with `fakeStore` (as in `notion/app/fakeStore.ts`) cover
   enumeration, create, a recovered create and a rejected write → `Atomic
-  write rejected`.
+write rejected`.
 - A note in `devonian/github-issues/README.md` states the verified `save()`
   semantics, or states that they are unverified.
 

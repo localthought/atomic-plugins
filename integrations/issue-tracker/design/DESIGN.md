@@ -62,15 +62,15 @@ What we take from each, and what we leave out on purpose. Sources: Linear's
 [board layout docs](https://docs.github.com/en/issues/planning-and-tracking-with-projects/customizing-views-in-your-project/customizing-the-board-layout),
 and Atlassian's [Jira list view docs](https://support.atlassian.com/jira-software-cloud/docs/what-is-the-list-view/).
 
-| Pattern                               | Linear                              | GitHub Projects                      | Jira                          | Here                                                                   |
-| ------------------------------------- | ----------------------------------- | ------------------------------------ | ----------------------------- | ---------------------------------------------------------------------- |
-| Board ↔ list toggle, same filter      | Yes (Cmd/Ctrl+B)                    | Yes (per view)                       | Board, list, backlog          | Yes: `B` toggles, and both views share one filter state                |
-| Columns = status                      | Grouped by status by default        | Any single-select field              | Workflow statuses             | Fixed three: Todo / Doing / Done                                       |
-| Card contents                         | Key, title, a few properties, no body | Title plus chosen fields           | Key, summary, type, avatar    | Number/key, title, up to 3 labels, comment count, sync marker          |
-| Peek at detail without leaving board  | Space to peek                       | Side panel                           | Side panel / modal            | Side panel at ≥ 1000 px, full-screen sheet below 600 px                |
-| Keyboard select and move              | X to select, S to move to a column  | Limited                              | Limited                       | `J`/`K` move focus, `Enter` opens, `1`/`2`/`3` set status, `/` searches |
-| Column count and limit                | Count only                          | Count, optional informational limit  | WIP limits                    | Count only; Done collapses to the 20 most recent                       |
-| Sync/source indicator                 | None (native)                       | None (native)                        | None (native)                 | Ours: a per-card pending marker, a header sync pill, conflict review   |
+| Pattern                              | Linear                                | GitHub Projects                     | Jira                       | Here                                                                    |
+| ------------------------------------ | ------------------------------------- | ----------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| Board ↔ list toggle, same filter     | Yes (Cmd/Ctrl+B)                      | Yes (per view)                      | Board, list, backlog       | Yes: `B` toggles, and both views share one filter state                 |
+| Columns = status                     | Grouped by status by default          | Any single-select field             | Workflow statuses          | Fixed three: Todo / Doing / Done                                        |
+| Card contents                        | Key, title, a few properties, no body | Title plus chosen fields            | Key, summary, type, avatar | Number/key, title, up to 3 labels, comment count, sync marker           |
+| Peek at detail without leaving board | Space to peek                         | Side panel                          | Side panel / modal         | Side panel at ≥ 1000 px, full-screen sheet below 600 px                 |
+| Keyboard select and move             | X to select, S to move to a column    | Limited                             | Limited                    | `J`/`K` move focus, `Enter` opens, `1`/`2`/`3` set status, `/` searches |
+| Column count and limit               | Count only                            | Count, optional informational limit | WIP limits                 | Count only; Done collapses to the 20 most recent                        |
+| Sync/source indicator                | None (native)                         | None (native)                       | None (native)              | Ours: a per-card pending marker, a header sync pill, conflict review    |
 
 The last row is what sets this app apart. Those three tools are the source
 of truth, so they never show sync state. This app is a two-way mirror, so it
@@ -290,12 +290,12 @@ now" action. This matches `background.mjs`'s exponential backoff.
 The iframe width is the only breakpoint input. Plugin frames are roughly
 360–1200 px wide.
 
-| Width      | Default view | Detail                           | Header                                                        |
-| ---------- | ------------ | -------------------------------- | ------------------------------------------------------------- |
-| < 600 px   | List         | Full-screen sheet with Back      | Name and pill; the source chip moves into the connection bar  |
-| 600–719 px | List         | Overlay drawer, 100% − 48 px     | Full                                                          |
-| 720–999 px | Board        | Overlay drawer, 440 px           | Full; columns scroll horizontally with snap below 3 × 240 px  |
-| ≥ 1000 px  | Board        | Docked side panel, 400–440 px    | Full                                                          |
+| Width      | Default view | Detail                        | Header                                                       |
+| ---------- | ------------ | ----------------------------- | ------------------------------------------------------------ |
+| < 600 px   | List         | Full-screen sheet with Back   | Name and pill; the source chip moves into the connection bar |
+| 600–719 px | List         | Overlay drawer, 100% − 48 px  | Full                                                         |
+| 720–999 px | Board        | Overlay drawer, 440 px        | Full; columns scroll horizontally with snap below 3 × 240 px |
+| ≥ 1000 px  | Board        | Docked side panel, 400–440 px | Full                                                         |
 
 An explicit Board/List choice by the user overrides the default at every
 width.
