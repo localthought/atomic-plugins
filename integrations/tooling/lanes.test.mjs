@@ -18,6 +18,7 @@ import {
   pluginRoutesLevels,
   root,
   PLUGIN_BUILD_DEPENDENCIES,
+  SHARED_PACKAGES,
 } from './lanes.mjs';
 
 const config = loadLanes();
@@ -89,11 +90,13 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
 
 test('a lane filter covers its own directory and only explicit sibling dependencies', () => {
   for (const lane of config.lanes) {
-    // A tooling lane names its files; none of them is a plugin's.
+    // A tooling lane names its files; none of them is a plugin's. It may
+    // also depend on a shared package (the `ontology` lane on ontology/).
     if (lane.dir) {
       for (const path of laneFilter(lane))
         assert.ok(
           path === '.atomic-server-ref' ||
+            SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)) ||
             (path.startsWith('integrations/tooling/') &&
               path !== 'integrations/tooling/**'),
           `${lane.id} claims ${path}`,

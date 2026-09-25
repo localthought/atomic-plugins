@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/money-category",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "money-category",
+  "https://atomicdata.dev/properties/name": "Category",
+  "https://atomicdata.dev/properties/description": "The person's own category for this transaction, as free text. Never written by an importer.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string"
+}

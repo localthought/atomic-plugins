@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "atomic-calendar-end",
+  "https://atomicdata.dev/properties/name": "End",
+  "https://atomicdata.dev/properties/description": "Exact exclusive end instant of a timed event, as an RFC 3339 date-time string with its UTC offset.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string"
+}

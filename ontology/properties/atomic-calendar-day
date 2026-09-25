@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-day",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "atomic-calendar-day",
+  "https://atomicdata.dev/properties/name": "Day",
+  "https://atomicdata.dev/properties/description": "First civil day of the event (YYYY-MM-DD), in the event's own time zone as the provider gives it. The shortname is the one AtomicServer's built-in Calendar view matches (calendarFields).",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/date"
+}

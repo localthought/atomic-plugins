@@ -1,0 +1,70 @@
+name: Shared ontology published
+
+# GitHub Pages (legacy build, main branch, repository root, with a root
+# .nojekyll so files are served byte-for-byte) publishes the committed term
+# files of the shared ontology (#177): `ontology/<path>` is served at
+# `<base>/<path>`, where `<base>` is ontology-kit/base.json's, and every
+# term's subject is that URL. After each Pages build this checks that every
+# file under ontology/ is served at its subject with exactly the committed
+# bytes. CI's `ontology-kit/ontology.mjs check` has already made the
+# committed files match a fresh build and kept published ones unchanged; this
+# catches a Pages publish that failed or lags. Pages' CDN caches for up to 10
+# minutes, so a mismatch is retried for up to 15 minutes before failing. See
+# ontology-kit/README.md.
+
+on:
+  page_build:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify GitHub Pages serves ontology/
+    if: github.event_name == 'workflow_dispatch' || github.event.build.status == 'built'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.build.commit || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compare served term files with the committed ones
+        run: |
+          node --input-type=module - <<'JS'
+          import { createHash } from 'node:crypto';
+          import { readFileSync, readdirSync } from 'node:fs';
+          import { join, relative } from 'node:path';
+          import { readBase } from './ontology-kit/ontology.mjs';
+          const base = readBase();
+          const files = readdirSync('ontology', { recursive: true, withFileTypes: true })
+            .filter(entry => entry.isFile())
+            .map(entry => relative('ontology', join(entry.parentPath, entry.name)));
+          const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+          const deadline = Date.now() + 15 * 60_000;
+          for (;;) {
+            const stale = [];
+            for (const path of files) {
+              const url = `${base}/${path}`;
+              try {
+                const res = await fetch(`${url}?v=${Date.now()}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const served = sha(Buffer.from(await res.arrayBuffer()));
+                const committed = sha(readFileSync(join('ontology', path)));
+                if (served !== committed)
+                  stale.push(`${url}: serves sha256 ${served}, ontology/${path} is ${committed}`);
+              } catch (error) {
+                stale.push(`${url}: ${error.message}`);
+              }
+            }
+            if (!stale.length) {
+              console.log(`${files.length} term file(s) served under ${base} match the committed ones`);
+              break;
+            }
+            if (Date.now() > deadline) {
+              console.error(stale.join('\n'));
+              process.exit(1);
+            }
+            console.log(`${stale.length} of ${files.length} not yet published; retrying in 60s`);
+            await new Promise(r => setTimeout(r, 60_000));
+          }
+          JS

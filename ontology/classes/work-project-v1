@@ -1,0 +1,13 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/work-project-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "work-project-v1",
+  "https://atomicdata.dev/properties/name": "Project",
+  "https://atomicdata.dev/properties/description": "A named body of work that time entries belong to.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://atomicdata.dev/properties/name"
+  ]
+}

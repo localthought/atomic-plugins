@@ -1,0 +1,24 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/bank-transaction-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "bank-transaction-v1",
+  "https://atomicdata.dev/properties/name": "Bank transaction",
+  "https://atomicdata.dev/properties/description": "A booked bank transaction: account, currency, an exact signed decimal amount and a value date, plus the bank's own narrative and reference and the person's own category and note. Import bookkeeping (source ids, fingerprints, statement numbers) is not part of this class.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-account",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-currency",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-amount",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-value-date"
+  ],
+  "https://atomicdata.dev/properties/recommends": [
+    "https://atomicdata.dev/properties/name",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-booking-date",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-description",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-reference",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/money-category",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/money-note"
+  ]
+}

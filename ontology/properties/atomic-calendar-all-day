@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-all-day",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "atomic-calendar-all-day",
+  "https://atomicdata.dev/properties/name": "All day",
+  "https://atomicdata.dev/properties/description": "Whether the event lasts whole days. Absent means false.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/boolean"
+}

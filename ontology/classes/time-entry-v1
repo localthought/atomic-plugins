@@ -1,0 +1,20 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/time-entry-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "time-entry-v1",
+  "https://atomicdata.dev/properties/name": "Time entry",
+  "https://atomicdata.dev/properties/description": "One interval of work: a start instant, an end instant (absent while a timer runs), and optionally a project, a person and a billable flag. Provider data (source ids, observation logs) is not part of this class.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-start"
+  ],
+  "https://atomicdata.dev/properties/recommends": [
+    "https://atomicdata.dev/properties/name",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-end",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-project",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-person",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-billable"
+  ]
+}

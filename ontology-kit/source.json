@@ -1,0 +1,227 @@
+{
+  "//": "Source of the shared row classes of ontola/atomic-plugins#177 (option 4). `node ontology-kit/ontology.mjs build` turns this plus base.json into the published term files under ontology/ and the subject constants in terms.mjs. A reference in requires, recommends or classtype is either a term defined here (a property shortname, or a class name) or an absolute URL of an existing term that is reused, never copied. Published terms never change: a change of meaning gets a new shortname or class version (see ontology-kit/README.md). Every term is declared, not verified.",
+  "releases": {
+    "v1": {
+      "name": "Shared row classes v1",
+      "description": "Row classes that several atomic-plugins drive apps sync into, so a plugin's view works on any table of that class (ontola/atomic-plugins#177). Declared, not verified: no plugin writes these classes yet.",
+      "classes": [
+        "event-v1",
+        "issue-v1",
+        "time-entry-v1",
+        "work-project-v1",
+        "work-person-v1",
+        "bank-transaction-v1"
+      ],
+      "properties": [
+        "atomic-calendar-day",
+        "atomic-calendar-end-day",
+        "atomic-calendar-all-day",
+        "atomic-calendar-start",
+        "atomic-calendar-end",
+        "atomic-calendar-location",
+        "atomic-calendar-notes",
+        "atomic-calendar-recurrence",
+        "work-start",
+        "work-end",
+        "work-project",
+        "work-person",
+        "work-billable",
+        "bank-account",
+        "bank-currency",
+        "bank-amount",
+        "bank-value-date",
+        "bank-booking-date",
+        "bank-description",
+        "bank-reference",
+        "money-category",
+        "money-note"
+      ]
+    }
+  },
+  "classes": {
+    "event-v1": {
+      "name": "Event",
+      "description": "A calendar event. Placed by its first civil day and, for multi-day or all-day events, its exclusive end day; timed events also carry their exact start and end instants as RFC 3339 strings with offset. Provider data (ids, ETags, links, sync baselines) is not part of this class.",
+      "requires": [
+        "https://atomicdata.dev/properties/name",
+        "atomic-calendar-day"
+      ],
+      "recommends": [
+        "atomic-calendar-end-day",
+        "atomic-calendar-all-day",
+        "atomic-calendar-start",
+        "atomic-calendar-end",
+        "atomic-calendar-location",
+        "atomic-calendar-notes",
+        "atomic-calendar-recurrence"
+      ]
+    },
+    "issue-v1": {
+      "name": "Issue",
+      "description": "An issue or task, using the task/v1 vocabulary every AtomicServer embeds: status (todo, doing, blocked, done; done is closed), body, assignee and due date. Provider data (issue numbers, labels, comments, sync state) is not part of this class.",
+      "requires": ["https://atomicdata.dev/properties/name"],
+      "recommends": [
+        "https://atomicdata.dev/task/v1/status",
+        "https://atomicdata.dev/task/v1/body",
+        "https://atomicdata.dev/task/v1/assignee",
+        "https://atomicdata.dev/task/v1/due-date"
+      ]
+    },
+    "time-entry-v1": {
+      "name": "Time entry",
+      "description": "One interval of work: a start instant, an end instant (absent while a timer runs), and optionally a project, a person and a billable flag. Provider data (source ids, observation logs) is not part of this class.",
+      "requires": ["work-start"],
+      "recommends": [
+        "https://atomicdata.dev/properties/name",
+        "work-end",
+        "work-project",
+        "work-person",
+        "work-billable"
+      ]
+    },
+    "work-project-v1": {
+      "name": "Project",
+      "description": "A named body of work that time entries belong to.",
+      "requires": ["https://atomicdata.dev/properties/name"],
+      "recommends": []
+    },
+    "work-person-v1": {
+      "name": "Person",
+      "description": "A person who performed work, by name. Not an Atomic authentication agent.",
+      "requires": ["https://atomicdata.dev/properties/name"],
+      "recommends": []
+    },
+    "bank-transaction-v1": {
+      "name": "Bank transaction",
+      "description": "A booked bank transaction: account, currency, an exact signed decimal amount and a value date, plus the bank's own narrative and reference and the person's own category and note. Import bookkeeping (source ids, fingerprints, statement numbers) is not part of this class.",
+      "requires": [
+        "bank-account",
+        "bank-currency",
+        "bank-amount",
+        "bank-value-date"
+      ],
+      "recommends": [
+        "https://atomicdata.dev/properties/name",
+        "bank-booking-date",
+        "bank-description",
+        "bank-reference",
+        "money-category",
+        "money-note"
+      ]
+    }
+  },
+  "properties": {
+    "atomic-calendar-day": {
+      "name": "Day",
+      "datatype": "https://atomicdata.dev/datatypes/date",
+      "description": "First civil day of the event (YYYY-MM-DD), in the event's own time zone as the provider gives it. The shortname is the one AtomicServer's built-in Calendar view matches (calendarFields)."
+    },
+    "atomic-calendar-end-day": {
+      "name": "End day",
+      "datatype": "https://atomicdata.dev/datatypes/date",
+      "description": "Exclusive end day (YYYY-MM-DD) of a multi-day or all-day event: the first day it no longer covers. Absent means a single day."
+    },
+    "atomic-calendar-all-day": {
+      "name": "All day",
+      "datatype": "https://atomicdata.dev/datatypes/boolean",
+      "description": "Whether the event lasts whole days. Absent means false."
+    },
+    "atomic-calendar-start": {
+      "name": "Start",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Exact start instant of a timed event, as an RFC 3339 date-time string with its UTC offset, exactly as the provider gave it. A string rather than a timestamp, so the offset is kept."
+    },
+    "atomic-calendar-end": {
+      "name": "End",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Exact exclusive end instant of a timed event, as an RFC 3339 date-time string with its UTC offset."
+    },
+    "atomic-calendar-location": {
+      "name": "Location",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Where the event takes place, as free text."
+    },
+    "atomic-calendar-notes": {
+      "name": "Notes",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "The event's description, as plain text."
+    },
+    "atomic-calendar-recurrence": {
+      "name": "Recurrence",
+      "datatype": "https://atomicdata.dev/datatypes/json",
+      "description": "Recurrence rule, in the JSON payload AtomicServer's calendar-recurrence reads (browser/lib/src/calendar-recurrence.ts)."
+    },
+    "work-start": {
+      "name": "Start",
+      "datatype": "https://atomicdata.dev/datatypes/timestamp",
+      "description": "Start instant of a work interval, milliseconds since the Unix epoch."
+    },
+    "work-end": {
+      "name": "End",
+      "datatype": "https://atomicdata.dev/datatypes/timestamp",
+      "description": "End instant of a completed work interval, milliseconds since the Unix epoch. Absent while a timer is running."
+    },
+    "work-project": {
+      "name": "Project",
+      "datatype": "https://atomicdata.dev/datatypes/atomicURL",
+      "classtype": "work-project-v1",
+      "description": "Project this work interval belongs to."
+    },
+    "work-person": {
+      "name": "Person",
+      "datatype": "https://atomicdata.dev/datatypes/atomicURL",
+      "classtype": "work-person-v1",
+      "description": "Person who performed this work."
+    },
+    "work-billable": {
+      "name": "Billable",
+      "datatype": "https://atomicdata.dev/datatypes/boolean",
+      "description": "Whether this work interval is marked billable. Does not imply invoicing or payment."
+    },
+    "bank-account": {
+      "name": "Account",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Account identifier: an IBAN when the bank gives one, otherwise the bank's own account id."
+    },
+    "bank-currency": {
+      "name": "Currency",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "ISO 4217 currency code of the amount."
+    },
+    "bank-amount": {
+      "name": "Amount",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Exact signed decimal string in the account currency, at most 5 fraction digits. Negative is money out; positive is money in."
+    },
+    "bank-value-date": {
+      "name": "Value date",
+      "datatype": "https://atomicdata.dev/datatypes/date",
+      "description": "Bank value date (YYYY-MM-DD), without an inferred time zone."
+    },
+    "bank-booking-date": {
+      "name": "Booking date",
+      "datatype": "https://atomicdata.dev/datatypes/date",
+      "description": "Booking date (YYYY-MM-DD)."
+    },
+    "bank-description": {
+      "name": "Description",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "The bank's original narrative for the transaction, verbatim."
+    },
+    "bank-reference": {
+      "name": "Reference",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "Bank reference, or customer reference if the bank gives none."
+    },
+    "money-category": {
+      "name": "Category",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "The person's own category for this transaction, as free text. Never written by an importer."
+    },
+    "money-note": {
+      "name": "Note",
+      "datatype": "https://atomicdata.dev/datatypes/string",
+      "description": "The person's own note on this transaction. Never written by an importer."
+    }
+  }
+}

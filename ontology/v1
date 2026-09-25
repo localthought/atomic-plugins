@@ -1,0 +1,41 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/class/ontology"
+  ],
+  "https://atomicdata.dev/properties/shortname": "atomic-plugins-shared-v1",
+  "https://atomicdata.dev/properties/name": "Shared row classes v1",
+  "https://atomicdata.dev/properties/description": "Row classes that several atomic-plugins drive apps sync into, so a plugin's view works on any table of that class (ontola/atomic-plugins#177). Declared, not verified: no plugin writes these classes yet.",
+  "https://atomicdata.dev/properties/classes": [
+    "https://ontola.github.io/atomic-plugins/ontology/classes/event-v1",
+    "https://ontola.github.io/atomic-plugins/ontology/classes/issue-v1",
+    "https://ontola.github.io/atomic-plugins/ontology/classes/time-entry-v1",
+    "https://ontola.github.io/atomic-plugins/ontology/classes/work-project-v1",
+    "https://ontola.github.io/atomic-plugins/ontology/classes/work-person-v1",
+    "https://ontola.github.io/atomic-plugins/ontology/classes/bank-transaction-v1"
+  ],
+  "https://atomicdata.dev/properties/properties": [
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-day",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end-day",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-all-day",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-start",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-location",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-notes",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-recurrence",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-start",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-end",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-project",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-person",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/work-billable",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-account",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-currency",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-amount",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-value-date",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-booking-date",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-description",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/bank-reference",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/money-category",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/money-note"
+  ]
+}
