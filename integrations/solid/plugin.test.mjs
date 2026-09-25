@@ -125,7 +125,10 @@ test('reject binary and unsupported RDF serialization without fake blobs', () =>
     () => run(ctx('bytes', 'application/octet-stream')),
     /Unsupported/,
   );
-  assert.throws(() => run(ctx('<s> <p> <o>.', 'text/turtle')), /Unsupported/);
+  assert.throws(
+    () => run(ctx('<s> <p> <o>.', 'application/rdf+xml')),
+    /Unsupported/,
+  );
 });
 test('parser rejects remote contexts, relative identifiers, malformed RDF, numbers', () => {
   const bad = [

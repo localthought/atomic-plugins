@@ -6,7 +6,7 @@ export const P = Object.freeze({
   localId: 'https://atomicdata.dev/properties/localId',
 });
 export const MAX_BYTES = 32768;
-const TYPES = ['text/plain', 'application/ld+json'];
+const TYPES = ['text/plain', 'application/ld+json', 'text/turtle'];
 
 export const manifest = {
   config: {
@@ -63,7 +63,10 @@ function fail(message) {
 function iri(value) {
   return (
     typeof value === 'string' &&
-    /^[a-z][a-z0-9+.-]*:[^\s<>"{}|\\^`]+$/i.test(value)
+    /^[a-z][a-z0-9+.-]*:[^\s<>"{}|\\^`]+$/i.test(value) &&
+    ![...value].some(
+      char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    )
   );
 }
 
@@ -117,6 +120,7 @@ export function parseRdf(body) {
             keys.some(k => !['@value', '@type', '@language'].includes(k))
           )
             fail('Expected string literal or named node');
+          bytes(value['@value']);
           if (
             '@type' in value &&
             (!iri(value['@type']) || '@language' in value)
@@ -139,13 +143,269 @@ export function parseRdf(body) {
   return graph;
 }
 
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const XSD = 'http://www.w3.org/2001/XMLSchema#';
+
+/** Deliberately bounded RDF 1.1 Turtle subset. No base URL, blank nodes or lists. */
+export function parseTurtle(body) {
+  bounded(body);
+  let offset = 0,
+    statements = 0,
+    expandedBytes = 0;
+  const prefixes = new Map();
+  const nodes = new Map();
+  const error = () =>
+    fail(`Unsupported or invalid Turtle at character ${offset}`);
+
+  function space() {
+    while (offset < body.length) {
+      if (/[\t\r\n ]/.test(body[offset])) offset++;
+      else if (body[offset] === '#') {
+        while (offset < body.length && !/[\r\n]/.test(body[offset])) offset++;
+      } else break;
+    }
+  }
+
+  function take(pattern) {
+    const found = pattern.exec(body.slice(offset));
+    if (!found) return undefined;
+    offset += found[0].length;
+
+    return found[0];
+  }
+
+  function punctuation(mark) {
+    space();
+    if (body[offset] !== mark) error();
+    offset++;
+  }
+
+  function escape(iriMode) {
+    const code = body[offset++];
+
+    if (code === 'u' || code === 'U') {
+      const count = code === 'u' ? 4 : 8;
+      const digits = body.slice(offset, offset + count);
+      if (digits.length !== count || !/^[0-9A-Fa-f]+$/.test(digits)) error();
+      offset += count;
+      const value = Number.parseInt(digits, 16);
+      if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) error();
+
+      return String.fromCodePoint(value);
+    }
+
+    const escapes = {
+      t: '\t',
+      b: '\b',
+      n: '\n',
+      r: '\r',
+      f: '\f',
+      '"': '"',
+      "'": "'",
+      '\\': '\\',
+    };
+    if (iriMode || !Object.prototype.hasOwnProperty.call(escapes, code))
+      error();
+
+    return escapes[code];
+  }
+
+  function delimited(close, iriMode) {
+    offset++;
+    let value = '';
+
+    while (offset < body.length) {
+      const char = body[offset++];
+      if (char === close) return value;
+
+      if (char === '\\') value += escape(iriMode);
+      else {
+        if (char === '\n' || char === '\r') error();
+        value += char;
+      }
+    }
+
+    return error();
+  }
+
+  function reference() {
+    space();
+    let value;
+
+    if (body[offset] === '<') value = delimited('>', true);
+    else {
+      // This subset intentionally excludes Unicode/escaped/dotted prefixed names.
+      const name = take(
+        /^(?:[A-Za-z][A-Za-z0-9_-]*)?:(?:[A-Za-z0-9_][A-Za-z0-9_-]*)?/,
+      );
+      if (name === undefined) error();
+      const colon = name.indexOf(':');
+      const prefix = name.slice(0, colon);
+      if (!prefixes.has(prefix)) error();
+      value = prefixes.get(prefix) + name.slice(colon + 1);
+    }
+
+    if (!iri(value)) error();
+    bytes(value); // Reject invalid Unicode scalar values after escape decoding.
+
+    return value;
+  }
+
+  function object() {
+    space();
+
+    if (body[offset] === '"' || body[offset] === "'") {
+      const quote = body[offset];
+      if (body.slice(offset, offset + 3) === quote.repeat(3)) error();
+      const value = delimited(quote, false);
+      bytes(value);
+      const result = { '@value': value };
+
+      if (body[offset] === '@') {
+        offset++;
+        const language = take(/^[A-Za-z]+(?:-[A-Za-z0-9]+)*/);
+        if (!language) error();
+        result['@language'] = language.toLowerCase();
+      } else if (body.slice(offset, offset + 2) === '^^') {
+        offset += 2;
+        result['@type'] = reference();
+      }
+
+      return result;
+    }
+
+    const boolean = take(/^(?:true|false)(?=[\t\r\n ;,.#]|$)/);
+    if (boolean) return { '@value': boolean, '@type': XSD + 'boolean' };
+    const number = take(
+      /^[+-]?(?:(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+)(?=[\t\r\n ;,.#]|$)/,
+    );
+
+    if (number) {
+      const type = /[eE]/.test(number)
+        ? 'double'
+        : number.includes('.')
+          ? 'decimal'
+          : 'integer';
+
+      return { '@value': number, '@type': XSD + type };
+    }
+
+    return { '@id': reference() };
+  }
+
+  function add(subject, predicate, value) {
+    if (++statements > 512) fail('At most 512 RDF statements');
+    expandedBytes +=
+      bytes(subject) + bytes(predicate) + bytes(JSON.stringify(value)) + 32;
+    if (expandedBytes > MAX_BYTES) fail('Expanded Turtle exceeds 32768 bytes');
+
+    if (!nodes.has(subject)) {
+      if (nodes.size >= 128) fail('At most 128 RDF nodes');
+      nodes.set(subject, { '@id': subject });
+    }
+
+    const node = nodes.get(subject);
+    if (!Object.prototype.hasOwnProperty.call(node, predicate))
+      node[predicate] = [];
+    node[predicate].push(value);
+  }
+
+  while (true) {
+    space();
+    if (offset === body.length) break;
+    const directive = take(/^(?:@prefix|PREFIX)(?=[\t\r\n ])/i);
+
+    if (directive) {
+      if (directive.startsWith('@') && directive !== '@prefix') error();
+      space();
+      const prefix = take(/^(?:[A-Za-z][A-Za-z0-9_-]*)?:/);
+      if (prefix === undefined) error();
+      space();
+      if (body[offset] !== '<') error();
+      const namespace = reference();
+      prefixes.set(prefix.slice(0, -1), namespace);
+      if (directive === '@prefix') punctuation('.');
+      continue;
+    }
+
+    const subject = reference();
+
+    while (true) {
+      space();
+      const predicate = take(/^a(?=[\t\r\n <#])/) ? RDF_TYPE : reference();
+
+      while (true) {
+        add(subject, predicate, object());
+        space();
+        if (body[offset] !== ',') break;
+        offset++;
+      }
+
+      space();
+      if (body[offset] !== ';') break;
+
+      while (body[offset] === ';') {
+        offset++;
+        space();
+      }
+
+      if (body[offset] === '.') break;
+    }
+
+    punctuation('.');
+  }
+
+  return [...nodes.values()];
+}
+
+/** Absolute triple form is valid Turtle; lexical strings never become JS numbers. */
+export function serializeTurtle(graph) {
+  // Use the same named-node graph subset as the expanded JSON-LD importer.
+  parseRdf(JSON.stringify(graph));
+  const lines = [];
+  let outputBytes = 0;
+
+  for (const node of graph) {
+    for (const [predicate, values] of Object.entries(node)) {
+      if (predicate === '@id') continue;
+
+      for (const value of values) {
+        const property = predicate === '@type' ? RDF_TYPE : predicate;
+        let object;
+
+        if (predicate === '@type') object = `<${value}>`;
+        else if ('@id' in value) object = `<${value['@id']}>`;
+        else {
+          object = JSON.stringify(value['@value']);
+          if (value['@language']) object += `@${value['@language']}`;
+          else if (value['@type']) object += `^^<${value['@type']}>`;
+        }
+
+        const line = `<${node['@id']}> <${property}> ${object} .`;
+        outputBytes += bytes(line) + (lines.length ? 1 : 0);
+        if (outputBytes > MAX_BYTES)
+          fail('Turtle representation exceeds 32768 bytes');
+        lines.push(line);
+      }
+    }
+  }
+
+  const body = lines.join('\n');
+  bounded(body);
+
+  return body;
+}
+
 function validate(body, media) {
   bounded(body);
   if (!TYPES.includes(media))
     fail(
-      'Unsupported media type; only text/plain and expanded application/ld+json',
+      'Unsupported media type; expected text/plain, text/turtle or expanded application/ld+json',
     );
-  if (media === 'application/ld+json') parseRdf(body);
+  if (media === 'application/ld+json') return parseRdf(body);
+  if (media === 'text/turtle') return parseTurtle(body);
+
+  return undefined;
 }
 
 /** Existing sandbox job verdicts become real Atomic commits only after host review. */
@@ -190,8 +450,8 @@ function response(status, body = '', headers = {}) {
   return { status, headers: { 'cache-control': 'no-store', ...headers }, body };
 }
 
-function accepts(header, media) {
-  if (!header) return true;
+function qualityFor(header, media) {
+  if (!header) return 1;
   let best = -1,
     quality = 0;
 
@@ -214,7 +474,7 @@ function accepts(header, media) {
     }
   }
 
-  return best >= 0 && quality > 0;
+  return best >= 0 ? quality : 0;
 }
 
 /** Content-derived weak cache validator; never used to authorize writes. */
@@ -258,24 +518,52 @@ export function handle(ctx, request) {
   }
 
   if (!resource) return response(404);
-  const media = resource[P.media];
-  const body = resource[P.description];
+  let media = resource[P.media];
+  let body = resource[P.description];
+  let graph;
 
   try {
-    validate(body, media);
+    graph = validate(body, media);
   } catch {
     return response(415, 'Stored document representation is unsupported');
   }
 
   const headers = request.headers || {};
+  const choices = graph
+    ? [
+        media,
+        ...['text/turtle', 'application/ld+json'].filter(
+          type => type !== media,
+        ),
+      ]
+    : [media];
+  const selected = choices
+    .map(type => ({ type, quality: qualityFor(headers.accept, type) }))
+    .sort((a, b) => b.quality - a.quality)[0];
+  if (!selected || selected.quality <= 0)
+    return response(406, '', { vary: 'Accept' });
+
+  if (selected.type !== media) {
+    try {
+      body =
+        selected.type === 'text/turtle'
+          ? serializeTurtle(graph)
+          : JSON.stringify(graph);
+      bounded(body);
+    } catch {
+      return response(406, '', { vary: 'Accept' });
+    }
+
+    media = selected.type;
+  }
+
   const tag = etag(media, body);
   const out = {
     'content-type': media,
     etag: tag,
     vary: 'Accept',
-    link: `<http://www.w3.org/ns/ldp#${media === 'application/ld+json' ? 'RDFSource' : 'NonRDFSource'}>; rel="type"`,
+    link: `<http://www.w3.org/ns/ldp#${graph ? 'RDFSource' : 'NonRDFSource'}>; rel="type"`,
   };
-  if (!accepts(headers.accept, media)) return response(406, '', out);
   // Strong comparison cannot succeed against our weak representation validator.
   if (headers['if-match'] && headers['if-match'].trim() !== '*')
     return response(412, '', out);
