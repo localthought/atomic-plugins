@@ -5,9 +5,10 @@
  * (`../fixtures/github-issues/scenario.mjs`, `atomic-fixture/tracker`: two
  * issues, one comment):
  *
- * 1. Install test-side (as the pets and notion specs do; there is no catalog
- *    install flow for drive apps yet), connect through the host's consent
- *    bar, choose the repository, import.
+ * 1. Install from the catalog's Drive apps section (as the pets spec does;
+ *    the lane's dev-server serves the committed
+ *    `apps/issue-tracker/<version>/ui.js` in place of GitHub Pages), connect
+ *    through the host's consent bar, choose the repository, import.
  * 2. Reload: the app resumes from the state it saved in the drive, and an
  *    unchanged refresh writes nothing on either side.
  * 3. A reviewed update: a status change made in the table outside the app
@@ -28,14 +29,11 @@
  *   node integrations/tooling/run-lane.mjs issue-tracker --tier e2e
  */
 import { test, expect, type Page, type FrameLocator } from '@playwright/test';
-import {
-  before,
-  createFromCatalog,
-} from '../../../browser/e2e/tests/test-utils';
-// @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build } from '../app/build.mjs';
+import { before } from '../../../browser/e2e/tests/test-utils';
 
 const APP_FRAME = 'iframe[title="App"]';
+/** The catalog's version of this app (integrations/catalog.json). */
+const VERSION = '0.1.0';
 const REPOSITORY = 'atomic-fixture/tracker';
 const NAME = 'https://atomicdata.dev/properties/name';
 
@@ -50,14 +48,7 @@ test.describe('GitHub issues drive app', () => {
       'Run with the documented mock integration-proxy server configuration',
     );
     test.setTimeout(240_000);
-    const { text } = (await build()) as { text: string };
-
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
 
     const app = page.frameLocator(APP_FRAME);
     const status = app.getByRole('status');
@@ -353,33 +344,29 @@ async function signedInAgent(page: Page): Promise<string> {
 }
 
 /**
- * Replaces the source of the app on screen, through `window.store`. Copied
- * from atomic-server's `browser/e2e/tests/apps.spec.ts` (not exported there),
- * as the pets and notion specs do.
+ * Installs the app the way a user does: Integrations page, experimental
+ * plugins shown, Drive apps, Install. The host downloads the catalog's
+ * `app-module` (the lane's dev-server serves the committed
+ * `apps/issue-tracker/<version>/ui.js` in place of GitHub Pages) and refuses it
+ * unless its bytes match `app-module-integrity`, then opens the new app.
+ * Returns the card, for its "Installed <version>" line.
  */
-async function setAppSource(page: Page, source: string) {
-  await page.evaluate(async (next: string) => {
-    const store = window.store!;
-    const subject = decodeURIComponent(
-      new URL(location.href).searchParams.get('subject')!,
-    );
-    const app = await store.getResource(subject);
+async function installFromCatalog(page: Page) {
+  await page.goto(new URL('/app/integrations', page.url()).href);
+  const experimental = page.getByRole('checkbox', {
+    name: 'Show experimental plugins',
+  });
+  await experimental.check();
+  // Disabled while the setting is still saving to the private drive.
+  await expect(experimental).toBeEnabled({ timeout: 30_000 });
+  const entry = page
+    .getByRole('region', { name: 'Drive apps' })
+    .locator('[data-catalog-app="issue-tracker"]');
+  await expect(entry).toContainText(`Version ${VERSION}`);
+  await entry.getByRole('button', { name: 'Install GitHub issues' }).click();
+  await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+    timeout: 45_000,
+  });
 
-    for (const value of Object.values(app.getPropVals())) {
-      if (typeof value !== 'string' || !value.includes(':')) continue;
-      const child = await store.getResource(value).catch(() => undefined);
-      if (!child) continue;
-      const sourceProp = Object.entries(child.getPropVals()).find(
-        ([, v]) =>
-          typeof v === 'string' && v.includes('export async function view'),
-      )?.[0];
-      if (!sourceProp) continue;
-      await child.set(sourceProp, next);
-      await child.save();
-
-      return;
-    }
-
-    throw new Error('could not find the app’s entry point');
-  }, source);
+  return entry;
 }

@@ -16,21 +16,20 @@
  * Nothing here talks to Google; see README.md for what is and isn't live
  * verified.
  *
- * Install is test-side, as in the pets and notion specs: there is no
- * catalog install flow for drive apps yet (#94).
+ * Each test installs the app from the catalog, as the pets spec does: the
+ * Integrations page's Drive apps section, with the lane's dev-server serving
+ * the committed `apps/calendar/<version>/ui.js` in place of GitHub Pages and
+ * the host checking it against the catalog's integrity hash.
  *
  *   node integrations/tooling/run-lane.mjs calendar --tier e2e
  */
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type FrameLocator, type Page } from '@playwright/test';
-import {
-  before,
-  createFromCatalog,
-} from '../../../browser/e2e/tests/test-utils';
-// @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build } from '../app/build.mjs';
+import { before } from '../../../browser/e2e/tests/test-utils';
 
 const APP_FRAME = 'iframe[title="App"]';
+/** The catalog's version of this app (integrations/catalog.json). */
+const VERSION = '0.1.0';
 const NAME = 'https://atomicdata.dev/properties/name';
 
 test.describe('calendar drive app', () => {
@@ -45,14 +44,7 @@ test.describe('calendar drive app', () => {
       'Run with the documented mock integration-proxy server configuration',
     );
     test.setTimeout(240_000);
-    const { text } = (await build()) as { text: string };
-
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
 
     const app = page.frameLocator(APP_FRAME);
     // The #89 design: the status pill carries the sync state in words, the
@@ -221,14 +213,8 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
       'Run with the documented mock integration-proxy server configuration',
     );
     test.setTimeout(240_000);
-    const { text } = (await build()) as { text: string };
     await page.emulateMedia({ colorScheme: 'light' });
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
     const app = page.frameLocator(APP_FRAME);
     await connectThroughHost(page, app);
     await app
@@ -295,13 +281,7 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
       'Run with the documented mock integration-proxy server configuration',
     );
     test.setTimeout(240_000);
-    const { text } = (await build()) as { text: string };
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
     const app = page.frameLocator(APP_FRAME);
     await connectThroughHost(page, app);
     await app
@@ -361,13 +341,7 @@ test.describe('calendar drive app: responsive and theme (#89 C13)', () => {
       'Run with the documented mock integration-proxy server configuration',
     );
     test.setTimeout(240_000);
-    const { text } = (await build()) as { text: string };
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
     const app = page.frameLocator(APP_FRAME);
     await connectThroughHost(page, app);
     await app
@@ -525,32 +499,29 @@ async function tableOf(page: Page): Promise<string> {
 }
 
 /**
- * Replaces the source of the app on screen, through `window.store`. Copied
- * from atomic-server's `browser/e2e/tests/apps.spec.ts` (not exported there).
+ * Installs the app the way a user does: Integrations page, experimental
+ * plugins shown, Drive apps, Install. The host downloads the catalog's
+ * `app-module` (the lane's dev-server serves the committed
+ * `apps/calendar/<version>/ui.js` in place of GitHub Pages) and refuses it
+ * unless its bytes match `app-module-integrity`, then opens the new app.
+ * Returns the card, for its "Installed <version>" line.
  */
-async function setAppSource(page: Page, source: string) {
-  await page.evaluate(async (next: string) => {
-    const store = window.store!;
-    const subject = decodeURIComponent(
-      new URL(location.href).searchParams.get('subject')!,
-    );
-    const app = await store.getResource(subject);
+async function installFromCatalog(page: Page) {
+  await page.goto(new URL('/app/integrations', page.url()).href);
+  const experimental = page.getByRole('checkbox', {
+    name: 'Show experimental plugins',
+  });
+  await experimental.check();
+  // Disabled while the setting is still saving to the private drive.
+  await expect(experimental).toBeEnabled({ timeout: 30_000 });
+  const entry = page
+    .getByRole('region', { name: 'Drive apps' })
+    .locator('[data-catalog-app="calendar"]');
+  await expect(entry).toContainText(`Version ${VERSION}`);
+  await entry.getByRole('button', { name: 'Install Google Calendar' }).click();
+  await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+    timeout: 45_000,
+  });
 
-    for (const value of Object.values(app.getPropVals())) {
-      if (typeof value !== 'string' || !value.includes(':')) continue;
-      const child = await store.getResource(value).catch(() => undefined);
-      if (!child) continue;
-      const sourceProp = Object.entries(child.getPropVals()).find(
-        ([, v]) =>
-          typeof v === 'string' && v.includes('export async function view'),
-      )?.[0];
-      if (!sourceProp) continue;
-      await child.set(sourceProp, next);
-      await child.save();
-
-      return;
-    }
-
-    throw new Error('could not find the app’s entry point');
-  }, source);
+  return entry;
 }
