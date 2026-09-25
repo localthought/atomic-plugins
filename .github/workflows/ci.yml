@@ -599,6 +599,7 @@ jobs:
             integrations/tooling/link-atomic-server.test.mjs \
             integrations/tooling/manifest-http.test.mjs \
             integrations/tooling/serve.test.mjs \
+            integrations/tooling/server-contract.test.mjs \
             integrations/tooling/server-build.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \

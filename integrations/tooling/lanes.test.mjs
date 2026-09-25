@@ -183,6 +183,34 @@ test('lane paths are also in the any filter', () => {
   assert.match(any, /- 'devonian\/src\/\*\*'/);
 });
 
+test('node tiers require explicit plugin-owned test files', () => {
+  assert.throws(
+    () => validateConfig(cfg(lane({ tiers: ['node'] }))),
+    /nodeTests/,
+  );
+  for (const path of [
+    'integrations/b/x.test.mjs',
+    'integrations/a/../b/x.test.mjs',
+    'integrations/a/*.test.mjs',
+    'integrations/a/source.mjs',
+  ])
+    assert.throws(
+      () => validateConfig(cfg(lane({ tiers: ['node'], nodeTests: [path] }))),
+      /nodeTests/,
+    );
+  assert.doesNotThrow(() =>
+    validateConfig(
+      cfg(lane({ tiers: ['node'], nodeTests: ['integrations/a/x.test.mjs'] })),
+    ),
+  );
+});
+
+test('node suite paths exist in every declared lane', () => {
+  for (const entry of config.lanes)
+    for (const path of entry.nodeTests ?? [])
+      assert.ok(existsSync(resolve(root, path)), `missing test suite ${path}`);
+});
+
 test('a tooling lane owns integrations/tooling or a directory under it', () => {
   assert.equal(laneDir(lane()), 'integrations/a');
   assert.equal(

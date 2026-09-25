@@ -107,6 +107,12 @@ install consent. atomic.place builds without the feature, so a package
 meant to be useful there must not depend on one; see
 [Public endpoints need a gated server](integrations/README.md#public-endpoints-need-a-gated-server).
 
+Server protocol scaffolds may instead have planning `plugin.json` metadata
+and a README with a `contract` lane tier. This Node-only check needs no
+browser checkout. It targets future QuickJS JavaScript handlers, not native
+Rust crates, and passing it establishes neither implementation nor protocol
+certification. See [Server protocol scaffolds](integrations/README.md#server-protocol-scaffolds).
+
 ## devonian/
 
 Unlike `integrations/`, `devonian/` is a self-contained, independently
