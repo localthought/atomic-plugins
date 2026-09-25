@@ -197,6 +197,10 @@ describe('statements (atomic-server#1768 destination.tables)', () => {
       [properties['bank-entry-count']]: '2',
       [properties['bank-format']]: 'mt940',
     });
+    // Never JSON-shaped (see plugin.ts): stored as the string it is.
+    expect(String(set(statements[0])[properties['bank-source-id']])).toMatch(
+      /^statement:\[/,
+    );
     expect(set(statements[0])[properties['bank-imported-date']]).toMatch(
       /^\d{4}-\d{2}-\d{2}$/,
     );

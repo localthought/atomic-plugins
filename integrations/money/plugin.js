@@ -1119,15 +1119,14 @@ function run(ctx) {
   const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const statementRecords = statements.map(
     (statement, index) => {
-      const identity = JSON.stringify([
-        "statement",
+      const identity = `statement:${JSON.stringify([
         format,
         statement.account,
         statement.currency,
         statement.number,
         statement.start,
         statement.end
-      ]);
+      ])}`;
       return {
         sourceId: identity,
         mode: "append",

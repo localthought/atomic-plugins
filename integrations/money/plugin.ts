@@ -196,15 +196,17 @@ export function run(ctx: Host) {
   const today = new Date().toISOString().slice(0, 10);
   const statementRecords: ImportRecord[] = statements.map(
     (statement, index) => {
-      const identity = JSON.stringify([
-        'statement',
+      // Not JSON-shaped: legacy storage reads a flat JSON array of strings as
+      // a resource array, and the host then refuses the write because the
+      // stored value no longer matches the imported one.
+      const identity = `statement:${JSON.stringify([
         format,
         statement.account,
         statement.currency,
         statement.number,
         statement.start,
         statement.end,
-      ]);
+      ])}`;
 
       return {
         sourceId: identity,

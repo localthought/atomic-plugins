@@ -12,7 +12,9 @@
  * a draft, set it up, import, reload, import again.
  *
  * A second test adds the Money drive app (`app/`) as a view of the same
- * table and checks its ledger, detail and in-app check against the host.
+ * table, imports through it with the host's review (atomic-server#1774),
+ * reads the statements table (#1768) and saves a category after the
+ * person allows editing in the host's bar (#1788).
  *
  * Needs an atomic-server with manifest `accepts`/`destination` and the
  * PluginPage Import tab (atomic-server#1691, for #1653; in the pinned
@@ -108,11 +110,12 @@ test.describe('money integration', () => {
     await choose(page, 'statement.mt940', mt940);
     await preview(page);
     const dialog = page.locator('dialog[open]');
+    // Two transactions, and the statement they came from (#1768).
     await expect(
-      dialog.getByRole('button', { name: 'Apply 2 changes' }),
+      dialog.getByRole('button', { name: 'Apply 3 changes' }),
     ).toBeVisible({ timeout: 120_000 });
     await expect(dialog.getByText(/1 statements reconciled/)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Apply 2 changes' }).click();
+    await dialog.getByRole('button', { name: 'Apply 3 changes' }).click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // Persisted: the rows are there after a full reload.
@@ -177,13 +180,14 @@ test.describe('money integration', () => {
       'Lunch with a client (edited here)',
     );
 
-    // camt.053 of the same period: identities are per format, so two new rows.
+    // camt.053 of the same period: identities are per format, so two new
+    // rows, and a statement row of its own.
     await choose(page, 'statement.xml', camt);
     await preview(page);
     await expect(
-      dialog.getByRole('button', { name: 'Apply 2 changes' }),
+      dialog.getByRole('button', { name: 'Apply 3 changes' }),
     ).toBeVisible({ timeout: 60_000 });
-    await dialog.getByRole('button', { name: 'Apply 2 changes' }).click();
+    await dialog.getByRole('button', { name: 'Apply 3 changes' }).click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
     await choose(page, 'statement.xml', camt);
     await preview(page);
@@ -213,13 +217,13 @@ test.describe('money integration', () => {
     await expect(dialog.getByText('"Café lunch"').first()).toBeVisible();
   });
 
-  test('Money app: a view of the Bank transactions table, with detail and an in-app check', async ({
+  test('Money app: a view of the Bank transactions table: import, statements, row editing, in-app check', async ({
     page,
   }) => {
     test.setTimeout(300_000);
     const main = page.getByRole('main');
 
-    // The importer, set up and fed the synthetic statement, as above.
+    // The importer, published and set up; nothing imported yet.
     const release = await publishBundle(page);
     await page
       .getByRole('checkbox', { name: 'Show experimental plugins' })
@@ -238,18 +242,17 @@ test.describe('money integration', () => {
     await expect(main.getByLabel('File to import')).toBeVisible({
       timeout: 120_000,
     });
-    await choose(page, 'statement.mt940', mt940);
-    await preview(page);
-    const dialog = page.locator('dialog[open]');
-    await dialog
-      .getByRole('button', { name: 'Apply 2 changes' })
-      .click({ timeout: 120_000 });
-    await expect(dialog).toBeHidden({ timeout: 30_000 });
-    await page.reload();
-    await main.getByRole('link', { name: 'Open workspace' }).click();
-    await expect(main.getByText('Fixture lunch').first()).toBeVisible({
-      timeout: 30_000,
-    });
+    const sidebar = page.getByRole('navigation').last();
+    await sidebar
+      .getByRole('button', { name: 'Expand folder' })
+      .first()
+      .click();
+    await sidebar
+      .getByRole('button', { name: 'Bank transactions', exact: true })
+      .click();
+    await expect(
+      main.getByRole('heading', { name: 'Bank transactions' }),
+    ).toBeVisible({ timeout: 30_000 });
     const table = new URL(page.url()).searchParams.get('subject')!;
     const rowClass = await page.evaluate(
       async subject =>
@@ -272,43 +275,21 @@ test.describe('money integration', () => {
     ).build;
     await installApp(page, (await moneyApp()).text, rowClass);
 
-    // The person adds it as a view of the importer's table.
+    // The person adds it as a view, read-only for now (#1788).
     await page.goto(showUrl(page, table));
     await main.getByRole('button', { name: 'Add view' }).click();
     await page.getByRole('menuitem', { name: 'New app' }).click();
+    await page
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Read-only' })
+      .click();
     const app = page.frameLocator('iframe[title="App"]');
     await expect(
-      app.getByRole('heading', { name: 'Money', level: 1 }),
+      app.getByRole('heading', { name: 'Bring in your bank transactions' }),
     ).toBeVisible({ timeout: 45_000 });
-    await expect(app.getByRole('status').first()).toContainText(
-      'Latest entry',
-      { timeout: 60_000 },
-    );
-    const lunch = app.getByRole('button', { name: /Fixture lunch/ });
-    await expect(lunch).toBeVisible();
-    await expect(
-      app.getByText('−€12.34', { exact: true }).first(),
-    ).toBeVisible();
 
-    // Detail: the bank's fields, read-only; the category is the person's.
-    await lunch.click();
-    const details = app.getByLabel('Transaction details');
-    await expect(details).toContainText('NL00 BUNQ 0000 0000 00 · EUR');
-    await expect(details).toContainText('TEST-1');
-    await details.getByLabel('Category').fill('Meals');
-    await details.getByLabel('Category').press('Tab');
-    // At this pin the host refuses an app's writes outside its own subtree,
-    // and the importer's table is under the importer: the app says so and
-    // keeps the text. When the host allows it, this becomes "Saved".
-    await expect(details.getByRole('alert')).toContainText(
-      "Couldn't save the category. This app isn't allowed to write to the importer's table yet.",
-      { timeout: 30_000 },
-    );
-    await expect(details.getByLabel('Category')).toHaveValue('Meals');
-    await page.keyboard.press('Escape');
-
-    // The in-app check agrees with the importer: nothing new in the same file,
-    // and a changed transaction blocks the file.
+    // Import from inside the app: check, preview, then the host's own
+    // review (#1774). Nothing is written before Apply.
     const input = app.locator('input[type="file"]');
     await input.setInputFiles({
       name: 'statement.mt940',
@@ -316,6 +297,70 @@ test.describe('money integration', () => {
       buffer: Buffer.from(mt940),
     });
     const sheet = app.getByRole('dialog', { name: 'Import statement' });
+    await expect(sheet.getByRole('tab', { name: 'New 2' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await sheet.getByRole('tab', { name: /Already imported/ }).click();
+    await expect(
+      sheet.getByRole('tab', { name: /Already imported/ }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await sheet.getByRole('tab', { name: /^New/ }).click();
+    await sheet.getByRole('button', { name: 'Import 2 transactions' }).click();
+    const ask = page.getByRole('group', { name: 'Import with this app' });
+    await expect(ask).toContainText('statement.mt940');
+    await ask.getByRole('button', { name: 'Preview import' }).click();
+    const review = page.locator('dialog[open]');
+    await review
+      .getByRole('button', { name: 'Apply 3 changes' })
+      .click({ timeout: 120_000 });
+    await expect(review).toBeHidden({ timeout: 30_000 });
+    await expect(sheet).toBeHidden({ timeout: 30_000 });
+    await expect(app.getByRole('status').first()).toContainText('Imported 2', {
+      timeout: 60_000,
+    });
+    const lunch = app.getByRole('button', { name: /Fixture lunch/ });
+    await expect(lunch).toBeVisible();
+    await expect(
+      app.getByText('−€12.34', { exact: true }).first(),
+    ).toBeVisible();
+
+    // The statement row, with its balances: the strip and the Imports tab.
+    await expect(app.getByRole('group', { name: /^Accounts/ })).toContainText(
+      /€107\.66\s*on /,
+      { timeout: 30_000 },
+    );
+    await app.getByRole('tab', { name: /^Imports/ }).click();
+    await expect(app.getByRole('table')).toContainText(/€100\.00 →\s*€107\.66/);
+    await app.getByRole('tab', { name: /^Transactions/ }).click();
+
+    // Detail: the category is the person's. Saving asks, in the host's bar.
+    await lunch.click();
+    const details = app.getByLabel('Transaction details');
+    await expect(details).toContainText('NL00 BUNQ 0000 0000 00 · EUR');
+    await expect(details).toContainText('allow it to edit them');
+    await details.getByLabel('Category').fill('Meals');
+    await details.getByLabel('Category').press('Tab');
+    const allow = page.getByRole('group', { name: 'Let this app edit rows' });
+    await expect(details).toContainText('Waiting for you to allow editing');
+    await expect(details.getByLabel('Category')).toHaveValue('Meals');
+    await allow.getByRole('button', { name: 'Allow editing' }).click();
+    await expect(details).toContainText('Saved', { timeout: 30_000 });
+    await page.keyboard.press('Escape');
+
+    // Stored on the row itself: after a reload the ledger shows it.
+    await page.reload();
+    await expect(
+      app.getByRole('button', { name: /Fixture lunch/ }),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(app.getByRole('table')).toContainText('Meals');
+
+    // The in-app check agrees with the importer: nothing new in the same
+    // file, and a changed transaction blocks the file.
+    await input.setInputFiles({
+      name: 'statement.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940),
+    });
     await expect(sheet).toContainText(
       'Nothing new in this file. All 2 transactions were imported before.',
       { timeout: 30_000 },

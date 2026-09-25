@@ -583,8 +583,17 @@ export function createController(
         if (outcome.status === 'applied' || outcome.status === 'nothing') {
           pendingText = undefined;
           // The new rows, and "Imported N", arrive through the table
-          // subscription: `created` also counts the statement rows.
+          // subscription (`created` also counts the statement rows). Read
+          // again now and shortly after as well: a subscription can miss
+          // writes made while the host's socket reconnects.
           update({ importing: undefined });
+
+          if (outcome.status === 'applied')
+            for (const delay of [0, 1000, 4000])
+              setTimeout(() => {
+                queueRefresh();
+                void loadStatements().catch(() => undefined);
+              }, delay);
         } else if (outcome.status === 'cancelled')
           // Closed in the host's review: back to the preview, unchanged.
           update({ importing: { ...sheet, applying: false } });
