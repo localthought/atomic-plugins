@@ -40,6 +40,7 @@ export const manifest = {
   ],
 };
 export const P = Object.freeze({
+  parent: 'https://atomicdata.dev/properties/parent',
   name: 'https://atomicdata.dev/properties/name',
   description: 'https://atomicdata.dev/properties/description',
   media: 'https://atomicdata.dev/properties/mimetype',
@@ -183,10 +184,28 @@ export function insertData(text) {
 
 function create(ctx, config, body, media) {
   const identity = `nextgraph:${config.parent}:${config.id}`;
-  if (ctx.query(P.localId, identity).length)
-    fail(
-      'Snapshot id already exists; choose a new id for an explicit snapshot',
-    );
+  const matches = ctx.query(P.localId, identity);
+  if (!Array.isArray(matches) || matches.length > 1)
+    fail('Ambiguous snapshot identity; review existing resources');
+
+  if (matches.length) {
+    const existing = ctx.read(matches[0]);
+    if (
+      !existing ||
+      existing[P.localId] !== identity ||
+      existing[P.parent] !== config.parent ||
+      !Array.isArray(existing[P.isA]) ||
+      !existing[P.isA].includes(PLAIN) ||
+      existing[P.name] !== config.name ||
+      existing[P.media] !== media ||
+      existing[P.description] !== body
+    )
+      fail(
+        'Snapshot id already exists with different content; choose a new id for an explicit snapshot',
+      );
+
+    return { intents: [], problems: [] };
+  }
 
   return {
     intents: [

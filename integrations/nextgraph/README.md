@@ -92,8 +92,10 @@ Input is capped at 65,536 UTF-8 bytes and 256 triples; generated N-Triples/updat
 text at 131,072 bytes; IDs at 64 ASCII letters/digits/underscore/hyphen; names
 at 256 characters. IRIs and language tags are validated before interpolation;
 literals are escaped, and raw blank labels never enter generated SPARQL. All
-validation completes before a verdict is returned. Duplicate local identities
-are refused to avoid accidental overwrites. This query preflight is not an
+validation completes before a verdict is returned. Repeating an identical stored
+snapshot produces no changes after a scoped read verifies its parent, class,
+identity, name, media type and exact body. Changed or ambiguous identities are
+refused to protect local edits and avoid accidental overwrites. This query preflight is not an
 atomic uniqueness transaction: concurrent reviewed jobs still need host review.
 
 No keys, credentials, binary blobs, broker sessions or peer requests are accepted.

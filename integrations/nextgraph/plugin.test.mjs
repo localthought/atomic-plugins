@@ -98,10 +98,49 @@ test('denied source read propagates and no write plan is returned', () => {
   c.query = () => assert.fail('must not plan after denial');
   assert.throws(() => run(c), /permission denied/);
 });
-test('duplicate snapshot blocks implicit overwrite and retry duplication preflight', () => {
+test('identical persisted snapshot retries are no-ops and changed snapshots are refused', () => {
   const c = context();
+  const intent = run(c).intents[0];
+  const persisted = {
+    ...intent.set,
+    [P.parent]: intent.parent,
+    [P.isA]: intent.isA,
+  };
   c.query = () => ['https://atomic.example/existing'];
-  assert.throws(() => run(c), /already exists/);
+
+  c.read = subject => {
+    assert.equal(subject, 'https://atomic.example/existing');
+
+    return persisted;
+  };
+
+  assert.deepEqual(run(c), { intents: [], problems: [] });
+
+  for (const [property, value] of [
+    [P.description, 'locally edited'],
+    [P.parent, 'https://atomic.example/other'],
+    [P.localId, 'other'],
+    [P.media, 'text/plain'],
+    [P.isA, []],
+    [P.name, 'renamed'],
+  ]) {
+    c.read = () => ({ ...persisted, [property]: value });
+    assert.throws(() => run(c), /already exists/);
+  }
+});
+test('duplicate, incomplete and denied snapshot lookups cannot produce intents', () => {
+  const c = context();
+
+  for (const result of [null, {}, ['urn:a', 'urn:b']]) {
+    c.query = () => result;
+    assert.throws(() => run(c), /Ambiguous/);
+  }
+
+  c.query = () => ['urn:private'];
+  c.read = () => {
+    throw Error('denied');
+  };
+  assert.throws(() => run(c), /denied/);
 });
 test('blank labels are remapped consistently and cannot inject SPARQL', () => {
   const label = 'danger } ; DROP ALL ; #';
