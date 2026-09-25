@@ -7,12 +7,13 @@
  * body out.
  */
 import { notionFixture } from '../fixtures/notion/scenario.mjs';
-import type {
-  HostProxy,
-  HostProxyRequest,
-  JSONValue,
-  PluginResource,
-  PluginStore,
+import {
+  MAX_GET_MANY,
+  type HostProxy,
+  type HostProxyRequest,
+  type JSONValue,
+  type PluginResource,
+  type PluginStore,
 } from './store.js';
 
 export const PARENT = 'https://atomicdata.dev/properties/parent';
@@ -27,9 +28,18 @@ export const TABLE = 'atomic:table';
 export interface FakeStore extends PluginStore {
   readonly resources: Map<string, Record<string, JSONValue>>;
   readonly writes: { op: 'create' | 'save'; subject: string }[];
+  readonly hostCalls: { op: string; args: unknown }[];
 }
 
-export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
+/**
+ * `hostApis` adds the store operations atomic-server 007869464 introduced
+ * (`getMany`, `openExternal`, `openResource`, `getTheme`, `onThemeChange`),
+ * recording their calls in `hostCalls`.
+ */
+export function fakeStore({
+  proxy,
+  hostApis = false,
+}: { proxy?: HostProxy; hostApis?: boolean } = {}): FakeStore {
   const resources = new Map<string, Record<string, JSONValue>>([
     [APP, {}],
     [ONTOLOGY, { [PARENT]: APP }],
@@ -37,6 +47,7 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
     [TABLE, { [PARENT]: APP }],
   ]);
   const writes: FakeStore['writes'] = [];
+  const hostCalls: FakeStore['hostCalls'] = [];
   let next = 0;
 
   const wrap = (
@@ -74,9 +85,10 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
     };
   };
 
-  return {
+  const store: FakeStore = {
     resources,
     writes,
+    hostCalls,
     getApp: async () => APP,
     getData: async () => ({ table: TABLE, rowClass: ROW_CLASS }),
     async getResource(subject) {
@@ -101,14 +113,58 @@ export function fakeStore({ proxy }: { proxy?: HostProxy } = {}): FakeStore {
     subscribe: () => () => {},
     ...(proxy ? { proxy } : {}),
   };
+
+  if (hostApis) {
+    store.getMany = async subjects => {
+      hostCalls.push({ op: 'getMany', args: subjects.length });
+      if (subjects.length > MAX_GET_MANY)
+        throw new Error('getMany reads at most 100 subjects at a time');
+
+      return subjects.map(subject => {
+        const stored = resources.get(subject);
+
+        return stored ? wrap(subject, stored) : { subject, error: 'Not found' };
+      });
+    };
+
+    store.openExternal = async url => {
+      hostCalls.push({ op: 'openExternal', args: url });
+
+      return { status: 'opened' };
+    };
+
+    store.openResource = async subject => {
+      hostCalls.push({ op: 'openResource', args: subject });
+
+      return { status: 'opened', subject };
+    };
+
+    store.getTheme = () => ({ colorScheme: 'dark' });
+
+    store.onThemeChange = handler => {
+      hostCalls.push({ op: 'onThemeChange', args: handler });
+
+      return () => {};
+    };
+  }
+
+  return store;
 }
 
 /** #52's relay in front of the notion fixture, recording every request. */
-export function fixtureProxy(connectionId = 'conn-1') {
-  const api = notionFixture();
+export function fixtureProxy(
+  connectionId = 'conn-1',
+  { scenario = 'default' }: { scenario?: string } = {},
+) {
+  const api = notionFixture({ scenario });
   const calls: HostProxyRequest[] = [];
-  const proxy: HostProxy & { calls: HostProxyRequest[] } = {
+  let disconnected = false;
+  const proxy: HostProxy & {
+    calls: HostProxyRequest[];
+    api: typeof api;
+  } = {
     calls,
+    api,
     async request(request) {
       calls.push(request);
       if (
@@ -125,13 +181,27 @@ export function fixtureProxy(connectionId = 'conn-1') {
 
       return {
         status: result.status,
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(result.headers ?? {}),
+        },
         body: result.body,
       };
     },
     connections: async ({ platform }) =>
-      platform === 'notion' ? [{ connectionId, platform }] : [],
+      platform === 'notion' && !disconnected
+        ? [{ connectionId, platform }]
+        : [],
     connect: async () => ({ status: 'cancelled' }),
+    disconnect: async ({ platform }) => {
+      disconnected = true;
+
+      return {
+        status: 'disconnected',
+        platform,
+        connectionIds: [connectionId],
+      };
+    },
   };
 
   return proxy;

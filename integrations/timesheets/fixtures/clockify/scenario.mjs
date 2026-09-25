@@ -643,6 +643,9 @@ export function clockifyEntries(now = Date.now()) {
 export const PROJECT = {
   id: 'cccccccccccccccccccccccc',
   name: 'Atomic plugins',
+  // As Clockify's project list returns them; the timesheets views show them.
+  color: '#0B8A8A',
+  clientName: 'Test client',
 };
 
 const PREFIX = '/proxy/clockify/api';
@@ -848,7 +851,7 @@ export function clockifyFixture({
         body: {
           ...USER,
           activeWorkspace: WORKSPACE.id,
-          settings: { timeZone: state.timeZone },
+          settings: { timeZone: state.timeZone, weekStart: 'MONDAY' },
         },
       };
     if (method === 'GET' && path === `${PREFIX}/v1/workspaces`)
@@ -888,6 +891,9 @@ export function clockifyFixture({
       return {
         status: state.failures.status,
         body: { message: 'Simulated Clockify failure' },
+        ...(state.failures.retryAfter
+          ? { headers: { 'Retry-After': state.failures.retryAfter } }
+          : {}),
       };
     }
 
@@ -1021,6 +1027,9 @@ export function clockifyFixture({
           state.failures = {
             count: Number(command.count ?? 1),
             status: Number(command.status ?? 500),
+            ...(command.retryAfter !== undefined
+              ? { retryAfter: String(command.retryAfter) }
+              : {}),
           };
 
           return { failures: state.failures };

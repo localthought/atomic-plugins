@@ -153,3 +153,69 @@ export function relayDispatch(
     };
   };
 }
+
+/** One repository the connection can see, for the picker. */
+export interface Repository {
+  fullName: string;
+  /** GitHub's `open_issues_count`, which counts open pull requests too. */
+  openIssues?: number;
+  /** `has_issues: false` repositories cannot be chosen. */
+  hasIssues: boolean;
+  private?: boolean;
+}
+
+/** At most this many pages of 100; more is not listed (type it instead). */
+export const REPOSITORY_PAGES = 5;
+
+/**
+ * `GET /user/repos` through the relay, for the repository picker. A read,
+ * outside the Bridge and its journal, and the only path besides `/repos/`
+ * the app asks the host for. The proxy's GitHub Issues document may not
+ * include it (atomic-plugins overlays, not verified): any failure rejects,
+ * and the view falls back to typing `owner/name`.
+ */
+export async function listRepositories(
+  proxy: HostProxy,
+  connectionId: string,
+): Promise<Repository[]> {
+  const out: Repository[] = [];
+
+  for (let page = 1; page <= REPOSITORY_PAGES; page++) {
+    const response = await proxy.request({
+      platform: PLATFORM,
+      connectionId,
+      path: '/user/repos',
+      method: 'GET',
+      query: { per_page: '100', page: String(page), sort: 'updated' },
+    });
+    const refused = proxyRefusal(response);
+    if (refused) throw refused;
+    if (response.status < 200 || response.status >= 300)
+      throw new Error(`GitHub list_repositories returned ${response.status}`);
+    const body =
+      typeof response.body === 'string'
+        ? (JSON.parse(response.body) as unknown)
+        : response.body;
+    if (!Array.isArray(body))
+      throw new Error('GitHub returned no repository list');
+
+    for (const raw of body as Record<string, unknown>[]) {
+      if (typeof raw?.full_name !== 'string') continue;
+      out.push({
+        fullName: raw.full_name,
+        hasIssues: raw.has_issues !== false,
+        ...(Number.isSafeInteger(raw.open_issues_count)
+          ? { openIssues: raw.open_issues_count as number }
+          : {}),
+        ...(typeof raw.private === 'boolean' ? { private: raw.private } : {}),
+      });
+    }
+
+    // GitHub pages with a Link header; without one, a short page is the last.
+    const link = response.headers?.link;
+    if (link !== undefined ? !/rel="next"/.test(link) : body.length < 100)
+      break;
+  }
+
+  return out;
+}

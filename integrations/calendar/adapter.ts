@@ -26,6 +26,8 @@ export interface Event {
   recurrence?: string[];
   recurringEventId?: string;
   etag: string;
+  /** Google Calendar's web page for the event. */
+  htmlLink?: string;
 }
 export type Projection = {
   title: string;
@@ -54,12 +56,24 @@ export interface Change {
   desired: Projection;
   /** The event's ETag as read in this preview; an edit sent later is conditioned on it. */
   etag?: string;
+  /** Google's `htmlLink` for the event (display only, never written back). */
+  link?: string;
 }
 export interface Preview {
   calendarId: string;
   revision: number;
   changes: Change[];
-  conflicts: Array<{ subject?: string; id?: string; fields: string[] }>;
+  conflicts: Array<{
+    subject?: string;
+    id?: string;
+    fields: string[];
+    /** Both-changed conflicts only: the three sides, and the ETag read, so a
+     * person can choose per field (the choice is sent later, reviewed). */
+    local?: Projection;
+    remote?: Projection;
+    base?: Projection;
+    etag?: string;
+  }>;
   /** Events read but not imported, by reason. A cancelled instance of a
    * series counts as recurring. */
   skipped: { recurring: number; cancelled: number };
@@ -301,6 +315,7 @@ export async function preview(
     );
   const events = new Map<string, Projection>();
   const etags = new Map<string, string>();
+  const links = new Map<string, string>();
   const skipped = { recurring: 0, cancelled: 0 };
   let pageToken: string | undefined;
   let pages = 0;
@@ -325,6 +340,11 @@ export async function preview(
       if (projection) {
         events.set(event.id, projection);
         if (typeof event.etag === 'string') etags.set(event.id, event.etag);
+        if (
+          typeof event.htmlLink === 'string' &&
+          /^https:\/\//.test(event.htmlLink)
+        )
+          links.set(event.id, event.htmlLink);
       } else if (event.recurrence?.length || event.recurringEventId)
         skipped.recurring++;
       else skipped.cancelled++;
@@ -359,7 +379,11 @@ export async function preview(
     const card = byId.get(id);
 
     if (binding && (!card || binding.local !== card.subject)) {
-      result.conflicts.push({ id, fields: ['Missing or rebound local card'] });
+      result.conflicts.push({
+        ...(binding.local ? { subject: binding.local } : {}),
+        id,
+        fields: ['Missing or rebound local card'],
+      });
       continue;
     }
 
@@ -374,6 +398,12 @@ export async function preview(
         subject: card?.subject,
         id,
         fields: decision.conflicts.map(c => c.property),
+        ...(card ? { local: card.value } : {}),
+        remote,
+        ...(binding?.baseline
+          ? { base: binding.baseline as unknown as Projection }
+          : {}),
+        ...(etags.has(id) ? { etag: etags.get(id) } : {}),
       });
       continue;
     }
@@ -388,6 +418,7 @@ export async function preview(
       remote,
       desired,
       etag: etags.get(id),
+      ...(links.has(id) ? { link: links.get(id) } : {}),
     });
   }
 
