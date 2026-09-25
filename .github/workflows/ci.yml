@@ -879,9 +879,42 @@ jobs:
           # The catalog is served byte for byte, except that each drive app's
           # `app-module` has its GitHub Pages prefix replaced by the
           # dev-server's own origin (dev-server.mjs localCatalog), which then
-          # serves the committed apps/ files under the same paths.
+          # serves the committed apps/ files under the same paths, and that a
+          # drive app entry (one with `app-module`) may be served with
+          # `enabled: true` where the committed catalog says false
+          # (DEV_SERVER_ENABLE_APPS, which serve.mjs sets for the lanes, so an
+          # e2e can install an app that is published but not yet launched).
+          # Nothing else may differ.
           sed -E 's#("https://atomicdata\.dev/integrations/properties/app-module": ")https://ontola\.github\.io/atomic-plugins/#\1http://localhost:'"$dev"'/#g' \
-            integrations/catalog.json | check /integrations/catalog.json
+            integrations/catalog.json > "$RUNNER_TEMP/expected-catalog.json"
+          curl -sf "http://localhost:$dev/integrations/catalog.json" > "$RUNNER_TEMP/served-catalog.json"
+          node --input-type=module - "$RUNNER_TEMP/expected-catalog.json" "$RUNNER_TEMP/served-catalog.json" <<'JS'
+          import { readFileSync } from 'node:fs';
+          const [expected, served] = process.argv.slice(2).map(f => readFileSync(f, 'utf8'));
+          const ENABLED = 'https://atomicdata.dev/integrations/properties/enabled';
+          const MODULE = 'https://atomicdata.dev/integrations/properties/app-module';
+          const fail = message => { console.error(`catalog: ${message}`); process.exit(1); };
+          const a = expected.split('\n');
+          const b = served.split('\n');
+          if (a.length !== b.length) fail('served catalog has a different number of lines');
+          let flipped = 0;
+          a.forEach((line, i) => {
+            if (line === b[i]) return;
+            const off = line.match(/^(\s*"https:\/\/atomicdata\.dev\/integrations\/properties\/enabled": )false(,?)$/);
+            if (!off || b[i] !== `${off[1]}true${off[2]}`) fail(`line ${i + 1} differs: ${b[i]}`);
+            flipped++;
+          });
+          const before = JSON.parse(expected);
+          const after = JSON.parse(served);
+          let apps = 0;
+          before.forEach((entry, i) => {
+            if (entry?.[ENABLED] === after[i]?.[ENABLED]) return;
+            if (typeof entry[MODULE] !== 'string') fail(`entry ${i} is not a drive app, yet served enabled`);
+            apps++;
+          });
+          if (apps !== flipped) fail('an enabled override is not on a top-level drive app entry');
+          console.log(`catalog: served as committed; ${flipped} drive app entr(y/ies) enabled for the lanes`);
+          JS
           for plugin in integrations/*/plugin.js; do
             check "/$plugin" < "$plugin"
           done

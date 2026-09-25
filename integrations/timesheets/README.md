@@ -1,4 +1,14 @@
-# Clockify (LocalThought)
+# Clockify
+
+The supported path is the **drive app** in `app/` (below): catalog entry
+`timesheets` (published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it), installed once enabled from the Integrations page's **Drive apps** section
+(experimental plugins shown), which downloads
+`apps/timesheets/<version>/ui.js` from GitHub Pages and checks it against the
+catalog's integrity hash (see
+[Publishing a drive app](../README.md#publishing-a-drive-app)). It is
+read-only, and mock-tested only. The first sections describe the Clockify
+lens and the LocalThought extension flow it was written for; the pinned host
+no longer has that flow.
 
 Clockify runs entirely in the browser through LocalThought: no AtomicServer-side
 code, no stored secret, no server-initiated calls to Clockify. The personal API
@@ -214,13 +224,17 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
 - **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
   against the pinned atomic-server (`.atomic-server-ref`, which includes
   frame capabilities from atomic-server#1697) and the local mock proxy,
-  which checks the proxy's 0.2 signatures: connect through
-  the consent bar, setup in the frame, Property and row writes through the
+  which checks the proxy's 0.2 signatures: install from the catalog's
+  Drive apps section (the committed `apps/timesheets/<version>/ui.js`, served
+  by the lane's dev-server), connect through the consent bar, setup in the
+  frame, Property and row writes through the
   real `/app-write`, 2 completed entries imported (running timer and break
   not), reopen with no duplicates, a changed entry updated in place, the
   window start moving forward between runs (from the mock's request log),
   7 → 30 days adding exactly the older entry, and a 503 that leaves the
-  three rows readable in the table and recovers on reopen. Provider changes
+  three rows readable in the table and recovers on reopen; then an M2
+  "unclear which project" conflict and not-loaded time in the #89 views.
+  Provider changes
   and failures are driven through the mock proxy's local-only
   `POST /__fixture/clockify`.
 - **Mock endpoints** (`app/fixture.test.ts`, #123 M0), modelled on
@@ -276,14 +290,17 @@ Read from the pinned atomic-server, and reproduced by the e2e where noted.
 
 ### What still has to happen
 
-1. **Install flow** (#94): catalog entry → the published module → an App
-   with its entry point, table and ontology, without the test-side
-   `setAppSource` the e2e uses.
-2. **Disconnect**: there is no `store.proxy.disconnect()` in the host
-   contract. The settings sheet offers Disconnect only when the host has
-   one, and says so otherwise.
-3. **Links out of the frame**: the sandbox has no `allow-popups`, so the
-   drawer's "Open Clockify" (`target=_blank`) is blocked, and there is no
-   host call to open the row in Atomic, so that link is left out.
-4. **Removal** of the LocalThought-extension Clockify path in
-   `data-browser`, and pruning `localthought.ts` to what `app/` imports.
+Done since this list was written: the catalog install (Drive apps,
+`apps/timesheets/0.1.0/ui.js`), and, from atomic-server 007869464 (in the
+pin), Disconnect (`store.proxy.disconnect`), "Open Clockify" through
+`store.openExternal` and "Open row in Atomic" through `store.openResource`,
+each feature-detected. The data-browser's LocalThought-extension path was
+removed upstream (`c707ca4ed`).
+
+1. **Writes to Clockify** (#123 M3, then M4): intents and an outbox, then
+   resolving conflicts from the app. Until then conflicts are read-only and
+   table edits are overwritten.
+2. **Live evidence**: a run of the app against a live account through the
+   real integration proxy. Until then the card's capabilities are declared,
+   not verified.
+3. **Pruning** `localthought.ts` to what `app/` imports.

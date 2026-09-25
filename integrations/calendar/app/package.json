@@ -1,0 +1,7 @@
+{
+  "name": "@atomic-integrations/calendar-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Google Calendar drive app. Records only the version its catalog entry and apps/calendar/<version>/ui.js carry (integrations/tooling/apps.mjs); no npm dependencies. Not a certified sandbox package (no atomicCertification)."
+}

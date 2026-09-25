@@ -13,22 +13,20 @@
  * atomic-server 4bab16ee6 removed (#68). Its two-way, PATCH and
  * revoked-access checks have no read-only counterpart, so they are gone.
  *
- * The install is test-side, as in the pets spec: there is no catalog install
- * flow for drive apps yet. So it makes a "New app" and replaces its entry
- * point's source with the built module.
+ * The app is installed from the catalog, as in the pets spec: the
+ * Integrations page's Drive apps section, with the lane's dev-server serving
+ * the committed `apps/notion/<version>/ui.js` in place of GitHub Pages and
+ * the host checking it against the catalog's integrity hash.
  *
  * Run it the way CI would:
  *   node integrations/tooling/run-lane.mjs notion --tier e2e
  */
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
-import {
-  before,
-  createFromCatalog,
-} from '../../../browser/e2e/tests/test-utils';
-// @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build } from '../app/build.mjs';
+import { before } from '../../../browser/e2e/tests/test-utils';
 
 const APP_FRAME = 'iframe[title="App"]';
+/** The catalog's version of this app (integrations/catalog.json). */
+const VERSION = '0.1.0';
 
 test.describe('notion drive plugin', () => {
   test.beforeEach(before);
@@ -44,14 +42,7 @@ test.describe('notion drive plugin', () => {
     );
     test.setTimeout(300_000);
     await driver('setScenario', ['default']);
-    const { text } = (await build()) as { text: string };
-
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
 
     const app = page.frameLocator(APP_FRAME);
     await app.getByRole('button', { name: 'Connect Notion' }).click();
@@ -88,17 +79,18 @@ test.describe('notion drive plugin', () => {
     ).toContainText('1 page has formatting in Notes');
     await page.keyboard.press('Escape');
 
-    // The rows are ordinary rows of the app's table ("Items" for a new app).
-    // After the connect round trip the app's folder is usually still
-    // expanded in the sidebar; expand it only when it is not.
+    // The rows are ordinary rows of the app's table, named by the catalog
+    // entry's `app-row-name-plural` ("Pages"). After the connect round trip
+    // the app's folder is usually still expanded in the sidebar; expand it
+    // only when it is not.
     const sidebar = page.getByRole('navigation').last();
-    const items = sidebar.getByRole('button', { name: 'Items', exact: true });
+    const items = sidebar.getByRole('button', { name: 'Pages', exact: true });
 
     if (!(await items.isVisible()))
       await sidebar
         .locator('[data-sidebar-id]')
         .filter({
-          has: page.getByRole('button', { name: 'New app', exact: true }),
+          has: page.getByRole('button', { name: 'Notion', exact: true }),
         })
         .getByRole('button', { name: 'Expand folder' })
         .click();
@@ -327,43 +319,29 @@ async function statesTour(page: Page, testInfo: TestInfo) {
 }
 
 /**
- * Replaces the entry point's source of the app on screen through
- * `window.store`, the way atomic-server's apps.spec.ts does: the entry point
- * is a child of the app whose source property is found by its value.
+ * Installs the app the way a user does: Integrations page, experimental
+ * plugins shown, Drive apps, Install. The host downloads the catalog's
+ * `app-module` (the lane's dev-server serves the committed
+ * `apps/notion/<version>/ui.js` in place of GitHub Pages) and refuses it
+ * unless its bytes match `app-module-integrity`, then opens the new app.
+ * Returns the card, for its "Installed <version>" line.
  */
-async function setAppSource(page: Page, source: string) {
-  await page.evaluate(async (next: string) => {
-    const store = (
-      window as unknown as {
-        store: {
-          getResource(s: string): Promise<{
-            getPropVals(): Record<string, unknown>;
-            set(p: string, v: unknown): Promise<void>;
-            save(): Promise<unknown>;
-          }>;
-        };
-      }
-    ).store;
-    const subject = decodeURIComponent(
-      new URL(location.href).searchParams.get('subject')!,
-    );
-    const app = await store.getResource(subject);
+async function installFromCatalog(page: Page) {
+  await page.goto(new URL('/app/integrations', page.url()).href);
+  const experimental = page.getByRole('checkbox', {
+    name: 'Show experimental plugins',
+  });
+  await experimental.check();
+  // Disabled while the setting is still saving to the private drive.
+  await expect(experimental).toBeEnabled({ timeout: 30_000 });
+  const entry = page
+    .getByRole('region', { name: 'Drive apps' })
+    .locator('[data-catalog-app="notion"]');
+  await expect(entry).toContainText(`Version ${VERSION}`);
+  await entry.getByRole('button', { name: 'Install Notion' }).click();
+  await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+    timeout: 45_000,
+  });
 
-    for (const value of Object.values(app.getPropVals())) {
-      if (typeof value !== 'string' || !value.includes(':')) continue;
-      const child = await store.getResource(value).catch(() => undefined);
-      if (!child) continue;
-      const sourceProp = Object.entries(child.getPropVals()).find(
-        ([, v]) =>
-          typeof v === 'string' && v.includes('export async function view'),
-      )?.[0];
-      if (!sourceProp) continue;
-      await child.set(sourceProp, next);
-      await child.save();
-
-      return;
-    }
-
-    throw new Error('could not find the app’s entry point');
-  }, source);
+  return entry;
 }

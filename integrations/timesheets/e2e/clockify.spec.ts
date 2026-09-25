@@ -9,9 +9,10 @@
  * duplicates), a changed entry, a wider window, and a proxy failure that
  * leaves the rows readable and recovers.
  *
- * The install is test-side, as in the Pets and Notion specs: `New app`, then
- * its entry point's source is replaced with `app/build.mjs`'s bundle. There
- * is no catalog install flow for drive apps yet (#94).
+ * The app is installed from the catalog, as in the Pets spec: the
+ * Integrations page's Drive apps section, with the lane's dev-server serving
+ * the committed `apps/timesheets/<version>/ui.js` in place of GitHub Pages
+ * and the host checking it against the catalog's integrity hash.
  *
  * Provider data changes and failures go through the mock proxy's local-only
  * fixture driver (`POST /__fixture/clockify`, see
@@ -22,14 +23,13 @@ import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
-import {
-  before,
-  createFromCatalog,
-} from '../../../browser/e2e/tests/test-utils';
+import { before } from '../../../browser/e2e/tests/test-utils';
 // @ts-expect-error build.mjs is plain JS with no declaration file.
-import { build, cssRawPlugin } from '../app/build.mjs';
+import { cssRawPlugin } from '../app/build.mjs';
 
 const APP_FRAME = 'iframe[title="App"]';
+/** The catalog's version of this app (integrations/catalog.json). */
+const VERSION = '0.1.0';
 /** The fixture's workspace (`../fixtures/clockify/scenario.mjs`). */
 const WORKSPACE_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -70,14 +70,7 @@ test.describe('timesheets drive app', () => {
     );
     test.setTimeout(240_000);
     await fixture({ action: 'reset' });
-    const { text } = (await build()) as { text: string };
-
-    await createFromCatalog(page, 'App');
-    await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
-      timeout: 45_000,
-    });
-    await setAppSource(page, text);
-    await page.reload();
+    await installFromCatalog(page);
     const appUrl = page.url();
 
     const app = page.frameLocator(APP_FRAME);
@@ -269,19 +262,7 @@ test.describe('timesheets drive app', () => {
     await expectRows(page, table);
 
     // #123 M2: a conflict and unknown time, as the #89 views show them
-    // through `ui/coverage.ts`. Those views reach the bundle only once
-    // `main.ts` renders them; until then the text below is tree-shaken
-    // out and these steps are skipped with an annotation, not passed.
-    if (!text.includes('Conflicts in Clockify')) {
-      test.info().annotations.push({
-        type: 'skipped-steps',
-        description:
-          '#123 M2 timeline assertions: the #89 views are not in the bundle yet',
-      });
-
-      return;
-    }
-
+    // through `ui/coverage.ts`.
     await page.goto(appUrl);
     await expect(status.filter({ hasText: 'Last synced' })).toBeVisible({
       timeout: 60_000,
@@ -449,38 +430,6 @@ async function tableOf(page: Page): Promise<string> {
 }
 
 /**
- * Replaces the source of the app on screen, through `window.store`. Copied
- * from atomic-server's `browser/e2e/tests/apps.spec.ts` (not exported there),
- * as the Pets and Notion specs do.
- */
-async function setAppSource(page: Page, source: string) {
-  await page.evaluate(async (next: string) => {
-    const store = window.store!;
-    const subject = decodeURIComponent(
-      new URL(location.href).searchParams.get('subject')!,
-    );
-    const app = await store.getResource(subject);
-
-    for (const value of Object.values(app.getPropVals())) {
-      if (typeof value !== 'string' || !value.includes(':')) continue;
-      const child = await store.getResource(value).catch(() => undefined);
-      if (!child) continue;
-      const sourceProp = Object.entries(child.getPropVals()).find(
-        ([, v]) =>
-          typeof v === 'string' && v.includes('export async function view'),
-      )?.[0];
-      if (!sourceProp) continue;
-      await child.set(sourceProp, next);
-      await child.save();
-
-      return;
-    }
-
-    throw new Error('could not find the app’s entry point');
-  }, source);
-}
-
-/**
  * The #89 views frame by frame (`app/ui/preview.ts`: the real views, the
  * mockup's sample data, a stub controller), at the mockups' widths, checked
  * with axe (WCAG 2.1 A/AA rules) and attached as screenshots. No server is
@@ -578,4 +527,32 @@ async function previewScript(): Promise<string> {
   });
 
   return result.outputFiles[0].text;
+}
+
+/**
+ * Installs the app the way a user does: Integrations page, experimental
+ * plugins shown, Drive apps, Install. The host downloads the catalog's
+ * `app-module` (the lane's dev-server serves the committed
+ * `apps/timesheets/<version>/ui.js` in place of GitHub Pages) and refuses it
+ * unless its bytes match `app-module-integrity`, then opens the new app.
+ * Returns the card, for its "Installed <version>" line.
+ */
+async function installFromCatalog(page: Page) {
+  await page.goto(new URL('/app/integrations', page.url()).href);
+  const experimental = page.getByRole('checkbox', {
+    name: 'Show experimental plugins',
+  });
+  await experimental.check();
+  // Disabled while the setting is still saving to the private drive.
+  await expect(experimental).toBeEnabled({ timeout: 30_000 });
+  const entry = page
+    .getByRole('region', { name: 'Drive apps' })
+    .locator('[data-catalog-app="timesheets"]');
+  await expect(entry).toContainText(`Version ${VERSION}`);
+  await entry.getByRole('button', { name: 'Install Clockify' }).click();
+  await expect(page.getByRole('main').locator(APP_FRAME)).toBeVisible({
+    timeout: 45_000,
+  });
+
+  return entry;
 }

@@ -21,7 +21,7 @@
       "index": 0,
       "platforms": ["google-calendar"],
       "tiers": ["typecheck", "unit", "e2e"],
-      "note": "e2e drives the Calendar drive app (integrations/calendar/app/) in its plugin iframe: connect through the host's consent bar, choose a calendar, import and refresh through the host proxy relay, then preview and send edits with If-Match (atomic-server#1657's ifMatch, in the pin), against the mock proxy's stateful google-calendar fixture and its test drivers.",
+      "note": "e2e installs the Calendar drive app from the catalog (Integrations, Drive apps; the dev-server serves the committed apps/calendar/<version>/ui.js in place of GitHub Pages) and drives it in its plugin iframe: connect through the host's consent bar, choose a calendar, import and refresh through the host proxy relay, then preview and send edits with If-Match (atomic-server#1657's ifMatch, in the pin), against the mock proxy's stateful google-calendar fixture and its test drivers.",
       "e2e": ["integrations/calendar/e2e/calendar.spec.ts"]
     },
     {
@@ -34,7 +34,7 @@
         "devonian/package.json",
         "devonian/pnpm-lock.yaml"
       ],
-      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here. The e2e drives the GitHub issues drive app (app/, npm devonian from app/package.json) through the host's proxy relay (atomic-server#1657, in the pin) against the mock proxy's seeded atomic-fixture/tracker repository.",
+      "note": "paths: devonian/github-issues/ imports the devonian package from source (vitest.config.ts aliases it to devonian/src/main.ts), so a devonian change runs this lane too. Its tests ran in devonian CI before the lens moved here. The e2e installs the GitHub issues drive app (app/, npm devonian from app/package.json) from the catalog's Drive apps section, as the committed apps/issue-tracker/<version>/ui.js, and drives it through the host's proxy relay (atomic-server#1657, in the pin) against the mock proxy's seeded atomic-fixture/tracker repository.",
       "e2e": ["integrations/issue-tracker/e2e/issue-tracker.spec.ts"]
     },
     {
@@ -75,7 +75,7 @@
       "index": 4,
       "platforms": ["notion"],
       "tiers": ["live", "e2e"],
-      "note": "The e2e drives the Notion drive plugin (integrations/notion/app/) through the host's integration-proxy relay (store.proxy, consent bar and connect return) from ontola/atomic-server#1657, against the shared mock proxy's notion fixture. The live tier stubs fetch in-process.",
+      "note": "The e2e installs the Notion drive app (integrations/notion/app/) from the catalog's Drive apps section, as the committed apps/notion/<version>/ui.js, and drives it through the host's integration-proxy relay (store.proxy, consent bar and connect return) from ontola/atomic-server#1657, against the shared mock proxy's notion fixture. The live tier stubs fetch in-process.",
       "e2e": ["integrations/notion/e2e/notion.spec.ts"],
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
@@ -96,7 +96,7 @@
       "index": 5,
       "platforms": ["pets"],
       "tiers": ["e2e"],
-      "note": "e2e drives the Pets drive app (integrations/pets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server#1657, for #1624, merged into feat/plugin-debug; the pin has it); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
+      "note": "e2e installs the Pets drive app from the catalog (Integrations, Drive apps; the committed apps/pets/<version>/ui.js), updates it from an older recorded version, and drives it in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server#1657, for #1624, merged into feat/plugin-debug; the pin has it); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
@@ -112,7 +112,7 @@
       "index": 6,
       "platforms": ["clockify"],
       "tiers": ["typecheck", "unit", "e2e"],
-      "note": "The e2e drives the timesheets drive app (integrations/timesheets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, set up workspace and look-back in the frame, then import, reload, refresh and recover from a proxy failure through the host relay (atomic-server#1657; the pin has it). Provider changes and failures go through the mock proxy's local-only fixture driver (POST /__fixture/clockify). The install is test-side (New app + replaced source) until #94. The old upstream Clockify tests were deleted in atomic-server 4bab16ee6 with the UI they drove (#44).",
+      "note": "The e2e installs the timesheets drive app from the catalog (Integrations, Drive apps; the committed apps/timesheets/<version>/ui.js) and drives it in its plugin iframe: connect through the host's consent bar and the mock proxy, set up workspace and look-back in the frame, then import, reload, refresh and recover from a proxy failure through the host relay (atomic-server#1657; the pin has it). Provider changes and failures go through the mock proxy's local-only fixture driver (POST /__fixture/clockify). It also checks an M2 conflict and not-loaded time in the #89 views. The old upstream Clockify tests were deleted in atomic-server 4bab16ee6 with the UI they drove (#44).",
       "e2e": ["integrations/timesheets/e2e/clockify.spec.ts"]
     },
     {

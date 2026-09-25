@@ -149,9 +149,12 @@ replace them.
   transport's journal refuses: "Uncertain GitHub write"), and sync stays
   paused. The banner says so and links to GitHub; "Send again" is offered
   only for an update GitHub does not show. There is no in-app way out for an
-  uncertain create yet (design state 12), nor for a record missing on one
-  side (state 13, "Remove from board" / "Keep here only"): both need Bridge
-  calls, and unbinding needs an `AtomicIdentityMap` unbind in `devonian/`.
+  uncertain create yet (design state 12, "It landed", #156).
+- An issue GitHub no longer has (state 13): "Keep here only" forgets its
+  GitHub identity and clears the row's issue number, so it stays as a local
+  row; "Remove from board" forgets it on both sides and deletes its row and
+  comment Messages here (`app/sync.ts`, `AtomicIdentityMap.unbind` from
+  devonian 0.8.0). Neither sends anything to GitHub.
 - Atomic Server refusing a write: a banner with "Try again".
 - Anything else (network, 5xx, rate limit) shows on the pill only, with
   "Retry now", and is retried on a timer while the view is open. While sync
@@ -212,9 +215,14 @@ read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
   `store.getMany` in batches of 100.
 - Search, keyboard and drag were checked in jsdom and the e2e; drag and drop
   was not exercised in an automated test.
-- **Install.** No catalog install flow for drive apps exists yet (#94), so
-  there is no catalog entry: one would advertise a runtime a user cannot
-  reach. The e2e installs the app test-side, as pets' and notion's do.
+- **Install.** From the catalog: entry `issue-tracker` (experimental; published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it). Once enabled it is listed under
+  the Integrations page's **Drive apps**, which downloads
+  `apps/issue-tracker/<version>/ui.js` from GitHub Pages and checks it
+  against the entry's integrity hash (see
+  [Publishing a drive app](../README.md#publishing-a-drive-app)). The e2e
+  installs it that way, from the committed module the lane's dev-server
+  serves. A new release needs a version bump in `app/package.json` and the
+  catalog, then `node integrations/tooling/apps.mjs write issue-tracker`.
 
 `app/package.json` pins `devonian@0.8.0` from npm (install it with
 `pnpm install --frozen-lockfile` in `app/`), bundled as `devonian/atomic` plus

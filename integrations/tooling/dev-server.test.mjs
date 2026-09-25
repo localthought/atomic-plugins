@@ -9,7 +9,14 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hostedAssets, createDevServer, root } from './dev-server.mjs';
+import {
+  hostedAssets,
+  createDevServer,
+  enableAppEntries,
+  localCatalog,
+  parseEnableApps,
+  root,
+} from './dev-server.mjs';
 
 async function withFixture(fn) {
   const base = mkdtempSync(join(tmpdir(), 'atomic-dev-server-'));
@@ -36,8 +43,8 @@ async function withFixture(fn) {
   }
 }
 
-async function withServers(assetsRoot, run) {
-  const dev = createDevServer({ assetsRoot });
+async function withServers(assetsRoot, run, { enableApps } = {}) {
+  const dev = createDevServer({ assetsRoot, enableApps });
   await new Promise(r => dev.listen(0, r));
   const devUrl = `http://localhost:${dev.address().port}`;
 
@@ -202,4 +209,128 @@ test('hosts the certified integration bundles in this repository', () => {
   const assets = hostedAssets(root);
   assert.ok(assets.has('catalog.json'));
   assert.ok(assets.has('notion/plugin.js'));
+});
+
+const ENABLED = `${APP}enabled`;
+const SHORTNAME = 'https://atomicdata.dev/properties/shortname';
+
+/** A catalog as apps.mjs writes it: two apps, one disabled; a non-app entry. */
+const appCatalog = () =>
+  `${JSON.stringify(
+    [
+      {
+        [SHORTNAME]: 'on',
+        [ENABLED]: true,
+        [`${APP}app-module`]:
+          'https://ontola.github.io/atomic-plugins/apps/on/1.0.0/ui.js',
+      },
+      {
+        [SHORTNAME]: 'off',
+        [ENABLED]: false,
+        [`${APP}app-module`]:
+          'https://ontola.github.io/atomic-plugins/apps/off/1.0.0/ui.js',
+      },
+      {
+        [SHORTNAME]: 'off-too',
+        [ENABLED]: false,
+        [`${APP}app-module`]:
+          'https://ontola.github.io/atomic-plugins/apps/off-too/1.0.0/ui.js',
+      },
+      { [SHORTNAME]: 'not-an-app', [ENABLED]: false },
+    ],
+    null,
+    2,
+  )}\n`;
+
+/** Lines of `served` that differ from `committed`, as [committed, served]. */
+const changedLines = (committed, served) => {
+  const a = committed.split('\n');
+  const b = served.split('\n');
+  assert.equal(a.length, b.length);
+
+  return a.flatMap((line, i) => (line === b[i] ? [] : [[line, b[i]]]));
+};
+
+test('DEV_SERVER_ENABLE_APPS: unset or empty changes nothing; ids or all', () => {
+  assert.equal(parseEnableApps(undefined), undefined);
+  assert.equal(parseEnableApps(''), undefined);
+  assert.equal(parseEnableApps(' , '), undefined);
+  assert.deepEqual(parseEnableApps('a, b'), new Set(['a', 'b']));
+  assert.equal(parseEnableApps('a,all'), 'all');
+});
+
+test('enableAppEntries turns enabled false into true on the named app entries only', () => {
+  const text = appCatalog();
+  const flip = [`    "${ENABLED}": false,`, `    "${ENABLED}": true,`];
+
+  assert.deepEqual(
+    changedLines(text, enableAppEntries(text, new Set(['off']))),
+    [flip],
+  );
+  // `all` is every drive app entry, never an entry without app-module, even
+  // when named.
+  assert.deepEqual(changedLines(text, enableAppEntries(text, 'all')), [
+    flip,
+    flip,
+  ]);
+  assert.equal(enableAppEntries(text, new Set(['not-an-app', 'on'])), text);
+  const all = JSON.parse(enableAppEntries(text, 'all'));
+  assert.deepEqual(
+    all.map(e => e[ENABLED]),
+    [true, true, true, false],
+  );
+});
+
+test('the served catalog enables app entries only with enableApps', async () => {
+  await withFixture(async base => {
+    writeFileSync(join(base, 'integrations/catalog.json'), appCatalog());
+    const committed = localCatalog(appCatalog(), 'http://x');
+
+    await withServers(base, async ({ devUrl }) => {
+      const served = await (
+        await fetch(`${devUrl}/integrations/catalog.json`)
+      ).text();
+      assert.equal(served, localCatalog(appCatalog(), devUrl));
+      assert.equal(
+        JSON.parse(served).filter(e => e[ENABLED]).length,
+        JSON.parse(committed).filter(e => e[ENABLED]).length,
+      );
+    });
+
+    await withServers(
+      base,
+      async ({ devUrl }) => {
+        const served = JSON.parse(
+          await (await fetch(`${devUrl}/integrations/catalog.json`)).text(),
+        );
+        assert.deepEqual(
+          served.map(e => [e[SHORTNAME], e[ENABLED]]),
+          [
+            ['on', true],
+            ['off', true],
+            ['off-too', false],
+            ['not-an-app', false],
+          ],
+        );
+      },
+      { enableApps: new Set(['off']) },
+    );
+  });
+});
+
+test("this repo's catalog, with every app enabled, differs only in app entries' enabled", () => {
+  const text = readFileSync(join(root, 'integrations/catalog.json'), 'utf8');
+  const served = localCatalog(text, 'http://localhost:1', {
+    enableApps: 'all',
+  });
+  const moved = localCatalog(text, 'http://localhost:1');
+
+  for (const [before, after] of changedLines(moved, served)) {
+    assert.match(before, /\/enabled": false,$/);
+    assert.equal(after, before.replace(/false,$/, 'true,'));
+  }
+
+  for (const entry of JSON.parse(served))
+    if (typeof entry[`${APP}app-module`] === 'string')
+      assert.equal(entry[ENABLED], true, entry[SHORTNAME]);
 });

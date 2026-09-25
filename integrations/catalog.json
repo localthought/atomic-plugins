@@ -6,7 +6,7 @@
     ],
     "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/ontology",
     "https://atomicdata.dev/properties/shortname": "integrations-catalog",
-    "https://atomicdata.dev/properties/description": "The plugin catalog for this repository's integrations: visibility flags and card copy per entry. The data-browser fetches this file at runtime from GitHub Pages (https://ontola.github.io/atomic-plugins/integrations/catalog.json by default, configurable in Settings > Integration), not from the connected server. At the pinned atomic-server it reads only `shortname`, `experimental`, `enabled` and `requires-api-plugins`, to decide whether to offer the 'Show experimental plugins' toggle; it renders no card from this file (see integrations/READINESS.md). Where `shortname` equals a package directory under integrations/ (money, notion, pets), the entry's `version` must equal that package's (integrations/README.md, 'Version and catalog entry'). Flip `experimental` to `false` once its package.json `atomicCertification.support` has left \"experimental\" — see integrations/README.md.",
+    "https://atomicdata.dev/properties/description": "The plugin catalog for this repository's integrations: visibility flags and card copy per entry. The data-browser fetches this file at runtime from GitHub Pages (https://ontola.github.io/atomic-plugins/integrations/catalog.json by default, configurable in Settings > Integration), not from the connected server. At the pinned atomic-server it reads `shortname`, `experimental`, `enabled` and `requires-api-plugins` of every entry, to decide whether to offer the 'Show experimental plugins' toggle, and renders a card under 'Drive apps' only for an entry with `app-module` (name, emoji, description, version; see integrations/README.md, 'Publishing a drive app', and integrations/READINESS.md). Where `shortname` equals a package directory under integrations/ (money, notion, pets), the entry's `version` must equal that package's (integrations/README.md, 'Version and catalog entry'). Flip `experimental` to `false` once its package.json `atomicCertification.support` has left \"experimental\" — see integrations/README.md.",
     "https://atomicdata.dev/properties/classes": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
     ],
@@ -153,22 +153,25 @@
     "https://atomicdata.dev/properties/description": "The platform id LocalThought's OAuth callback reports back, for an integration that owns its own setup component instead of using the generic LocalThought flow (so it has no `platform`)."
   },
   {
-    "https://atomicdata.dev/properties/localId": "devonian-google-calendar",
+    "https://atomicdata.dev/properties/localId": "calendar",
     "https://atomicdata.dev/properties/isA": [
       "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
     ],
-    "https://atomicdata.dev/properties/shortname": "devonian-google-calendar",
+    "https://atomicdata.dev/properties/shortname": "calendar",
     "https://atomicdata.dev/integrations/properties/experimental": true,
     "https://atomicdata.dev/integrations/properties/enabled": false,
     "https://atomicdata.dev/properties/name": "Google Calendar",
     "https://atomicdata.dev/properties/emoji": "🗓️",
-    "https://atomicdata.dev/properties/description": "Import Google Calendar events into calendar views.",
-    "https://atomicdata.dev/integrations/properties/capabilities": "Imports one calendar's single (non-recurring) events with title, description, location and time. Edits to those five fields made here are listed for review and sent to Google only when you approve, each conditioned on the event not having changed in Google since.",
-    "https://atomicdata.dev/integrations/properties/events": "Open the Calendar app, connect Google Calendar through the host's consent bar and choose a calendar. Refresh reads the whole calendar; Send sends reviewed edits.",
-    "https://atomicdata.dev/integrations/properties/limitation": "Drive app; not yet installable from this catalog (installed by its tests only). One calendar per app, up to 25,000 events. Recurring events (series and instances) and cancelled events are not imported; an imported event cancelled in Google is reported, never deleted. No creating or deleting events. Google may notify guests of a sent edit. Mock-tested only: not yet verified against a live Google account.",
-    "https://atomicdata.dev/integrations/properties/keywords": "google calendar events agenda schedule drive app two-way",
-    "https://atomicdata.dev/integrations/properties/requires-api-plugins": true,
-    "https://atomicdata.dev/integrations/properties/platform": "google-calendar"
+    "https://atomicdata.dev/properties/description": "A drive app that imports one Google calendar's events and sends the edits you review back to Google.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Imports one calendar's single (non-recurring) events with title, description, location, start and end into the app's table, shown as an agenda and a week in the app and as a month through the table's own calendar view. Edits to those five fields are listed for review and sent to Google only when you approve them, each with If-Match (refused if the event changed in Google since it was read) and sendUpdates=none. A field changed on both sides waits until you pick a side.",
+    "https://atomicdata.dev/integrations/properties/events": "Install from Drive apps, connect Google Calendar through the host's consent bar and choose a calendar. It syncs when opened and on Sync now; Send sends the reviewed edits. Nothing runs while the app is closed.",
+    "https://atomicdata.dev/integrations/properties/limitation": "One calendar per app, up to 25,000 events per scan. Recurring events (series and instances) and cancelled events are not imported; an imported event cancelled in Google is reported, never deleted. No creating or deleting events in Google. Mock-tested only: not yet verified against a live Google account.",
+    "https://atomicdata.dev/integrations/properties/keywords": "google calendar events agenda week month schedule drive app two-way review",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
+    "https://atomicdata.dev/integrations/properties/app-row-name": "Event",
+    "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Events",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/calendar/0.1.0/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-uwmajpxh9zYj+YfenZC6Bmv2Xk7X6Q0qyF0SkRB2dVzTtBBm9qy8w8hT+ffuC/AU"
   },
   {
     "https://atomicdata.dev/properties/localId": "devonian-todoist",
@@ -233,12 +236,16 @@
     "https://atomicdata.dev/integrations/properties/enabled": false,
     "https://atomicdata.dev/properties/name": "Clockify",
     "https://atomicdata.dev/properties/emoji": "⏱️",
-    "https://atomicdata.dev/properties/description": "Bring your completed work into a Time Tracker.",
-    "https://atomicdata.dev/integrations/properties/capabilities": "Imports your completed entries with start/end times, description and billable flag into a timer view with daily totals.",
-    "https://atomicdata.dev/integrations/properties/events": "Connect through LocalThought with a personal API key, then the table refreshes while it is open.",
-    "https://atomicdata.dev/integrations/properties/limitation": "Your entries only, past 7 or 30 days. Import only: no active timers, tags, tasks, rates or custom fields, and nothing is written back to Clockify.",
-    "https://atomicdata.dev/integrations/properties/keywords": "clockify time tracking timesheet timer billable import localthought",
-    "https://atomicdata.dev/integrations/properties/platform": "clockify"
+    "https://atomicdata.dev/properties/description": "A read-only drive app that brings your Clockify time entries into a week view and a table of its own.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Reads your own time entries in one workspace over a rolling 7- or 30-day look-back, keeps what each read saw in an observation log in the drive, and shows a week grid, the entries by day and hours per project. Completed entries become rows in the app's table (start, end, project, billable). A timeline shows overlapping entries and work over a break as conflicts, read-only, and time no read has covered as not loaded, never as not worked.",
+    "https://atomicdata.dev/integrations/properties/events": "Install from Drive apps, connect Clockify through the host's consent bar (the API key is entered at the integration proxy, never in the drive), then choose a workspace and a look-back. It syncs when opened and on Sync now; nothing runs while the app is closed.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Read-only: nothing is written to Clockify, and conflicts cannot be resolved from the app yet. Edits made in the table are overwritten by the next sync. No tags, tasks, rates or custom fields. Tested against a mock proxy modelled on Clockify behaviour checked against a live account (2026-09-24); the app itself has not run against a live account or the real integration proxy.",
+    "https://atomicdata.dev/integrations/properties/keywords": "clockify time tracking timesheet week hours projects conflicts drive app",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
+    "https://atomicdata.dev/integrations/properties/app-row-name": "Time entry",
+    "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Time entries",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/timesheets/0.1.0/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-EqMsXgbu57BU1Y0u0KaUoq/5DtTJ4Vuto7uPk/lEvf9RwvCOmFbA570TqTVzwjEw"
   },
   {
     "@id": "https://atomicdata.dev/integrations/catalog/notion",
@@ -250,14 +257,16 @@
     "https://atomicdata.dev/integrations/properties/enabled": false,
     "https://atomicdata.dev/properties/name": "Notion",
     "https://atomicdata.dev/properties/emoji": "📓",
-    "https://atomicdata.dev/properties/description": "Work with your Notion database in Atomic.",
-    "https://atomicdata.dev/integrations/properties/capabilities": "Sync supported row fields, property names and table or board views.",
-    "https://atomicdata.dev/integrations/properties/events": "Start automations from newly discovered rows.",
-    "https://atomicdata.dev/integrations/properties/limitation": "Formatted text, relations, formulas and filtered views need additional mappings.",
-    "https://atomicdata.dev/integrations/properties/keywords": "notion database table board rows knowledge tasks automation",
-    "https://atomicdata.dev/integrations/properties/requires-api-plugins": true,
-    "https://atomicdata.dev/integrations/properties/callback-platform": "notion",
-    "https://atomicdata.dev/integrations/properties/version": "0.1.0"
+    "https://atomicdata.dev/properties/description": "A read-only drive app that brings the Notion databases you share with it into a table, with table, board and list views.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Reads every Notion data source shared with the connection into one table in the drive, through Devonian lenses: plain title and text, number, checkbox, URL, email, phone, and select, status and multi-select options (shown with Notion's names and colours). Table, board and list views per database, a side peek per row, and sync details listing what could not be read. Disconnect removes only this app's access; the rows stay.",
+    "https://atomicdata.dev/integrations/properties/events": "Install from Drive apps, then connect Notion through the host's consent bar. It syncs when opened if the last sync is older than 15 minutes, and on Sync now. Nothing runs while the app is closed.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Read-only: nothing is written to Notion, and a page removed or archived in Notion is left in place here. Formatted text is not imported and is listed as a warning; other property types (dates, people, relations, formulas and more) are not imported. All shared databases go into one table. Mock-tested only: not yet verified against live Notion or the real integration proxy.",
+    "https://atomicdata.dev/integrations/properties/keywords": "notion database table board list rows pages read-only drive app devonian",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
+    "https://atomicdata.dev/integrations/properties/app-row-name": "Page",
+    "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pages",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/notion/0.1.0/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-FrLZZxyZiVFiAsyQXLelQf5+e9+/BLeAjkPvBWhQpRe7zUCaRqYLibJRI56mv0NZ"
   },
   {
     "@id": "https://atomicdata.dev/integrations/properties/pluginUrl",
@@ -349,6 +358,27 @@
     "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-41Lz+YXgQJNRqGsiGtduk4wE6fVURecH8sK68Rkwz6GS/EvcG974e69xvj3hEN8i",
     "https://atomicdata.dev/integrations/properties/app-row-name": "Pet",
     "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pets"
+  },
+  {
+    "https://atomicdata.dev/properties/localId": "issue-tracker",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
+    ],
+    "https://atomicdata.dev/properties/shortname": "issue-tracker",
+    "https://atomicdata.dev/integrations/properties/experimental": true,
+    "https://atomicdata.dev/integrations/properties/enabled": false,
+    "https://atomicdata.dev/properties/name": "GitHub issues",
+    "https://atomicdata.dev/properties/emoji": "🐙",
+    "https://atomicdata.dev/properties/description": "A drive app that keeps one GitHub repository's issues on a board, two-way, with every change to GitHub reviewed before it is sent.",
+    "https://atomicdata.dev/integrations/properties/capabilities": "Imports one repository's issues and comments into the app's table, shown as a board (Todo, Doing, Done) or a list, with search and a label filter. Title, description (Markdown), status and comments sync both ways; a change bound for GitHub waits in Review and send until you approve exactly that change. A field changed on both sides pauses sync until you pick a side. An issue gone from GitHub can be kept here only or removed from the board.",
+    "https://atomicdata.dev/integrations/properties/events": "Install from Drive apps, connect GitHub through the host's consent bar and choose a repository. It syncs when opened, on Sync now and after each edit made in the app; nothing runs while the app is closed.",
+    "https://atomicdata.dev/integrations/properties/limitation": "One repository per app. Labels and assignees are shown read-only; milestones and pull requests are not synced, and deletions are never sent to GitHub. One syncing view per app is assumed: two tabs or devices are not guarded. A new issue whose send got no answer pauses sync, with no in-app way out yet (#156). Mock-tested only: not yet verified against live GitHub or the real integration proxy.",
+    "https://atomicdata.dev/integrations/properties/keywords": "github issues board kanban tracker two-way review drive app devonian",
+    "https://atomicdata.dev/integrations/properties/version": "0.1.0",
+    "https://atomicdata.dev/integrations/properties/app-row-name": "Issue",
+    "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Issues",
+    "https://atomicdata.dev/integrations/properties/app-module": "https://ontola.github.io/atomic-plugins/apps/issue-tracker/0.1.0/ui.js",
+    "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-QyXVqeSXn59mWrCcsoubVrfKllEI0Y+1QP/B2HxTcyZO5e7mr3UPkllNZ06UTXFB"
   },
   {
     "https://atomicdata.dev/properties/localId": "open-cloud-mesh",

@@ -450,6 +450,10 @@ export async function bringUp({
     ['integrations/tooling/dev-server.mjs'],
     {
       DEV_SERVER_PORT: String(ports.devServer),
+      // Serve every drive app entry enabled, so an e2e can install an app
+      // the published catalog still keeps disabled until its launch
+      // (dev-server.mjs enableAppEntries).
+      DEV_SERVER_ENABLE_APPS: process.env.DEV_SERVER_ENABLE_APPS ?? 'all',
     },
   );
 

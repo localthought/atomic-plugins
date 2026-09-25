@@ -1,15 +1,23 @@
 # Notion ↔ Atomic
 
 Everything Notion-specific lives in this folder. atomic-server keeps no
-Notion code (branch `claude/remove-notion-code`). There are two paths, and
-neither has an entry point in the atomic-server data-browser today:
+Notion code (branch `claude/remove-notion-code`). There are two paths:
 
-- **Drive plugin on syncables and Devonian** (`app/`, read-only, new). This
+- **Drive plugin on syncables and Devonian** (`app/`, read-only). This
   is the direction for #8 and #68: an iframe plugin that reads Notion through
   `syncables/browser` over the host's integration-proxy relay, and maps it to
-  Atomic rows through a Devonian lens (`devonian/notion/`).
+  Atomic rows through a Devonian lens (`devonian/notion/`). It is the one
+  with an entry point: the `notion` catalog entry (experimental; published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it) installs it
+  from the Integrations page's **Drive apps**, downloading
+  `apps/notion/<version>/ui.js` from GitHub Pages and checking it against the
+  entry's integrity hash (see
+  [Publishing a drive app](../README.md#publishing-a-drive-app)). Its version
+  is this folder's `package.json` version, shared with the sandbox plugin, so
+  a release of either bumps both. After a bump, write the module with:
+  `node integrations/tooling/apps.mjs write notion`.
 - **Sandbox plugin** (`plugin.ts`, two-way, the pilot). It runs in atomic-server's
-  QuickJS/WASM plugin runtime. It is still the only two-way path.
+  QuickJS/WASM plugin runtime. It is still the only two-way path, and has no
+  entry point in the data-browser today.
 
 API version `2026-03-11` throughout. Planning notes from the pilot moved
 here from atomic-server and are under [`planning/`](planning/).
@@ -109,7 +117,8 @@ What it does not do, and what is not verified:
 ## E2E
 
 `e2e/notion.spec.ts` drives the drive plugin the same way the pets spec does:
-a test-side install (`setAppSource` with `build().text`), then Connect, the
+an install from the catalog's Drive apps section (the committed
+`apps/notion/<version>/ui.js`, served by the lane's dev-server), then Connect, the
 host's consent bar and the mock proxy's consent page, then the 3 rows in the
 app's own table and their column types. It then walks the #89 states against
 the fixture's scenarios (`setScenario`, `renameOption` drivers): two

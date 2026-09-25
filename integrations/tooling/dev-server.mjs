@@ -65,6 +65,9 @@ export function hostedAssets(base = root) {
   return assets;
 }
 
+/** The catalog's visibility gate for an entry. */
+const ENABLED = 'https://atomicdata.dev/integrations/properties/enabled';
+
 const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 /** An `app-module` value that starts with the Pages base, as it is written. */
@@ -80,10 +83,73 @@ const PAGES_MODULE = new RegExp(
  * of the file is served as committed (CI's hosting-surface check compares
  * them), and the integrity hash is left alone, so the host still refuses a
  * module that does not match what the catalog pins — `apps.mjs check` is what
- * keeps the two equal. A URL outside Pages is served as it is.
+ * keeps the two equal. A URL outside Pages is served as it is. With
+ * `enableApps` it also enables drive app entries (`enableAppEntries`).
  */
-export function localCatalog(text, origin) {
-  return text.replace(PAGES_MODULE, (_, key) => `${key}${origin}/`);
+export function localCatalog(text, origin, { enableApps } = {}) {
+  const moved = text.replace(PAGES_MODULE, (_, key) => `${key}${origin}/`);
+
+  return enableApps ? enableAppEntries(moved, enableApps) : moved;
+}
+
+const ENABLED_FALSE = new RegExp(
+  `("${escapeRegExp(ENABLED)}"\\s*:\\s*)false\\b`,
+);
+
+/**
+ * `DEV_SERVER_ENABLE_APPS` as a set of shortnames, or `'all'`. Unset or
+ * empty is `undefined`: the catalog's `enabled` is served as committed.
+ */
+export function parseEnableApps(value) {
+  const ids = (value ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (!ids.length) return undefined;
+
+  return ids.includes('all') ? 'all' : new Set(ids);
+}
+
+/**
+ * The catalog with `enabled: false` turned into `enabled: true` on the drive
+ * app entries (those with `app-module`) that `enable` names, or on every
+ * drive app entry for `'all'`. The lanes need it: the e2e installs through
+ * the Integrations page's Drive apps section, which hides a disabled entry,
+ * while the published catalog may keep an app disabled until its launch.
+ * Like the `app-module` rewrite, it is textual, one `false` per entry, so
+ * every other byte stays as committed; CI's hosting-surface check allows
+ * exactly this change on app entries and nothing else. An entry that is not
+ * a drive app is never touched, whatever `enable` says.
+ */
+export function enableAppEntries(text, enable) {
+  const wanted = new Set(
+    JSON.parse(text)
+      .filter(
+        entry =>
+          entry &&
+          typeof entry[terms.module] === 'string' &&
+          entry[ENABLED] === false &&
+          (enable === 'all' || enable.has(entry[terms.shortname])),
+      )
+      .map(entry => entry[terms.shortname]),
+  );
+  const done = new Set();
+  // Top-level array elements, as JSON.stringify(catalog, null, 2) (apps.mjs
+  // write) and oxfmt lay them out.
+  const out = text.replace(/^ {2}\{\n[\s\S]*?\n {2}\}/gm, block => {
+    const id = JSON.parse(block)[terms.shortname];
+    if (!wanted.has(id)) return block;
+    done.add(id);
+
+    return block.replace(ENABLED_FALSE, '$1true');
+  });
+
+  for (const id of wanted)
+    if (!done.has(id))
+      throw new Error(`dev-server: could not enable ${id} in catalog.json`);
+
+  return out;
 }
 
 /**
@@ -108,7 +174,10 @@ const CONTENT_TYPES = {
   catalog: 'application/json',
 };
 
-export function createDevServer({ assetsRoot = root } = {}) {
+export function createDevServer({
+  assetsRoot = root,
+  enableApps = parseEnableApps(process.env.DEV_SERVER_ENABLE_APPS),
+} = {}) {
   const assets = hostedAssets(assetsRoot);
 
   return createHttpServer((req, res) => {
@@ -153,6 +222,7 @@ export function createDevServer({ assetsRoot = root } = {}) {
             localCatalog(
               readFileSync(file, 'utf8'),
               `http://${req.headers.host}`,
+              { enableApps },
             ),
           )
         : readFileSync(file);
