@@ -12,11 +12,15 @@ atomic-server#1657), for platform `google-calendar`. The frame names a
 connection id, never a credential. The same shape as the Pets and Notion
 drive apps.
 
-1. **Install.** Not yet through the catalog: there is no catalog install flow
-   for drive apps (#94). Today the e2e installs it test-side, as the Pets and
-   Notion specs do. It makes a new App and replaces its entry point's source
-   with `node integrations/calendar/app/build.mjs`'s bundle (`dist/ui.js`,
-   minified, about 105 KB).
+1. **Install.** From the catalog: entry `calendar` (experimental), under the
+   Integrations page's **Drive apps**. The host downloads
+   `apps/calendar/<version>/ui.js` (`app/build.mjs`'s bundle, minified,
+   103,857 bytes for 0.1.0) from GitHub Pages and refuses it unless it
+   matches the entry's integrity hash (see
+   [Publishing a drive app](../README.md#publishing-a-drive-app)). The e2e
+   installs it that way, from the committed module the lane's dev-server
+   serves. A release bumps `app/package.json` and the catalog's `version`,
+   then runs `node integrations/tooling/apps.mjs write calendar`.
 2. **Connect.** "Connect Google Calendar" asks the host to show its consent
    bar. On Connect, the page goes to the integration-proxy and comes back
    with a connection the page holds.
@@ -50,20 +54,21 @@ where it differs from the mockups.
 
 ### What backs the catalog entry today
 
-`catalog.json`'s `devonian-google-calendar` entry describes this drive app.
-Two other runtimes live in this folder, and neither is reachable from the
-pinned host (`2f403624e`):
+`catalog.json`'s `calendar` entry (called `devonian-google-calendar`, with
+`requires-api-plugins`, before the drive app was published) describes this
+drive app and installs it. Two other runtimes live in this folder, and
+neither is reachable from the pinned host:
 
 - `adapter.ts` is also written as a **sandbox-plugin** adapter (`manifest()`
   with a `secret:google-calendar` placeholder). The drive app reuses its
   `preview`/`planEdit`/`applyEdit` unchanged, through `app/relay.ts`. But
-  there is no `plugin.js` or `package.json` here, so the sandbox runtime has
-  no bundle to run, and nothing certifies one.
+  there is no `plugin.js` or certified `package.json` here (`app/package.json`
+  only records the drive app's version), so the sandbox runtime has no
+  bundle to run, and nothing certifies one.
 - [`devonian/google-calendar/`](devonian/google-calendar/) is the Devonian
-  lens of the LocalThought setup dialog flow. The pinned host's Integrations
-  page draws no card for this entry and has no LocalThought dialog: its
-  catalog entries only gate the "Show experimental plugins" toggle. Evidence
-  gathered against that flow does not certify the drive app.
+  lens of the LocalThought setup dialog flow. The pinned host has no
+  LocalThought dialog. Evidence gathered against that flow does not certify
+  the drive app.
 
 ## Mapping
 
@@ -215,7 +220,9 @@ node --test integrations/localthought/mock-proxy.test.mjs
   bundle is one ES module with no storage, `fetch` or credential of its own.
 - **Host e2e** (`e2e/calendar.spec.ts`, lane `calendar`, tier `e2e`): the
   same path in the real plugin frame on the pinned host, with the mock
-  integration proxy. It connects through the consent bar, chooses a
+  integration proxy. Each test installs the app from the catalog's Drive
+  apps section (the committed `apps/calendar/<version>/ui.js`, served by the
+  lane's dev-server). It connects through the consent bar, chooses a
   calendar, imports and checks the rows, then refreshes after a Google-side
   edit made through the mock's test drivers
   (`POST /fixture/google-calendar/…`). It then sends a reviewed edit
