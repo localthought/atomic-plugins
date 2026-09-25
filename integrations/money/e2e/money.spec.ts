@@ -11,6 +11,11 @@
  * a person does: find "Bank statements" among the community plugins, create
  * a draft, set it up, import, reload, import again.
  *
+ * A second test adds the Money drive app (`app/`) as a view of the same
+ * table, imports through it with the host's review (atomic-server#1774),
+ * reads the statements table (#1768) and saves a category after the
+ * person allows editing in the host's bar (#1788).
+ *
  * Needs an atomic-server with manifest `accepts`/`destination` and the
  * PluginPage Import tab (atomic-server#1691, for #1653; in the pinned
  * `.atomic-server-ref`); against a host without them, publishing fails on
@@ -47,15 +52,13 @@ test.describe('money integration', () => {
     const main = page.getByRole('main');
 
     // Maintainer: publish the committed bundle to this server's store.
-    await publishBundle(page);
+    const release = await publishBundle(page);
 
     // User: discover it and create a draft from the release.
     await page
       .getByRole('checkbox', { name: 'Show experimental plugins' })
       .check();
-    const card = page.locator('[data-release]').filter({
-      has: page.getByRole('heading', { name: 'Bank statements', exact: true }),
-    });
+    const card = releaseCard(page, release);
     await expect(card.getByText('Unverified', { exact: true })).toBeVisible();
     await card.getByRole('button', { name: 'Open', exact: true }).click();
     await page
@@ -107,11 +110,12 @@ test.describe('money integration', () => {
     await choose(page, 'statement.mt940', mt940);
     await preview(page);
     const dialog = page.locator('dialog[open]');
+    // Two transactions, and the statement they came from (#1768).
     await expect(
-      dialog.getByRole('button', { name: 'Apply 2 changes' }),
+      dialog.getByRole('button', { name: 'Apply 3 changes' }),
     ).toBeVisible({ timeout: 120_000 });
     await expect(dialog.getByText(/1 statements reconciled/)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Apply 2 changes' }).click();
+    await dialog.getByRole('button', { name: 'Apply 3 changes' }).click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     // Persisted: the rows are there after a full reload.
@@ -176,13 +180,14 @@ test.describe('money integration', () => {
       'Lunch with a client (edited here)',
     );
 
-    // camt.053 of the same period: identities are per format, so two new rows.
+    // camt.053 of the same period: identities are per format, so two new
+    // rows, and a statement row of its own.
     await choose(page, 'statement.xml', camt);
     await preview(page);
     await expect(
-      dialog.getByRole('button', { name: 'Apply 2 changes' }),
+      dialog.getByRole('button', { name: 'Apply 3 changes' }),
     ).toBeVisible({ timeout: 60_000 });
-    await dialog.getByRole('button', { name: 'Apply 2 changes' }).click();
+    await dialog.getByRole('button', { name: 'Apply 3 changes' }).click();
     await expect(dialog).toBeHidden({ timeout: 30_000 });
     await choose(page, 'statement.xml', camt);
     await preview(page);
@@ -211,9 +216,221 @@ test.describe('money integration', () => {
     ).toBeVisible({ timeout: 60_000 });
     await expect(dialog.getByText('"Café lunch"').first()).toBeVisible();
   });
+
+  test('Money app: a view of the Bank transactions table: import, statements, row editing, in-app check', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const main = page.getByRole('main');
+
+    // The importer, published and set up; nothing imported yet.
+    const release = await publishBundle(page);
+    await page
+      .getByRole('checkbox', { name: 'Show experimental plugins' })
+      .check();
+    await releaseCard(page, release)
+      .getByRole('button', { name: 'Open', exact: true })
+      .click();
+    await page
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Create draft', exact: true })
+      .click();
+    await expect(
+      main.getByRole('heading', { name: 'Bank statements', level: 1 }),
+    ).toBeVisible({ timeout: 45_000 });
+    await main.getByRole('button', { name: 'Set up', exact: true }).click();
+    await expect(main.getByLabel('File to import')).toBeVisible({
+      timeout: 120_000,
+    });
+    const sidebar = page.getByRole('navigation').last();
+    await sidebar
+      .getByRole('button', { name: 'Expand folder' })
+      .first()
+      .click();
+    await sidebar
+      .getByRole('button', { name: 'Bank transactions', exact: true })
+      .click();
+    await expect(
+      main.getByRole('heading', { name: 'Bank transactions' }),
+    ).toBeVisible({ timeout: 30_000 });
+    const table = new URL(page.url()).searchParams.get('subject')!;
+    const rowClass = await page.evaluate(
+      async subject =>
+        (await window.store!.getResource(subject)).get(
+          'https://atomicdata.dev/properties/classtype',
+        ) as string,
+      table,
+    );
+
+    // A new App running the Money bundle, told it renders bank transactions
+    // (test-side: no catalog entry installs it yet).
+    await createFromCatalog(page, 'App');
+    await expect(main.locator('iframe[title="App"]')).toBeVisible({
+      timeout: 45_000,
+    });
+    const moneyApp = (
+      (await import('../app/build.mjs' as string)) as {
+        build(): Promise<{ text: string }>;
+      }
+    ).build;
+    await installApp(page, (await moneyApp()).text, rowClass);
+
+    // The person adds it as a view, read-only for now (#1788).
+    await page.goto(showUrl(page, table));
+    await main.getByRole('button', { name: 'Add view' }).click();
+    await page.getByRole('menuitem', { name: 'New app' }).click();
+    await page
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Read-only' })
+      .click();
+    const app = page.frameLocator('iframe[title="App"]');
+    await expect(
+      app.getByRole('heading', { name: 'Bring in your bank transactions' }),
+    ).toBeVisible({ timeout: 45_000 });
+
+    // Import from inside the app: check, preview, then the host's own
+    // review (#1774). Nothing is written before Apply.
+    const input = app.locator('input[type="file"]');
+    await input.setInputFiles({
+      name: 'statement.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940),
+    });
+    const sheet = app.getByRole('dialog', { name: 'Import statement' });
+    await expect(sheet.getByRole('tab', { name: 'New 2' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await sheet.getByRole('tab', { name: /Already imported/ }).click();
+    await expect(
+      sheet.getByRole('tab', { name: /Already imported/ }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await sheet.getByRole('tab', { name: /^New/ }).click();
+    await sheet.getByRole('button', { name: 'Import 2 transactions' }).click();
+    const ask = page.getByRole('group', { name: 'Import with this app' });
+    await expect(ask).toContainText('statement.mt940');
+    await ask.getByRole('button', { name: 'Preview import' }).click();
+    const review = page.locator('dialog[open]');
+    await review
+      .getByRole('button', { name: 'Apply 3 changes' })
+      .click({ timeout: 120_000 });
+    await expect(review).toBeHidden({ timeout: 30_000 });
+    await expect(sheet).toBeHidden({ timeout: 30_000 });
+    await expect(app.getByRole('status').first()).toContainText('Imported 2', {
+      timeout: 60_000,
+    });
+    const lunch = app.getByRole('button', { name: /Fixture lunch/ });
+    await expect(lunch).toBeVisible();
+    await expect(
+      app.getByText('−€12.34', { exact: true }).first(),
+    ).toBeVisible();
+
+    // The statement row, with its balances: the strip and the Imports tab.
+    await expect(app.getByRole('group', { name: /^Accounts/ })).toContainText(
+      /€107\.66\s*on /,
+      { timeout: 30_000 },
+    );
+    await app.getByRole('tab', { name: /^Imports/ }).click();
+    await expect(app.getByRole('table')).toContainText(/€100\.00 →\s*€107\.66/);
+    await app.getByRole('tab', { name: /^Transactions/ }).click();
+
+    // Detail: the category is the person's. Saving asks, in the host's bar.
+    await lunch.click();
+    const details = app.getByLabel('Transaction details');
+    await expect(details).toContainText('NL00 BUNQ 0000 0000 00 · EUR');
+    await expect(details).toContainText('allow it to edit them');
+    await details.getByLabel('Category').fill('Meals');
+    await details.getByLabel('Category').press('Tab');
+    const allow = page.getByRole('group', { name: 'Let this app edit rows' });
+    await expect(details).toContainText('Waiting for you to allow editing');
+    await expect(details.getByLabel('Category')).toHaveValue('Meals');
+    await allow.getByRole('button', { name: 'Allow editing' }).click();
+    await expect(details).toContainText('Saved', { timeout: 30_000 });
+    await page.keyboard.press('Escape');
+
+    // Stored on the row itself: after a reload the ledger shows it.
+    await page.reload();
+    await expect(
+      app.getByRole('button', { name: /Fixture lunch/ }),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(app.getByRole('table')).toContainText('Meals');
+
+    // The in-app check agrees with the importer: nothing new in the same
+    // file, and a changed transaction blocks the file.
+    await input.setInputFiles({
+      name: 'statement.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940),
+    });
+    await expect(sheet).toContainText(
+      'Nothing new in this file. All 2 transactions were imported before.',
+      { timeout: 30_000 },
+    );
+    await sheet.getByRole('button', { name: 'Close' }).first().click();
+    await input.setInputFiles({
+      name: 'changed.mt940',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(mt940.replace('Fixture lunch', 'Fixture dinner')),
+    });
+    await expect(sheet).toContainText(
+      'This file changes a transaction you already have',
+      { timeout: 30_000 },
+    );
+  });
 });
 
-async function publishBundle(page: Page) {
+/**
+ * Loads `source` into the App on screen and lets it render `rowClass`, as an
+ * install from the catalog would. The entry point and `renders` are found by
+ * value: their property subjects are minted per drive.
+ */
+async function installApp(page: Page, source: string, rowClass: string) {
+  await page.evaluate(
+    async args => {
+      const store = window.store!;
+      const subject = new URL(location.href).searchParams.get('subject')!;
+      const app = await store.getResource(subject);
+      let loaded = false;
+
+      for (const [property, value] of Object.entries(app.getPropVals())) {
+        if (Array.isArray(value)) {
+          // `renders`: the drive's own property listing the classes this app
+          // can show (Atomic's own, like isA, are not it).
+          if (property.startsWith('https://atomicdata.dev/')) continue;
+          const first = await store
+            .getResource(String(value[0]))
+            .catch(() => undefined);
+          const isA = first?.get('https://atomicdata.dev/properties/isA');
+          if (
+            Array.isArray(isA) &&
+            isA.includes('https://atomicdata.dev/classes/Class')
+          )
+            await app.set(property, [...value, args.rowClass]);
+          continue;
+        }
+
+        if (typeof value !== 'string' || !value.includes(':')) continue;
+        const child = await store.getResource(value).catch(() => undefined);
+        const sourceProp =
+          child &&
+          Object.entries(child.getPropVals()).find(
+            ([, v]) =>
+              typeof v === 'string' && v.includes('export async function view'),
+          )?.[0];
+        if (!child || !sourceProp) continue;
+        await child.set(sourceProp, args.source);
+        await child.save();
+        loaded = true;
+      }
+
+      await app.set('https://atomicdata.dev/properties/name', 'New app');
+      await app.save();
+      if (!loaded) throw new Error('could not find the app’s entry point');
+    },
+    { source, rowClass },
+  );
+}
+
+async function publishBundle(page: Page): Promise<string> {
   await createFromCatalog(page, 'Plugin');
   await expect(
     page
@@ -251,9 +468,27 @@ async function publishBundle(page: Page) {
     .click();
   const published = await publication;
   expect(published.ok(), await published.text()).toBe(true);
+  const { id } = (await published.json()) as { id: string };
   await expect(
     page.getByRole('heading', { name: 'Integrations', exact: true }),
   ).toBeVisible();
+
+  return id;
+}
+
+/**
+ * The store card of the release just published. Matched by its
+ * content-addressed id, not by name: a lane store kept from an earlier run
+ * (or an earlier test in this one) lists more "Bank statements" cards, and
+ * publishing the same bundle again lists the same release once more.
+ */
+function releaseCard(page: Page, id: string) {
+  return page
+    .locator(`[data-release="${id}"]`)
+    .filter({
+      has: page.getByRole('heading', { name: 'Bank statements', exact: true }),
+    })
+    .first();
 }
 
 async function choose(page: Page, name: string, text: string) {

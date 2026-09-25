@@ -2,13 +2,25 @@
 // ISO 20022 camt.053 (BankToCustomerStatement) reader producing the same
 // Statement shape as the MT940 parser. It runs in the plugin sandbox, which
 // has no DOMParser, so it carries its own small XML reader.
+import { StatementError, statementError } from './errors.js';
 import {
   decimal,
+  reconcile,
   rejectJsonNarratives,
-  units,
   type Statement,
   type Transaction,
 } from './parser.js';
+
+/** Names the element a plain reader error came from, keeping its message. */
+function within<T>(tag: string, read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof StatementError || !(error instanceof Error))
+      throw error;
+    throw statementError('INVALID_FIELD', error.message, { tag });
+  }
+}
 
 export const CAMT053_MAX_BYTES = 5_000_000;
 
@@ -234,17 +246,25 @@ function transaction(entry: Node, currency: string): Transaction {
 
 export function parseCamt053(text: string): Statement[] {
   if (typeof text !== 'string' || text.length > CAMT053_MAX_BYTES)
-    throw new Error('Choose a camt.053 file smaller than 5 MB');
-  const root = parseXml(text.replace(/^﻿/, ''));
+    throw statementError(
+      'FILE_TOO_LARGE',
+      'Choose a camt.053 file smaller than 5 MB',
+      { limit: CAMT053_MAX_BYTES, format: 'camt053' },
+    );
+  const root = within('xml', () => parseXml(text.replace(/^﻿/, '')));
   const report = one(root, 'Document', 'BkToCstmrStmt');
   if (!report)
-    throw new Error(
+    throw statementError(
+      'NOT_A_STATEMENT',
       'Not a camt.053 bank statement: expected a Document with BkToCstmrStmt',
+      {},
     );
   const statements: Statement[] = [];
   let count = 0;
 
-  for (const stmt of all(report, 'Stmt')) {
+  for (const stmt of all(report, 'Stmt')) within('Stmt', () => statement(stmt));
+
+  function statement(stmt: Node) {
     const acct = one(stmt, 'Acct');
     const account = accountId(acct);
     if (!account) throw new Error('Missing bank account');
@@ -262,8 +282,10 @@ export function parseCamt053(text: string): Statement[] {
       balances.find(b => b.type === 'PRCD');
     const closing = balances.find(b => b.type === 'CLBD');
     if (!opening || !closing)
-      throw new Error(
+      throw statementError(
+        'MISSING_BALANCE',
         'camt.053 statement needs an opening (OPBD) and closing (CLBD) booked balance',
+        { statement: textOf(stmt, 'Id') || undefined },
       );
     if (closing.date < opening.date)
       throw new Error('Statement currency or date range is inconsistent');
@@ -274,21 +296,15 @@ export function parseCamt053(text: string): Statement[] {
       const status = textOf(entry, 'Sts') || textOf(entry, 'Sts', 'Cd');
       if (status && status !== 'BOOK') continue;
       if (++count > 500)
-        throw new Error(
+        throw statementError(
+          'TOO_MANY_ENTRIES',
           'Import at most 500 transactions at a time; export a shorter period',
+          { limit: 500 },
         );
-      transactions.push(transaction(entry, currency));
+      transactions.push(within('Ntry', () => transaction(entry, currency)));
     }
 
-    if (
-      units(opening.amount) +
-        transactions.reduce((sum, row) => sum + units(row.amount), 0n) !==
-      units(closing.amount)
-    )
-      throw new Error(
-        'Statement balance does not reconcile; no transactions will be imported',
-      );
-    statements.push({
+    const parsed: Statement = {
       account,
       number: textOf(stmt, 'Id') || textOf(stmt, 'ElctrncSeqNb'),
       currency,
@@ -297,11 +313,17 @@ export function parseCamt053(text: string): Statement[] {
       start: opening.date,
       end: closing.date,
       transactions,
-    });
+    };
+    reconcile(parsed, closing.amount, closing.date);
+    statements.push(parsed);
   }
 
   if (!statements.length)
-    throw new Error('camt.053 file contains no statements');
+    throw statementError(
+      'NOT_A_STATEMENT',
+      'camt.053 file contains no statements',
+      {},
+    );
   rejectJsonNarratives(statements);
 
   return statements;

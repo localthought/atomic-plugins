@@ -24,6 +24,13 @@ const p = Object.fromEntries(
     'statement',
     'source-id',
     'fingerprint',
+    'period-start',
+    'period-end',
+    'opening-balance',
+    'closing-balance',
+    'entry-count',
+    'format',
+    'imported-date',
   ].map(k => [`bank-${k}`, `https://example.com/${k}`]),
 );
 const host = {
@@ -32,6 +39,12 @@ const host = {
     table: 'https://example.com/table',
     rowClass: 'https://example.com/transaction',
     properties: p,
+    tables: {
+      statements: {
+        table: 'https://example.com/statements',
+        rowClass: 'https://example.com/statement',
+      },
+    },
   },
   query: () => [] as string[],
   read: () => ({}),
@@ -137,7 +150,8 @@ describe('camt.053 parser and import proposals', () => {
     expect(parseBankStatement(mt940Fixture).format).toBe('mt940');
     expect(parseBankStatement('﻿\n' + fixture).format).toBe('camt053');
     const verdict = run(host);
-    expect(verdict.intents).toHaveLength(2);
+    // Two transactions and their statement.
+    expect(verdict.intents).toHaveLength(3);
     const first = verdict.intents[0] as Intent;
     expect(first.set[p['bank-amount']]).toBe('-12.34');
     expect(first.set[p['bank-source-id']]).toBe(
@@ -161,5 +175,68 @@ describe('camt.053 parser and import proposals', () => {
         ['bank', 'TEST-1'],
       ]),
     );
+  });
+});
+
+describe('camt.053 structured errors', () => {
+  const caught = (read: () => unknown) => {
+    try {
+      read();
+    } catch (error) {
+      return error as { code?: string; data?: unknown; message: string };
+    }
+
+    throw new Error('expected a throw');
+  };
+
+  it('BALANCE_MISMATCH with the statement figures', () => {
+    const error = caught(() =>
+      parseCamt053(fixture.replace('>107.66<', '>107.67<')),
+    );
+    expect(error).toMatchObject({
+      code: 'BALANCE_MISMATCH',
+      message:
+        'Statement balance does not reconcile; no transactions will be imported',
+      data: {
+        statement: 'SYNTHETIC-1',
+        account: 'NL00BUNQ0000000000',
+        currency: 'EUR',
+        opening: '100',
+        entries: 2,
+        entriesSum: '7.66',
+        expectedClosing: '107.66',
+        closing: '107.67',
+      },
+    });
+  });
+
+  it('NOT_A_STATEMENT, INVALID_FIELD and FILE_TOO_LARGE', () => {
+    expect(caught(() => parseCamt053('<Document/>'))).toMatchObject({
+      code: 'NOT_A_STATEMENT',
+    });
+    expect(
+      caught(() => parseCamt053('<Document><a></b></Document>')),
+    ).toMatchObject({
+      code: 'INVALID_FIELD',
+      data: { tag: 'xml' },
+    });
+    expect(
+      caught(() =>
+        parseCamt053(
+          fixture.replace(
+            '2026-09-02</Dt></BookgDt>',
+            '2026-02-30</Dt></BookgDt>',
+          ),
+        ),
+      ),
+    ).toMatchObject({
+      code: 'INVALID_FIELD',
+      data: { tag: 'Ntry' },
+      message: 'Invalid camt.053 date',
+    });
+    expect(caught(() => parseCamt053('x'.repeat(5_000_001)))).toMatchObject({
+      code: 'FILE_TOO_LARGE',
+      data: { limit: 5_000_000, format: 'camt053' },
+    });
   });
 });

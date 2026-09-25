@@ -1,5 +1,6 @@
 // @wc-ignore-file
 import { parseCamt053 } from './camt053.js';
+import { statementError } from './errors.js';
 import { parseMT940, type Statement } from './parser.js';
 
 export type StatementFormat = 'mt940' | 'camt053';
@@ -16,7 +17,8 @@ export function parseBankStatement(text: string): {
   format: StatementFormat;
   statements: Statement[];
 } {
-  if (typeof text !== 'string') throw new Error('Choose a bank statement file');
+  if (typeof text !== 'string')
+    throw statementError('NOT_A_STATEMENT', 'Choose a bank statement file', {});
   const format = detectStatementFormat(text);
 
   return {

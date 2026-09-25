@@ -1,4 +1,6 @@
 // @wc-ignore-file
+import { StatementError, statementError } from './errors.js';
+
 export interface Transaction {
   date: string;
   bookingDate: string;
@@ -95,22 +97,30 @@ function transaction(value: string): Transaction {
 
 export function parseMT940(text: string): Statement[] {
   if (typeof text !== 'string' || text.length > 512_000)
-    throw new Error('Choose an MT940 file smaller than 512 KB');
+    throw statementError(
+      'FILE_TOO_LARGE',
+      'Choose an MT940 file smaller than 512 KB',
+      { limit: 512_000, format: 'mt940' },
+    );
   const normalized = text
     .replace(/^\uFEFF/, '')
     .replace(/\r\n?/g, '\n')
     .trim();
-  const fields: Array<{ tag: string; value: string }> = [];
+  const fields: Array<{ tag: string; value: string; line: number }> = [];
 
-  for (const line of normalized.split('\n')) {
+  for (const [index, line] of normalized.split('\n').entries()) {
     if (/^(?:\{1:.*\{4:|\{4:| -\}|-\}|\{5:.*\})$/.test(line)) continue;
     const match = line.match(/^:(\d{2}[A-Z]?):(.*)$/);
 
-    if (match) fields.push({ tag: match[1], value: match[2] });
+    if (match) fields.push({ tag: match[1], value: match[2], line: index + 1 });
     else if (line.trim()) {
       const previous = fields[fields.length - 1];
       if (!previous || !['61', '86'].includes(previous.tag))
-        throw new Error('Unsupported MT940 header or field continuation');
+        throw statementError(
+          'INVALID_FIELD',
+          'Unsupported MT940 header or field continuation',
+          { tag: previous?.tag ?? 'header', line: index + 1 },
+        );
       previous.value += '\n' + line;
     }
   }
@@ -122,11 +132,26 @@ export function parseMT940(text: string): Statement[] {
   let closed = true,
     count = 0;
 
-  for (const { tag, value } of fields) {
+  for (const { tag, value, line } of fields) {
+    try {
+      field(tag, value);
+    } catch (error) {
+      // Field-level problems name the field and its line.
+      if (error instanceof StatementError || !(error instanceof Error))
+        throw error;
+      throw statementError('INVALID_FIELD', error.message, { tag, line });
+    }
+  }
+
+  function field(tag: string, value: string) {
     switch (tag) {
       case '20':
         if (!closed)
-          throw new Error('Statement is missing its closing balance');
+          throw statementError(
+            'MISSING_BALANCE',
+            'Statement is missing its closing balance',
+            { statement: number },
+          );
         account = '';
         number = '';
         current = undefined;
@@ -168,8 +193,10 @@ export function parseMT940(text: string): Statement[] {
         if (!current || closed)
           throw new Error('Transaction outside an open statement');
         if (++count > 500)
-          throw new Error(
+          throw statementError(
+            'TOO_MANY_ENTRIES',
             'Import at most 500 transactions at a time; export a shorter period',
+            { limit: 500 },
           );
         current.transactions.push(transaction(value));
         break;
@@ -194,17 +221,7 @@ export function parseMT940(text: string): Statement[] {
           closing.date < current.start
         )
           throw new Error('Statement currency or date range is inconsistent');
-        if (
-          units(current.opening) +
-            current.transactions.reduce(
-              (sum, row) => sum + units(row.amount),
-              0n,
-            ) !==
-          units(closing.amount)
-        )
-          throw new Error(
-            'Statement balance does not reconcile; no transactions will be imported',
-          );
+        reconcile(current, closing.amount, closing.date);
         current.closing = closing.amount;
         current.end = closing.date;
         closed = true;
@@ -221,16 +238,60 @@ export function parseMT940(text: string): Statement[] {
   }
 
   if (!statements.length || !closed)
-    throw new Error(
+    throw statementError(
+      'MISSING_BALANCE',
       'Incomplete MT940 statement: opening and closing balances are required',
+      { statement: number || undefined },
     );
   rejectJsonNarratives(statements);
 
   return statements;
 }
+
+/** `units()` back to a decimal string, for error data. */
+function decimalOf(value: bigint): string {
+  const negative = value < 0n;
+  const digits = (negative ? -value : value).toString().padStart(6, '0');
+  const fraction = digits.slice(-5).replace(/0+$/, '');
+  const text = digits.slice(0, -5) + (fraction ? `.${fraction}` : '');
+
+  return negative ? `-${text}` : text;
+}
+
+/** Opening + Σ entries must equal the closing balance, exactly. */
+export function reconcile(
+  statement: Statement,
+  closing: string,
+  end: string,
+): void {
+  const sum = statement.transactions.reduce(
+    (total, row) => total + units(row.amount),
+    0n,
+  );
+  const expected = units(statement.opening) + sum;
+  if (expected === units(closing)) return;
+  throw statementError(
+    'BALANCE_MISMATCH',
+    'Statement balance does not reconcile; no transactions will be imported',
+    {
+      statement: statement.number,
+      account: statement.account,
+      currency: statement.currency,
+      opening: statement.opening,
+      entries: statement.transactions.length,
+      entriesSum: decimalOf(sum),
+      expectedClosing: decimalOf(expected),
+      closing,
+      start: statement.start,
+      end,
+    },
+  );
+}
 // Current Atomic legacy materialization interprets JSON-shaped strings as
 // resources. Refuse these rare narratives instead of corrupting bank text.
 export function rejectJsonNarratives(statements: Statement[]): void {
+  let count = 0;
+
   for (const statement of statements)
     for (const row of statement.transactions) {
       const narrative = row.description.trim();
@@ -244,10 +305,14 @@ export function rejectJsonNarratives(statements: Statement[]): void {
           continue;
         }
 
-        if (parsed && typeof parsed === 'object')
-          throw new Error(
-            'JSON-shaped bank narratives are not supported yet; the statement was not imported',
-          );
+        if (parsed && typeof parsed === 'object') count++;
       }
     }
+
+  if (count)
+    throw statementError(
+      'JSON_NARRATIVE',
+      'JSON-shaped bank narratives are not supported yet; the statement was not imported',
+      { count },
+    );
 }

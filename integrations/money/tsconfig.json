@@ -8,5 +8,17 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["parser.ts", "camt053.ts", "statement.ts", "plugin.ts"]
+  "include": [
+    "parser.ts",
+    "camt053.ts",
+    "statement.ts",
+    "plugin.ts",
+    "errors.ts",
+    "identity.ts",
+    "schema.ts",
+    "app/*.ts",
+    "app/ui/*.ts",
+    "app/harness/*.ts"
+  ],
+  "exclude": ["app/*.test.ts", "app/ui/*.test.ts"]
 }

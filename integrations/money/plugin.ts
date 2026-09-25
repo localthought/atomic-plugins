@@ -4,6 +4,8 @@ import {
   type ImportRecord,
 } from '../../browser/lib/src/import-records.js';
 import { CAMT053_MAX_BYTES } from './camt053.js';
+import { statementError } from './errors.js';
+import { entries, OVERLAP_MESSAGE } from './identity.js';
 import { bankingSchema } from './schema.js';
 import { parseBankStatement } from './statement.js';
 
@@ -33,8 +35,13 @@ export const manifest = {
         type: 'object',
         description: 'Banking ontology properties, by shortname',
       },
+      tables: {
+        type: 'object',
+        description:
+          'More tables Set up created, by key: `statements` holds one row per imported statement with its balances',
+      },
     },
-    required: ['table', 'rowClass', 'properties'],
+    required: ['table', 'rowClass', 'properties', 'tables'],
   },
   // The host draws the file picker and hands the decoded text over as
   // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
@@ -62,12 +69,30 @@ export const manifest = {
         'bank-reference',
       ],
     },
+    // One row per imported statement, with its reconciled balances: the
+    // Money app's Imports tab and closing balances (atomic-server#1768).
+    tables: {
+      statements: {
+        name: 'Imported statements',
+        rowClass: 'bank-statement-record',
+        columns: [
+          'bank-period-end',
+          'bank-account',
+          'bank-currency',
+          'bank-statement',
+          'bank-opening-balance',
+          'bank-closing-balance',
+          'bank-entry-count',
+        ],
+      },
+    },
   },
 };
 export interface Config {
   table: string;
   rowClass: string;
   properties: Record<string, string>;
+  tables: { statements: { table: string; rowClass: string } };
 }
 interface Host {
   /** What the host hands over for a declared `accepts` file. */
@@ -90,11 +115,18 @@ export function run(ctx: Host) {
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };
   // Absent config reads as a configuration problem, never a TypeError.
-  const { table, rowClass, properties: p } = ctx.config ?? ({} as Config);
+  const {
+    table,
+    rowClass,
+    properties: p,
+    tables,
+  } = ctx.config ?? ({} as Config);
+  const statementsTable = tables?.statements;
   const missing = [
     ['table', table],
     ['rowClass', rowClass],
     ['properties', p],
+    ['tables.statements', statementsTable?.table && statementsTable.rowClass],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name);
@@ -104,115 +136,108 @@ export function run(ctx: Host) {
       `Configure this importer before running it: missing ${missing.join(', ')}`,
     );
   const records: ImportRecord[] = [];
-  const seen = new Map<string, string>();
   let fallback = 0;
+  const inTable = (subject: string) =>
+    ctx.read(subject)['https://atomicdata.dev/properties/parent'] === table;
 
-  for (const statement of statements) {
-    const statementKey = JSON.stringify([
-      statement.number,
-      statement.start,
-      statement.end,
-      statement.opening,
-      statement.closing,
-    ]);
+  for (const entry of entries(format, statements)) {
+    const { statement, row, identity, fingerprint, reference } = entry;
 
-    for (const [index, row] of statement.transactions.entries()) {
-      // Identities are per export format: the same booking exported twice as
-      // MT940 and camt.053 carries different narratives, which would otherwise
-      // surface as a conflict instead of a second row.
-      const fingerprint =
-        `${format}-content:` +
-        JSON.stringify([
-          statement.account,
-          statement.currency,
-          row.date,
-          row.bookingDate,
-          row.amount,
-          row.code,
-          row.reference,
-          row.description,
-        ]);
-      const reference =
-        row.bankReference && row.bankReference !== 'NONREF'
-          ? row.bankReference
-          : '';
-      const identity = JSON.stringify([
-        format,
-        statement.account,
-        statement.currency,
-        reference ? ['bank', reference] : ['statement', statementKey, index],
-      ]);
+    if (!reference) {
+      fallback++;
+      const earlier = ctx
+        .query(p['bank-fingerprint'], fingerprint)
+        .filter(inTable);
 
-      if (seen.has(identity)) {
-        if (seen.get(identity) !== fingerprint)
-          throw new Error(
-            'Conflicting bank transaction references in this file',
-          );
-        throw new Error(
-          'Repeated bank transaction reference in this file; export non-overlapping statements',
-        );
-      }
-
-      seen.set(identity, fingerprint);
-
-      if (!reference) {
-        fallback++;
-        if (
-          !ctx
-            .query(p['bank-source-id'], identity)
-            .some(
-              subject =>
-                ctx.read(subject)[
-                  'https://atomicdata.dev/properties/parent'
-                ] === table,
-            ) &&
-          ctx
-            .query(p['bank-fingerprint'], fingerprint)
-            .some(
-              subject =>
-                ctx.read(subject)[
-                  'https://atomicdata.dev/properties/parent'
-                ] === table,
-            )
-        )
-          throw new Error(
-            'This statement overlaps an earlier import without unique bank references. Use the original statement or export a non-overlapping period.',
-          );
-      }
-
-      const values: Record<string, string> = {
-        'https://atomicdata.dev/properties/name':
-          row.description || row.reference,
-        [p['bank-account']]: statement.account,
-        [p['bank-currency']]: statement.currency,
-        [p['bank-amount']]: row.amount,
-        [p['bank-value-date']]: row.date,
-        [p['bank-booking-date']]: row.bookingDate,
-        [p['bank-description']]: row.description,
-        [p['bank-reference']]: row.bankReference || row.reference,
-        [p['bank-transaction-code']]: row.code,
-        [p['bank-statement']]: statement.number,
-        [p['bank-source-id']]: identity,
-        [p['bank-fingerprint']]: fingerprint,
-      };
-      records.push({
-        sourceId: identity,
-        mode: 'append',
-        legacy: { property: p['bank-source-id'], value: identity },
-        localId: `transaction-${records.length}`,
-        parent: table,
-        isA: [rowClass],
-        values,
-      });
+      if (
+        earlier.length &&
+        !ctx.query(p['bank-source-id'], identity).some(inTable)
+      )
+        throw statementError('OVERLAP_WITHOUT_REFERENCES', OVERLAP_MESSAGE, {
+          statement: statement.number,
+          account: statement.account,
+          thisPeriod: { start: statement.start, end: statement.end },
+          overlappingDate: String(
+            ctx.read(earlier[0])[p['bank-value-date']] ?? '',
+          ),
+        });
     }
+
+    const values: Record<string, string> = {
+      'https://atomicdata.dev/properties/name':
+        row.description || row.reference,
+      [p['bank-account']]: statement.account,
+      [p['bank-currency']]: statement.currency,
+      [p['bank-amount']]: row.amount,
+      [p['bank-value-date']]: row.date,
+      [p['bank-booking-date']]: row.bookingDate,
+      [p['bank-description']]: row.description,
+      [p['bank-reference']]: row.bankReference || row.reference,
+      [p['bank-transaction-code']]: row.code,
+      [p['bank-statement']]: statement.number,
+      [p['bank-source-id']]: identity,
+      [p['bank-fingerprint']]: fingerprint,
+    };
+    records.push({
+      sourceId: identity,
+      mode: 'append',
+      legacy: { property: p['bank-source-id'], value: identity },
+      localId: `transaction-${records.length}`,
+      parent: table,
+      isA: [rowClass],
+      values,
+    });
   }
 
   const result = importRecords(ctx, records);
+  // One row per statement, beside its transactions: account, period and the
+  // reconciled balances. Append-only, like the transactions, so a reimport
+  // of the same statement proposes nothing.
+  const today = new Date().toISOString().slice(0, 10);
+  const statementRecords: ImportRecord[] = statements.map(
+    (statement, index) => {
+      // Not JSON-shaped: legacy storage reads a flat JSON array of strings as
+      // a resource array, and the host then refuses the write because the
+      // stored value no longer matches the imported one.
+      const identity = `statement:${JSON.stringify([
+        format,
+        statement.account,
+        statement.currency,
+        statement.number,
+        statement.start,
+        statement.end,
+      ])}`;
+
+      return {
+        sourceId: identity,
+        mode: 'append',
+        localId: `statement-${index}`,
+        parent: statementsTable!.table,
+        isA: [statementsTable!.rowClass],
+        values: {
+          'https://atomicdata.dev/properties/name': `${statement.account} ${statement.currency} ${statement.number}`,
+          [p['bank-account']]: statement.account,
+          [p['bank-currency']]: statement.currency,
+          [p['bank-statement']]: statement.number,
+          [p['bank-period-start']]: statement.start,
+          [p['bank-period-end']]: statement.end,
+          [p['bank-opening-balance']]: statement.opening,
+          [p['bank-closing-balance']]: statement.closing,
+          [p['bank-entry-count']]: String(statement.transactions.length),
+          [p['bank-format']]: format,
+          [p['bank-imported-date']]: today,
+          [p['bank-source-id']]: identity,
+        },
+      };
+    },
+  );
+  const saved = importRecords(ctx, statementRecords);
 
   return {
-    intents: result.intents,
+    intents: [...result.intents, ...saved.intents],
     problems: [
       ...result.problems,
+      ...saved.problems,
       {
         severity: 'warning',
         message: `${statements.length} statements reconciled. ${result.summary.unchanged} previously imported transactions skipped. Amounts are exact decimal strings; negative amounts are money out.`,

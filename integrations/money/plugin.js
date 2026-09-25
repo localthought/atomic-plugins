@@ -63,14 +63,14 @@ function marker(row) {
   return v?.version === 1 && typeof v.id === "string" && typeof v.canonical === "string" && v.members && typeof v.members === "object" && Array.isArray(v.supersedes) ? v : void 0;
 }
 function resolvedImportSubject(rows) {
-  const entries = Object.entries(rows);
-  if (entries.length === 1 && !entries[0][1][IMPORT_RESOLUTION])
-    return entries[0][0];
-  const winners = entries.filter(([subject, row]) => {
+  const entries2 = Object.entries(rows);
+  if (entries2.length === 1 && !entries2[0][1][IMPORT_RESOLUTION])
+    return entries2[0][0];
+  const winners = entries2.filter(([subject, row]) => {
     const resolution = marker(row);
-    if (!resolution || resolution.canonical !== pure(subject) || Object.keys(resolution.members).length !== entries.length)
+    if (!resolution || resolution.canonical !== pure(subject) || Object.keys(resolution.members).length !== entries2.length)
       return false;
-    return entries.every(([other, value]) => {
+    return entries2.every(([other, value]) => {
       const reviewed = resolution.members[pure(other)];
       if (!reviewed) return false;
       if (other === subject) return true;
@@ -258,6 +258,19 @@ function importRecords(host, records) {
   return { intents, problems, summary: { created, updated, unchanged } };
 }
 
+// integrations/money/errors.ts
+var StatementError = class extends Error {
+  code;
+  data;
+  constructor(code, message, data) {
+    super(message);
+    this.name = "StatementError";
+    this.code = code;
+    this.data = data;
+  }
+};
+var statementError = (code, message, data) => new StatementError(code, message, data);
+
 // integrations/money/parser.ts
 function decimal(raw, negative = false) {
   if (!/^\d{1,15},\d{0,5}$/.test(raw)) throw new Error("Invalid MT940 amount");
@@ -318,28 +331,49 @@ function transaction(value) {
 }
 function parseMT940(text) {
   if (typeof text !== "string" || text.length > 512e3)
-    throw new Error("Choose an MT940 file smaller than 512 KB");
+    throw statementError(
+      "FILE_TOO_LARGE",
+      "Choose an MT940 file smaller than 512 KB",
+      { limit: 512e3, format: "mt940" }
+    );
   const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
   const fields = [];
-  for (const line of normalized.split("\n")) {
+  for (const [index, line] of normalized.split("\n").entries()) {
     if (/^(?:\{1:.*\{4:|\{4:| -\}|-\}|\{5:.*\})$/.test(line)) continue;
     const match = line.match(/^:(\d{2}[A-Z]?):(.*)$/);
-    if (match) fields.push({ tag: match[1], value: match[2] });
+    if (match) fields.push({ tag: match[1], value: match[2], line: index + 1 });
     else if (line.trim()) {
       const previous = fields[fields.length - 1];
       if (!previous || !["61", "86"].includes(previous.tag))
-        throw new Error("Unsupported MT940 header or field continuation");
+        throw statementError(
+          "INVALID_FIELD",
+          "Unsupported MT940 header or field continuation",
+          { tag: previous?.tag ?? "header", line: index + 1 }
+        );
       previous.value += "\n" + line;
     }
   }
   const statements = [];
   let account = "", number = "", current;
   let closed = true, count = 0;
-  for (const { tag, value } of fields) {
+  for (const { tag, value, line } of fields) {
+    try {
+      field(tag, value);
+    } catch (error) {
+      if (error instanceof StatementError || !(error instanceof Error))
+        throw error;
+      throw statementError("INVALID_FIELD", error.message, { tag, line });
+    }
+  }
+  function field(tag, value) {
     switch (tag) {
       case "20":
         if (!closed)
-          throw new Error("Statement is missing its closing balance");
+          throw statementError(
+            "MISSING_BALANCE",
+            "Statement is missing its closing balance",
+            { statement: number }
+          );
         account = "";
         number = "";
         current = void 0;
@@ -379,8 +413,10 @@ function parseMT940(text) {
         if (!current || closed)
           throw new Error("Transaction outside an open statement");
         if (++count > 500)
-          throw new Error(
-            "Import at most 500 transactions at a time; export a shorter period"
+          throw statementError(
+            "TOO_MANY_ENTRIES",
+            "Import at most 500 transactions at a time; export a shorter period",
+            { limit: 500 }
           );
         current.transactions.push(transaction(value));
         break;
@@ -399,13 +435,7 @@ function parseMT940(text) {
         const closing = balance(value);
         if (closing.currency !== current.currency || closing.date < current.start)
           throw new Error("Statement currency or date range is inconsistent");
-        if (units(current.opening) + current.transactions.reduce(
-          (sum, row) => sum + units(row.amount),
-          0n
-        ) !== units(closing.amount))
-          throw new Error(
-            "Statement balance does not reconcile; no transactions will be imported"
-          );
+        reconcile(current, closing.amount, closing.date);
         current.closing = closing.amount;
         current.end = closing.date;
         closed = true;
@@ -420,13 +450,47 @@ function parseMT940(text) {
     }
   }
   if (!statements.length || !closed)
-    throw new Error(
-      "Incomplete MT940 statement: opening and closing balances are required"
+    throw statementError(
+      "MISSING_BALANCE",
+      "Incomplete MT940 statement: opening and closing balances are required",
+      { statement: number || void 0 }
     );
   rejectJsonNarratives(statements);
   return statements;
 }
+function decimalOf(value) {
+  const negative = value < 0n;
+  const digits = (negative ? -value : value).toString().padStart(6, "0");
+  const fraction = digits.slice(-5).replace(/0+$/, "");
+  const text = digits.slice(0, -5) + (fraction ? `.${fraction}` : "");
+  return negative ? `-${text}` : text;
+}
+function reconcile(statement, closing, end) {
+  const sum = statement.transactions.reduce(
+    (total, row) => total + units(row.amount),
+    0n
+  );
+  const expected = units(statement.opening) + sum;
+  if (expected === units(closing)) return;
+  throw statementError(
+    "BALANCE_MISMATCH",
+    "Statement balance does not reconcile; no transactions will be imported",
+    {
+      statement: statement.number,
+      account: statement.account,
+      currency: statement.currency,
+      opening: statement.opening,
+      entries: statement.transactions.length,
+      entriesSum: decimalOf(sum),
+      expectedClosing: decimalOf(expected),
+      closing,
+      start: statement.start,
+      end
+    }
+  );
+}
 function rejectJsonNarratives(statements) {
+  let count = 0;
   for (const statement of statements)
     for (const row of statement.transactions) {
       const narrative = row.description.trim();
@@ -437,15 +501,27 @@ function rejectJsonNarratives(statements) {
         } catch {
           continue;
         }
-        if (parsed && typeof parsed === "object")
-          throw new Error(
-            "JSON-shaped bank narratives are not supported yet; the statement was not imported"
-          );
+        if (parsed && typeof parsed === "object") count++;
       }
     }
+  if (count)
+    throw statementError(
+      "JSON_NARRATIVE",
+      "JSON-shaped bank narratives are not supported yet; the statement was not imported",
+      { count }
+    );
 }
 
 // integrations/money/camt053.ts
+function within(tag, read) {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof StatementError || !(error instanceof Error))
+      throw error;
+    throw statementError("INVALID_FIELD", error.message, { tag });
+  }
+}
 var CAMT053_MAX_BYTES = 5e6;
 var local = (name) => name.replace(/^[^:]*:/, "");
 function decode(text) {
@@ -607,16 +683,23 @@ function transaction2(entry, currency) {
 }
 function parseCamt053(text) {
   if (typeof text !== "string" || text.length > CAMT053_MAX_BYTES)
-    throw new Error("Choose a camt.053 file smaller than 5 MB");
-  const root = parseXml(text.replace(/^﻿/, ""));
+    throw statementError(
+      "FILE_TOO_LARGE",
+      "Choose a camt.053 file smaller than 5 MB",
+      { limit: CAMT053_MAX_BYTES, format: "camt053" }
+    );
+  const root = within("xml", () => parseXml(text.replace(/^﻿/, "")));
   const report = one(root, "Document", "BkToCstmrStmt");
   if (!report)
-    throw new Error(
-      "Not a camt.053 bank statement: expected a Document with BkToCstmrStmt"
+    throw statementError(
+      "NOT_A_STATEMENT",
+      "Not a camt.053 bank statement: expected a Document with BkToCstmrStmt",
+      {}
     );
   const statements = [];
   let count = 0;
-  for (const stmt of all(report, "Stmt")) {
+  for (const stmt of all(report, "Stmt")) within("Stmt", () => statement(stmt));
+  function statement(stmt) {
     const acct = one(stmt, "Acct");
     const account = accountId(acct);
     if (!account) throw new Error("Missing bank account");
@@ -628,8 +711,10 @@ function parseCamt053(text) {
     const opening = balances.find((b) => b.type === "OPBD") ?? balances.find((b) => b.type === "PRCD");
     const closing = balances.find((b) => b.type === "CLBD");
     if (!opening || !closing)
-      throw new Error(
-        "camt.053 statement needs an opening (OPBD) and closing (CLBD) booked balance"
+      throw statementError(
+        "MISSING_BALANCE",
+        "camt.053 statement needs an opening (OPBD) and closing (CLBD) booked balance",
+        { statement: textOf(stmt, "Id") || void 0 }
       );
     if (closing.date < opening.date)
       throw new Error("Statement currency or date range is inconsistent");
@@ -638,16 +723,14 @@ function parseCamt053(text) {
       const status = textOf(entry, "Sts") || textOf(entry, "Sts", "Cd");
       if (status && status !== "BOOK") continue;
       if (++count > 500)
-        throw new Error(
-          "Import at most 500 transactions at a time; export a shorter period"
+        throw statementError(
+          "TOO_MANY_ENTRIES",
+          "Import at most 500 transactions at a time; export a shorter period",
+          { limit: 500 }
         );
-      transactions.push(transaction2(entry, currency));
+      transactions.push(within("Ntry", () => transaction2(entry, currency)));
     }
-    if (units(opening.amount) + transactions.reduce((sum, row) => sum + units(row.amount), 0n) !== units(closing.amount))
-      throw new Error(
-        "Statement balance does not reconcile; no transactions will be imported"
-      );
-    statements.push({
+    const parsed = {
       account,
       number: textOf(stmt, "Id") || textOf(stmt, "ElctrncSeqNb"),
       currency,
@@ -656,17 +739,103 @@ function parseCamt053(text) {
       start: opening.date,
       end: closing.date,
       transactions
-    });
+    };
+    reconcile(parsed, closing.amount, closing.date);
+    statements.push(parsed);
   }
   if (!statements.length)
-    throw new Error("camt.053 file contains no statements");
+    throw statementError(
+      "NOT_A_STATEMENT",
+      "camt.053 file contains no statements",
+      {}
+    );
   rejectJsonNarratives(statements);
   return statements;
 }
 
+// integrations/money/identity.ts
+function entries(format, statements) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Map();
+  for (const statement of statements) {
+    const statementKey = JSON.stringify([
+      statement.number,
+      statement.start,
+      statement.end,
+      statement.opening,
+      statement.closing
+    ]);
+    for (const [index, row] of statement.transactions.entries()) {
+      const fingerprint = `${format}-content:` + JSON.stringify([
+        statement.account,
+        statement.currency,
+        row.date,
+        row.bookingDate,
+        row.amount,
+        row.code,
+        row.reference,
+        row.description
+      ]);
+      const reference = row.bankReference && row.bankReference !== "NONREF" ? row.bankReference : "";
+      const identity = JSON.stringify([
+        format,
+        statement.account,
+        statement.currency,
+        reference ? ["bank", reference] : ["statement", statementKey, index]
+      ]);
+      if (seen.has(identity)) {
+        if (seen.get(identity) !== fingerprint)
+          throw statementError(
+            "CONFLICTING_REFERENCE",
+            "Conflicting bank transaction references in this file",
+            { reference }
+          );
+        throw statementError(
+          "REPEATED_REFERENCE",
+          "Repeated bank transaction reference in this file; export non-overlapping statements",
+          { reference }
+        );
+      }
+      seen.set(identity, fingerprint);
+      out.push({ statement, row, index, identity, fingerprint, reference });
+    }
+  }
+  return out;
+}
+var OVERLAP_MESSAGE = "This statement overlaps an earlier import without unique bank references. Use the original statement or export a non-overlapping period.";
+
 // integrations/money/schema.ts
 var DATE = "https://atomicdata.dev/datatypes/date";
 var STRING = "https://atomicdata.dev/datatypes/string";
+var STATEMENT_FIELDS = [
+  [
+    "bank-period-start",
+    "Period start",
+    "Date of the statement opening balance."
+  ],
+  ["bank-period-end", "Period end", "Date of the statement closing balance."],
+  [
+    "bank-opening-balance",
+    "Opening balance",
+    "Exact signed decimal string: the booked balance the statement starts from."
+  ],
+  [
+    "bank-closing-balance",
+    "Closing balance",
+    "Exact signed decimal string: the booked balance the statement ends on, reconciled with its entries."
+  ],
+  [
+    "bank-entry-count",
+    "Entries",
+    "Number of booked entries in the statement, as a decimal string."
+  ],
+  ["bank-format", "Format", "mt940 or camt053: the export format read."],
+  [
+    "bank-imported-date",
+    "Imported on",
+    "The date this statement was first imported."
+  ]
+];
 function bankingSchema() {
   const fields = [
     [
@@ -721,13 +890,28 @@ function bankingSchema() {
       "Original imported transaction content used to detect conflicting reimports."
     ]
   ];
+  const notes = [
+    [
+      "money-category",
+      "Category",
+      "Your own category for this transaction, as free text. Never written by the importer."
+    ],
+    [
+      "money-note",
+      "Note",
+      "Your own note on this transaction. Never written by the importer."
+    ]
+  ];
+  const dated = /* @__PURE__ */ new Set(["bank-period-start", "bank-period-end"]);
   return {
-    properties: fields.map(([shortname, name, description]) => ({
-      shortname,
-      name,
-      description,
-      datatype: shortname.endsWith("-date") ? DATE : STRING
-    })),
+    properties: [...fields, ...notes, ...STATEMENT_FIELDS].map(
+      ([shortname, name, description]) => ({
+        shortname,
+        name,
+        description,
+        datatype: shortname.endsWith("-date") || dated.has(shortname) ? DATE : STRING
+      })
+    ),
     classes: [
       {
         shortname: "bank-transaction",
@@ -740,7 +924,33 @@ function bankingSchema() {
           "bank-value-date",
           "bank-source-id"
         ],
-        recommends: fields.slice(0, 9).map((f) => f[0])
+        recommends: [...fields.slice(0, 9), ...notes].map((f) => f[0])
+      },
+      {
+        shortname: "bank-statement-record",
+        name: "Bank statement",
+        description: "One imported MT940 or camt.053 statement: account, period and its reconciled opening and closing balances.",
+        requires: [
+          "bank-account",
+          "bank-currency",
+          "bank-period-start",
+          "bank-period-end",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-source-id"
+        ],
+        recommends: [
+          "bank-account",
+          "bank-currency",
+          "bank-statement",
+          "bank-period-start",
+          "bank-period-end",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-entry-count",
+          "bank-format",
+          "bank-imported-date"
+        ]
       }
     ]
   };
@@ -751,7 +961,8 @@ function detectStatementFormat(text) {
   return text.replace(/^﻿/, "").trimStart().startsWith("<") ? "camt053" : "mt940";
 }
 function parseBankStatement(text) {
-  if (typeof text !== "string") throw new Error("Choose a bank statement file");
+  if (typeof text !== "string")
+    throw statementError("NOT_A_STATEMENT", "Choose a bank statement file", {});
   const format = detectStatementFormat(text);
   return {
     format,
@@ -784,9 +995,13 @@ var manifest = {
       properties: {
         type: "object",
         description: "Banking ontology properties, by shortname"
+      },
+      tables: {
+        type: "object",
+        description: "More tables Set up created, by key: `statements` holds one row per imported statement with its balances"
       }
     },
-    required: ["table", "rowClass", "properties"]
+    required: ["table", "rowClass", "properties", "tables"]
   },
   // The host draws the file picker and hands the decoded text over as
   // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
@@ -813,6 +1028,23 @@ var manifest = {
         "bank-account",
         "bank-reference"
       ]
+    },
+    // One row per imported statement, with its reconciled balances: the
+    // Money app's Imports tab and closing balances (atomic-server#1768).
+    tables: {
+      statements: {
+        name: "Imported statements",
+        rowClass: "bank-statement-record",
+        columns: [
+          "bank-period-end",
+          "bank-account",
+          "bank-currency",
+          "bank-statement",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-entry-count"
+        ]
+      }
     }
   }
 };
@@ -824,96 +1056,106 @@ function run(ctx) {
     );
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };
-  const { table, rowClass, properties: p } = ctx.config ?? {};
+  const {
+    table,
+    rowClass,
+    properties: p,
+    tables
+  } = ctx.config ?? {};
+  const statementsTable = tables?.statements;
   const missing = [
     ["table", table],
     ["rowClass", rowClass],
-    ["properties", p]
+    ["properties", p],
+    ["tables.statements", statementsTable?.table && statementsTable.rowClass]
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length)
     throw new Error(
       `Configure this importer before running it: missing ${missing.join(", ")}`
     );
   const records = [];
-  const seen = /* @__PURE__ */ new Map();
   let fallback = 0;
-  for (const statement of statements) {
-    const statementKey = JSON.stringify([
-      statement.number,
-      statement.start,
-      statement.end,
-      statement.opening,
-      statement.closing
-    ]);
-    for (const [index, row] of statement.transactions.entries()) {
-      const fingerprint = `${format}-content:` + JSON.stringify([
-        statement.account,
-        statement.currency,
-        row.date,
-        row.bookingDate,
-        row.amount,
-        row.code,
-        row.reference,
-        row.description
-      ]);
-      const reference = row.bankReference && row.bankReference !== "NONREF" ? row.bankReference : "";
-      const identity = JSON.stringify([
+  const inTable = (subject) => ctx.read(subject)["https://atomicdata.dev/properties/parent"] === table;
+  for (const entry of entries(format, statements)) {
+    const { statement, row, identity, fingerprint, reference } = entry;
+    if (!reference) {
+      fallback++;
+      const earlier = ctx.query(p["bank-fingerprint"], fingerprint).filter(inTable);
+      if (earlier.length && !ctx.query(p["bank-source-id"], identity).some(inTable))
+        throw statementError("OVERLAP_WITHOUT_REFERENCES", OVERLAP_MESSAGE, {
+          statement: statement.number,
+          account: statement.account,
+          thisPeriod: { start: statement.start, end: statement.end },
+          overlappingDate: String(
+            ctx.read(earlier[0])[p["bank-value-date"]] ?? ""
+          )
+        });
+    }
+    const values = {
+      "https://atomicdata.dev/properties/name": row.description || row.reference,
+      [p["bank-account"]]: statement.account,
+      [p["bank-currency"]]: statement.currency,
+      [p["bank-amount"]]: row.amount,
+      [p["bank-value-date"]]: row.date,
+      [p["bank-booking-date"]]: row.bookingDate,
+      [p["bank-description"]]: row.description,
+      [p["bank-reference"]]: row.bankReference || row.reference,
+      [p["bank-transaction-code"]]: row.code,
+      [p["bank-statement"]]: statement.number,
+      [p["bank-source-id"]]: identity,
+      [p["bank-fingerprint"]]: fingerprint
+    };
+    records.push({
+      sourceId: identity,
+      mode: "append",
+      legacy: { property: p["bank-source-id"], value: identity },
+      localId: `transaction-${records.length}`,
+      parent: table,
+      isA: [rowClass],
+      values
+    });
+  }
+  const result = importRecords(ctx, records);
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const statementRecords = statements.map(
+    (statement, index) => {
+      const identity = `statement:${JSON.stringify([
         format,
         statement.account,
         statement.currency,
-        reference ? ["bank", reference] : ["statement", statementKey, index]
-      ]);
-      if (seen.has(identity)) {
-        if (seen.get(identity) !== fingerprint)
-          throw new Error(
-            "Conflicting bank transaction references in this file"
-          );
-        throw new Error(
-          "Repeated bank transaction reference in this file; export non-overlapping statements"
-        );
-      }
-      seen.set(identity, fingerprint);
-      if (!reference) {
-        fallback++;
-        if (!ctx.query(p["bank-source-id"], identity).some(
-          (subject) => ctx.read(subject)["https://atomicdata.dev/properties/parent"] === table
-        ) && ctx.query(p["bank-fingerprint"], fingerprint).some(
-          (subject) => ctx.read(subject)["https://atomicdata.dev/properties/parent"] === table
-        ))
-          throw new Error(
-            "This statement overlaps an earlier import without unique bank references. Use the original statement or export a non-overlapping period."
-          );
-      }
-      const values = {
-        "https://atomicdata.dev/properties/name": row.description || row.reference,
-        [p["bank-account"]]: statement.account,
-        [p["bank-currency"]]: statement.currency,
-        [p["bank-amount"]]: row.amount,
-        [p["bank-value-date"]]: row.date,
-        [p["bank-booking-date"]]: row.bookingDate,
-        [p["bank-description"]]: row.description,
-        [p["bank-reference"]]: row.bankReference || row.reference,
-        [p["bank-transaction-code"]]: row.code,
-        [p["bank-statement"]]: statement.number,
-        [p["bank-source-id"]]: identity,
-        [p["bank-fingerprint"]]: fingerprint
-      };
-      records.push({
+        statement.number,
+        statement.start,
+        statement.end
+      ])}`;
+      return {
         sourceId: identity,
         mode: "append",
-        legacy: { property: p["bank-source-id"], value: identity },
-        localId: `transaction-${records.length}`,
-        parent: table,
-        isA: [rowClass],
-        values
-      });
+        localId: `statement-${index}`,
+        parent: statementsTable.table,
+        isA: [statementsTable.rowClass],
+        values: {
+          "https://atomicdata.dev/properties/name": `${statement.account} ${statement.currency} ${statement.number}`,
+          [p["bank-account"]]: statement.account,
+          [p["bank-currency"]]: statement.currency,
+          [p["bank-statement"]]: statement.number,
+          [p["bank-period-start"]]: statement.start,
+          [p["bank-period-end"]]: statement.end,
+          [p["bank-opening-balance"]]: statement.opening,
+          [p["bank-closing-balance"]]: statement.closing,
+          [p["bank-entry-count"]]: String(statement.transactions.length),
+          [p["bank-format"]]: format,
+          [p["bank-imported-date"]]: today,
+          [p["bank-source-id"]]: identity
+        }
+      };
     }
-  }
-  const result = importRecords(ctx, records);
+  );
+  const saved = importRecords(ctx, statementRecords);
   return {
-    intents: result.intents,
+    intents: [...result.intents, ...saved.intents],
     problems: [
       ...result.problems,
+      ...saved.problems,
       {
         severity: "warning",
         message: `${statements.length} statements reconciled. ${result.summary.unchanged} previously imported transactions skipped. Amounts are exact decimal strings; negative amounts are money out.`

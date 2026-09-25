@@ -8,6 +8,40 @@ const DATE = 'https://atomicdata.dev/datatypes/date' as Datatype;
 const STRING = 'https://atomicdata.dev/datatypes/string' as Datatype;
 
 /**
+ * Written by the importer on a Bank statement row, one per parsed statement:
+ * what the Money app shows in its Imports tab and as closing balances.
+ */
+export const STATEMENT_FIELDS = [
+  [
+    'bank-period-start',
+    'Period start',
+    'Date of the statement opening balance.',
+  ],
+  ['bank-period-end', 'Period end', 'Date of the statement closing balance.'],
+  [
+    'bank-opening-balance',
+    'Opening balance',
+    'Exact signed decimal string: the booked balance the statement starts from.',
+  ],
+  [
+    'bank-closing-balance',
+    'Closing balance',
+    'Exact signed decimal string: the booked balance the statement ends on, reconciled with its entries.',
+  ],
+  [
+    'bank-entry-count',
+    'Entries',
+    'Number of booked entries in the statement, as a decimal string.',
+  ],
+  ['bank-format', 'Format', 'mt940 or camt053: the export format read.'],
+  [
+    'bank-imported-date',
+    'Imported on',
+    'The date this statement was first imported.',
+  ],
+] as const;
+
+/**
  * The banking ontology, declared as the manifest's `destination.schema`: the
  * host creates it in the drive when the importer is set up.
  */
@@ -65,14 +99,33 @@ export function bankingSchema(): SchemaSpec {
       'Original imported transaction content used to detect conflicting reimports.',
     ],
   ];
+  // The person's own annotations, edited in the Money app. The importer never
+  // writes them, so a reimport leaves them alone.
+  const notes = [
+    [
+      'money-category',
+      'Category',
+      'Your own category for this transaction, as free text. Never written by the importer.',
+    ],
+    [
+      'money-note',
+      'Note',
+      'Your own note on this transaction. Never written by the importer.',
+    ],
+  ];
+
+  const dated = new Set(['bank-period-start', 'bank-period-end']);
 
   return {
-    properties: fields.map(([shortname, name, description]) => ({
-      shortname,
-      name,
-      description,
-      datatype: shortname.endsWith('-date') ? DATE : STRING,
-    })),
+    properties: [...fields, ...notes, ...STATEMENT_FIELDS].map(
+      ([shortname, name, description]) => ({
+        shortname,
+        name,
+        description,
+        datatype:
+          shortname.endsWith('-date') || dated.has(shortname) ? DATE : STRING,
+      }),
+    ),
     classes: [
       {
         shortname: 'bank-transaction',
@@ -86,7 +139,34 @@ export function bankingSchema(): SchemaSpec {
           'bank-value-date',
           'bank-source-id',
         ],
-        recommends: fields.slice(0, 9).map(f => f[0]),
+        recommends: [...fields.slice(0, 9), ...notes].map(f => f[0]),
+      },
+      {
+        shortname: 'bank-statement-record',
+        name: 'Bank statement',
+        description:
+          'One imported MT940 or camt.053 statement: account, period and its reconciled opening and closing balances.',
+        requires: [
+          'bank-account',
+          'bank-currency',
+          'bank-period-start',
+          'bank-period-end',
+          'bank-opening-balance',
+          'bank-closing-balance',
+          'bank-source-id',
+        ],
+        recommends: [
+          'bank-account',
+          'bank-currency',
+          'bank-statement',
+          'bank-period-start',
+          'bank-period-end',
+          'bank-opening-balance',
+          'bank-closing-balance',
+          'bank-entry-count',
+          'bank-format',
+          'bank-imported-date',
+        ],
       },
     ],
   };

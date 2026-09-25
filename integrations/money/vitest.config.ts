@@ -8,5 +8,5 @@ export default {
       ).pathname,
     },
   },
-  test: { include: ['*.test.ts'] },
+  test: { include: ['*.test.ts', 'app/*.test.ts', 'app/ui/*.test.ts'] },
 };
