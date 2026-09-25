@@ -80,6 +80,14 @@
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
     },
     {
+      "id": "nextgraph",
+      "index": 15,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/nextgraph/plugin.test.mjs"],
+      "note": "Executable RDF interchange and reviewed Atomic snapshot storage; no live NextGraph broker verification."
+    },
+    {
       "id": "timesheets",
       "index": 6,
       "platforms": ["clockify"],
