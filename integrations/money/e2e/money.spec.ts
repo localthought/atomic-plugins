@@ -27,6 +27,7 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   before,
   createFromCatalog,
+  waitForSynced,
 } from '../../../browser/e2e/tests/test-utils';
 import { enableIntegrationDiscovery } from '../../../browser/e2e/tests/integration-settings-utils';
 
@@ -144,6 +145,8 @@ test.describe('money integration', () => {
 
       return property;
     }, lunch);
+    // The edit must be on the server before this page goes; see installApp.
+    await waitForSynced(page);
 
     // Reimport: nothing new, and the local edit survives.
     await page.goto(importer);
@@ -428,6 +431,12 @@ async function installApp(page: Page, source: string, rowClass: string) {
     },
     { source, rowClass },
   );
+  // `save()` can resolve before the commit is acknowledged and mirrored to the
+  // local database. Navigating away before then gives the next page an app
+  // without the `renders` set here, and the table's "Add view" menu, which
+  // reads the drive's apps once when it mounts, never lists it. CI showed
+  // that: the app's commits arrived by sync push after the menu had opened.
+  await waitForSynced(page);
 }
 
 async function publishBundle(page: Page): Promise<string> {
