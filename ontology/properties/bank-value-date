@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/bank-value-date",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "bank-value-date",
+  "https://atomicdata.dev/properties/name": "Value date",
+  "https://atomicdata.dev/properties/description": "Bank value date (YYYY-MM-DD), without an inferred time zone.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/date"
+}

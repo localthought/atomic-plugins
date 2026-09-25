@@ -603,7 +603,9 @@ jobs:
             integrations/tooling/server-build.test.mjs \
             integrations/tooling/workflow.test.mjs \
             integrations/localthought/mock-proxy.test.mjs \
-            integrations/localthought/no-credentials-in-graph.test.mjs
+            integrations/localthought/no-credentials-in-graph.test.mjs \
+            ontology-kit/ontology.test.mjs \
+            ontology-kit/resolver.test.mjs
 
       # plugin.js is a committed esbuild output (verified byte-for-byte against
       # a fresh bundle by the "reproducible-bundle" check below), not
@@ -612,11 +614,11 @@ jobs:
       # __toESM interop helper (pulled in by notion's plugin.js) uses `!=`.
       - name: Lint (oxlint)
         working-directory: atomic-plugins
-        run: browser/node_modules/.bin/oxlint -c browser/.oxlintrc.json --ignore-pattern '**/plugin.js' integrations
+        run: browser/node_modules/.bin/oxlint -c browser/.oxlintrc.json --ignore-pattern '**/plugin.js' integrations ontology-kit
 
       - name: Format check (oxfmt)
         working-directory: atomic-plugins
-        run: browser/node_modules/.bin/oxfmt -c browser/.oxfmtrc.json --check integrations
+        run: browser/node_modules/.bin/oxfmt -c browser/.oxfmtrc.json --check integrations ontology-kit
 
       # Playwright transpiles the lane specs without typechecking them, so a
       # type error in integrations/<lane>/e2e/*.spec.ts would otherwise only
@@ -647,6 +649,19 @@ jobs:
         env:
           PUBLISHED: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'origin/main' || '' }}
         run: node integrations/tooling/apps.mjs check ${PUBLISHED:+--published "$PUBLISHED"}
+
+      # The shared ontology (#177): ontology/ must be exactly what
+      # `ontology-kit/ontology.mjs build` writes from ontology-kit/source.json
+      # and base.json; on a PR or in the merge queue no term file already on
+      # main may change or disappear (servers fetch a term once and keep it),
+      # except by a base move; the base is written only in base.json; and,
+      # while it is on github.io, every catalog entry that uses it is
+      # `enabled: false`. See ontology-kit/README.md.
+      - name: Shared ontology is fresh, immutable and gated
+        working-directory: atomic-plugins
+        env:
+          PUBLISHED: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'origin/main' || '' }}
+        run: node ontology-kit/ontology.mjs check ${PUBLISHED:+--published "$PUBLISHED"}
 
       - name: Offline certification (typecheck, bundle reproducibility, fixture tests)
         working-directory: atomic-plugins

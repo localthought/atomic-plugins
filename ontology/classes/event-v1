@@ -1,0 +1,23 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/event-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "event-v1",
+  "https://atomicdata.dev/properties/name": "Event",
+  "https://atomicdata.dev/properties/description": "A calendar event. Placed by its first civil day and, for multi-day or all-day events, its exclusive end day; timed events also carry their exact start and end instants as RFC 3339 strings with offset. Provider data (ids, ETags, links, sync baselines) is not part of this class.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://atomicdata.dev/properties/name",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-day"
+  ],
+  "https://atomicdata.dev/properties/recommends": [
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end-day",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-all-day",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-start",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-location",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-notes",
+    "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-recurrence"
+  ]
+}

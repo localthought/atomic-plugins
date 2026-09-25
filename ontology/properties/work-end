@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/work-end",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "work-end",
+  "https://atomicdata.dev/properties/name": "End",
+  "https://atomicdata.dev/properties/description": "End instant of a completed work interval, milliseconds since the Unix epoch. Absent while a timer is running.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/timestamp"
+}

@@ -203,3 +203,66 @@ test('hosts the certified integration bundles in this repository', () => {
   assert.ok(assets.has('catalog.json'));
   assert.ok(assets.has('notion/plugin.js'));
 });
+
+test('serves the committed ontology terms like Pages, with subjects on its own origin', async () => {
+  await withFixture(async base => {
+    const published = 'https://vocab.example/ontology';
+    mkdirSync(join(base, 'ontology-kit'), { recursive: true });
+    mkdirSync(join(base, 'ontology/classes'), { recursive: true });
+    writeFileSync(
+      join(base, 'ontology-kit/base.json'),
+      JSON.stringify({ base: published }),
+    );
+    writeFileSync(
+      join(base, 'ontology/classes/thing-v1'),
+      JSON.stringify({
+        '@id': `${published}/classes/thing-v1`,
+        parent: `${published}/v1`,
+      }),
+    );
+
+    await withServers(base, async ({ devUrl }) => {
+      const res = await fetch(`${devUrl}/ontology/classes/thing-v1`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'application/octet-stream');
+      assert.equal(res.headers.get('access-control-allow-origin'), '*');
+      assert.deepEqual(await res.json(), {
+        '@id': `${devUrl}/ontology/classes/thing-v1`,
+        parent: `${devUrl}/ontology/v1`,
+      });
+
+      // Pages can't pass a CORS preflight; neither does this.
+      const preflight = await fetch(`${devUrl}/ontology/classes/thing-v1`, {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'http://localhost:1',
+          'access-control-request-method': 'GET',
+          'access-control-request-headers': 'x-atomic-agent',
+        },
+      });
+      assert.equal(preflight.status, 405);
+      assert.equal(preflight.headers.get('access-control-allow-origin'), null);
+
+      for (const path of [
+        '/ontology/classes/missing-v1',
+        '/ontology/classes/thing-v1.json',
+        '/ontology/classes/%2e%2e/%2e%2e/ontology-kit/base.json',
+        '/ontology/Classes/thing-v1',
+        '/ontology/',
+      ])
+        assert.equal((await fetch(`${devUrl}${path}`)).status, 404, path);
+    });
+  });
+});
+
+test('serves this repository’s shared ontology', async () => {
+  await withServers(root, async ({ devUrl }) => {
+    const res = await fetch(`${devUrl}/ontology/classes/event-v1`);
+    assert.equal(res.status, 200);
+    const event = await res.json();
+    assert.equal(event['@id'], `${devUrl}/ontology/classes/event-v1`);
+    assert.deepEqual(event['https://atomicdata.dev/properties/isA'], [
+      'https://atomicdata.dev/classes/Class',
+    ]);
+  });
+});

@@ -183,8 +183,19 @@ export const sharedPorts = config =>
  * `devonian` package). A lane may list paths in these under `paths`, so a
  * change there still runs the plugin code that depends on it; it may never
  * list another plugin's directory.
+ *
+ * `ontology-kit` (the shared ontology's subject constants and field resolver,
+ * which a plugin bundles) and `ontology` (its published term files, which a
+ * plugin's e2e reads through the dev-server) are not npm packages, but a
+ * plugin depends on them the same way (#177).
  */
-export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
+export const SHARED_PACKAGES = [
+  'devonian',
+  'syncables',
+  'reflector',
+  'ontology',
+  'ontology-kit',
+];
 
 // Reviewed exact build dependency: reuse the existing WILLIAM3 primitive without
 // duplicating cryptographic source or granting arbitrary sibling-folder globs.
@@ -263,9 +274,13 @@ export function filtersYaml(config) {
     ...config.lanes.map(l => block(l.id, laneFilter(l))),
     // apps/ holds the committed drive app modules; shared-checks' `apps.mjs
     // check` guards them (and a change there comes with a catalog.json one).
+    // ontology/ and ontology-kit/ are the shared ontology; shared-checks'
+    // `ontology.mjs check` guards them.
     block('any', [
       'integrations/**',
       'apps/**',
+      'ontology/**',
+      'ontology-kit/**',
       ...SHARED_FILTER,
       ...lanePaths,
     ]),

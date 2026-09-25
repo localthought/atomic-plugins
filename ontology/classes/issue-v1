@@ -1,0 +1,19 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/issue-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "issue-v1",
+  "https://atomicdata.dev/properties/name": "Issue",
+  "https://atomicdata.dev/properties/description": "An issue or task, using the task/v1 vocabulary every AtomicServer embeds: status (todo, doing, blocked, done; done is closed), body, assignee and due date. Provider data (issue numbers, labels, comments, sync state) is not part of this class.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://atomicdata.dev/properties/name"
+  ],
+  "https://atomicdata.dev/properties/recommends": [
+    "https://atomicdata.dev/task/v1/status",
+    "https://atomicdata.dev/task/v1/body",
+    "https://atomicdata.dev/task/v1/assignee",
+    "https://atomicdata.dev/task/v1/due-date"
+  ]
+}

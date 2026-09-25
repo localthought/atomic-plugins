@@ -1,0 +1,13 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/classes/work-person-v1",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Class"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "work-person-v1",
+  "https://atomicdata.dev/properties/name": "Person",
+  "https://atomicdata.dev/properties/description": "A person who performed work, by name. Not an Atomic authentication agent.",
+  "https://atomicdata.dev/properties/requires": [
+    "https://atomicdata.dev/properties/name"
+  ]
+}

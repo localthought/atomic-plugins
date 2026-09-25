@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/bank-booking-date",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "bank-booking-date",
+  "https://atomicdata.dev/properties/name": "Booking date",
+  "https://atomicdata.dev/properties/description": "Booking date (YYYY-MM-DD).",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/date"
+}

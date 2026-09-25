@@ -221,6 +221,26 @@ silent headroom: when a change needs a higher limit, re-measure and raise the
 limit and its comment in the same commit. See
 [Bundle size](integrations/README.md#bundle-size).
 
+## ontology/ and ontology-kit/
+
+The shared row classes of [#177](https://github.com/ontola/atomic-plugins/issues/177)
+(event, issue, time entry, bank transaction), which several plugins sync into
+so that a plugin's view works on any table of that class. `ontology/` holds
+only the generated term files, which the same Pages publish serves at
+`https://ontola.github.io/atomic-plugins/ontology/<path>`, each file at its
+own subject. `ontology-kit/` holds everything else: `base.json` (the one place
+the base URL is written), `source.json`, `ontology.mjs` (`build` and `check`),
+the generated subject constants `terms.mjs`, and the strict field resolver
+`resolver.mjs` that plugin views bundle. Never edit `ontology/` or
+`terms.mjs` by hand: edit `source.json` or `base.json` and run
+`node ontology-kit/ontology.mjs build`. A term file that is on `main` is never
+changed or deleted, apart from a base move; CI's
+`ontology.mjs check --published origin/main` enforces that. While the base is
+on github.io, every catalog entry that uses it must be `enabled: false`, which
+the same check enforces. See [`ontology-kit/README.md`](ontology-kit/README.md).
+Both folders are shared code outside the plugin folders, approved by Michiel
+on #177 (question 12).
+
 ## Style notes for docs and code in `integrations/`
 
 - Prose here is precise and hedged, not marketing copy: state exact limits
@@ -272,7 +292,10 @@ same time. These are the working agreements between them.
 
 - Keep each plugin inside its own folder (see "Plugin runtimes" and
   `integrations/README.md`). Moving shared code out of plugin folders needs
-  the user's decision.
+  the user's decision. `ontology/` and `ontology-kit/` are such shared code,
+  approved by Michiel on #177: shared-class terms, subject constants, the
+  field resolver and class-to-class lenses belong there, while a plugin's
+  provider-specific terms and code stay in its own folder.
 - Never merge ontola/atomic-server PRs; they are reviewed by its
   maintainer. Pin `.atomic-server-ref` to a commit SHA instead, which may be
   on an unmerged branch.

@@ -1,0 +1,11 @@
+{
+  "@id": "https://ontola.github.io/atomic-plugins/ontology/properties/atomic-calendar-end-day",
+  "https://atomicdata.dev/properties/isA": [
+    "https://atomicdata.dev/classes/Property"
+  ],
+  "https://atomicdata.dev/properties/parent": "https://ontola.github.io/atomic-plugins/ontology/v1",
+  "https://atomicdata.dev/properties/shortname": "atomic-calendar-end-day",
+  "https://atomicdata.dev/properties/name": "End day",
+  "https://atomicdata.dev/properties/description": "Exclusive end day (YYYY-MM-DD) of a multi-day or all-day event: the first day it no longer covers. Absent means a single day.",
+  "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/date"
+}

@@ -10,7 +10,9 @@
  * layout Pages publishes, and the catalog it serves points `app-module` there
  * (see `localCatalog`). So an e2e installs exactly the bytes this checkout
  * would publish, through the same integrity check a published version gets,
- * before they are on Pages.
+ * before they are on Pages. In the same way it serves the committed shared
+ * ontology (`ontology/...`, #177) at `/ontology/...`, with its subjects moved
+ * to this server's origin and Pages' headers (`ontologyFile`, `serveTerm`).
  *
  * That is all it does. It used to also reverse-proxy everything else through
  * to a real atomic-server, so that one origin looked like an atomic-server
@@ -37,6 +39,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGES_BASE, terms } from './apps.mjs';
+import { readBase } from '../../ontology-kit/ontology.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -103,6 +106,71 @@ export function appModuleFile(path, base = root) {
   return existsSync(file) ? file : undefined;
 }
 
+/**
+ * A committed ontology term file (`ontology/v<N>`, `ontology/classes/<name>`
+ * or `ontology/properties/<shortname>`, written by `ontology-kit/ontology.mjs
+ * build`) for a request path, or undefined. The pattern admits no `/`, `.` or
+ * upper case in a segment, so the path cannot leave ontology/.
+ */
+export function ontologyFile(path, base = root) {
+  if (
+    !/^\/ontology\/(?:v[1-9][0-9]*|(?:classes|properties)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/.test(
+      path,
+    )
+  )
+    return undefined;
+  const file = resolve(base, path.slice(1));
+
+  return existsSync(file) ? file : undefined;
+}
+
+/**
+ * A term file with its subjects moved from the published base
+ * (`ontology-kit/base.json`) to this server's `<origin>/ontology`, so every
+ * subject is the URL it is fetched from here, as it is on Pages. Like
+ * `localCatalog`, a textual rewrite of just that prefix.
+ */
+export const localTerms = (text, publishedBase, origin) =>
+  text.replaceAll(publishedBase, `${origin}/ontology`);
+
+/**
+ * GitHub Pages' answer for a term (probed 2026-09-25, #177 spike S1): an
+ * extensionless file is `application/octet-stream`, a GET carries
+ * `access-control-allow-origin: *`, and a CORS preflight gets 405 with no
+ * CORS headers. Imitated here so an e2e takes the same path through the
+ * host (a failed signed read, then the local database worker's unsigned one)
+ * as a real Pages term does. The cache header is not imitated: `no-cache`, so
+ * a rebuilt term is served at once.
+ */
+function serveTerm(req, res, file, base) {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(405, { 'content-type': 'text/html' }).end();
+
+    return;
+  }
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'access-control-allow-origin': '*' }).end();
+
+    return;
+  }
+
+  const body = Buffer.from(
+    localTerms(
+      readFileSync(file, 'utf8'),
+      readBase(base),
+      `http://${req.headers.host}`,
+    ),
+  );
+  res.writeHead(200, {
+    'access-control-allow-origin': '*',
+    'cache-control': 'no-cache',
+    etag: `"${createHash('sha256').update(body).digest('base64url').slice(0, 27)}"`,
+    'content-type': 'application/octet-stream',
+  });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 const CONTENT_TYPES = {
   plugin: 'text/javascript',
   catalog: 'application/json',
@@ -112,6 +180,14 @@ export function createDevServer({ assetsRoot = root } = {}) {
   const assets = hostedAssets(assetsRoot);
 
   return createHttpServer((req, res) => {
+    const term = ontologyFile(req.url.split('?')[0], assetsRoot);
+
+    if (term) {
+      serveTerm(req, res, term, assetsRoot);
+
+      return;
+    }
+
     // The SPA is served from atomic-server's origin and fetches the catalog
     // from here, so every read of it is cross-origin. These assets are public
     // build artifacts of this repository and carry no credentials.
