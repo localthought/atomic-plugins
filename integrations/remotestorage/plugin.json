@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "name": "remotestorage",
+  "namespace": "atomic-plugins",
+  "version": "0.2.0",
+  "description": "Import remoteStorage text exports as Atomic documents and serve explicitly public categories.",
+  "operations": [],
+  "secrets": [],
+  "capabilities": [
+    {
+      "name": "storage",
+      "reason": "Read scoped Atomic resources; propose reviewed document import intents."
+    }
+  ],
+  "config": {
+    "key": "remotestorage",
+    "properties": {
+      "table": {
+        "type": "string",
+        "description": "Parent resource for reviewed text imports"
+      },
+      "publicCategories": {
+        "type": "object",
+        "description": "Explicit public category to parent resource mapping; private parents are refused by host read permissions"
+      }
+    },
+    "required": ["table"]
+  },
+  "accepts": [
+    {
+      "extensions": [".json"],
+      "mediaTypes": ["application/json"],
+      "as": "text",
+      "maxBytes": 262144
+    }
+  ],
+  "http": {
+    "mount": "drive-prefix",
+    "reason": "Read explicitly exported public text documents. No public write route or private-data authority.",
+    "routes": [
+      {
+        "id": "public-storage",
+        "path": "/storage/public/{*rest}",
+        "methods": ["GET", "HEAD"],
+        "principal": "anonymous",
+        "auth": "none",
+        "cors": "any-origin-no-credentials"
+      }
+    ]
+  }
+}

@@ -25,6 +25,15 @@
       "e2e": ["integrations/calendar/e2e/calendar.spec.ts"]
     },
     {
+      "id": "remotestorage",
+      "index": 10,
+      "platforms": [],
+      "tiers": ["node", "e2e"],
+      "nodeTests": ["integrations/remotestorage/plugin.test.mjs"],
+      "e2e": ["integrations/remotestorage/e2e/remotestorage.spec.ts"],
+      "note": "QuickJS-targeted reviewed text import intents, actual Atomic read adapter, public remoteStorage reads and deterministic bundle checks. The e2e tier runs real host QuickJS text imports with approved atom persistence; private bearer writes and blobs await host support."
+    },
+    {
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],
