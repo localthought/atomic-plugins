@@ -1,6 +1,6 @@
 [package]
 name = "atomic-integration-proxy"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "OAuth/catalog integration proxy (pinned OpenAPI catalog, connections owned by Atomic agents, Atomic v2 request signatures, delegations and frame capabilities) used by Atomic Server and LocalThought"
 license = "MIT"
@@ -21,6 +21,7 @@ include = [
     "/Cargo.toml",
     "/Cargo.lock",
     "/README.md",
+    "/CHANGELOG.md",
     "/SECURITY.md",
     "/LICENSE",
 ]

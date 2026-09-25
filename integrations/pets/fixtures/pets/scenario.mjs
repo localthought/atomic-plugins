@@ -1,4 +1,14 @@
+import { readFileSync } from 'node:fs';
+
 /** Synthetic Pets fixtures: five read-only records, two pages via a Link header. */
+const documentFile = new URL('../../app/openapi.json', import.meta.url);
+
+/**
+ * The API base the app's document names (the demo provider on GitHub Pages).
+ * The second page's Link stays under it, where the app's transport accepts it.
+ */
+const upstream = JSON.parse(readFileSync(documentFile, 'utf8')).servers[0].url;
+
 export const pets = ['Rex', 'Whiskers', 'Tweety', 'Nibbles', 'Bubbles'].map(
   (name, i) => ({
     id: i + 1,
@@ -22,7 +32,7 @@ export function petsFixture() {
         body: second ? pets.slice(2) : pets.slice(0, 2),
         headers: url.searchParams.has('page')
           ? {}
-          : { Link: '<https://pets.example/pets?page=2>; rel="next"' },
+          : { Link: `<${upstream}/pets?page=2>; rel="next"` },
       };
     },
   };
@@ -31,6 +41,6 @@ export function petsFixture() {
 export default {
   title: 'Pets',
   // Served as-is with a YAML content type, like the real proxy's overlay doc.
-  documentFile: new URL('../../app/openapi.json', import.meta.url),
+  documentFile,
   create: petsFixture,
 };

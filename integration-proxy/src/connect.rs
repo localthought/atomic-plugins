@@ -4,7 +4,9 @@
 //!    There is no proxy login and no `user_id`: this page is a consent
 //!    screen naming the platform and where the browser will return to.
 //! 2. `POST /connect/authorize` sends the browser to the provider's OAuth,
-//!    or, for an API-key platform, seals the key pasted on the consent page.
+//!    or, for an API-key platform, seals the key pasted on the consent page,
+//!    or, for a platform whose document requires no security, hands off a
+//!    connection that holds no credential.
 //! 3. The provider callback (`oauth.rs`) sends the browser back to
 //!    `redirect_uri?connection_code=<handoff>`; the handoff is single-use,
 //!    valid five minutes, and bound to the PKCE challenge.
@@ -213,7 +215,13 @@ pub async fn page(
             &request.platform,
             &destination_label(&target),
             &consent.csrf,
-            matches!(scheme, crate::providers::SecurityScheme::ApiKey(_)),
+            match scheme {
+                crate::providers::SecurityScheme::OAuth(_) => templates::ConnectKind::OAuth,
+                crate::providers::SecurityScheme::ApiKey(_) => templates::ConnectKind::ApiKey,
+                crate::providers::SecurityScheme::NoCredential => {
+                    templates::ConnectKind::NoCredential
+                }
+            },
         )),
     ));
     // Keep the consent form's same-origin POST attributable while sending no
@@ -223,8 +231,8 @@ pub async fn page(
         .insert(header::REFERRER_POLICY, "same-origin".parse().unwrap());
     // Chrome applies form-action to redirects too, including an
     // already-authorized provider returning straight through its callback to
-    // the hub. An apiKey platform never redirects to a third party, so only
-    // the caller's own redirect_uri needs allowing.
+    // the hub. An apiKey or no-credential platform never redirects to a third
+    // party, so only the caller's own redirect_uri needs allowing.
     let base = response.headers()["content-security-policy"]
         .to_str()
         .unwrap()
@@ -238,7 +246,8 @@ pub async fn page(
                 .ascii_serialization(),
             form_action_source(&target)
         ),
-        crate::providers::SecurityScheme::ApiKey(_) => {
+        crate::providers::SecurityScheme::ApiKey(_)
+        | crate::providers::SecurityScheme::NoCredential => {
             format!("{base}; form-action 'self' {}", form_action_source(&target))
         }
     };
@@ -309,6 +318,17 @@ pub async fn authorize(
             let credential = crate::proxy::StoredCredential::ApiKey {
                 provider: consent.request.platform.clone(),
                 key: key.to_owned(),
+            };
+            let code = match handoff(security, &consent.request, credential).await {
+                Ok(code) => code,
+                Err(()) => return error("Could not complete connection"),
+            };
+            finish_with_connection_code(jar, &consent.request.redirect_uri, &code)
+        }
+        Ok(crate::providers::SecurityScheme::NoCredential) => {
+            // Consent is all there is: no key is read, even if one was sent.
+            let credential = crate::proxy::StoredCredential::NoCredential {
+                provider: consent.request.platform.clone(),
             };
             let code = match handoff(security, &consent.request, credential).await {
                 Ok(code) => code,
@@ -858,6 +878,120 @@ mod tests {
         // Single use.
         let reused = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
         assert_eq!(reused.status(), StatusCode::BAD_REQUEST);
+    }
+
+    fn no_credential_catalog() -> crate::catalog::Catalog {
+        crate::catalog::Catalog::from_test_document(
+            "pets",
+            serde_json::json!({
+                "servers": [{"url": "https://pets.example/api"}],
+                "security": [],
+                "paths": {"/pets": {"get": {}}}
+            }),
+            serde_json::json!({}),
+        )
+    }
+
+    fn no_credential_request() -> Request {
+        Request {
+            platform: "pets".into(),
+            redirect_uri:
+                "https://hub.example/app/integrations?integration_state=state&platform=pets".into(),
+            code_challenge: pkce_challenge(&"a".repeat(43)).unwrap(),
+            code_challenge_method: "S256".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn no_credential_consent_page_asks_for_nothing_and_redirects_nowhere_else() {
+        let mut s = state(None);
+        s.catalog = no_credential_catalog();
+        let r = no_credential_request();
+        let uri = format!(
+            "/connect?platform=pets&redirect_uri={}&code_challenge={}&code_challenge_method=S256",
+            url::form_urlencoded::byte_serialize(r.redirect_uri.as_bytes()).collect::<String>(),
+            r.code_challenge
+        );
+        let response = crate::router(s)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(uri)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let policy = response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(policy.ends_with("form-action 'self' https://hub.example"));
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(html.contains("Pets needs no account"));
+        assert!(!html.contains("api_key"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_no_credential_connect_seals_no_secret_and_the_signer_owns_it() {
+        let security = crate::test_support::security().await;
+        let mut s = state(Some(security.clone()));
+        s.catalog = no_credential_catalog();
+        let consent = Consent {
+            request: no_credential_request(),
+            csrf: random(),
+            expires: crate::now_secs() + 600,
+        };
+        let jar = PrivateCookieJar::new(s.key.clone()).add(private_cookie(
+            CONSENT_COOKIE,
+            serde_json::to_string(&consent).unwrap(),
+        ));
+        // A key sent anyway is ignored, not stored.
+        let response = authorize(
+            State(s.clone()),
+            jar,
+            HeaderMap::new(),
+            Form(Approval {
+                csrf: consent.csrf.clone(),
+                api_key: Some("unexpected-secret".into()),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let location = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert_eq!(
+            location.origin().ascii_serialization(),
+            "https://hub.example"
+        );
+        let code = location
+            .query_pairs()
+            .find(|(k, _)| k == "connection_code")
+            .unwrap()
+            .1
+            .into_owned();
+        let owner = Agent::new(25);
+        let ok = redeem_as(&s, &owner, &code, &"a".repeat(43)).await;
+        assert_eq!(ok.status(), StatusCode::OK);
+        let body = body_json(ok).await;
+        assert_eq!(body["platform"], "pets");
+        assert_eq!(body["owner"], owner.id());
+        let record = security
+            .load_connection(body["connection_id"].as_str().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.owner, owner.id());
+        let credential: crate::proxy::StoredCredential =
+            serde_json::from_slice(&record.credential).unwrap();
+        assert!(matches!(
+            credential,
+            crate::proxy::StoredCredential::NoCredential { ref provider } if provider == "pets"
+        ));
+        assert!(!String::from_utf8_lossy(&record.credential).contains("unexpected-secret"));
     }
 
     #[tokio::test]

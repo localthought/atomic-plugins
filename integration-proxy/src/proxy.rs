@@ -33,8 +33,8 @@ use crate::{
 };
 
 /// The provider credential sealed in a connection row, interpreted only here
-/// and where it is minted (`oauth.rs`'s callback, `connect.rs`'s apiKey
-/// branch).
+/// and where it is minted (`oauth.rs`'s callback, `connect.rs`'s apiKey and
+/// no-credential branches).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub(crate) enum StoredCredential {
@@ -47,12 +47,18 @@ pub(crate) enum StoredCredential {
     },
     #[serde(rename = "api_key")]
     ApiKey { provider: String, key: String },
+    /// A connection to a platform whose document requires no security
+    /// (`SecurityScheme::NoCredential`): only the platform it is for.
+    #[serde(rename = "none")]
+    NoCredential { provider: String },
 }
 
 impl StoredCredential {
     fn provider(&self) -> &str {
         match self {
-            Self::OAuth { provider, .. } | Self::ApiKey { provider, .. } => provider,
+            Self::OAuth { provider, .. }
+            | Self::ApiKey { provider, .. }
+            | Self::NoCredential { provider } => provider,
         }
     }
 }
@@ -407,6 +413,17 @@ async fn forward_inner(
                         .into_response());
                 }
             }
+        }
+        StoredCredential::NoCredential { .. } => {
+            // Only while the catalog still says the platform needs none: if
+            // it has since gained a scheme, this connection holds nothing to
+            // send, and the person has to connect again.
+            if state.catalog.security_scheme(platform)
+                != Ok(crate::providers::SecurityScheme::NoCredential)
+            {
+                return Err(ApiError::CredentialRefreshFailed);
+            }
+            CredentialInjection::None
         }
     };
     let upstream = match upstream_request(
@@ -864,6 +881,122 @@ mod tests {
         // A signed POST covers its body.
         let post = signed_request(&f.state, &f.owner, "POST", &f.path(), b"{}".to_vec());
         assert_eq!(f.send(post).await.status(), StatusCode::OK);
+    }
+
+    /// A platform whose document requires no security, served under an API
+    /// base path the way a static host serves it.
+    fn no_credential_catalog(address: std::net::SocketAddr) -> crate::catalog::Catalog {
+        crate::catalog::Catalog::from_test_document(
+            "pets",
+            json!({
+                "servers": [{"url": format!("http://{address}/demo/api")}],
+                "security": [],
+                "paths": {"/pets": {"get": {}}}
+            }),
+            json!({}),
+        )
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; CI runs with --include-ignored"]
+    async fn postgres_a_no_credential_connection_forwards_only_catalog_reads_with_no_credential() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/demo/api/pets",
+            axum::routing::any(|headers: HeaderMap| async move {
+                (
+                    [(header::CONTENT_TYPE, "application/octet-stream")],
+                    serde_json::to_string(&json!([{
+                        "id": 1,
+                        "name": "Rex",
+                        "authorization": headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()),
+                        "signature_forwarded": headers.contains_key("x-atomic-signature"),
+                    }]))
+                    .unwrap(),
+                )
+            }),
+        );
+        let _server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let security = security().await;
+        let mut s = state(Some(security.clone()));
+        s.catalog = no_credential_catalog(address);
+        let owner = Agent::new(37);
+        let id = security
+            .create_connection(
+                "pets",
+                &owner.id(),
+                &serde_json::to_vec(&StoredCredential::NoCredential {
+                    provider: "pets".into(),
+                })
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let send =
+            |s: AppState, request| async move { crate::router(s).oneshot(request).await.unwrap() };
+        let path = format!("/proxy/{id}/pets/demo/api/pets");
+
+        // Signed by the owner: forwarded with nothing attached, and the
+        // provider's bytes come back whatever their content type.
+        let response = send(s.clone(), signed_request(&s, &owner, "GET", &path, vec![])).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response).await;
+        assert_eq!(body[0]["name"], "Rex");
+        assert_eq!(body[0]["authorization"], serde_json::Value::Null);
+        assert_eq!(body[0]["signature_forwarded"], false);
+
+        // Still not an open relay: unsigned, another method, or another
+        // path is refused before anything is sent.
+        let unsigned = axum::http::Request::builder()
+            .uri(&path)
+            .body(axum::body::Body::empty())
+            .unwrap();
+        expect_error(
+            send(s.clone(), unsigned).await,
+            StatusCode::UNAUTHORIZED,
+            "missing_signature",
+        )
+        .await;
+        let post = signed_request(&s, &owner, "POST", &path, b"{}".to_vec());
+        assert_eq!(send(s.clone(), post).await.status(), StatusCode::NOT_FOUND);
+        let other = format!("/proxy/{id}/pets/demo/api/owners");
+        let other = signed_request(&s, &owner, "GET", &other, vec![]);
+        assert_eq!(send(s.clone(), other).await.status(), StatusCode::NOT_FOUND);
+        let stranger = signed_request(&s, &Agent::new(38), "GET", &path, vec![]);
+        expect_error(
+            send(s.clone(), stranger).await,
+            StatusCode::FORBIDDEN,
+            "not_delegated",
+        )
+        .await;
+
+        // A catalog that has since given the platform a scheme: this
+        // connection holds nothing to send, so connect again.
+        let changed = crate::catalog::Catalog::from_test_document(
+            "pets",
+            json!({
+                "servers": [{"url": format!("http://{address}/demo/api")}],
+                "components": {"securitySchemes": {"petsKey": {
+                    "type": "apiKey", "in": "header", "name": "X-Api-Key"
+                }}},
+                "security": [{"petsKey": []}],
+                "paths": {"/pets": {"get": {}}}
+            }),
+            json!({}),
+        );
+        let mut s2 = s.clone();
+        s2.catalog = changed;
+        expect_error(
+            send(
+                s2.clone(),
+                signed_request(&s2, &owner, "GET", &path, vec![]),
+            )
+            .await,
+            StatusCode::UNAUTHORIZED,
+            "credential_refresh_failed",
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1346,7 +1479,7 @@ mod tests {
                 assert_eq!(access_token, "refreshed-token");
                 assert_eq!(refresh_token.as_deref(), Some("rotated-refresh"));
             }
-            StoredCredential::ApiKey { .. } => panic!("expected an OAuth credential"),
+            _ => panic!("expected an OAuth credential"),
         }
         server.abort();
     }

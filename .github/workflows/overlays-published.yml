@@ -30,7 +30,10 @@ jobs:
           base = "https://ontola.github.io/atomic-plugins/overlays/"
           paths = ["catalog.json"]
           for platform in json.loads(pathlib.Path("catalog.json").read_text())["platforms"]:
-              paths += [url[len(base):] for url in platform.get("overlays", []) if url.startswith(base)]
+              sources = [platform["openapi"], *platform.get("overlays", [])]
+              paths += [url[len(base):] for url in sources if url.startswith(base)]
+          # The static demo API that pets-demo's document points at.
+          paths += ["pets-demo/1.0.0/api/pets"]
           deadline = time.time() + 15 * 60
           while True:
               stale = []

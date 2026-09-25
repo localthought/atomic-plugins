@@ -85,7 +85,10 @@ proxy or platform router the process sees plain HTTP. Clients sign the URL they 
 - `POST /connect/authorize` — the consent form (cookie-bound CSRF token,
   single use). For an OAuth platform it redirects to the provider; for an
   API-key platform (`type: apiKey` in the composed document) the consent page
-  asks for the key, and this seals it.
+  asks for the key, and this seals it. For a platform whose composed document
+  declares top-level `security: []` and no security scheme (0.2.2 and
+  later), it asks for nothing and hands off a connection that holds no
+  credential; requests are forwarded with none.
 - `GET /oauth/{platform}/callback` — the provider's callback. Only the
   browser that approved consent can complete it. It redirects to
   `redirect_uri?connection_code=<handoff>` (or `?error=access_denied`). The
@@ -372,7 +375,7 @@ git tag integration-proxy-v0.1.1 && git push origin integration-proxy-v0.1.1
 ```
 
 Only `src/`, `static/index.html`, `static/logo.png`, `Cargo.toml`,
-`Cargo.lock`, `README.md`, `SECURITY.md` and `LICENSE` are packaged
+`Cargo.lock`, `README.md`, `CHANGELOG.md`, `SECURITY.md` and `LICENSE` are packaged
 (`cargo package --list` shows the exact list). `tests/` fixtures are not, so
 `cargo test` only works from a checkout of this repository.
 

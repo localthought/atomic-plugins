@@ -1,9 +1,10 @@
 """Validate full catalog-pinned compositions, without task-local base files."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
 import yaml
-from generate_identity_catalog_fixtures import apply, compose, fetch, platform_config
+from generate_identity_catalog_fixtures import PAGES_BASE, ROOT, apply, compose, fetch, platform_config
 
 
 class IdentityOverlayTests(unittest.TestCase):
@@ -151,6 +152,42 @@ class IdentityOverlayTests(unittest.TestCase):
                 for requirement in operation.get("security", []):
                     scopes.update(requirement.get("githubOAuth", []))
         self.assertEqual(scopes, {"repo"})
+
+    def test_pets_demo_needs_no_credential_and_serves_its_schema(self):
+        # Published whole from this folder: the OAD and the static API it
+        # describes (GitHub Pages serves both). compose() validates the OAD.
+        config = platform_config("pets")
+        self.assertEqual(config["openapi"], PAGES_BASE + "pets-demo/1.0.0/openapi.json")
+        self.assertEqual(config["overlays"], [])
+        self.assertNotIn("selection", config)
+        document = self.composed("pets")
+        # The integration proxy's no-credential kind: an explicit empty
+        # top-level requirement and no scheme anywhere.
+        self.assertEqual(document["security"], [])
+        self.assertNotIn("securitySchemes", document.get("components", {}))
+        server = document["servers"][0]["url"]
+        self.assertEqual(server, PAGES_BASE + "pets-demo/1.0.0/api")
+        # Read-only: one collection, GET only.
+        self.assertEqual(set(document["paths"]), {"/pets"})
+        self.assertEqual(set(document["paths"]["/pets"]), {"get"})
+        # What Pages serves at server + /pets matches the Pet schema.
+        pets = json.loads((ROOT / server[len(PAGES_BASE):] / "pets").read_text())
+        schema = document["components"]["schemas"]["Pet"]
+        types = {"integer": int, "string": str, "boolean": bool, "number": (int, float)}
+        self.assertEqual(len(pets), 5)
+        self.assertEqual(len({pet["id"] for pet in pets}), 5)
+        for pet in pets:
+            self.assertEqual(set(pet), set(schema["properties"]))
+            for field in schema["required"]:
+                self.assertIn(field, pet)
+            for field, value in pet.items():
+                expected = types[schema["properties"][field]["type"]]
+                self.assertIsInstance(value, expected, field)
+                if expected is int:
+                    self.assertNotIsInstance(value, bool, field)
+        # The Pets drive app bundles the same document.
+        app = json.loads((ROOT.parent / "integrations/pets/app/openapi.json").read_text())
+        self.assertEqual(app, document)
 
 
 if __name__ == "__main__":

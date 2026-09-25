@@ -620,7 +620,7 @@ mod tests {
                 assert_eq!(scheme.name, "X-Api-Key");
                 assert_eq!(scheme.location, crate::providers::ApiKeyLocation::Header);
             }
-            crate::providers::SecurityScheme::OAuth(_) => panic!("expected an apiKey scheme"),
+            _ => panic!("expected an apiKey scheme"),
         }
         assert!(catalog
             .allows(
@@ -756,6 +756,14 @@ mod tests {
         )
         .unwrap();
         for platform in config.platforms {
+            // An OAD may be published from overlays/ too (the pets demo's is).
+            if let Some(relative) = platform.openapi.strip_prefix(OVERLAYS_PAGES_BASE) {
+                assert!(
+                    overlays.join(relative).is_file(),
+                    "{}: missing overlays/{relative}",
+                    platform.name
+                );
+            }
             for url in platform.overlays {
                 let relative = url.strip_prefix(OVERLAYS_PAGES_BASE).unwrap_or_else(|| {
                     panic!("{}: {url} is not published from overlays/", platform.name)
@@ -767,6 +775,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The `pets` platform is published entirely from `overlays/` (its OAD
+    /// and the static API it describes), so it composes from this checkout
+    /// with no download: a credential-free, read-only platform whose only
+    /// allowed request is `GET` of the pets collection under the API base.
+    #[tokio::test]
+    async fn default_catalog_pets_is_a_credential_free_read_of_one_collection() {
+        let overlays = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../overlays");
+        let catalog: Value =
+            serde_json::from_str(&fs::read_to_string(overlays.join("catalog.json")).unwrap())
+                .unwrap();
+        let pets = catalog["platforms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|platform| platform["name"] == "pets")
+            .expect("overlays/catalog.json lists pets")
+            .clone();
+        let only_pets = tempfile_path("pets-catalog.json");
+        fs::write(
+            &only_pets,
+            serde_json::json!({"platforms": [pets]}).to_string(),
+        )
+        .unwrap();
+        let catalog = Catalog::load_with_mirror(
+            &only_pets.to_string_lossy(),
+            &crate::build_http_client(),
+            Some(&overlays),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            catalog.security_scheme("pets"),
+            Ok(crate::providers::SecurityScheme::NoCredential)
+        );
+        let base = "/atomic-plugins/overlays/pets-demo/1.0.0/api";
+        let upstream = catalog
+            .allows("pets", "GET", &format!("{base}/pets"))
+            .unwrap();
+        assert_eq!(
+            upstream.as_str(),
+            "https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/api"
+        );
+        // The file that URL serves is the one committed next to the OAD.
+        let served: Value = serde_json::from_str(
+            &fs::read_to_string(overlays.join("pets-demo/1.0.0/api/pets")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(served.as_array().unwrap().len(), 5);
+        for method in ["POST", "PUT", "PATCH", "DELETE"] {
+            assert!(catalog
+                .allows("pets", method, &format!("{base}/pets"))
+                .is_none());
+        }
+        for path in [
+            "/pets".to_owned(),
+            format!("{base}/pets/1"),
+            format!("{base}/owners"),
+            "/atomic-plugins/overlays/catalog.json".to_owned(),
+            "/atomic-plugins/apps/pets/0.1.2/ui.js".to_owned(),
+        ] {
+            assert!(catalog.allows("pets", "GET", &path).is_none(), "{path}");
+        }
+        assert!(catalog
+            .validate_request("pets", "GET", &format!("{base}/pets"), None, None, false)
+            .is_ok());
+    }
+
+    fn tempfile_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "integration-proxy-test-{}-{}",
+            std::process::id(),
+            crate::connect::random()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
     }
 
     /// Exercises the catalog the application loads by default
@@ -802,6 +887,18 @@ mod tests {
             .contains(&("access_type".into(), "offline".into())));
         let spotify = catalog.oauth_provider("spotify").unwrap();
         assert!(spotify.use_pkce);
+        // atomic-plugins#174: the Pets demo needs no credential.
+        assert_eq!(
+            catalog.security_scheme("pets"),
+            Ok(crate::providers::SecurityScheme::NoCredential)
+        );
+        assert!(catalog
+            .allows(
+                "pets",
+                "GET",
+                "/atomic-plugins/overlays/pets-demo/1.0.0/api/pets"
+            )
+            .is_some());
         assert!(catalog
             .allows("github-issues", "GET", "/repositories/123/issues")
             .is_some());

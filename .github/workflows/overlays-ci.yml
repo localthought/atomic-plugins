@@ -67,7 +67,10 @@ jobs:
           base = "https://ontola.github.io/atomic-plugins/overlays/"
           errors = []
           for platform in json.loads(pathlib.Path("catalog.json").read_text())["platforms"]:
-              for url in platform.get("overlays", []):
+              sources = platform.get("overlays", [])
+              if platform["openapi"].startswith(base):
+                  sources = [platform["openapi"], *sources]
+              for url in sources:
                   if not url.startswith(base):
                       errors.append(f"{platform['name']}: {url} is not under {base}")
                   elif not pathlib.Path(url[len(base):]).is_file():

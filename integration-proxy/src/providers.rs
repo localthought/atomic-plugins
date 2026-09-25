@@ -87,6 +87,11 @@ impl ApiKeyScheme {
 pub enum SecurityScheme {
     OAuth(Provider),
     ApiKey(ApiKeyScheme),
+    /// The document explicitly requires no security: top-level
+    /// `security: []`, no declared security scheme, and no operation that
+    /// requires one. Connecting takes consent only, stores no provider
+    /// credential, and forwards requests with none.
+    NoCredential,
 }
 
 impl SecurityScheme {
@@ -95,6 +100,9 @@ impl SecurityScheme {
         oauth_selected: Option<&str>,
         api_key_selected: Option<&str>,
     ) -> Result<Self, String> {
+        if declares_no_security(document) {
+            return Ok(Self::NoCredential);
+        }
         let schemes = document
             .pointer("/components/securitySchemes")
             .and_then(Value::as_object)
@@ -115,6 +123,33 @@ impl SecurityScheme {
             (false, false) => Err("no supported security scheme found".into()),
         }
     }
+}
+
+/// Whether `document` opts out of security explicitly, as OpenAPI spells
+/// it: a top-level `security` that is an empty array. Anything else that
+/// mentions security (a declared scheme, or an operation with a non-empty
+/// `security`) keeps the platform out of this kind, so a document that only
+/// forgot its auth overlay is refused rather than connected without
+/// credentials.
+fn declares_no_security(document: &Value) -> bool {
+    let top_level_empty = document
+        .get("security")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let no_schemes = document
+        .pointer("/components/securitySchemes")
+        .and_then(Value::as_object)
+        .is_none_or(serde_json::Map::is_empty);
+    let no_operation_security = document
+        .get("paths")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|paths| paths.values())
+        .filter_map(Value::as_object)
+        .flat_map(|item| item.values())
+        .filter_map(|operation| operation.get("security"))
+        .all(|security| security.as_array().is_some_and(Vec::is_empty));
+    top_level_empty && no_schemes && no_operation_security
 }
 
 impl Provider {
@@ -1297,6 +1332,51 @@ mod tests {
         let neither = serde_json::json!({"components":{"securitySchemes":{"basic":{
             "type":"http","scheme":"basic"}}}});
         assert!(SecurityScheme::from_document(&neither, None, None).is_err());
+    }
+
+    fn no_security_document() -> Value {
+        serde_json::json!({"servers":[{"url":"https://pets.example/api"}],
+            "security":[], "paths":{"/pets":{"get":{}}}})
+    }
+
+    #[test]
+    fn an_explicit_empty_security_requirement_needs_no_credential() {
+        assert_eq!(
+            SecurityScheme::from_document(&no_security_document(), None, None),
+            Ok(SecurityScheme::NoCredential)
+        );
+        // An empty scheme map and per-operation `security: []` are still none.
+        let mut doc = no_security_document();
+        doc["components"] = serde_json::json!({"securitySchemes": {}});
+        doc["paths"]["/pets"]["get"]["security"] = serde_json::json!([]);
+        assert_eq!(
+            SecurityScheme::from_document(&doc, None, None),
+            Ok(SecurityScheme::NoCredential)
+        );
+    }
+
+    #[test]
+    fn a_document_that_does_not_opt_out_explicitly_still_needs_a_scheme() {
+        // No `security` at all: e.g. a base document whose auth overlay is
+        // missing. Refused, never connected without credentials.
+        let mut silent = no_security_document();
+        silent.as_object_mut().unwrap().remove("security");
+        assert!(SecurityScheme::from_document(&silent, None, None).is_err());
+        // `security: []` next to a declared scheme is not an opt-out.
+        let mut declared = api_key_document();
+        declared["security"] = serde_json::json!([]);
+        assert!(matches!(
+            SecurityScheme::from_document(&declared, None, None),
+            Ok(SecurityScheme::ApiKey(_))
+        ));
+        // Nor is one operation that requires a scheme.
+        let mut operation = no_security_document();
+        operation["paths"]["/pets"]["get"]["security"] = serde_json::json!([{"key": []}]);
+        assert!(SecurityScheme::from_document(&operation, None, None).is_err());
+        // A non-array top-level `security` is not an opt-out either.
+        let mut malformed = no_security_document();
+        malformed["security"] = serde_json::json!({});
+        assert!(SecurityScheme::from_document(&malformed, None, None).is_err());
     }
 
     #[test]
