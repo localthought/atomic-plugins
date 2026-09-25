@@ -10,7 +10,11 @@
  * background when the last sync is unknown or older than 15 minutes
  * (DESIGN.md §7), and again on "Sync now".
  */
-import { createController, isConnected, type Controller } from './controller.js';
+import {
+  createController,
+  isConnected,
+  type Controller,
+} from './controller.js';
 import type { ViewArgs } from './store.js';
 import { createApp } from './view/app.js';
 
@@ -63,7 +67,10 @@ export async function view({ root, store }: ViewArgs): Promise<void> {
       let timer: ReturnType<typeof setTimeout> | undefined;
       store.subscribe(data.table, () => {
         clearTimeout(timer);
-        timer = setTimeout(() => void controller?.refreshRows(), REFRESH_DEBOUNCE_MS);
+        timer = setTimeout(
+          () => void controller?.refreshRows(),
+          REFRESH_DEBOUNCE_MS,
+        );
       });
     }
   } catch (error) {

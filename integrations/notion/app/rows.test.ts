@@ -52,59 +52,71 @@ describe('loadRows (N4)', () => {
     store.query = async args => [...(await query(args)), 'atomic:gone'];
     let singles = 0;
     const get = store.getResource.bind(store);
+
     store.getResource = s => {
       singles++;
 
       return get(s);
     };
+
     const rows = await loadRows(store, schema);
     expect(rows).toHaveLength(250);
     expect(rows[0]!.name).toBe('Row 0');
-    expect(store.hostCalls.filter(c => c.op === 'getMany').map(c => c.args)).toEqual([
-      100, 100, 51,
-    ]);
+    expect(
+      store.hostCalls.filter(c => c.op === 'getMany').map(c => c.args),
+    ).toEqual([100, 100, 51]);
     expect(singles).toBe(0);
   });
 
   it('ignores children of the table the sync did not make', async () => {
     const store = fakeStore();
-    await store.newResource({ parent: TABLE, propVals: { [atomic.name]: 'Hand-made' } });
+    await store.newResource({
+      parent: TABLE,
+      propVals: { [atomic.name]: 'Hand-made' },
+    });
     const rows = await loadRows(store, (await loadSchema(store))!);
     expect(rows).toEqual([]);
   });
 
   // Not an assertion on speed: records the cost for the PR (N4 asks for it).
-  it.each([45, 500, 2000])('reads %i rows with one getResource each', async n => {
-    const store = fakeStore();
-    const schema = (await loadSchema(store))!;
-    const pageId = await store.newResource({
-      parent: 'atomic:ontology',
-      propVals: { [atomic.shortname]: 'notion-page-id' },
-    });
-    schema.columns.set('notion-page-id', {
-      subject: pageId.subject,
-      shortname: 'notion-page-id',
-      name: 'Notion page id',
-      datatype: '',
-    });
-    for (let i = 0; i < n; i++)
-      store.resources.set(`atomic:row-${i}`, {
-        [PARENT]: TABLE,
-        [atomic.name]: `Row ${i}`,
-        [pageId.subject]: `page-${i}`,
+  it.each([45, 500, 2000])(
+    'reads %i rows with one getResource each',
+    async n => {
+      const store = fakeStore();
+      const schema = (await loadSchema(store))!;
+      const pageId = await store.newResource({
+        parent: 'atomic:ontology',
+        propVals: { [atomic.shortname]: 'notion-page-id' },
       });
-    let reads = 0;
-    const get = store.getResource.bind(store);
-    store.getResource = s => {
-      reads++;
+      schema.columns.set('notion-page-id', {
+        subject: pageId.subject,
+        shortname: 'notion-page-id',
+        name: 'Notion page id',
+        datatype: '',
+      });
+      for (let i = 0; i < n; i++)
+        store.resources.set(`atomic:row-${i}`, {
+          [PARENT]: TABLE,
+          [atomic.name]: `Row ${i}`,
+          [pageId.subject]: `page-${i}`,
+        });
+      let reads = 0;
+      const get = store.getResource.bind(store);
 
-      return get(s);
-    };
-    const started = performance.now();
-    const rows = await loadRows(store, schema);
-    const ms = performance.now() - started;
-    expect(rows).toHaveLength(n);
-    expect(reads).toBe(n);
-    console.info(`loadRows: ${n} rows, ${reads} getResource calls, ${ms.toFixed(1)} ms (fake store)`);
-  });
+      store.getResource = s => {
+        reads++;
+
+        return get(s);
+      };
+
+      const started = performance.now();
+      const rows = await loadRows(store, schema);
+      const ms = performance.now() - started;
+      expect(rows).toHaveLength(n);
+      expect(reads).toBe(n);
+      console.info(
+        `loadRows: ${n} rows, ${reads} getResource calls, ${ms.toFixed(1)} ms (fake store)`,
+      );
+    },
+  );
 });

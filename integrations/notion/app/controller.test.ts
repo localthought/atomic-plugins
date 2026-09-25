@@ -110,7 +110,9 @@ describe('proxy refusal codes (#54 phase 2)', () => {
   ])('%s means reconnect', code => {
     expect(classifyFailure([refusal(code)], failed, T0)?.kind).toBe('reauth');
     // Even when other data sources were read.
-    expect(classifyFailure([refusal(code)], undefined, T0)?.kind).toBe('reauth');
+    expect(classifyFailure([refusal(code)], undefined, T0)?.kind).toBe(
+      'reauth',
+    );
   });
 
   it.each(['unauthorized', 'forbidden'])(
@@ -121,6 +123,7 @@ describe('proxy refusal codes (#54 phase 2)', () => {
         kind: 'failed',
         title: 'Atomic isn’t allowed to read this',
       });
+
       if (state?.kind === 'failed') {
         expect(state.message).toMatch(/Reconnecting does not change that/);
         expect(state.technical).toContain(code);
@@ -129,15 +132,18 @@ describe('proxy refusal codes (#54 phase 2)', () => {
   );
 
   it('an unauthorized refusal is not reauth even with status 401', () => {
-    expect(classifyFailure([refusal('unauthorized', 401)], failed, T0)?.kind).toBe(
-      'failed',
-    );
+    expect(
+      classifyFailure([refusal('unauthorized', 401)], failed, T0)?.kind,
+    ).toBe('failed');
   });
 
   it('other refusals (a bad signature) are a failed sync', () => {
     expect(
       classifyFailure([refusal('bad_signature')], failed, T0),
-    ).toMatchObject({ kind: 'failed', title: 'The integration relay refused the request' });
+    ).toMatchObject({
+      kind: 'failed',
+      title: 'The integration relay refused the request',
+    });
   });
 
   const refusing = (code: string, status: number) =>
@@ -200,17 +206,28 @@ describe('controller (N2)', () => {
       connect: async () => {
         connected = true;
 
-        return { status: 'connected', connectionId: 'conn-1', platform: 'notion' };
+        return {
+          status: 'connected',
+          connectionId: 'conn-1',
+          platform: 'notion',
+        };
       },
     });
     expect((await controller.load()).kind).toBe('not-connected');
-    expect(await controller.connect()).toMatchObject({ kind: 'ready', connectionId: 'conn-1' });
+    expect(await controller.connect()).toMatchObject({
+      kind: 'ready',
+      connectionId: 'conn-1',
+    });
   });
 
   it('imports first (importing), then syncs over rows (syncing)', async () => {
     const { controller, states } = setup();
     const loaded = await controller.load();
-    expect(loaded).toMatchObject({ kind: 'ready', connectionId: 'conn-1', rows: [] });
+    expect(loaded).toMatchObject({
+      kind: 'ready',
+      connectionId: 'conn-1',
+      rows: [],
+    });
     expect(controller.isStale()).toBe(true);
     const first = await controller.sync();
     expect(first.kind).toBe('ready');
@@ -234,7 +251,9 @@ describe('controller (N2)', () => {
       store,
       s => {
         if (s.kind === 'importing' && s.progress.length)
-          seen.push(s.progress.map(p => `${p.title}:${p.phase}:${p.pages}`).join());
+          seen.push(
+            s.progress.map(p => `${p.title}:${p.phase}:${p.pages}`).join(),
+          );
       },
       () => T0,
     );
@@ -256,16 +275,24 @@ describe('controller (N2)', () => {
     await controller.sync();
     // The record is a JSON string property on the table resource.
     const property = [...store.resources].find(
-      ([, p]) => p['https://atomicdata.dev/properties/shortname'] === RECORD_SHORTNAME,
+      ([, p]) =>
+        p['https://atomicdata.dev/properties/shortname'] === RECORD_SHORTNAME,
     )![0];
-    expect(
-      typeof store.resources.get('atomic:table')![property],
-    ).toBe('string');
+    expect(typeof store.resources.get('atomic:table')![property]).toBe(
+      'string',
+    );
 
     let clock = T0 + 5 * 60 * 1000;
-    const reopened = createController(store, () => {}, () => clock);
+    const reopened = createController(
+      store,
+      () => {},
+      () => clock,
+    );
     const state = await reopened.load();
-    expect(state).toMatchObject({ kind: 'ready', last: { at: T0, created: 3 } });
+    expect(state).toMatchObject({
+      kind: 'ready',
+      last: { at: T0, created: 3 },
+    });
     if (state.kind === 'ready') expect(state.rows).toHaveLength(3);
     expect(reopened.isStale()).toBe(false);
     clock = T0 + STALE_AFTER_MS + 1;
@@ -277,7 +304,11 @@ describe('controller (N2)', () => {
     const { store, controller } = setup('empty');
     await controller.load();
     expect((await controller.sync()).kind).toBe('no-databases');
-    const reopened = createController(store, () => {}, () => T0);
+    const reopened = createController(
+      store,
+      () => {},
+      () => T0,
+    );
     expect((await reopened.load()).kind).toBe('no-databases');
   });
 
@@ -296,7 +327,11 @@ describe('controller (N2)', () => {
     await controller.load();
     await controller.sync();
     store.proxy!.connections = async () => [];
-    const reopened = createController(store, () => {}, () => T0);
+    const reopened = createController(
+      store,
+      () => {},
+      () => T0,
+    );
     const state = await reopened.load();
     expect(state).toMatchObject({ kind: 'disconnected', last: { created: 3 } });
     if (state.kind === 'disconnected') expect(state.rows).toHaveLength(3);
@@ -308,27 +343,38 @@ describe('controller (N2)', () => {
     await controller.sync();
     const state = await controller.disconnect!();
     expect(state).toMatchObject({ kind: 'disconnected' });
+
     if (state.kind === 'disconnected') {
       expect(state.rows).toHaveLength(3);
       expect(state.connectionId).toBeUndefined();
     }
+
     // Nothing to sync without a connection.
     expect((await controller.sync()).kind).toBe('disconnected');
-    const reopened = createController(store, () => {}, () => T0);
+    const reopened = createController(
+      store,
+      () => {},
+      () => T0,
+    );
     expect((await reopened.load()).kind).toBe('disconnected');
   });
 
   it('offers no disconnect on a host without proxy.disconnect', () => {
     const { disconnect, ...older } = fixtureProxy();
     void disconnect;
-    expect(createController(fakeStore({ proxy: older })).disconnect).toBeUndefined();
+    expect(
+      createController(fakeStore({ proxy: older })).disconnect,
+    ).toBeUndefined();
   });
 
   it('goes to rate-limited with the retry time on a 429', async () => {
     const { controller } = setup('rate-limited');
     await controller.load();
     const state = await controller.sync();
-    expect(state).toMatchObject({ kind: 'rate-limited', retryAt: T0 + 120_000 });
+    expect(state).toMatchObject({
+      kind: 'rate-limited',
+      retryAt: T0 + 120_000,
+    });
   });
 
   it('keeps the previous sync record when a sync fails, so it is not counted as fresh', async () => {
@@ -347,6 +393,7 @@ describe('controller (N2)', () => {
     await controller.load();
     const state = await controller.sync();
     expect(state).toMatchObject({ kind: 'failed' });
+
     if (state.kind === 'failed') {
       expect(state.message).toMatch(/502/);
       expect(state.technical).toMatch(/\/v1\/search/);
@@ -382,8 +429,6 @@ describe('controller (N2)', () => {
     const a = controller.sync();
     const b = controller.sync();
     await Promise.all([a, b]);
-    expect(
-      proxy.calls.filter(c => c.path === '/v1/search'),
-    ).toHaveLength(1);
+    expect(proxy.calls.filter(c => c.path === '/v1/search')).toHaveLength(1);
   });
 });

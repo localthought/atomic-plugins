@@ -122,8 +122,7 @@ export function classifyFailure(
 
     return {
       kind: 'rate-limited',
-      retryAt:
-        parseRetryAfter(last.retryAfter, now) ?? now + DEFAULT_RETRY_MS,
+      retryAt: parseRetryAfter(last.retryAfter, now) ?? now + DEFAULT_RETRY_MS,
       technical: details,
     };
   }

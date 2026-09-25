@@ -58,7 +58,8 @@ export const TYPE_NAMES: Record<string, string> = {
   unique_id: 'ID',
 };
 
-export const typeName = (type: string) => TYPE_NAMES[type] ?? type.replaceAll('_', ' ');
+export const typeName = (type: string) =>
+  TYPE_NAMES[type] ?? type.replaceAll('_', ' ');
 
 export const isNumeric = (column: ViewColumn) => column.type === 'number';
 
@@ -76,20 +77,24 @@ export function optionPill(
   id: string,
   status: boolean,
 ): HTMLElement {
-  const colour = option && NOTION_COLOURS.has(option.color) ? option.color : 'default';
+  const colour =
+    option && NOTION_COLOURS.has(option.color) ? option.color : 'default';
 
   return h(
     doc,
     'span',
     {
       class: `nt-tag${status ? ' nt-status' : ''} c-${colour}`,
-      title: option ? undefined : `Option ${id} is not in the last sync’s schema`,
+      title: option
+        ? undefined
+        : `Option ${id} is not in the last sync’s schema`,
     },
     option?.name || (option ? 'Untitled option' : 'Unknown option'),
   );
 }
 
-const displayUrl = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+const displayUrl = (url: string) =>
+  url.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
 /** The content of one cell; `undefined` values render as nothing. */
 export function renderValue(
@@ -105,28 +110,47 @@ export function renderValue(
     case 'title':
       return h(doc, 'span', {}, row.name);
     case 'database':
-      return h(doc, 'span', { class: 'nt-dbname' }, icon(doc, 'db'), row.dataSource);
+      return h(
+        doc,
+        'span',
+        { class: 'nt-dbname' },
+        icon(doc, 'db'),
+        row.dataSource,
+      );
     case 'edited':
       return typeof value === 'number'
-        ? doc.createTextNode(`${when(value, ctx.now, ctx.locale)}${inPeek ? ' in Notion' : ''}`)
+        ? doc.createTextNode(
+            `${when(value, ctx.now, ctx.locale)}${inPeek ? ' in Notion' : ''}`,
+          )
         : null;
+
     case 'checkbox': {
       const yes = value === true;
       const mark = h(
         doc,
         'span',
-        { class: yes ? 'nt-yes' : 'nt-no', role: 'img', 'aria-label': yes ? 'Yes' : 'No' },
+        {
+          class: yes ? 'nt-yes' : 'nt-no',
+          role: 'img',
+          'aria-label': yes ? 'Yes' : 'No',
+        },
         icon(doc, yes ? 'check' : 'dash'),
       );
 
-      return inPeek ? h(doc, 'span', { class: 'nt-dbname' }, mark, yes ? 'Yes' : 'No') : mark;
+      return inPeek
+        ? h(doc, 'span', { class: 'nt-dbname' }, mark, yes ? 'Yes' : 'No')
+        : mark;
     }
+
     case 'number':
       return typeof value === 'number'
-        ? doc.createTextNode(value.toLocaleString(ctx.locale, { maximumFractionDigits: 20 }))
+        ? doc.createTextNode(
+            value.toLocaleString(ctx.locale, { maximumFractionDigits: 20 }),
+          )
         : null;
     case 'status':
     case 'select':
+
     case 'multi_select': {
       const ids = optionIds(value);
       if (!ids.length) return null;
@@ -134,16 +158,22 @@ export function renderValue(
         optionPill(doc, column.options.get(id), id, column.type === 'status'),
       );
 
-      return pills.length === 1 ? pills[0]! : h(doc, 'span', { class: 'nt-tags' }, pills);
+      return pills.length === 1
+        ? pills[0]!
+        : h(doc, 'span', { class: 'nt-tags' }, pills);
     }
+
     case 'url':
     case 'email':
+
     case 'phone_number': {
       if (typeof value !== 'string' || !value) return null;
       // The host opens http(s) links only (`store.openExternal`), so email
       // addresses and phone numbers are selectable text, not links.
       const href =
-        column.type === 'url' && /^https?:\/\//i.test(value) ? value : undefined;
+        column.type === 'url' && /^https?:\/\//i.test(value)
+          ? value
+          : undefined;
       if (!href) return doc.createTextNode(value);
 
       return h(
@@ -163,6 +193,7 @@ export function renderValue(
         column.type === 'url' ? displayUrl(value) : value,
       );
     }
+
     default:
       return typeof value === 'string' || typeof value === 'number'
         ? doc.createTextNode(String(value))

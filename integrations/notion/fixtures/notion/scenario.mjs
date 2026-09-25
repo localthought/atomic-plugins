@@ -179,9 +179,21 @@ export const pages = [
 
 export const DATA_SOURCE_2 = '3a91e0c2-5d10-4c3e-9f00-00000000d502';
 const DATABASE_2 = '3a91e0c2-5d10-4c3e-9f00-00000000db02';
-const TO_READ = option('d3f7c5e4-0003-4000-8000-000000000001', 'To read', 'gray');
-const READING = option('d3f7c5e4-0003-4000-8000-000000000002', 'Reading', 'yellow');
-const FINISHED = option('d3f7c5e4-0003-4000-8000-000000000003', 'Finished', 'green');
+const TO_READ = option(
+  'd3f7c5e4-0003-4000-8000-000000000001',
+  'To read',
+  'gray',
+);
+const READING = option(
+  'd3f7c5e4-0003-4000-8000-000000000002',
+  'Reading',
+  'yellow',
+);
+const FINISHED = option(
+  'd3f7c5e4-0003-4000-8000-000000000003',
+  'Finished',
+  'green',
+);
 
 /** Another database's "Status": same name and type, another property id. */
 const schema2 = {
@@ -345,6 +357,7 @@ export function notionFixture({ scenario = 'default' } = {}) {
     },
     renameOption(id, name) {
       let renamed = 0;
+
       const rename = options => {
         for (const o of options ?? [])
           if (o.id === id) {
@@ -353,10 +366,11 @@ export function notionFixture({ scenario = 'default' } = {}) {
           }
       };
 
-      for (const { source, pages: list } of data.sources) {
+      for (const { source, pages: sourcePages } of data.sources) {
         for (const property of Object.values(source.properties))
           rename(property[property.type]?.options);
-        for (const p of list)
+
+        for (const p of sourcePages)
           for (const value of Object.values(p.properties)) {
             const v = value[value.type];
             if (Array.isArray(v)) rename(v);
@@ -447,7 +461,10 @@ export default {
   // test too) does not touch the file system.
   get document() {
     return JSON.parse(
-      readFileSync(new URL('../../catalog/notion.json', import.meta.url), 'utf8'),
+      readFileSync(
+        new URL('../../catalog/notion.json', import.meta.url),
+        'utf8',
+      ),
     );
   },
   jsonBody: true,

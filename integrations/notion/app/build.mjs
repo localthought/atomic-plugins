@@ -27,21 +27,24 @@ const path = relative => fileURLToPath(new URL(relative, import.meta.url));
 const minifiedStyles = esbuild => ({
   name: 'minified-styles',
   setup(builder) {
-    builder.onLoad({ filter: /[\\/]app[\\/](ui|view)[\\/]styles\.ts$/ }, async args => {
-      const source = readFileSync(args.path, 'utf8');
-      const match = /export const (\w+) = `([^`]*)`;/.exec(source);
-      if (!match || match[2].includes('${'))
-        throw new Error(`${args.path}: expected one CSS template literal`);
-      const { code } = await esbuild.transform(match[2], {
-        loader: 'css',
-        minify: true,
-      });
+    builder.onLoad(
+      { filter: /[\\/]app[\\/](ui|view)[\\/]styles\.ts$/ },
+      async args => {
+        const source = readFileSync(args.path, 'utf8');
+        const match = /export const (\w+) = `([^`]*)`;/.exec(source);
+        if (!match || match[2].includes('${'))
+          throw new Error(`${args.path}: expected one CSS template literal`);
+        const { code } = await esbuild.transform(match[2], {
+          loader: 'css',
+          minify: true,
+        });
 
-      return {
-        contents: `export const ${match[1]} = ${JSON.stringify(code.trim())};`,
-        loader: 'js',
-      };
-    });
+        return {
+          contents: `export const ${match[1]} = ${JSON.stringify(code.trim())};`,
+          loader: 'js',
+        };
+      },
+    );
   },
 });
 

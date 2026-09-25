@@ -336,7 +336,7 @@ Decisions for the maintainer:
   containment rule as written), or allow one shared module (for example
   `integrations/plugin-ui/`)? This design assumes copies.
 - **Where to persist last-sync metadata and the option dictionary.**
-  *Decided* (#144): one JSON text property, `notion-sync-record`, on the
+  _Decided_ (#144): one JSON text property, `notion-sync-record`, on the
   app's data table resource. It holds the last sync's time, duration and
   counts, and per database its schema in Notion's order (property names,
   types, option names and colours) and its grouped warnings, so the option

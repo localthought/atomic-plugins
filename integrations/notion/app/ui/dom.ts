@@ -21,10 +21,12 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null || value === false) continue;
+
     if (typeof value === 'function') {
       el.addEventListener(key.slice(2).toLowerCase(), value);
       continue;
     }
+
     if (key === 'class') el.className = String(value);
     else el.setAttribute(key, value === true ? '' : String(value));
   }

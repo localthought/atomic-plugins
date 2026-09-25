@@ -149,23 +149,34 @@ export function renderToolbar(ctx: ViewContext): HTMLElement {
                 {
                   'data-key': 'groupby',
                   onchange: (event: Event) =>
-                    ctx.update({ groupBy: (event.target as HTMLSelectElement).value }),
+                    ctx.update({
+                      groupBy: (event.target as HTMLSelectElement).value,
+                    }),
                 },
                 groupColumns.map(c =>
-                  h(doc, 'option', { value: c.key, selected: c.key === group.key }, c.name),
+                  h(
+                    doc,
+                    'option',
+                    { value: c.key, selected: c.key === group.key },
+                    c.name,
+                  ),
                 ),
               ),
             )
-          : h(doc, 'span', { class: 'nt-sortlabel' }, 'Grouped by ', h(doc, 'b', {}, group.name));
+          : h(
+              doc,
+              'span',
+              { class: 'nt-sortlabel' },
+              'Grouped by ',
+              h(doc, 'b', {}, group.name),
+            );
   } else {
     const sorted = ui.sort && ctx.columns.find(c => c.key === ui.sort!.key);
     label = h(
       doc,
       'span',
       { class: 'nt-sortlabel' },
-      sorted
-        ? ['Sorted by ', h(doc, 'b', {}, fixedName(sorted))]
-        : 'Unsorted',
+      sorted ? ['Sorted by ', h(doc, 'b', {}, fixedName(sorted))] : 'Unsorted',
     );
   }
 
@@ -183,7 +194,9 @@ export function renderToolbar(ctx: ViewContext): HTMLElement {
       doc,
       'span',
       { class: 'nt-count' },
-      shown === total ? plural(total, 'row') : `${shown} of ${plural(total, 'row')}`,
+      shown === total
+        ? plural(total, 'row')
+        : `${shown} of ${plural(total, 'row')}`,
     ),
   );
 }
@@ -207,6 +220,7 @@ function moveFocus(ctx: ViewContext, from: Row, delta: number) {
 
 const rowKeys = (ctx: ViewContext, row: Row) => (event: Event) => {
   const key = (event as KeyboardEvent).key;
+
   if (key === 'Enter' || key === ' ') {
     event.preventDefault();
     ctx.open(row.subject);
@@ -234,7 +248,11 @@ export function renderTable(ctx: ViewContext): HTMLElement {
         {
           scope: 'col',
           class: isNumeric(column) ? 'num' : undefined,
-          'aria-sort': sorted ? (sorted === 'asc' ? 'ascending' : 'descending') : undefined,
+          'aria-sort': sorted
+            ? sorted === 'asc'
+              ? 'ascending'
+              : 'descending'
+            : undefined,
         },
         h(
           doc,
@@ -248,7 +266,12 @@ export function renderTable(ctx: ViewContext): HTMLElement {
           icon(doc, glyphFor(column.type)),
           column.name,
           sorted &&
-            h(doc, 'span', { class: 'nt-sortmark' }, icon(doc, sorted === 'asc' ? 'up' : 'down', 'sm')),
+            h(
+              doc,
+              'span',
+              { class: 'nt-sortmark' },
+              icon(doc, sorted === 'asc' ? 'up' : 'down', 'sm'),
+            ),
         ),
       );
     }),
@@ -298,12 +321,20 @@ export function renderTable(ctx: ViewContext): HTMLElement {
     h(
       doc,
       'table',
-      { class: 'nt-table', 'aria-label': ui.scope === ALL ? 'All rows' : `${ui.scope} rows` },
+      {
+        class: 'nt-table',
+        'aria-label': ui.scope === ALL ? 'All rows' : `${ui.scope} rows`,
+      },
       h(doc, 'thead', {}, head),
       body,
     ),
     !rows.length &&
-      h(doc, 'p', { class: 'nt-empty-row' }, ui.query ? 'No row matches this search.' : 'No rows.'),
+      h(
+        doc,
+        'p',
+        { class: 'nt-empty-row' },
+        ui.query ? 'No row matches this search.' : 'No rows.',
+      ),
     moreButton(ctx),
   );
 }
@@ -331,20 +362,29 @@ function moreButton(ctx: ViewContext): Child {
 export function renderBoard(ctx: ViewContext): HTMLElement {
   const { doc } = ctx;
   const group = boardGroupColumn(ctx)!;
-  const others = ctx.columns.filter(
-    c => c.key !== group.key && OPTION_TYPES.has(c.type),
-  ).slice(0, 2);
+  const others = ctx.columns
+    .filter(c => c.key !== group.key && OPTION_TYPES.has(c.type))
+    .slice(0, 2);
   const number = ctx.columns.find(c => c.type === 'number');
 
   return h(
     doc,
     'div',
-    { class: 'nt-board', 'data-scroll-key': 'board', role: 'list', 'aria-label': `Grouped by ${group.name}` },
+    {
+      class: 'nt-board',
+      'data-scroll-key': 'board',
+      role: 'list',
+      'aria-label': `Grouped by ${group.name}`,
+    },
     groupRows(ctx.visible, group).map(g =>
       h(
         doc,
         'section',
-        { class: 'nt-col', role: 'listitem', 'aria-label': `${g.option?.name ?? (g.key ? 'Unknown option' : 'No value')}, ${plural(g.rows.length, 'row')}` },
+        {
+          class: 'nt-col',
+          role: 'listitem',
+          'aria-label': `${g.option?.name ?? (g.key ? 'Unknown option' : 'No value')}, ${plural(g.rows.length, 'row')}`,
+        },
         h(
           doc,
           'h3',
@@ -370,7 +410,8 @@ export function renderBoard(ctx: ViewContext): HTMLElement {
                   type: 'button',
                   class: 'nt-card',
                   'data-key': `row:${row.subject}`,
-                  'aria-current': ctx.ui.selected === row.subject ? 'true' : undefined,
+                  'aria-current':
+                    ctx.ui.selected === row.subject ? 'true' : undefined,
                   onclick: () => ctx.open(row.subject),
                 },
                 h(doc, 'span', { class: 'nt-card-t' }, row.name),
@@ -381,7 +422,13 @@ export function renderBoard(ctx: ViewContext): HTMLElement {
                   others.map(c => renderValue(ctx, row, c)),
                   number &&
                     typeof cellValue(row, number) === 'number' &&
-                    h(doc, 'span', { class: 'nt-pts' }, renderValue(ctx, row, number), ` ${number.name.toLocaleLowerCase()}`),
+                    h(
+                      doc,
+                      'span',
+                      { class: 'nt-pts' },
+                      renderValue(ctx, row, number),
+                      ` ${number.name.toLocaleLowerCase()}`,
+                    ),
                 ),
               ),
             ),
@@ -422,7 +469,8 @@ export function renderList(ctx: ViewContext): HTMLElement {
               type: 'button',
               class: 'nt-li',
               'data-key': `row:${row.subject}`,
-              'aria-current': ctx.ui.selected === row.subject ? 'true' : undefined,
+              'aria-current':
+                ctx.ui.selected === row.subject ? 'true' : undefined,
               onclick: () => ctx.open(row.subject),
               onkeydown: rowKeys(ctx, row),
             },
@@ -432,16 +480,34 @@ export function renderList(ctx: ViewContext): HTMLElement {
                 doc,
                 'span',
                 { class: 'nt-li-m' },
-                ctx.ui.scope === ALL && h(doc, 'span', { class: 'nt-dbname' }, icon(doc, 'db'), row.dataSource),
+                ctx.ui.scope === ALL &&
+                  h(
+                    doc,
+                    'span',
+                    { class: 'nt-dbname' },
+                    icon(doc, 'db'),
+                    row.dataSource,
+                  ),
                 pills.map(c => renderValue(ctx, row, c)),
               ),
             row.lastEdited !== undefined &&
-              h(doc, 'span', { class: 'nt-li-s' }, 'Edited ', renderValue(ctx, row, edited)),
+              h(
+                doc,
+                'span',
+                { class: 'nt-li-s' },
+                'Edited ',
+                renderValue(ctx, row, edited),
+              ),
           ),
         ),
       ),
       !ctx.visible.length &&
-        h(doc, 'li', { class: 'nt-empty-row' }, ctx.ui.query ? 'No row matches this search.' : 'No rows.'),
+        h(
+          doc,
+          'li',
+          { class: 'nt-empty-row' },
+          ctx.ui.query ? 'No row matches this search.' : 'No rows.',
+        ),
     ),
     moreButton(ctx),
   );
@@ -449,7 +515,11 @@ export function renderList(ctx: ViewContext): HTMLElement {
 
 // ---------------------------------------------------------------- peek
 
-export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElement {
+export function renderPeek(
+  ctx: ViewContext,
+  row: Row,
+  sheet: boolean,
+): HTMLElement {
   const { doc } = ctx;
   const source = ctx.sources.find(s => s.title === row.dataSource);
   const columns = columnsFor(row.dataSource, ctx.sources, ctx.fallback).filter(
@@ -457,17 +527,32 @@ export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElem
   );
   const at = ctx.visible.findIndex(r => r.subject === row.subject);
   const skipped = (source?.report?.properties ?? []).filter(p => !p.shortname);
-  const formatted = (source?.report?.formatted ?? []).filter(f => f.page === row.pageId);
+  const formatted = (source?.report?.formatted ?? []).filter(
+    f => f.page === row.pageId,
+  );
+
   const move = (delta: number) => {
     const next = ctx.visible[at + delta];
     if (next) ctx.open(next.subject);
   };
 
-  const iconButton = (label: string, glyph: string, onClick: () => void, disabled = false) =>
+  const iconButton = (
+    label: string,
+    glyph: string,
+    onClick: () => void,
+    disabled = false,
+  ) =>
     h(
       doc,
       'button',
-      { type: 'button', class: 'pl-icon-btn', 'aria-label': label, disabled, 'data-key': `peek:${glyph}`, onclick: onClick },
+      {
+        type: 'button',
+        class: 'pl-icon-btn',
+        'aria-label': label,
+        disabled,
+        'data-key': `peek:${glyph}`,
+        onclick: onClick,
+      },
       icon(doc, glyph),
     );
 
@@ -480,8 +565,12 @@ export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElem
       'data-scroll-key': 'peek',
       onkeydown: (event: Event) => {
         const key = (event as KeyboardEvent).key;
+
         if (key === 'Escape') ctx.open(undefined);
-        else if ((key === 'ArrowDown' || key === 'ArrowUp') && !(event.target instanceof HTMLSelectElement)) {
+        else if (
+          (key === 'ArrowDown' || key === 'ArrowUp') &&
+          !(event.target instanceof HTMLSelectElement)
+        ) {
           event.preventDefault();
           move(key === 'ArrowDown' ? 1 : -1);
         }
@@ -493,7 +582,12 @@ export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElem
       { class: 'nt-peek-bar' },
       iconButton('Close', 'close', () => ctx.open(undefined)),
       iconButton('Previous row', 'up', () => move(-1), at <= 0),
-      iconButton('Next row', 'down', () => move(1), at < 0 || at >= ctx.visible.length - 1),
+      iconButton(
+        'Next row',
+        'down',
+        () => move(1),
+        at < 0 || at >= ctx.visible.length - 1,
+      ),
       h(doc, 'span', { class: 'pl-spacer' }),
       row.url &&
         button(doc, {
@@ -532,16 +626,36 @@ export function renderPeek(ctx: ViewContext, row: Row, sheet: boolean): HTMLElem
         doc,
         'section',
         { class: 'nt-skipped', 'aria-label': 'Not copied from this page' },
-        h(doc, 'p', { class: 'nt-skipped-h' }, icon(doc, 'info'), 'Not copied from this page'),
+        h(
+          doc,
+          'p',
+          { class: 'nt-skipped-h' },
+          icon(doc, 'info'),
+          'Not copied from this page',
+        ),
         h(
           doc,
           'ul',
           {},
           skipped.map(p =>
-            h(doc, 'li', {}, icon(doc, glyphFor(p.type)), p.name, h(doc, 'span', {}, typeName(p.type))),
+            h(
+              doc,
+              'li',
+              {},
+              icon(doc, glyphFor(p.type)),
+              p.name,
+              h(doc, 'span', {}, typeName(p.type)),
+            ),
           ),
           formatted.map(f =>
-            h(doc, 'li', {}, icon(doc, 'text'), f.property, h(doc, 'span', {}, 'has formatting')),
+            h(
+              doc,
+              'li',
+              {},
+              icon(doc, 'text'),
+              f.property,
+              h(doc, 'span', {}, 'has formatting'),
+            ),
           ),
         ),
         h(
@@ -572,11 +686,19 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
   const items = last.dataSources.map(d => {
     const skipped = d.properties.filter(p => !p.shortname);
     const byProperty = new Map<string, number>();
-    for (const f of d.formatted) byProperty.set(f.property, (byProperty.get(f.property) ?? 0) + 1);
-    for (const f of d.formatted) raw.push(`${d.title}: page ${f.page} (${f.title}) property "${f.property}" has formatting`);
-    for (const a of d.archived) raw.push(`${d.title}: page ${a} is archived or in trash`);
+    for (const f of d.formatted)
+      byProperty.set(f.property, (byProperty.get(f.property) ?? 0) + 1);
+    for (const f of d.formatted)
+      raw.push(
+        `${d.title}: page ${f.page} (${f.title}) property "${f.property}" has formatting`,
+      );
+    for (const a of d.archived)
+      raw.push(`${d.title}: page ${a} is archived or in trash`);
     raw.push(...d.errors.map(e => `${d.title}: ${e}`));
-    const counts: Child[] = [h(doc, 'b', {}, d.pages), ` ${d.pages === 1 ? 'row' : 'rows'}`];
+    const counts: Child[] = [
+      h(doc, 'b', {}, d.pages),
+      ` ${d.pages === 1 ? 'row' : 'rows'}`,
+    ];
     if (d.created) counts.push(` · ${d.created} new`);
     if (d.updated) counts.push(` · ${d.updated} updated`);
     if (d.unchanged) counts.push(` · ${d.unchanged} unchanged`);
@@ -593,7 +715,11 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
           'p',
           { class: 'nt-d-skip' },
           'Not copied: ',
-          skipped.flatMap((p, i) => [i ? ', ' : '', h(doc, 'span', {}, p.name), ` ${typeName(p.type)}`]),
+          skipped.flatMap((p, i) => [
+            i ? ', ' : '',
+            h(doc, 'span', {}, p.name),
+            ` ${typeName(p.type)}`,
+          ]),
         ),
       [...byProperty].map(([property, n]) =>
         warning(doc, [
@@ -603,7 +729,10 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
         ]),
       ),
       d.archived.length > 0 &&
-        warning(doc, `${plural(d.archived.length, 'page')} ${d.archived.length === 1 ? 'was' : 'were'} archived in Notion. ${d.archived.length === 1 ? 'Its row is' : 'Their rows are'} kept here.`),
+        warning(
+          doc,
+          `${plural(d.archived.length, 'page')} ${d.archived.length === 1 ? 'was' : 'were'} archived in Notion. ${d.archived.length === 1 ? 'Its row is' : 'Their rows are'} kept here.`,
+        ),
       d.errors.map(e => warning(doc, e)),
     );
   });
@@ -618,7 +747,8 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
       'data-key': 'details',
       tabindex: -1,
       onkeydown: (event: Event) => {
-        if ((event as KeyboardEvent).key === 'Escape') ctx.update({ details: false });
+        if ((event as KeyboardEvent).key === 'Escape')
+          ctx.update({ details: false });
       },
     },
     h(
@@ -626,13 +756,28 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
       'div',
       { class: 'nt-details-h' },
       h(doc, 'b', {}, 'Last sync'),
-      h(doc, 'span', {}, `${when(last.at, ctx.now, ctx.locale)} · took ${Math.max(1, Math.round(last.durationMs / 1000))} s`),
+      h(
+        doc,
+        'span',
+        {},
+        `${when(last.at, ctx.now, ctx.locale)} · took ${Math.max(1, Math.round(last.durationMs / 1000))} s`,
+      ),
     ),
     items.length
       ? h(doc, 'ul', { class: 'nt-details-dbs' }, items)
-      : h(doc, 'p', { class: 'nt-muted' }, 'Notion shared no databases in the last sync.'),
+      : h(
+          doc,
+          'p',
+          { class: 'nt-muted' },
+          'Notion shared no databases in the last sync.',
+        ),
     last.general.length > 0 &&
-      h(doc, 'div', { class: 'nt-details-general' }, last.general.map(g => warning(doc, g))),
+      h(
+        doc,
+        'div',
+        { class: 'nt-details-general' },
+        last.general.map(g => warning(doc, g)),
+      ),
     raw.length > 0 &&
       h(
         doc,
@@ -645,11 +790,20 @@ export function renderDetails(ctx: ViewContext): HTMLElement | null {
 }
 
 const warning = (doc: Document, text: Child | Child[]) =>
-  h(doc, 'p', { class: 'nt-d-warn' }, icon(doc, 'alert', 'sm'), h(doc, 'span', {}, ...[text].flat()));
+  h(
+    doc,
+    'p',
+    { class: 'nt-d-warn' },
+    icon(doc, 'alert', 'sm'),
+    h(doc, 'span', {}, ...[text].flat()),
+  );
 
 // ---------------------------------------------------------------- first import
 
-export function renderImport(ctx: ViewContext, progress: SyncProgress[]): HTMLElement {
+export function renderImport(
+  ctx: ViewContext,
+  progress: SyncProgress[],
+): HTMLElement {
   const { doc } = ctx;
   const active = progress.findIndex(p => p.phase !== 'done');
 
@@ -690,15 +844,33 @@ export function renderImport(ctx: ViewContext, progress: SyncProgress[]): HTMLEl
                   done
                     ? [icon(doc, 'check', 'ok'), plural(p.pages, 'page')]
                     : current && p.phase !== 'listing'
-                      ? [h(doc, 'span', { class: 'pl-spin' }, icon(doc, 'sync', 'sm')), `${p.phase === 'writing' ? 'Saving…' : 'Reading…'} ${plural(p.pages, 'page')}`]
+                      ? [
+                          h(
+                            doc,
+                            'span',
+                            { class: 'pl-spin' },
+                            icon(doc, 'sync', 'sm'),
+                          ),
+                          `${p.phase === 'writing' ? 'Saving…' : 'Reading…'} ${plural(p.pages, 'page')}`,
+                        ]
                       : 'Waiting',
                 ),
                 current &&
-                  h(doc, 'span', { class: 'nt-bar is-indeterminate', 'aria-hidden': 'true' }, h(doc, 'span')),
+                  h(
+                    doc,
+                    'span',
+                    { class: 'nt-bar is-indeterminate', 'aria-hidden': 'true' },
+                    h(doc, 'span'),
+                  ),
               );
             }),
           )
-        : h(doc, 'p', { class: 'nt-muted' }, 'Asking Notion which databases it shares…'),
+        : h(
+            doc,
+            'p',
+            { class: 'nt-muted' },
+            'Asking Notion which databases it shares…',
+          ),
     ),
     h(
       doc,
@@ -723,8 +895,18 @@ export function renderImport(ctx: ViewContext, progress: SyncProgress[]): HTMLEl
 export function stateBanner(ctx: ViewContext): HTMLElement | null {
   const { doc, state } = ctx;
   const rows = state.rows.length;
-  const kept = rows ? `Your ${plural(rows, 'row')} ${rows === 1 ? 'is' : 'are'} kept` : 'Nothing was imported yet';
-  const lastGood = state.last ? ` Your rows are from the last good sync (${when(state.last.at, ctx.now, ctx.locale).replace(/^Today/, 'today').replace(/^Yesterday/, 'yesterday')}).` : '';
+  const kept = rows
+    ? `Your ${plural(rows, 'row')} ${rows === 1 ? 'is' : 'are'} kept`
+    : 'Nothing was imported yet';
+  const lastGood = state.last
+    ? ` Your rows are from the last good sync (${when(
+        state.last.at,
+        ctx.now,
+        ctx.locale,
+      )
+        .replace(/^Today/, 'today')
+        .replace(/^Yesterday/, 'yesterday')}).`
+    : '';
 
   switch (state.kind) {
     case 'disconnected':
@@ -732,7 +914,12 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
         tone: 'warn',
         title: 'Notion is not connected to this app',
         text: `${kept}${rows ? ' but won’t update' : ''}. Connect Notion again to sync.`,
-        action: { kind: 'secondary', label: 'Connect Notion', key: 'reconnect', onClick: ctx.connect },
+        action: {
+          kind: 'secondary',
+          label: 'Connect Notion',
+          key: 'reconnect',
+          onClick: ctx.connect,
+        },
         alert: ctx.alert,
       });
     case 'reauth':
@@ -740,7 +927,12 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
         tone: 'neg',
         title: 'Notion no longer gives Atomic access',
         text: `Someone removed the connection in Notion, or it expired. ${kept}${rows ? '; they just won’t update.' : '.'}`,
-        action: { kind: 'danger', label: 'Reconnect Notion', key: 'reconnect', onClick: ctx.connect },
+        action: {
+          kind: 'danger',
+          label: 'Reconnect Notion',
+          key: 'reconnect',
+          onClick: ctx.connect,
+        },
         ...(state.technical ? { technical: state.technical } : {}),
         alert: ctx.alert,
       });
@@ -749,7 +941,12 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
         tone: 'warn',
         title: 'Notion asked Atomic to slow down',
         text: `The sync paused ${state.pagesRead ? `after ${plural(state.pagesRead, 'page')}` : 'before reading any pages'} and tries again at ${clock(state.retryAt, ctx.locale)}. Rows already here stay as they are.`,
-        action: { kind: 'secondary', label: 'Try now', key: 'try-now', onClick: ctx.sync },
+        action: {
+          kind: 'secondary',
+          label: 'Try now',
+          key: 'try-now',
+          onClick: ctx.sync,
+        },
         technical: state.technical,
         alert: ctx.alert,
       });
@@ -758,7 +955,12 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
         tone: 'neg',
         title: state.title,
         text: `${state.message}${lastGood}`,
-        action: { kind: 'danger', label: 'Try again', key: 'try-again', onClick: ctx.sync },
+        action: {
+          kind: 'danger',
+          label: 'Try again',
+          key: 'try-again',
+          onClick: ctx.sync,
+        },
         technical: state.technical,
         alert: ctx.alert,
       });
@@ -768,7 +970,12 @@ export function stateBanner(ctx: ViewContext): HTMLElement | null {
             tone: 'warn',
             title: 'Notion no longer shares any databases with Atomic',
             text: `${kept}. Share a database with the integration in Notion, then sync again.`,
-            action: { kind: 'secondary', label: 'Choose pages in Notion', key: 'choose', onClick: ctx.connect },
+            action: {
+              kind: 'secondary',
+              label: 'Choose pages in Notion',
+              key: 'choose',
+              onClick: ctx.connect,
+            },
             alert: ctx.alert,
           })
         : null;
@@ -784,11 +991,25 @@ export function noDatabases(ctx: ViewContext): HTMLElement {
     glyph: emptyGlyph(doc, 'db'),
     title: 'Notion didn’t share any databases with Atomic',
     text: 'The connection works, but Atomic can only see what you share with it in Notion. Pages that aren’t in a database are not imported.',
-    action: { label: 'Choose pages in Notion', key: 'choose', onClick: ctx.connect },
+    action: {
+      label: 'Choose pages in Notion',
+      key: 'choose',
+      onClick: ctx.connect,
+    },
     steps: [
       'Open the database in Notion.',
-      ['Choose ', h(doc, 'b', {}, '•••'), ' in its top-right corner, then ', h(doc, 'b', {}, 'Connections'), '.'],
-      ['Pick the Atomic integration. Come back and choose ', h(doc, 'b', {}, 'Sync now'), '.'],
+      [
+        'Choose ',
+        h(doc, 'b', {}, '•••'),
+        ' in its top-right corner, then ',
+        h(doc, 'b', {}, 'Connections'),
+        '.',
+      ],
+      [
+        'Pick the Atomic integration. Come back and choose ',
+        h(doc, 'b', {}, 'Sync now'),
+        '.',
+      ],
     ],
   });
 }
@@ -800,7 +1021,13 @@ export function noRows(ctx: ViewContext): HTMLElement {
     glyph: emptyGlyph(doc, 'db'),
     title: 'The shared databases have no pages yet',
     text: 'Add a page to one of them in Notion, then sync again.',
-    action: { label: 'Sync now', icon: 'sync', key: 'empty-sync', onClick: ctx.sync, disabled: ctx.state.kind !== 'ready' },
+    action: {
+      label: 'Sync now',
+      icon: 'sync',
+      key: 'empty-sync',
+      onClick: ctx.sync,
+      disabled: ctx.state.kind !== 'ready',
+    },
   });
 }
 
@@ -810,17 +1037,28 @@ export function preConnection(
   state: Exclude<ViewState, ConnectedState>,
   connect: () => void,
 ): HTMLElement {
-  const mark = h(doc, 'span', { class: 'pl-mark is-lg', 'aria-hidden': 'true' }, 'N');
+  const mark = h(
+    doc,
+    'span',
+    { class: 'pl-mark is-lg', 'aria-hidden': 'true' },
+    'N',
+  );
 
   switch (state.kind) {
     case 'loading':
-      return h(doc, 'div', { class: 'pl-empty' }, h(doc, 'p', { class: 'nt-muted' }, 'Loading…'));
+      return h(
+        doc,
+        'div',
+        { class: 'pl-empty' },
+        h(doc, 'p', { class: 'nt-muted' }, 'Loading…'),
+      );
     case 'no-proxy':
       return renderEmpty(doc, {
         glyph: emptyGlyph(doc, 'plug'),
         title: 'This Atomic Server can’t connect apps to other services yet',
         text: 'The Notion app needs the server’s integration relay to read from Notion. Nothing was fetched and nothing was stored.',
-        secondary: 'Ask the person who runs this server to update it (the relay arrived in atomic-server PR #1657).',
+        secondary:
+          'Ask the person who runs this server to update it (the relay arrived in atomic-server PR #1657).',
       });
     case 'not-connected':
       return renderEmpty(doc, {
@@ -828,20 +1066,39 @@ export function preConnection(
         title: 'Bring your Notion databases into Atomic',
         text: 'Atomic keeps a copy of the pages in the Notion databases you choose, as rows in this app’s table.',
         facts: [
-          { icon: 'check', text: 'Every property of type text, number, checkbox, select, status, URL, email and phone is copied' },
-          { icon: 'lock', text: 'Read-only: nothing is ever written back to Notion' },
-          { icon: 'db', text: 'Notion asks you which pages and databases to share; only those are read' },
+          {
+            icon: 'check',
+            text: 'Every property of type text, number, checkbox, select, status, URL, email and phone is copied',
+          },
+          {
+            icon: 'lock',
+            text: 'Read-only: nothing is ever written back to Notion',
+          },
+          {
+            icon: 'db',
+            text: 'Notion asks you which pages and databases to share; only those are read',
+          },
         ],
         action: { label: 'Connect Notion', key: 'connect', onClick: connect },
-        secondary: 'Your Notion sign-in stays with the integration relay. This app only ever sees the pages.',
+        secondary:
+          'Your Notion sign-in stays with the integration relay. This app only ever sees the pages.',
       });
     case 'connecting':
       return renderEmpty(doc, {
         glyph: mark,
         title: 'Confirm in the bar above',
         text: 'Atomic asks first. Then Notion shows its own page, where you pick the pages and databases to share. You come back here afterwards.',
-        action: { label: 'Waiting for confirmation…', key: 'connect', busy: true, onClick: () => {} },
-        secondary: ['Changed your mind? Choose ', h(doc, 'b', {}, 'Cancel'), ' in the bar above.'],
+        action: {
+          label: 'Waiting for confirmation…',
+          key: 'connect',
+          busy: true,
+          onClick: () => {},
+        },
+        secondary: [
+          'Changed your mind? Choose ',
+          h(doc, 'b', {}, 'Cancel'),
+          ' in the bar above.',
+        ],
       });
   }
 }

@@ -228,17 +228,24 @@ describe('syncNotion progress (N3)', () => {
     const proxy = fixtureProxy('conn-1', { scenario: 'two-sources' });
     const store = fakeStore({ proxy });
     const create = store.newResource.bind(store);
+
     store.newResource = async args => {
       if (args?.propVals?.[atomic.name] === 'Thinking in Systems')
         throw new Error('host refused the write');
 
       return create(args);
     };
+
     const events: { phase: string; title: string }[] = [];
     await expect(
-      syncNotion(store, syncablesTransport(proxy, 'conn-1', upstream), undefined, {
-        onProgress: e => events.push(e),
-      }),
+      syncNotion(
+        store,
+        syncablesTransport(proxy, 'conn-1', upstream),
+        undefined,
+        {
+          onProgress: e => events.push(e),
+        },
+      ),
     ).rejects.toThrow(/refused/);
     const rows = [...store.resources.values()].filter(p => p[PARENT] === TABLE);
     expect(rows.map(r => r[atomic.name])).toEqual([
@@ -289,7 +296,11 @@ describe('syncNotion per data source (N6, N7, N10)', () => {
         { name: 'Done', color: 'green' },
       ],
     });
-    expect(reading).toMatchObject({ title: 'Reading list', pages: 2, created: 2 });
+    expect(reading).toMatchObject({
+      title: 'Reading list',
+      pages: 2,
+      created: 2,
+    });
     // Types the lens does not project are listed, without a column.
     expect(
       reading!.properties.filter(p => !p.shortname).map(p => [p.name, p.type]),
@@ -330,6 +341,10 @@ describe('syncNotion per data source (N6, N7, N10)', () => {
       fakeStore({ proxy }),
       syncablesTransport(proxy, 'conn-1', upstream),
     );
-    expect(result).toMatchObject({ dataSources: 0, created: 0, perDataSource: [] });
+    expect(result).toMatchObject({
+      dataSources: 0,
+      created: 0,
+      perDataSource: [],
+    });
   });
 });

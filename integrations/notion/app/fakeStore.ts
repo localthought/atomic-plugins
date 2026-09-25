@@ -126,17 +126,21 @@ export function fakeStore({
         return stored ? wrap(subject, stored) : { subject, error: 'Not found' };
       });
     };
+
     store.openExternal = async url => {
       hostCalls.push({ op: 'openExternal', args: url });
 
       return { status: 'opened' };
     };
+
     store.openResource = async subject => {
       hostCalls.push({ op: 'openResource', args: subject });
 
       return { status: 'opened', subject };
     };
+
     store.getTheme = () => ({ colorScheme: 'dark' });
+
     store.onThemeChange = handler => {
       hostCalls.push({ op: 'onThemeChange', args: handler });
 
@@ -185,12 +189,18 @@ export function fixtureProxy(
       };
     },
     connections: async ({ platform }) =>
-      platform === 'notion' && !disconnected ? [{ connectionId, platform }] : [],
+      platform === 'notion' && !disconnected
+        ? [{ connectionId, platform }]
+        : [],
     connect: async () => ({ status: 'cancelled' }),
     disconnect: async ({ platform }) => {
       disconnected = true;
 
-      return { status: 'disconnected', platform, connectionIds: [connectionId] };
+      return {
+        status: 'disconnected',
+        platform,
+        connectionIds: [connectionId],
+      };
     },
   };
 

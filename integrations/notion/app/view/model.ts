@@ -42,7 +42,13 @@ const FIXED = new Set([
   'notion-last-edited',
 ]);
 
-export const TEXT_TYPES = new Set(['title', 'rich_text', 'url', 'email', 'phone_number']);
+export const TEXT_TYPES = new Set([
+  'title',
+  'rich_text',
+  'url',
+  'email',
+  'phone_number',
+]);
 export const OPTION_TYPES = new Set(['select', 'status', 'multi_select']);
 
 const titleColumn = (): ViewColumn => ({
@@ -66,11 +72,16 @@ const fixed = (key: 'database' | 'edited'): ViewColumn => ({
 /** The databases for the chips: from the sync record, else from the rows. */
 export function sources(rows: readonly Row[], last?: SyncRecord): Source[] {
   const counts = new Map<string, number>();
-  for (const row of rows) counts.set(row.dataSource, (counts.get(row.dataSource) ?? 0) + 1);
+  for (const row of rows)
+    counts.set(row.dataSource, (counts.get(row.dataSource) ?? 0) + 1);
   const out: Source[] = [];
 
   for (const report of last?.dataSources ?? []) {
-    out.push({ title: report.title, count: counts.get(report.title) ?? 0, report });
+    out.push({
+      title: report.title,
+      count: counts.get(report.title) ?? 0,
+      report,
+    });
     counts.delete(report.title);
   }
 
@@ -120,7 +131,10 @@ export function columnsFor(
 
   if (!reports.length) {
     const extra = [...fallback]
-      .filter(([shortname]) => !FIXED.has(shortname) && shortname !== 'notion-sync-record')
+      .filter(
+        ([shortname]) =>
+          !FIXED.has(shortname) && shortname !== 'notion-sync-record',
+      )
       .filter(([shortname]) => shortname.startsWith('notion-'))
       .filter(([, c]) => c.name !== 'Name' && c.name !== 'Title')
       .map(([shortname, c]) => ({
@@ -201,7 +215,10 @@ export function searchRows(
   const q = query.trim().toLocaleLowerCase();
   if (!q) return [...rows];
   const searchable = columns.filter(
-    c => TEXT_TYPES.has(c.type) || OPTION_TYPES.has(c.type) || c.type === 'database',
+    c =>
+      TEXT_TYPES.has(c.type) ||
+      OPTION_TYPES.has(c.type) ||
+      c.type === 'database',
   );
 
   return rows.filter(row =>
@@ -228,6 +245,7 @@ const sortKey = (row: Row, column: ViewColumn): string | number | undefined => {
   const value = cellValue(row, column);
   if (typeof value === 'number') return value;
   if (typeof value === 'boolean') return value ? 1 : 0;
+
   if (OPTION_TYPES.has(column.type)) {
     const [id] = optionIds(value);
     if (id === undefined) return undefined;
@@ -274,7 +292,10 @@ export interface BoardGroup {
 }
 
 /** One group per option in Notion's order, then "No value" when any row has none. */
-export function groupRows(rows: readonly Row[], column: ViewColumn): BoardGroup[] {
+export function groupRows(
+  rows: readonly Row[],
+  column: ViewColumn,
+): BoardGroup[] {
   const groups: BoardGroup[] = column.order.map(option => ({
     key: option.id,
     option,
@@ -315,28 +336,43 @@ export function notes(record: SyncRecord | undefined): number {
   );
 }
 
-export function pill(state: ViewState, now: number, locale?: string): PillModel | undefined {
+export function pill(
+  state: ViewState,
+  now: number,
+  locale?: string,
+): PillModel | undefined {
   switch (state.kind) {
     case 'loading':
     case 'no-proxy':
     case 'not-connected':
     case 'connecting':
       return undefined;
-    case 'syncing': {
-      const active = [...state.progress].reverse().find(p => p.phase !== 'done');
 
-      return { tone: 'sync', text: active ? `Syncing… ${active.title}` : 'Syncing…' };
+    case 'syncing': {
+      const active = [...state.progress]
+        .reverse()
+        .find(p => p.phase !== 'done');
+
+      return {
+        tone: 'sync',
+        text: active ? `Syncing… ${active.title}` : 'Syncing…',
+      };
     }
+
     case 'importing': {
       const total = state.progress.length;
       if (!total) return { tone: 'sync', text: 'Importing…' };
-      const at = Math.min(total, state.progress.filter(p => p.phase === 'done').length + 1);
+      const at = Math.min(
+        total,
+        state.progress.filter(p => p.phase === 'done').length + 1,
+      );
 
       return {
         tone: 'sync',
         text: `Importing ${at} of ${total} ${total === 1 ? 'database' : 'databases'}`,
       };
     }
+
     case 'no-databases':
       return { tone: 'warn', text: 'No databases shared' };
     case 'reauth':
@@ -344,9 +380,13 @@ export function pill(state: ViewState, now: number, locale?: string): PillModel 
     case 'disconnected':
       return { tone: 'muted', text: 'Not connected' };
     case 'rate-limited':
-      return { tone: 'warn', text: `Paused until ${clock(state.retryAt, locale)}` };
+      return {
+        tone: 'warn',
+        text: `Paused until ${clock(state.retryAt, locale)}`,
+      };
     case 'failed':
       return { tone: 'neg', text: 'Sync failed' };
+
     case 'ready': {
       if (!state.last) return { tone: 'muted', text: 'Not synced yet' };
       const n = notes(state.last);
@@ -359,15 +399,26 @@ export function pill(state: ViewState, now: number, locale?: string): PillModel 
 }
 
 /** Whether the header's "Sync now" is offered, and enabled. */
-export function syncAction(state: ViewState): { shown: boolean; enabled: boolean } {
-  if (!('rows' in state) || state.kind === 'reauth' || state.kind === 'disconnected')
+export function syncAction(state: ViewState): {
+  shown: boolean;
+  enabled: boolean;
+} {
+  if (
+    !('rows' in state) ||
+    state.kind === 'reauth' ||
+    state.kind === 'disconnected'
+  )
     return { shown: false, enabled: false };
 
   return {
     shown: true,
-    enabled: !isRunning(state) && state.kind !== 'rate-limited' && !!state.connectionId,
+    enabled:
+      !isRunning(state) &&
+      state.kind !== 'rate-limited' &&
+      !!state.connectionId,
   };
 }
 
 /** The default view for a frame width (DESIGN.md §5: List below 640px). */
-export const defaultView = (narrow: boolean): ViewKind => (narrow ? 'list' : 'table');
+export const defaultView = (narrow: boolean): ViewKind =>
+  narrow ? 'list' : 'table';

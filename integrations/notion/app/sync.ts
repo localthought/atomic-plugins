@@ -165,7 +165,10 @@ export async function readNotion(
       .map(r => [r.id, r] as const),
   );
 
-  for (const dataSource of new Set([...titles.keys(), ...byDataSource.keys()])) {
+  for (const dataSource of new Set([
+    ...titles.keys(),
+    ...byDataSource.keys(),
+  ])) {
     const rows = byDataSource.get(dataSource) ?? [];
     const title = titles.get(dataSource) ?? dataSource;
     const projected = notionProjection(
@@ -278,8 +281,7 @@ export function schemaProperties(
                 ? [
                     {
                       id: option.id,
-                      name:
-                        typeof option.name === 'string' ? option.name : '',
+                      name: typeof option.name === 'string' ? option.name : '',
                       color:
                         typeof option.color === 'string'
                           ? option.color
@@ -396,7 +398,10 @@ export async function syncNotion(
   if (!data?.table || !data.rowClass)
     throw new Error('This app has no data table with a row class to fill');
   const { sources, columns, dataSources, warnings, readErrors, reports } =
-    await readNotion(observedTransport(transport, progressTap(onProgress)), read);
+    await readNotion(
+      observedTransport(transport, progressTap(onProgress)),
+      read,
+    );
   const bound = await ensureColumns(store, data.rowClass, columns, warnings);
   const pageId = bound.get('notion-page-id');
   if (!pageId) throw new Error('No column to key rows by Notion page id');
@@ -494,7 +499,15 @@ const sameId = (a: string, b: string) =>
 function progressTap(onProgress: (progress: SyncProgress) => void) {
   const seen = new Map<string, SyncProgress>();
 
-  return ({ path, status, body }: { path: string; status: number; body: unknown }) => {
+  return ({
+    path,
+    status,
+    body,
+  }: {
+    path: string;
+    status: number;
+    body: unknown;
+  }) => {
     if (status < 200 || status >= 300) return;
     const results = record(body).results;
     if (!Array.isArray(results)) return;

@@ -117,7 +117,8 @@ export function createApp(
     menu: false,
   };
   let state: ViewState = { kind: 'loading' };
-  const measure = () => width?.() ?? (app.clientWidth || win.innerWidth || WIDE);
+  const measure = () =>
+    width?.() ?? (app.clientWidth || win.innerWidth || WIDE);
   let size = sizeOf(measure());
   let flash = new Set<string>();
   let flashed: unknown;
@@ -155,18 +156,20 @@ export function createApp(
 
   const openLink = (href: string, row: Row) => {
     const fallback = () =>
-      update({ selected: row.subject, linkFallback: { subject: row.subject, href } });
+      update({
+        selected: row.subject,
+        linkFallback: { subject: row.subject, href },
+      });
+
     if (!actions.openExternal) {
       if (!openExternal(win, href)) fallback();
 
       return;
     }
-    actions.openExternal(href).then(
-      handled => {
-        if (!handled) fallback();
-      },
-      fallback,
-    );
+
+    actions.openExternal(href).then(handled => {
+      if (!handled) fallback();
+    }, fallback);
   };
 
   // On click, not pointerdown: a re-render between pointerdown and click
@@ -175,16 +178,23 @@ export function createApp(
     const target = event.target as Element | null;
     const patch: Partial<UiState> = {};
     if (ui.menu && !target?.closest?.('.pl-menu-wrap')) patch.menu = false;
-    if (ui.details && !target?.closest?.('.nt-details, [data-key="details-toggle"], .pl-menu-wrap'))
+    if (
+      ui.details &&
+      !target?.closest?.(
+        '.nt-details, [data-key="details-toggle"], .pl-menu-wrap',
+      )
+    )
       patch.details = false;
     if (Object.keys(patch).length) update(patch);
   };
+
   const onKey = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || !(ui.menu || ui.details)) return;
     if (ui.details) focusAfter = 'details-toggle';
     else focusAfter = 'menu:More';
     update({ menu: false, details: false });
   };
+
   doc.addEventListener('click', onClick);
   doc.addEventListener('keydown', onKey);
 
@@ -192,6 +202,7 @@ export function createApp(
     typeof win.ResizeObserver === 'function'
       ? new win.ResizeObserver(() => {
           const next = sizeOf(measure());
+
           if (next !== size) {
             size = next;
             render();
@@ -207,7 +218,10 @@ export function createApp(
     clearTimeout(retry);
     retry = undefined;
     if (state.kind !== 'rate-limited') return;
-    retry = setTimeout(() => actions.sync(), Math.max(0, state.retryAt - now()));
+    retry = setTimeout(
+      () => actions.sync(),
+      Math.max(0, state.retryAt - now()),
+    );
   }
 
   function header(): HTMLElement {
@@ -229,7 +243,12 @@ export function createApp(
             count: s.count,
             icon: 'db',
             pressed: ui.scope === s.title,
-            onClick: () => update({ scope: s.title, selected: undefined, groupBy: undefined }),
+            onClick: () =>
+              update({
+                scope: s.title,
+                selected: undefined,
+                groupBy: undefined,
+              }),
           })),
         ]
       : [];
@@ -246,9 +265,17 @@ export function createApp(
               value: ui.scope,
               options: [
                 { value: ALL, label: `All databases (${state.rows.length})` },
-                ...list.map(s => ({ value: s.title, label: `${s.title} (${s.count})` })),
+                ...list.map(s => ({
+                  value: s.title,
+                  label: `${s.title} (${s.count})`,
+                })),
               ],
-              onChange: value => update({ scope: value, selected: undefined, groupBy: undefined }),
+              onChange: value =>
+                update({
+                  scope: value,
+                  selected: undefined,
+                  groupBy: undefined,
+                }),
             },
           }
         : {}),
@@ -277,7 +304,19 @@ export function createApp(
     return renderConnbar(
       doc,
       [
-        [h(doc, 'span', { class: 'pl-dot', 'aria-hidden': 'true', style: state.kind === 'reauth' ? 'background:var(--pl-neg)' : state.kind === 'disconnected' ? 'background:var(--pl-muted)' : undefined }), 'Notion'],
+        [
+          h(doc, 'span', {
+            class: 'pl-dot',
+            'aria-hidden': 'true',
+            style:
+              state.kind === 'reauth'
+                ? 'background:var(--pl-neg)'
+                : state.kind === 'disconnected'
+                  ? 'background:var(--pl-muted)'
+                  : undefined,
+          }),
+          'Notion',
+        ],
         plural(databases, 'database'),
         state.kind === 'reauth'
           ? 'Access revoked'
@@ -305,27 +344,46 @@ export function createApp(
           doc,
           'More',
           [
-            { label: 'Sync details', icon: 'info', disabled: !state.last, onClick: () => update({ details: true }) },
+            {
+              label: 'Sync details',
+              icon: 'info',
+              disabled: !state.last,
+              onClick: () => update({ details: true }),
+            },
             ...(state.connectionId
-              ? [{ label: 'Choose pages in Notion', icon: 'ext', onClick: actions.connect }]
+              ? [
+                  {
+                    label: 'Choose pages in Notion',
+                    icon: 'ext',
+                    onClick: actions.connect,
+                  },
+                ]
               : []),
             ...(actions.openTable
-              ? [{ label: 'Open data table', icon: 'table', onClick: actions.openTable }]
+              ? [
+                  {
+                    label: 'Open data table',
+                    icon: 'table',
+                    onClick: actions.openTable,
+                  },
+                ]
               : []),
             ...(actions.disconnect && state.connectionId
-              ? [{
-                  label: 'Disconnect Notion…',
-                  icon: 'plug',
-                  disabled: isRunning(state),
-                  onClick: () => {
-                    focusAfter = 'disconnect-cancel';
-                    update({ confirmDisconnect: true });
+              ? [
+                  {
+                    label: 'Disconnect Notion…',
+                    icon: 'plug',
+                    disabled: isRunning(state),
+                    onClick: () => {
+                      focusAfter = 'disconnect-cancel';
+                      update({ confirmDisconnect: true });
+                    },
                   },
-                }]
+                ]
               : []),
           ],
           ui.menu,
-          open => update({ menu: open, details: false }),
+          menuOpen => update({ menu: menuOpen, details: false }),
         ),
       ],
     );
@@ -333,14 +391,23 @@ export function createApp(
 
   function content(ctx: ViewContext): (Node | null)[] {
     const s = ctx.state;
-    if (s.kind === 'importing' || (s.kind === 'ready' && !s.last && !s.rows.length))
+    if (
+      s.kind === 'importing' ||
+      (s.kind === 'ready' && !s.last && !s.rows.length)
+    )
       return [renderImport(ctx, s.kind === 'importing' ? s.progress : [])];
     if (s.kind === 'no-databases' && !s.rows.length) return [noDatabases(ctx)];
     if (!s.rows.length) return s.kind === 'ready' ? [noRows(ctx)] : [];
 
-    const selected = ui.selected ? ctx.visible.find(r => r.subject === ui.selected) : undefined;
+    const selected = ui.selected
+      ? ctx.visible.find(r => r.subject === ui.selected)
+      : undefined;
     const body =
-      ctx.view === 'board' ? renderBoard(ctx) : ctx.view === 'list' ? renderList(ctx) : renderTable(ctx);
+      ctx.view === 'board'
+        ? renderBoard(ctx)
+        : ctx.view === 'list'
+          ? renderList(ctx)
+          : renderTable(ctx);
     if (!selected) return [renderToolbar(ctx), body];
 
     if (size === 'narrow') {
@@ -370,8 +437,10 @@ export function createApp(
 
   function render(next?: ViewState) {
     if (next && next !== state) {
-      if (isRunning(state) && !isRunning(next) && next.kind !== 'ready') alertFor = next;
+      if (isRunning(state) && !isRunning(next) && next.kind !== 'ready')
+        alertFor = next;
       state = next;
+
       if (isConnected(state) && state.changed && state.changed !== flashed) {
         flashed = state.changed;
         flash = new Set(state.changed);
@@ -381,11 +450,15 @@ export function createApp(
           render();
         }, FLASH_MS);
       }
+
       scheduleRetry();
     }
 
     const active = doc.activeElement as HTMLElement | null;
-    const focusKey = focusAfter ?? active?.closest?.('[data-key]')?.getAttribute('data-key') ?? undefined;
+    const focusKey =
+      focusAfter ??
+      active?.closest?.('[data-key]')?.getAttribute('data-key') ??
+      undefined;
     focusAfter = undefined;
     const scrolls = new Map(
       [...app.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(el => [
@@ -402,14 +475,23 @@ export function createApp(
       children.push(preConnection(doc, state, actions.connect));
     } else {
       const list = listSources(state.rows, state.last);
-      if (ui.scope !== ALL && !list.some(s => s.title === ui.scope)) ui.scope = ALL;
+      if (ui.scope !== ALL && !list.some(s => s.title === ui.scope))
+        ui.scope = ALL;
       const columns = columnsFor(ui.scope, list);
-      const scoped = ui.scope === ALL ? state.rows : state.rows.filter(r => r.dataSource === ui.scope);
-      const visible = sortRows(searchRows(scoped, columns, ui.query), columns, ui.sort);
+      const scoped =
+        ui.scope === ALL
+          ? state.rows
+          : state.rows.filter(r => r.dataSource === ui.scope);
+      const visible = sortRows(
+        searchRows(scoped, columns, ui.query),
+        columns,
+        ui.sort,
+      );
       let view = ui.view ?? defaultView(size === 'narrow');
       if (view === 'board' && (ui.scope === ALL || !groupable(columns).length))
         view = defaultView(size === 'narrow');
-      if (ui.selected && !visible.some(r => r.subject === ui.selected)) ui.selected = undefined;
+      if (ui.selected && !visible.some(r => r.subject === ui.selected))
+        ui.selected = undefined;
       const ctx: ViewContext = {
         doc,
         now: now(),
@@ -475,6 +557,7 @@ export function createApp(
     }
 
     const dialog = app.querySelector('dialog');
+
     if (dialog && !dialog.open) {
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', '');
@@ -494,7 +577,13 @@ export function createApp(
     fatal(message) {
       app.replaceChildren(
         renderHeader(doc, { mark: 'N', name: 'Notion' }),
-        h(doc, 'div', { class: 'pl-empty' }, h(doc, 'h2', {}, 'The Notion app could not load'), h(doc, 'p', {}, message)),
+        h(
+          doc,
+          'div',
+          { class: 'pl-empty' },
+          h(doc, 'h2', {}, 'The Notion app could not load'),
+          h(doc, 'p', {}, message),
+        ),
       );
     },
     ui: () => ui,

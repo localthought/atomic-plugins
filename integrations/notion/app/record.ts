@@ -64,7 +64,10 @@ export async function loadSchema(
   const klass = await store.getResource(data.rowClass);
   const ontology = klass.get(atomic.parent);
   if (typeof ontology !== 'string') return undefined;
-  const subjects = strings(await store.getResource(ontology), atomic.properties);
+  const subjects = strings(
+    await store.getResource(ontology),
+    atomic.properties,
+  );
   const columns = new Map<string, Column>();
 
   for (const property of await Promise.all(
@@ -113,14 +116,14 @@ export function parseRecord(value: unknown): SyncRecord | undefined {
       parsed.version === 1 &&
       typeof parsed.at === 'number' &&
       Array.isArray(parsed.dataSources)
-      ? {
+      ? ({
           durationMs: 0,
           created: 0,
           updated: 0,
           unchanged: 0,
           general: [],
           ...parsed,
-        } as SyncRecord
+        } as SyncRecord)
       : undefined;
   } catch {
     return undefined;
@@ -134,7 +137,9 @@ export async function loadRecord(
   const column = schema.columns.get(RECORD_SHORTNAME);
   if (!column) return undefined;
 
-  return parseRecord((await store.getResource(schema.table)).get(column.subject));
+  return parseRecord(
+    (await store.getResource(schema.table)).get(column.subject),
+  );
 }
 
 /**

@@ -133,7 +133,9 @@ export interface PluginStore {
   /** Shows a resource in the host page, leaving the app. */
   openResource?(subject: string): Promise<OpenResourceResult>;
   getTheme?(): { colorScheme: ColorScheme };
-  onThemeChange?(handler: (theme: { colorScheme: ColorScheme }) => void): () => void;
+  onThemeChange?(
+    handler: (theme: { colorScheme: ColorScheme }) => void,
+  ): () => void;
 }
 
 export interface ViewArgs {

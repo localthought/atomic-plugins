@@ -75,6 +75,7 @@ export function updatePill(
   pill: PillModel | undefined,
 ): HTMLElement {
   el.hidden = !pill;
+
   if (!pill) {
     el.replaceChildren();
 
@@ -91,7 +92,10 @@ export function updatePill(
           ? null
           : icon(doc, 'alert');
   if (el.textContent !== pill.text || el.childElementCount !== (glyph ? 2 : 1))
-    el.replaceChildren(...(glyph ? [glyph] : []), h(doc, 'span', {}, pill.text));
+    el.replaceChildren(
+      ...(glyph ? [glyph] : []),
+      h(doc, 'span', {}, pill.text),
+    );
 
   return el;
 }
@@ -260,7 +264,10 @@ export function renderConnbar(
   const parts: Child[] = [];
 
   items.forEach((item, i) => {
-    if (i) parts.push(h(doc, 'span', { class: 'pl-sep', 'aria-hidden': 'true' }, '·'));
+    if (i)
+      parts.push(
+        h(doc, 'span', { class: 'pl-sep', 'aria-hidden': 'true' }, '·'),
+      );
     parts.push(h(doc, 'span', { class: 'pl-cb-item' }, ...[item].flat()));
   });
 
@@ -349,7 +356,13 @@ export function renderEmpty(doc: Document, model: EmptyModel): HTMLElement {
         'ul',
         { class: 'pl-facts' },
         model.facts.map(f =>
-          h(doc, 'li', {}, icon(doc, f.icon), h(doc, 'span', {}, ...[f.text].flat())),
+          h(
+            doc,
+            'li',
+            {},
+            icon(doc, f.icon),
+            h(doc, 'span', {}, ...[f.text].flat()),
+          ),
         ),
       ),
     model.action && button(doc, { size: 'lg', ...model.action }),
@@ -386,7 +399,11 @@ export function openExternal(win: Window, url: string): boolean {
 }
 
 /** A selectable URL with a Copy button, for when a link cannot open. */
-export function renderCopy(doc: Document, text: string, note: string): HTMLElement {
+export function renderCopy(
+  doc: Document,
+  text: string,
+  note: string,
+): HTMLElement {
   const code = h(doc, 'code', {}, text);
   const status = h(doc, 'span', { class: 'pl-sr', role: 'status' });
 
@@ -414,7 +431,11 @@ export function renderCopy(doc: Document, text: string, note: string): HTMLEleme
   );
 }
 
-async function copyText(doc: Document, text: string, el: Element): Promise<boolean> {
+async function copyText(
+  doc: Document,
+  text: string,
+  el: Element,
+): Promise<boolean> {
   try {
     await doc.defaultView?.navigator.clipboard.writeText(text);
 

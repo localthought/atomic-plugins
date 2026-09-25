@@ -173,6 +173,7 @@ async function statesTour(page: Page, testInfo: TestInfo) {
   const banner = app.locator('.pl-banner');
   const shot = (name: string) =>
     page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
+
   const syncNow = async () => {
     await expect(app.getByRole('button', { name: 'Sync now' })).toBeEnabled({
       timeout: 60_000,
@@ -186,7 +187,9 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await expect(status).toContainText('Synced', { timeout: 60_000 });
     await syncNow();
     const chips = app.getByRole('group', { name: 'Databases' });
-    await expect(chips.getByRole('button', { name: /Reading list/ })).toBeVisible({
+    await expect(
+      chips.getByRole('button', { name: /Reading list/ }),
+    ).toBeVisible({
       timeout: 60_000,
     });
     await chips.getByRole('button', { name: /Roadmap/ }).click();
@@ -201,9 +204,9 @@ async function statesTour(page: Page, testInfo: TestInfo) {
       'Last edited in Notion',
     ]);
     // N7: option names, not ids.
-    await expect(
-      table.getByRole('row', { name: /Launch plan/ }),
-    ).toContainText('In progress');
+    await expect(table.getByRole('row', { name: /Launch plan/ })).toContainText(
+      'In progress',
+    );
     await shot('s6-table');
 
     // S7: side peek, Esc closes.
@@ -227,9 +230,9 @@ async function statesTour(page: Page, testInfo: TestInfo) {
 
     // S8: board by status.
     await app.getByRole('button', { name: 'Board', exact: true }).click();
-    await expect(app.getByRole('list', { name: 'Grouped by Status' })).toContainText(
-      'In progress',
-    );
+    await expect(
+      app.getByRole('list', { name: 'Grouped by Status' }),
+    ).toContainText('In progress');
     await shot('s8-board');
     await app.getByRole('button', { name: 'Table', exact: true }).click();
 
@@ -273,7 +276,9 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await expect(banner).toContainText('no longer shares any databases', {
       timeout: 60_000,
     });
-    await expect(table.getByRole('cell', { name: 'Launch plan', exact: true })).toBeVisible();
+    await expect(
+      table.getByRole('cell', { name: 'Launch plan', exact: true }),
+    ).toBeVisible();
 
     // S11: Notion revoked access; rows are kept.
     await driver('setScenario', ['unauthorized']);
@@ -304,12 +309,16 @@ async function statesTour(page: Page, testInfo: TestInfo) {
     await app.getByRole('button', { name: 'More' }).click();
     await app.getByRole('menuitem', { name: 'Disconnect Notion…' }).click();
     await expect(banner).toContainText('Disconnect Notion from this app?');
-    await banner.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    await banner
+      .getByRole('button', { name: 'Disconnect', exact: true })
+      .click();
     await expect(banner).toContainText('Notion is not connected to this app', {
       timeout: 30_000,
     });
     await expect(status).toHaveText('Not connected');
-    await expect(table.getByRole('cell', { name: 'Launch plan', exact: true })).toBeVisible();
+    await expect(
+      table.getByRole('cell', { name: 'Launch plan', exact: true }),
+    ).toBeVisible();
     await shot('disconnected');
   } finally {
     await driver('setScenario', ['default']);
