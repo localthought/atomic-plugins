@@ -10,7 +10,7 @@
   "lanes": [
     {
       "id": "open-cloud-mesh",
-      "index": 8,
+      "index": 16,
       "platforms": [],
       "tiers": ["node"],
       "nodeTests": ["integrations/open-cloud-mesh/plugin.test.mjs"],
