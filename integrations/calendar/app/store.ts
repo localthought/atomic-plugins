@@ -6,7 +6,10 @@
  * sync with that file by hand; if they disagree, view-client.js is ground
  * truth.
  *
- * A copy of `integrations/pets/app/store.ts`. Calendar is the first app to
+ * A copy of `integrations/pets/app/store.ts`, with the operations of pin
+ * 007869464 (`openExternal`, `openResource`, `getTheme`, `onThemeChange`,
+ * `proxy.disconnect`; typed in atomic-server's `@tomic/plugin`) as optional
+ * members. Calendar is the first app to
  * use `ifMatch`: view-client.js sends it to the proxy as `If-Match`. Kept
  * per plugin on purpose (strict per-plugin containment).
  *
@@ -85,7 +88,19 @@ export interface HostProxy {
    * settles.
    */
   connect(args: { platform: string }): Promise<ConnectResult>;
+  /**
+   * Takes this app's delegation off its `platform` connections at the proxy;
+   * the connection itself stays for other apps. Feature-detected (pin
+   * 007869464 and later).
+   */
+  disconnect?(args: { platform: string }): Promise<{
+    status: 'disconnected';
+    platform: string;
+    connectionIds: string[];
+  }>;
 }
+
+export type ColorScheme = 'light' | 'dark';
 
 export interface PluginStore {
   getApp(): Promise<string>;
@@ -100,6 +115,22 @@ export interface PluginStore {
   subscribe(subject: string, handler: () => void): () => void;
   /** Feature-detected: hosts without integration-proxy support lack it. */
   proxy?: HostProxy;
+  /**
+   * Opens an http(s) link in a new tab after the person confirms it in the
+   * host (the frame has no popup rights). Feature-detected, like the rest
+   * below: hosts before pin 007869464 lack them.
+   */
+  openExternal?(url: string): Promise<{ status: 'opened' | 'cancelled' }>;
+  /** Shows a resource the person can read in the host page, leaving the app. */
+  openResource?(
+    subject: string,
+  ): Promise<{ status: 'opened'; subject: string }>;
+  /** The host's light or dark setting. */
+  getTheme?(): { colorScheme: ColorScheme };
+  /** Called when the person switches the host's theme; returns an unsubscribe. */
+  onThemeChange?(
+    handler: (theme: { colorScheme: ColorScheme }) => void,
+  ): () => void;
 }
 
 export interface ViewArgs {

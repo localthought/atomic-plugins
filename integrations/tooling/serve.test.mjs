@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -25,6 +26,10 @@ import {
   dockerRunArgs,
   IMAGE_STORE,
   imagePinProblem,
+  pluginRoutesArgs,
+  PLUGIN_ROUTES_ENV,
+  routesImageFor,
+  routesOrigin,
   serverEnv,
   storeVolume,
 } from './serve.mjs';
@@ -101,6 +106,10 @@ const { appendFileSync } = require('node:fs');
 const http = require('node:http');
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'image' && args.includes('--format')) {
+  process.stdout.write((process.env.FAKE_DOCKER_FEATURES ?? 'wasm-plugins') + '\\n');
+  process.exit(0);
+}
 if (args[0] === 'image') process.exit(process.env.FAKE_DOCKER_HAS_IMAGE === '1' ? 0 : 1);
 if (args[0] === 'pull') process.exit(process.env.FAKE_DOCKER_PULL_FAILS === '1' ? 1 : 0);
 if (args[0] !== 'run') process.exit(0);
@@ -198,4 +207,185 @@ test('bringUp explains a failed pull instead of timing out', async () => {
       assert.ok(!calls().some(args => args[0] === 'run'));
     },
   );
+});
+
+test('a plugin-routes level becomes flags, with a routes origin apart from the API', () => {
+  assert.deepEqual(pluginRoutesArgs(undefined, ports), []);
+  assert.deepEqual(pluginRoutesArgs('off', ports), [
+    '--plugin-routes',
+    'off',
+    '--routes-origin',
+    'http://routes.localhost:41001',
+  ]);
+  assert.equal(routesOrigin(ports), 'http://routes.localhost:41001');
+  // atomic-server#1726 refuses http unless the host is *.localhost, and any
+  // origin that is the API's own host.
+  const origin = new URL(routesOrigin(ports));
+  assert.ok(origin.hostname.endsWith('.localhost'));
+  assert.notEqual(origin.hostname, 'localhost');
+});
+
+const FAKE_SERVER = `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+const http = require('node:http');
+writeFileSync(process.env.FAKE_SERVER_LOG, JSON.stringify({
+  args: process.argv.slice(2),
+  env: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^ATOMIC_(PLUGIN|ROUTES)/.test(k))),
+}));
+const server = http.createServer((_, res) => res.end('fake plugin-routes server')).listen(Number(process.env.ATOMIC_PORT), '127.0.0.1');
+process.on('SIGTERM', () => server.close(() => process.exit(0)));
+`;
+
+test('a plugin-routes lane runs the feature binary with its level, never the image or a stray env var', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'atomic-fake-routes-'));
+  const binary = join(dir, 'atomic-server');
+  const log = join(dir, 'server.json');
+  writeFileSync(binary, FAKE_SERVER);
+  chmodSync(binary, 0o755);
+  const saved = { ...process.env };
+  Object.assign(process.env, {
+    ATOMIC_SERVER_ROUTES_BINARY: binary,
+    FAKE_SERVER_LOG: log,
+    // Both must be ignored: the image is the default build, and the level
+    // comes from lanes.json only.
+    ATOMIC_SERVER_IMAGE: pinnedImage,
+    ATOMIC_PLUGIN_ROUTES: 'read-write',
+    ATOMIC_PLUGIN_SIDECARS: 'pds=http://127.0.0.1:1',
+  });
+
+  try {
+    const live = {
+      atomicServer: await freePort(),
+      mockProxy: await freePort(),
+      devServer: await freePort(),
+    };
+    const stop = await bringUp({
+      ports: live,
+      platforms: [],
+      label: 'test',
+      pluginRoutes: 'read-only',
+    });
+
+    try {
+      assert.equal(
+        await (await fetch(`http://localhost:${live.atomicServer}/`)).text(),
+        'fake plugin-routes server',
+      );
+    } finally {
+      await stop();
+    }
+
+    const started = JSON.parse(readFileSync(log, 'utf8'));
+    assert.deepEqual(started.args, pluginRoutesArgs('read-only', live));
+    assert.deepEqual(started.env, {});
+    for (const key of PLUGIN_ROUTES_ENV) assert.ok(!(key in started.env));
+  } finally {
+    process.env = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('routesImageFor: an explicit image, else the -plugin-routes variant of ATOMIC_SERVER_IMAGE', () => {
+  const repo = 'ghcr.io/ontola/atomic-server-e2e';
+  assert.equal(routesImageFor({}, pin), undefined);
+  assert.equal(
+    routesImageFor({ ATOMIC_SERVER_ROUTES_IMAGE: 'x:y' }, pin),
+    'x:y',
+  );
+  const other = 'b'.repeat(40);
+  assert.equal(
+    routesImageFor({ ATOMIC_SERVER_IMAGE: `${repo}:${other}` }, pin),
+    `${repo}:${other}-plugin-routes`,
+  );
+  // latest-pin has no variant; the pinned SHA's is used.
+  assert.equal(
+    routesImageFor({ ATOMIC_SERVER_IMAGE: `${repo}:latest-pin` }, pin),
+    `${repo}:${pin}-plugin-routes`,
+  );
+  assert.equal(
+    routesImageFor({ ATOMIC_SERVER_IMAGE: 'localhost:5000/e2e' }, pin),
+    `localhost:5000/e2e:${pin}-plugin-routes`,
+  );
+  assert.match(
+    imagePinProblem(`${repo}:${other}-plugin-routes`, pin),
+    /is atomic-server b{40}/,
+  );
+});
+
+test('a plugin-routes lane runs the variant image with the gate flags as container arguments', async () => {
+  await withFakeDocker(
+    {
+      ATOMIC_SERVER_IMAGE: pinnedImage,
+      FAKE_DOCKER_HAS_IMAGE: '1',
+      FAKE_DOCKER_FEATURES: 'wasm-plugins,plugin-routes',
+    },
+    async calls => {
+      delete process.env.ATOMIC_SERVER_ROUTES_BINARY;
+      const live = {
+        atomicServer: await freePort(),
+        mockProxy: await freePort(),
+        devServer: await freePort(),
+      };
+      const stop = await bringUp({
+        ports: live,
+        platforms: [],
+        label: 'test',
+        pluginRoutes: 'off',
+      });
+      await stop();
+      const run = calls().find(args => args[0] === 'run');
+      const image = `${pinnedImage}-plugin-routes`;
+      assert.deepEqual(run.slice(run.indexOf(image)), [
+        image,
+        ...pluginRoutesArgs('off', live),
+      ]);
+    },
+  );
+});
+
+test('a variant image without the feature falls back to the local plugin-routes build', async () => {
+  const cache = mkdtempSync(join(tmpdir(), 'atomic-routes-cache-'));
+  const pinned = pinnedImage.split(':').at(-1);
+  const dir = join(cache, `${pinned}-plugin-routes/target/e2e`);
+  mkdirSync(dir, { recursive: true });
+  const binary = join(dir, 'atomic-server');
+  const log = join(cache, 'server.json');
+  writeFileSync(binary, FAKE_SERVER);
+  chmodSync(binary, 0o755);
+
+  try {
+    await withFakeDocker(
+      {
+        ATOMIC_SERVER_IMAGE: pinnedImage,
+        FAKE_DOCKER_HAS_IMAGE: '1',
+        FAKE_DOCKER_FEATURES: 'wasm-plugins',
+        ATOMIC_PLUGINS_BUILD_CACHE: cache,
+        // No git checkout here, so the pin names the build.
+        ATOMIC_SERVER_CHECKOUT: join(cache, 'no-checkout'),
+        FAKE_SERVER_LOG: log,
+      },
+      async calls => {
+        delete process.env.ATOMIC_SERVER_ROUTES_BINARY;
+        const live = {
+          atomicServer: await freePort(),
+          mockProxy: await freePort(),
+          devServer: await freePort(),
+        };
+        const stop = await bringUp({
+          ports: live,
+          platforms: [],
+          label: 'test',
+          pluginRoutes: 'read-only',
+        });
+        await stop();
+        assert.ok(!calls().some(args => args[0] === 'run'));
+        assert.deepEqual(
+          JSON.parse(readFileSync(log, 'utf8')).args,
+          pluginRoutesArgs('read-only', live),
+        );
+      },
+    );
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
 });

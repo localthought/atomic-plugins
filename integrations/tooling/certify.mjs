@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { installMissing, pluginDependencyDirs } from './deps.mjs';
+import { packageGating, requiresProblems } from './catalog-requires.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export function bundleArguments(entry) {
@@ -91,9 +92,19 @@ export function discover(base = root) {
           );
       }
 
+      // A version-3 or gated manifest needs the derived `requires` on its
+      // card; a gated plugin without it is refused here, before any check
+      // runs (catalog-requires.mjs).
+      const gating = packageGating(base, path);
+      const problems = requiresProblems(path, gating, card);
+      if (problems.length) throw new Error(problems.join('\n'));
+
       return {
         id: d.name,
         path,
+        schemaVersion: gating?.schemaVersion ?? null,
+        requires: gating?.requires ?? null,
+        pluginRoutes: gating?.gate.needed ?? 'none',
         version: pkg.version,
         owner: c.owner,
         support: c.support,
@@ -131,6 +142,15 @@ export function formatFailureSummary(checks) {
     )
     .join('; ');
 }
+/**
+ * The atomic-server features a package's sandbox tests are built with: the
+ * `plugin-routes` feature too when its manifest needs it (a build without it
+ * refuses to install the plugin at all).
+ */
+export const sandboxFeatures = p =>
+  p.pluginRoutes && p.pluginRoutes !== 'none'
+    ? 'light,wasm-plugins,plugin-routes'
+    : 'light,wasm-plugins';
 /** `js` by default: the `sandbox` layer (and so `all`) runs exact named Rust
  * tests that the pinned atomic-server removed in 4bab16ee6, so it cannot pass
  * there. `--layer all` or `--layer sandbox` still selects it explicitly. */
@@ -236,6 +256,8 @@ export function certify({
       support: p.support,
       apiVersion: p.apiVersion,
       declaredCapabilities: p.capabilities,
+      ...(p.schemaVersion !== null ? { schemaVersion: p.schemaVersion } : {}),
+      ...(p.requires ? { requires: p.requires } : {}),
       bundleSha256: createHash('sha256').update(shipped).digest('hex'),
       checks: [],
       status: 'pending',
@@ -309,6 +331,14 @@ export function certify({
       };
     }
 
+    // A gated plugin's sandbox tests run on a build with the feature, and
+    // the report says so. It records no runtime level: these are cargo
+    // tests, not a running server, so they can't be the live evidence at
+    // the needed `--plugin-routes` level that evidence.mjs asks for.
+    const features = sandboxFeatures(p);
+    if (layer !== 'js' && p.pluginRoutes !== 'none')
+      item.hostFeatures = { features: features.split(','), pluginRoutes: null };
+
     if (layer !== 'js')
       for (const test of p.sandboxTests) {
         const r = run(
@@ -321,7 +351,7 @@ export function certify({
             test,
             '--no-default-features',
             '--features',
-            'light,wasm-plugins',
+            features,
             '--',
             '--exact',
           ],

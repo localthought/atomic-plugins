@@ -18,7 +18,11 @@ describe('calendar drive-plugin bundle', async () => {
     expect(Object.keys(mod)).toEqual(['view']);
     expect(typeof mod.view).toBe('function');
     // Stored as a string property on a resource: keep an eye on the size.
-    expect(bytes).toBeLessThan(160 * 1024);
+    // Measured 103,825 bytes (about 101 KiB) with minified JS and CSS
+    // (2026-09-24, the #89 designed UI with the pin-007869464 host
+    // operations). The limit is that plus about 10%, rounded up to 112 KiB,
+    // so a real growth fails here instead of passing silently.
+    expect(bytes).toBeLessThan(112 * 1024);
   });
 
   it('carries no credential handling or network access of its own', () => {
@@ -27,8 +31,9 @@ describe('calendar drive-plugin bundle', async () => {
     // adapter.ts is shared with the sandbox runtime, whose intents carry an
     // `Authorization: secret:google-calendar` placeholder; relay.ts drops
     // every header but If-Match. That placeholder is the only mention.
-    expect(text.match(/authorization[^\n]*/gi)).toEqual([
-      'Authorization: "secret:google-calendar",',
+    // The bundle is minified: one match, on one long line.
+    expect(text.match(/\bauthorization[^,]*/gi)).toEqual([
+      'Authorization:"secret:google-calendar"',
     ]);
     expect(text).not.toMatch(/\bfetch\(/);
   });

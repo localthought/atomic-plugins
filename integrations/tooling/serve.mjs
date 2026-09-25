@@ -24,13 +24,32 @@
  *     run the published linux image on a Mac. The store is a named Docker
  *     volume per label rather than <checkout>/.lane-store/<label>. Like that
  *     directory, it persists across tiers and runs.
+ *
+ * A lane that declares `pluginRoutes` in lanes.json (see server-build.mjs)
+ * gets a different binary: one built with the `plugin-routes` feature,
+ * started with `--plugin-routes <level>` and `--routes-origin
+ * http://routes.localhost:<port>`. It comes from, first match wins:
+ *
+ *   - ATOMIC_SERVER_ROUTES_BINARY (CI sets it);
+ *   - an image: ATOMIC_SERVER_ROUTES_IMAGE, or, with ATOMIC_SERVER_IMAGE
+ *     set, its `:<sha>-plugin-routes` variant (routesImageFor), which the e2e
+ *     image workflow publishes for every SHA that has the feature. The flags
+ *     go to the container as its arguments. If that image can't be pulled or
+ *     lacks the feature, the lane falls back to:
+ *   - the local source build (server-build.mjs).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadLanes, lanePorts, sharedPorts, root } from './lanes.mjs';
+import {
+  loadLanes,
+  lanePorts,
+  pluginRoutesLevels,
+  sharedPorts,
+  root,
+} from './lanes.mjs';
 
 export const serverCheckout = () =>
   process.env.ATOMIC_SERVER_CHECKOUT ?? '/tmp/atomic-server';
@@ -67,6 +86,40 @@ export function serverEnv(ports, store) {
 }
 
 /**
+ * The origin plugin routes would be served under (`--routes-origin`): a
+ * `*.localhost` name, which atomic-server#1726 accepts over plain http when
+ * the API is on localhost, on the lane's own atomic-server port. It must not
+ * overlap the API or a website origin; `routes.localhost` overlaps neither.
+ * No host serves routes there yet (AS-04), so nothing listens on it.
+ */
+export const routesOrigin = ports =>
+  `http://routes.localhost:${ports.atomicServer}`;
+
+/** atomic-server's arguments for a lane at one `--plugin-routes` level. */
+export const pluginRoutesArgs = (level, ports) =>
+  level === undefined
+    ? []
+    : ['--plugin-routes', level, '--routes-origin', routesOrigin(ports)];
+
+/**
+ * The plugin-routes options atomic-server reads from its environment. A build
+ * without the feature refuses to start when any is set, so a stray one in the
+ * caller's shell never reaches a lane's server: the level comes from
+ * lanes.json only.
+ */
+export const PLUGIN_ROUTES_ENV = [
+  'ATOMIC_PLUGIN_ROUTES',
+  'ATOMIC_ROUTES_ORIGIN',
+  'ATOMIC_PLUGIN_LISTENERS',
+  'ATOMIC_PLUGIN_SIDECARS',
+];
+
+const withoutPluginRoutesEnv = env =>
+  Object.fromEntries(
+    Object.entries(env).filter(([key]) => !PLUGIN_ROUTES_ENV.includes(key)),
+  );
+
+/**
  * The mock proxy's public origin (its BASE_URL): what the browser is told
  * (INTEGRATION_PROXY_URL in run-lane.mjs), what the server is told, and what
  * every v2 signature and capability `aud` must name, byte for byte.
@@ -91,7 +144,14 @@ export const IMAGE_STORE = '/data';
  *   can't block the next one by name. It can't hold the port either, because
  *   assertFree() would name the clash before anything starts.
  */
-export function dockerRunArgs({ image, name, ports, label, env }) {
+export function dockerRunArgs({
+  image,
+  name,
+  ports,
+  label,
+  env,
+  command = [],
+}) {
   const args = [
     'run',
     '--rm',
@@ -109,7 +169,8 @@ export function dockerRunArgs({ image, name, ports, label, env }) {
   for (const [key, value] of Object.entries(env))
     args.push('--env', `${key}=${value}`);
 
-  args.push(image);
+  // Arguments after the image go to its entrypoint, atomic-server.
+  args.push(image, ...command);
 
   return args;
 }
@@ -128,10 +189,88 @@ export const storeVolume = label => `atomic-plugins-lane-store-${label}`;
  * shouldn't go unnoticed.
  */
 export function imagePinProblem(image, pinned) {
-  const tag = /:([0-9a-f]{40})$/.exec(image)?.[1];
+  const tag = /:([0-9a-f]{40})(?:-plugin-routes)?$/.exec(image)?.[1];
   if (tag === undefined || tag === pinned) return undefined;
 
   return `${image} is atomic-server ${tag}, but .atomic-server-ref pins ${pinned}`;
+}
+
+/**
+ * The plugin-routes image for a lane that declares `pluginRoutes`, or
+ * undefined: ATOMIC_SERVER_ROUTES_IMAGE, else the `-plugin-routes` variant of
+ * ATOMIC_SERVER_IMAGE's tag. A tag that isn't a full SHA (`latest-pin`) has
+ * no variant, so the pinned SHA's is used.
+ */
+export function routesImageFor(env, pinned) {
+  if (env.ATOMIC_SERVER_ROUTES_IMAGE) return env.ATOMIC_SERVER_ROUTES_IMAGE;
+  const image = env.ATOMIC_SERVER_IMAGE;
+  if (!image) return undefined;
+  const match = /^(.+?):([^:/]+)$/.exec(image);
+  const repository = match ? match[1] : image;
+  const tag = match?.[2];
+  const sha = tag && /^[0-9a-f]{40}$/.test(tag) ? tag : pinned;
+
+  return `${repository}:${sha}-plugin-routes`;
+}
+
+/**
+ * Makes sure `image` is local, pulling it in the foreground: a first pull (a
+ * few hundred MB) would otherwise eat the readiness timeout. Throws with the
+ * cause when it can't.
+ */
+function pullImage(image) {
+  if (
+    spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' })
+      .status === 0
+  )
+    return;
+  const pull = spawnSync('docker', ['pull', image], { stdio: 'inherit' });
+
+  if (pull.error || pull.status !== 0)
+    throw new Error(
+      `could not pull ${image}${pull.error ? ` (${pull.error.message})` : ''}. Is Docker running, and does a tag exist for this commit? See AGENTS.md, "Shared pinned atomic-server build".`,
+    );
+}
+
+/** The features an image says it was built with (the Dockerfile's label). */
+function imageFeatures(image) {
+  const r = spawnSync(
+    'docker',
+    [
+      'image',
+      'inspect',
+      '--format',
+      '{{ index .Config.Labels "dev.atomicdata.atomic-server.features" }}',
+      image,
+    ],
+    { encoding: 'utf8' },
+  );
+
+  return r.status === 0 ? r.stdout.trim().split(',') : [];
+}
+
+/**
+ * The plugin-routes image if it is usable here, else undefined after saying
+ * why, so the caller falls back to the source build.
+ */
+function usableRoutesImage(image) {
+  try {
+    pullImage(image);
+  } catch (error) {
+    console.warn(`warning: ${error.message} Falling back to the local build.`);
+
+    return undefined;
+  }
+
+  if (!imageFeatures(image).includes('plugin-routes')) {
+    console.warn(
+      `warning: ${image} was not built with the plugin-routes feature. Falling back to the local build.`,
+    );
+
+    return undefined;
+  }
+
+  return image;
 }
 
 const free = port =>
@@ -205,28 +344,39 @@ async function waitFor(url, what) {
  * never touch the shared mock — does not start the mock at all. See §4 of
  * integrations/PARALLEL_LANES.md.
  */
-export async function bringUp({ ports, platforms, label = 'shared' }) {
+export async function bringUp({
+  ports,
+  platforms,
+  label = 'shared',
+  pluginRoutes,
+}) {
   const config = loadLanes();
-  const image = serverImage();
-  const binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
+  let image = serverImage();
+  let binary = resolve(serverCheckout(), 'target/e2e/atomic-server');
 
-  if (image) {
+  if (pluginRoutes !== undefined) {
+    // The default image can't open the gates; its variant can.
+    const routesImage = process.env.ATOMIC_SERVER_ROUTES_BINARY
+      ? undefined
+      : routesImageFor(process.env, readPin());
+    image = routesImage && usableRoutesImage(routesImage);
+
+    if (image) {
+      const problem = imagePinProblem(image, readPin());
+      if (problem) console.warn(`warning: ${problem}`);
+    } else {
+      // Loaded only here, so a lane on the default build (and anything that
+      // copies serve.mjs without it) never needs server-build.mjs.
+      const { ensureRoutesBinary } = await import('./server-build.mjs');
+      binary = await ensureRoutesBinary({
+        checkout: serverCheckout(),
+        pin: readPin(),
+      });
+    }
+  } else if (image) {
     const problem = imagePinProblem(image, readPin());
     if (problem) console.warn(`warning: ${problem}`);
-
-    // Pulled up front, in the foreground: a first pull (a few hundred MB)
-    // would otherwise eat the readiness timeout below.
-    if (
-      spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' })
-        .status !== 0
-    ) {
-      const pull = spawnSync('docker', ['pull', image], { stdio: 'inherit' });
-
-      if (pull.error || pull.status !== 0)
-        throw new Error(
-          `could not pull ${image}${pull.error ? ` (${pull.error.message})` : ''}. Is Docker running, and does a tag exist for this commit? See AGENTS.md, "Shared pinned atomic-server build".`,
-        );
-    }
+    pullImage(image);
   } else if (!existsSync(binary)) {
     // Checked up front: spawn's ENOENT surfaces asynchronously, so without this
     // the caller waits out the full readiness timeout before seeing the cause.
@@ -242,7 +392,7 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
   const start = (name, command, args, env) => {
     const child = spawn(command, args, {
       cwd: root,
-      env: { ...process.env, ...env },
+      env: { ...withoutPluginRoutesEnv(process.env), ...env },
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     child.on('exit', code => {
@@ -264,13 +414,14 @@ export async function bringUp({ ports, platforms, label = 'shared' }) {
         ports,
         label,
         env: serverEnv(ports, IMAGE_STORE),
+        command: pluginRoutesArgs(pluginRoutes, ports),
       }),
     );
   } else {
     start(
       'atomic-server',
       binary,
-      [],
+      pluginRoutesArgs(pluginRoutes, ports),
       serverEnv(ports, resolve(serverCheckout(), `.lane-store/${label}`)),
     );
   }
@@ -352,10 +503,15 @@ if (
   }
 
   const ports = lane ? lanePorts(lane, config) : sharedPorts(config);
+  // A lane with several levels starts at its first; --plugin-routes picks.
+  const pluginRoutes = process.argv.includes('--plugin-routes')
+    ? process.argv[process.argv.indexOf('--plugin-routes') + 1]
+    : lane && pluginRoutesLevels(lane)[0];
   const stop = await bringUp({
     ports,
     platforms: lane?.platforms,
     label: lane?.id ?? 'shared',
+    pluginRoutes,
   });
   console.log(`serving ${JSON.stringify(ports)} — ctrl-c to stop`);
   for (const signal of ['SIGINT', 'SIGTERM'])

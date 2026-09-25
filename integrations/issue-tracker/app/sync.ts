@@ -29,7 +29,13 @@ import {
 } from './frameStore.js';
 import type { SyncState } from './state.js';
 import type { HostProxy, PluginStore } from './store.js';
-import { ABOUT, LOCAL_ID, PARENT, type Tracker } from './tracker.js';
+import {
+  ABOUT,
+  DESCRIPTION,
+  LOCAL_ID,
+  PARENT,
+  type Tracker,
+} from './tracker.js';
 import { relayDispatch, type Dispatch } from './transport.js';
 
 /** Stable, so saved snapshots keep binding (`Bridge` checks `binding.base`). */
@@ -50,6 +56,22 @@ export interface Held {
   issueNumber?: number;
   /** An earlier approved attempt got no answer; it may have reached GitHub. */
   unconfirmed?: boolean;
+  /** The Atomic resource this write comes from: a table row or a Message. */
+  local?: string;
+}
+
+export interface Label {
+  name: string;
+  color?: string;
+}
+
+export interface CommentRow {
+  subject: string;
+  body: string;
+  /** GitHub login; absent until GitHub has the comment. */
+  author?: string;
+  createdAt?: string;
+  url?: string;
 }
 
 export interface IssueRow {
@@ -57,6 +79,23 @@ export interface IssueRow {
   number?: number;
   title: string;
   status: Status;
+  body: string;
+  labels: Label[];
+  assignees: string[];
+  /** GitHub's `updated_at`, exact ISO text. */
+  updatedAt?: string;
+  url?: string;
+  author?: string;
+  /** Comments in this table (GitHub's plus any waiting to be sent), oldest first. */
+  comments: CommentRow[];
+}
+
+/** One field of a conflict: last synced value and both sides' current ones. */
+export interface ConflictField {
+  field: string;
+  base: unknown;
+  local: unknown;
+  remote: unknown;
 }
 
 export interface PassResult {
@@ -77,6 +116,10 @@ export interface PassError extends Error {
   subject?: string;
   entity?: string;
   fields?: string[];
+  /** The Atomic row or Message it is about, when bound. */
+  local?: string;
+  /** "Missing … record": which side lost a bound record, and which one. */
+  missing?: { side: 'local' | 'remote'; subject: string; entity?: string };
 }
 
 /**
@@ -222,20 +265,10 @@ async function summary(
   atomicStore: FrameAtomicStore,
   sent: { value: number },
   local: FrameAtomicPort,
+  options: PassOptions,
 ): Promise<PassResult> {
   const writes = { ...atomicStore.writes };
-  const rows = (
-    (await local.list('issue')) as {
-      id: string;
-      remoteId?: number;
-      value: { title: string; status: Status };
-    }[]
-  ).map(row => ({
-    subject: row.id,
-    ...(row.remoteId === undefined ? {} : { number: row.remoteId }),
-    title: row.value.title,
-    status: row.value.status,
-  }));
+  const rows = await tableRows(atomicStore, local, options);
   const bound = Object.entries(
     bridge.records as Record<string, { entity: string }>,
   ).filter(
@@ -251,14 +284,46 @@ async function summary(
     updatedHere: writes.saves,
     sentToGitHub: sent.value,
     held: [...(bridge.held as Map<string, Held>).values()].map(held => {
-      if (held.entity === 'issue') return held;
+      const at = bridge.id('local', held.entity, held.subject);
+      const withLocal = typeof at === 'string' ? { ...held, local: at } : held;
+      if (held.entity === 'issue') return withLocal;
       const issue = held.entity.slice('comment:'.length);
       const issueNumber = bridge.id('remote', 'issue', issue);
 
-      return issueNumber === undefined ? held : { ...held, issueNumber };
+      return issueNumber === undefined
+        ? withLocal
+        : { ...withLocal, issueNumber };
     }),
     rows,
   };
+}
+
+async function tableRows(
+  atomicStore: FrameAtomicStore,
+  local: FrameAtomicPort,
+  options: PassOptions,
+): Promise<IssueRow[]> {
+  const comments = await commentsByIssue(atomicStore, options);
+
+  return (
+    (await local.list('issue')) as {
+      id: string;
+      remoteId?: number;
+      value: { title: string; body: string; status: Status };
+      metadata?: Record<string, unknown>;
+    }[]
+  ).map(row => issueRow(row, comments.get(row.id) ?? []));
+}
+
+/**
+ * The table's issues as they are now, without a pass: for the board while
+ * sync is paused or failed, so a reload never shows an empty board. Reads
+ * only; nothing is sent or written.
+ */
+export async function readRows(options: PassOptions): Promise<IssueRow[]> {
+  const { atomicStore, local } = bridgeFor(options);
+
+  return tableRows(atomicStore, local, options);
 }
 
 /** One pass. Throws a `PassError`; the state is flushed either way. */
@@ -269,6 +334,26 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
   try {
     await bridge.sync();
   } catch (error) {
+    // Name the Atomic resource a conflict is about, for the view's marker.
+    const e = error as PassError;
+
+    const gone = /^Missing (local|remote) record: (.+)$/.exec(e?.message ?? '');
+
+    if (gone) {
+      const subject = gone[2];
+      const entity = (bridge.records as Record<string, { entity: string }>)[
+        subject
+      ]?.entity;
+      e.missing = { side: gone[1] as 'local' | 'remote', subject, entity };
+      e.entity ??= entity;
+      e.subject ??= subject;
+    }
+
+    if (e?.subject && e.entity) {
+      const at = bridge.id('local', e.entity, e.subject);
+      if (typeof at === 'string') e.local = at;
+    }
+
     // Keep the pass's own error; a failing flush would only hide it.
     await options.state.flush().catch(() => {});
     throw error;
@@ -276,14 +361,29 @@ export async function runPass(options: PassOptions): Promise<PassResult> {
 
   await options.state.flush();
 
-  return summary(bridge, atomicStore, sent, local);
+  return summary(bridge, atomicStore, sent, local, options);
 }
 
-/** Settles a conflict the last pass reported; writes nothing to either side. */
+/** Per-field detail of a conflict the last pass reported. Reads only. */
+export async function describeConflict(
+  options: PassOptions,
+  subject: string,
+): Promise<ConflictField[]> {
+  const { bridge } = bridgeFor(options);
+
+  return bridge.describeConflict(subject);
+}
+
+export type Side = 'local' | 'remote';
+
+/**
+ * Settles a conflict the last pass reported, for one side or per field;
+ * writes nothing to either side.
+ */
 export async function resolveConflict(
   options: PassOptions,
   subject: string,
-  keep: 'local' | 'remote',
+  keep: Side | Record<string, Side>,
 ): Promise<string[]> {
   const { bridge } = bridgeFor(options);
 
@@ -291,5 +391,144 @@ export async function resolveConflict(
     return await bridge.resolveConflict(subject, keep);
   } finally {
     await options.state.flushIfDirty();
+  }
+}
+
+const text = (value: unknown) =>
+  typeof value === 'string' ? value : undefined;
+
+function issueRow(
+  row: {
+    id: string;
+    remoteId?: number;
+    value: { title: string; body: string; status: Status };
+    metadata?: Record<string, unknown>;
+  },
+  comments: CommentRow[],
+): IssueRow {
+  const m = row.metadata ?? {};
+  const labels = Array.isArray(m.labels)
+    ? (m.labels as Label[]).filter(l => typeof l?.name === 'string')
+    : [];
+  const optional = {
+    updatedAt: text(m.updatedAt),
+    url: text(m.url),
+    author: text(m.author),
+  };
+
+  return {
+    subject: row.id,
+    ...(row.remoteId === undefined ? {} : { number: row.remoteId }),
+    title: row.value.title,
+    status: row.value.status,
+    body: row.value.body ?? '',
+    labels,
+    assignees: Array.isArray(m.assignees)
+      ? (m.assignees as unknown[]).filter(
+          (a): a is string => typeof a === 'string',
+        )
+      : [],
+    ...Object.fromEntries(
+      Object.entries(optional).filter(([, v]) => v !== undefined),
+    ),
+    comments,
+  };
+}
+
+/**
+ * The Messages in the app's comments folder, by the row they are about,
+ * oldest first (GitHub's creation time; not yet sent ones last).
+ */
+async function commentsByIssue(
+  atomicStore: FrameAtomicStore,
+  options: PassOptions,
+): Promise<Map<string, CommentRow[]>> {
+  const { tracker } = options;
+  const out = new Map<string, CommentRow[]>();
+  const { subjects } = await atomicStore.queryLocalDb({
+    drive: tracker.app,
+    property: PARENT,
+    value: tracker.commentsFolder,
+  });
+
+  for (const subject of subjects) {
+    const r = await atomicStore.getResource(subject);
+    const about = r.get(ABOUT);
+    if (typeof about !== 'string') continue;
+    let source: Record<string, unknown> = {};
+
+    try {
+      const raw = r.get(tracker.properties.provenance);
+      if (typeof raw === 'string') source = JSON.parse(raw);
+    } catch {
+      // Unreadable provenance: shown without an author.
+    }
+
+    const comment: CommentRow = {
+      subject,
+      body: text(r.get(DESCRIPTION)) ?? '',
+      ...(text(source.author) ? { author: text(source.author) } : {}),
+      ...(text(source.createdAt) ? { createdAt: text(source.createdAt) } : {}),
+      ...(text(source.url) ? { url: text(source.url) } : {}),
+    };
+    const list = out.get(about) ?? [];
+    list.push(comment);
+    out.set(about, list);
+  }
+
+  for (const list of out.values())
+    list.sort((a, b) =>
+      (a.createdAt ?? '\uffff').localeCompare(b.createdAt ?? '\uffff'),
+    );
+
+  return out;
+}
+
+/**
+ * "Keep here only" for an issue GitHub no longer has: the Bridge forgets
+ * its GitHub identity (and its comments'), and the row's issue-number
+ * column is cleared so nothing binds it back. Sends nothing to GitHub.
+ */
+export async function keepLocalOnly(
+  options: PassOptions,
+  subject: string,
+): Promise<void> {
+  const { bridge } = bridgeFor(options);
+  const row = bridge.id('local', 'issue', subject);
+
+  try {
+    await bridge.keepLocalOnly(subject);
+
+    if (typeof row === 'string') {
+      const resource = await options.store.getResource(row);
+      if (resource.get(options.tracker.properties.number) !== undefined)
+        await resource.remove(options.tracker.properties.number).save();
+    }
+  } finally {
+    await options.state.flush();
+  }
+}
+
+/**
+ * "Remove from board" for an issue GitHub no longer has: the Bridge forgets
+ * it on both sides, then its row and comment Messages are deleted from the
+ * table. Sends nothing to GitHub.
+ */
+export async function removeFromBoard(
+  options: PassOptions,
+  subject: string,
+): Promise<void> {
+  const { bridge } = bridgeFor(options);
+  let local: string[] = [];
+
+  try {
+    local = await bridge.forget(subject);
+  } finally {
+    await options.state.flush();
+  }
+
+  for (const id of local) {
+    const resource = await options.store.getResource(id).catch(() => undefined);
+    await resource?.destroy();
   }
 }

@@ -1,4 +1,4 @@
-import { project, issueFields } from './lens/index.js';
+import { project, issueFields, issueExtras } from './lens/index.js';
 import { core, dataBrowser } from '@tomic/lib';
 import { assertEnumerable, assertSaved } from './target.mjs';
 
@@ -39,7 +39,10 @@ export class GitHubPort {
       return {
         id: raw.number,
         value: project(raw),
-        metadata: this.metadata(raw, { number: raw.number }),
+        metadata: this.metadata(raw, {
+          number: raw.number,
+          ...issueExtras(raw),
+        }),
       };
     }
 

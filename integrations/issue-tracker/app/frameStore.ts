@@ -103,6 +103,27 @@ export function frameStore(
   /** Per wrapped resource: property -> the value it had before `set`. */
   const unsent = new Map<FrameResource, Map<string, JSONValue>>();
   const writes = { creates: 0, saves: 0 };
+  /**
+   * Resources a query just listed, read in batches with `store.getMany`
+   * (pin 007869464) instead of one round trip each. Each is used for one
+   * read only, so a later read always asks the host again.
+   */
+  const prefetched = new Map<string, PluginResource>();
+
+  const prefetch = async (subjects: string[]) => {
+    if (!store.getMany) return;
+    const wanted = subjects.filter(s => !prefetched.has(s));
+
+    for (let at = 0; at < wanted.length; at += 100) {
+      const batch = await store
+        .getMany(wanted.slice(at, at + 100))
+        .catch(() => []);
+
+      for (const entry of batch)
+        if (!('error' in entry && entry.error))
+          prefetched.set(entry.subject, entry as PluginResource);
+    }
+  };
 
   const remember = (property: string, value: JSONValue, subject: string) => {
     if (typeof value !== 'string' || !indexed.includes(property)) return;
@@ -112,7 +133,9 @@ export function frameStore(
 
   /** A host read, corrected for the app's own saves; see the module comment. */
   const read = async (subject: string): Promise<PluginResource> => {
-    const resource = await store.getResource(subject);
+    const early = prefetched.get(subject);
+    prefetched.delete(subject);
+    const resource = early ?? (await store.getResource(subject));
     const saved = overlay.get(subject);
     if (!saved) return resource;
 
@@ -148,6 +171,7 @@ export function frameStore(
         if (!pending) return undefined;
         await inner.save();
         writes.saves++;
+        prefetched.delete(inner.subject);
         unsent.delete(resource);
         const saved = overlay.get(inner.subject) ?? new Map();
 
@@ -181,6 +205,10 @@ export function frameStore(
     async queryLocalDb({ property, value }) {
       const listed = await store.query({ property, value: String(value) });
       const subjects = [...listed];
+      await prefetch([
+        ...listed,
+        ...(known[keyOf(property, String(value))] ?? []),
+      ]);
 
       for (const subject of known[keyOf(property, String(value))] ?? []) {
         if (subjects.includes(subject)) continue;
