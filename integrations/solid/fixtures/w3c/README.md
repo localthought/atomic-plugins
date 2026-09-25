@@ -9,7 +9,8 @@ Technology, European Research Consortium for Informatics and Mathematics,
 Keio University) and others. All Rights Reserved.
 <https://www.w3.org/Consortium/Legal/2008/04-testsuite-copyright.html>
 
-The upstream dual license is retained in LICENSE; these copies are distributed
+The upstream dual license text is retained in LICENSE (summary heading underline
+and trailing blank lines normalized to avoid a false Git conflict-marker check); these copies are distributed
 under its W3C 3-clause BSD option. Files ending `.nt` are the upstream expected
 results for the four evaluation tests. The manifest upstream identifies
 `turtle-syntax-string-01` as positive syntax and `turtle-syntax-bad-num-01` and
