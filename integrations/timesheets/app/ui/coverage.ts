@@ -41,11 +41,16 @@ export function renderConflicts(h: H, sheet: Timesheet): HTMLElement | null {
   return renderConflictList(h, sheet);
 }
 
-/** `sheet.unknown` clipped to `span`. */
+/** Spans shorter than this are not shown: the views count whole minutes,
+ * and the few seconds between a sync's read and "now" would otherwise read
+ * as "Not loaded: 08:09 – 08:09". */
+export const MIN_UNKNOWN_MS = 60_000;
+
+/** `sheet.unknown` clipped to `span`, without sub-minute slivers. */
 export const unknownIn = (sheet: Timesheet, span: Interval): Interval[] =>
   sheet.unknown
     .map(i => ({
       from: Math.max(i.from, span.from),
       to: Math.min(i.to, span.to),
     }))
-    .filter(i => i.to > i.from);
+    .filter(i => i.to - i.from >= MIN_UNKNOWN_MS);

@@ -16,6 +16,7 @@ import type { ColorScheme, PluginStore } from '../store.js';
 import { FRAMES, renderFrame, type FrameId } from './preview.js';
 import type { Shell } from './shell.js';
 import { css } from './theme.js';
+import { unknownIn } from './coverage.js';
 
 const { JSDOM } = createRequire(
   new URL('../../../../browser/data-browser/package.json', import.meta.url),
@@ -344,6 +345,21 @@ describe('frames', () => {
       frame('a').root.querySelector('.pl')!.getAttribute('data-scheme'),
     ).toBe('light');
     expect(css).toMatch(/--pl-pos: var\(--t-color-success/);
+  });
+
+  it('does not report a sub-minute unknown sliver as "Not loaded"', () => {
+    const sheet = {
+      unknown: [
+        { from: 0, to: 30_000 },
+        { from: 0, to: 120_000 },
+      ],
+    };
+    expect(
+      unknownIn(sheet as unknown as Parameters<typeof unknownIn>[0], {
+        from: 0,
+        to: 1e9,
+      }),
+    ).toEqual([{ from: 0, to: 120_000 }]);
   });
 
   it('view tabs move with the arrow keys', () => {
