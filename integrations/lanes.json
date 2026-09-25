@@ -84,6 +84,27 @@
       "tiers": ["typecheck", "unit", "e2e"],
       "note": "Willow drop importer (#139), a sandbox job like money: no provider, so no mock proxy (platforms is empty). typecheck and unit are lane tiers rather than certify.mjs's, because certification requires named atomic-server sandbox tests that do not exist for this package; the unit tier also checks that the committed plugin.js is a fresh esbuild bundle. The e2e publishes the bundle and imports fixture drops through the host's generic file entry point (atomic-server#1653, in the pin), so the QuickJS sandbox runs the Ed25519 and WILLIAM3 code and a binary file crosses the text-only hand-over. The fixtures come from willow25 (fixtures/generate/), which CI does not run.",
       "e2e": ["integrations/willow-drop/e2e/willow-drop.spec.ts"]
+    },
+    {
+      "id": "plugin-routes",
+      "index": 8,
+      "dir": "integrations/tooling",
+      "platforms": [],
+      "tiers": ["e2e"],
+      "pluginRoutes": ["read-only", "off"],
+      "paths": [
+        "integrations/tooling/e2e/plugin-routes.spec.ts",
+        "integrations/tooling/fixtures/gated-plugin/**",
+        "integrations/tooling/fixtures/plugin-manifest/**",
+        "integrations/tooling/manifest-http.mjs",
+        "integrations/tooling/catalog-requires.mjs",
+        "integrations/tooling/server-build.mjs",
+        "integrations/tooling/serve.mjs",
+        "integrations/tooling/run-lane.mjs",
+        ".atomic-server-ref"
+      ],
+      "note": "A tooling lane (#134), not a plugin: it lives in integrations/tooling/ (`dir`) and runs only when one of its `paths` changes, not on every tooling or shared change, because each run builds atomic-server with the feature (or pulls its image). Its node tests run in shared-checks like every tooling test. It tests the gates of docs/design/server-plugin-routes.md section 0 against atomic-server built with the `plugin-routes` feature (atomic-server#1726, #1732). pluginRoutes runs the e2e twice, first at `--plugin-routes read-only`, then at `off`, on a fresh server over the same store. The spec publishes the gated fixture plugin (integrations/tooling/fixtures/gated-plugin/) and checks the `requires` and `hostFeatures` /plugin-catalog reports. At read-only it pins it, installs it through the store's review dialog and requests its drive-prefix route, which answers the fixture's body. At off, pinning is refused with host-feature-unavailable, the review dialog's Install button is disabled, and the installation from the read-only run, now degraded, answers 404. Needs an .atomic-server-ref with atomic-server#1726, #1732, #1749 and #1751.",
+      "e2e": ["integrations/tooling/e2e/plugin-routes.spec.ts"]
     }
   ]
 }

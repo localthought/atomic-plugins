@@ -15,13 +15,21 @@
 #     /path/to/atomic-server-checkout
 #
 # It builds exactly what ci.yml's `build-server` job builds from source, with
-# the same steps and flags. Keep the two in step. The comments on those steps
+# the same steps and flags. Keep the two in step.
+#
+# One build argument changes that: CARGO_FEATURES (default `wasm-plugins`).
+# With `--build-arg CARGO_FEATURES=wasm-plugins,plugin-routes` it builds the
+# plugin-routes variant, ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes,
+# which is what ci.yml's `build-server-plugin-routes` builds from source
+# (docs/design/server-plugin-routes.md, section 0.2; the feature exists from
+# ontola/atomic-server#1726 on). The label
+# dev.atomicdata.atomic-server.features records which one an image is. The comments on those steps
 # in ci.yml explain each one; they are not repeated here.
 #
 #   1. The browser WASM bundle (wasm-pack, --no-opt) goes into
 #      browser/data-browser/public/wasm/.
 #   2. `cargo build --profile e2e -p atomic-server --no-default-features
-#      --features wasm-plugins`, with SKIP_WASM_BUILD=1 and VITE_E2E=true.
+#      --features $CARGO_FEATURES`, with SKIP_WASM_BUILD=1 and VITE_E2E=true.
 #      build.rs builds and embeds the data-browser frontend, and
 #      build_plugin_runtime.rs embeds the wasm32-wasip2 plugin runtime.
 #
@@ -48,6 +56,8 @@ ARG PNPM_VERSION=10.15.1
 # Desktop's default VM (8 GB, 10 cores) runs out of memory linking wasmtime at
 # full parallelism. Empty means cargo's default, one job per core.
 ARG CARGO_BUILD_JOBS=
+# `wasm-plugins`, or `wasm-plugins,plugin-routes` for that variant (above).
+ARG CARGO_FEATURES=wasm-plugins
 
 # libclang is for bindgen in rquickjs-sys, which the wasm32-wasip2 plugin
 # runtime builds. ubuntu-latest runners have it preinstalled; this image
@@ -102,13 +112,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   set -eu \
   && if [ -n "${CARGO_BUILD_JOBS}" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi \
   && SKIP_WASM_BUILD=1 VITE_E2E=true ATOMICSERVER_REQUIRE_PLUGIN_RUNTIME=true HUSKY=0 \
-    cargo build --profile e2e -p atomic-server --no-default-features --features wasm-plugins \
+    cargo build --profile e2e -p atomic-server --no-default-features --features "${CARGO_FEATURES}" \
   && install -D -m 755 target/e2e/atomic-server /out/atomic-server
 
 FROM ${RUNTIME_IMAGE}
 ARG ATOMIC_SERVER_SHA=unknown
+ARG CARGO_FEATURES=wasm-plugins
 LABEL org.opencontainers.image.source="https://github.com/ontola/atomic-plugins" \
-  org.opencontainers.image.description="ontola/atomic-server e2e build (profile e2e, --features wasm-plugins, VITE_E2E) for atomic-plugins' lanes" \
+  org.opencontainers.image.description="ontola/atomic-server e2e build (profile e2e, --features ${CARGO_FEATURES}, VITE_E2E) for atomic-plugins' lanes" \
+  dev.atomicdata.atomic-server.features="${CARGO_FEATURES}" \
   org.opencontainers.image.licenses="MIT" \
   org.opencontainers.image.revision="${ATOMIC_SERVER_SHA}" \
   dev.atomicdata.atomic-server.sha="${ATOMIC_SERVER_SHA}"

@@ -3,194 +3,946 @@
  * The Calendar drive-plugin entry point. The host's generated shell does
  * `const plugin = await import(js_url); await plugin.view({ root, store })`
  * (atomic-server `server/src/handlers/plugin_ui.rs`), so this module must
- * export `view` and must not render on import. One module, no stylesheet.
+ * export `view` and must not render on import. One module, no stylesheet:
+ * `view()` injects one `<style>`.
  *
- * Deliberately plain: the designed chrome (integrations/calendar/design/ on
- * the design branch, #89) is separate work. This is the smallest UI that
- * makes the supported path usable: connect, choose one calendar, refresh,
- * review local edits and send them.
+ * Draws the #89 design (`../design/`): shared chrome from `ui/`, the
+ * calendar's screens, Agenda and Week, the event drawer, and the Review and
+ * Conflicts sheets. All state lives in `controller.ts`; this file keeps only
+ * what is on screen (view, date, open drawer or sheet, focus).
  */
-import { createController, describe, type ViewState } from './controller.js';
+import type { Projection } from '../adapter.js';
+import { agenda, dayStrip } from './agenda.js';
+import { CALENDAR_CSS } from './calendarStyles.js';
+import type { Ctx } from './context.js';
+import {
+  banner as bannerCopy,
+  createController,
+  pill as pillModel,
+  reviewCount,
+  syncedAgo,
+  type Problem,
+  type Snapshot,
+  type ViewState,
+} from './controller.js';
+import { detail, editor } from './drawer.js';
+import { busyDays, nextEvent, type CalEvent } from './events.js';
+import { firstRun, importing, noRelay, picker } from './screens.js';
+import { conflicts, review, shortcuts } from './sheets.js';
+import { notShown, sidebar } from './sidebar.js';
 import type { ViewArgs } from './store.js';
-import type { Outcome } from './sync.js';
+import type { Choice, Conflict, ImportSummary } from './sync.js';
+import {
+  addDays,
+  longDay,
+  mondayOf,
+  monthTitle,
+  rangeTitle,
+  shortRange,
+  viewerZone,
+  wall,
+} from './time.js';
+import {
+  banner,
+  connectionBar,
+  emptyState,
+  header,
+  pill,
+  segmented,
+} from './ui/chrome.js';
+import { focusKey, h, ICONS, restoreFocus, svg } from './ui/dom.js';
+import { PLUGIN_CSS } from './ui/styles.js';
+import { installTheme } from './ui/theme.js';
+import { dayCount, firstHour, ROW, week } from './week.js';
 
-const OUTCOME: Record<Outcome['status'], string> = {
-  sent: 'Sent',
-  stale:
-    'Changed in Google since this preview; not sent. Refresh to review it again',
-  uncertain: 'Unknown whether Google applied it',
-  failed: 'Google refused it',
-  'not-sent': 'Not sent, because an earlier change’s outcome is unknown',
+type Sheet = 'review' | 'conflicts' | 'shortcuts';
+
+interface Ui {
+  view: 'agenda' | 'week';
+  /** The date the view is anchored on. */
+  anchor: string;
+  /** The month the sidebar shows. */
+  month: string;
+  drawer?: { subject: string; mode: 'view' | 'edit'; from?: string };
+  sheet?: Sheet;
+  sheetFrom?: string;
+  menu: boolean;
+  /** The one calendar's visibility toggle (chip, sidebar checkbox). */
+  visible: boolean;
+  why: boolean;
+  /** Seconds left before a rate-limited sync retries. */
+  countdown?: number;
+  choices: Map<Conflict, Partial<Record<keyof Projection, Choice>>>;
+  confirming?: Conflict;
+  conflictErrors: Map<Conflict, string>;
+  /** Scroll the week grid to this hour on the next render. */
+  scrollTo?: number;
+}
+
+const TYPING = /^(input|textarea|select)$/i;
+
+const EMPTY_SUMMARY: ImportSummary = {
+  calendarId: '',
+  total: 0,
+  added: 0,
+  updated: 0,
+  unchanged: 0,
+  skipped: { recurring: 0, cancelled: 0 },
+  conflicts: [],
+  localOnly: 0,
+  invalid: [],
+  review: [],
 };
 
 export async function view({ root, store }: ViewArgs): Promise<void> {
   const doc = root.ownerDocument;
+  const win = doc.defaultView!;
+  installTheme(root, `${PLUGIN_CSS}\n${CALENDAR_CSS}`, store);
+  root.classList.add('pl-app');
+  const zone = viewerZone();
+  const today = () => wall(Date.now(), zone).date;
+  const width = () => root.clientWidth || win.innerWidth || 1024;
 
-  const el = <K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    text?: string,
-  ): HTMLElementTagNameMap[K] => {
-    const node = doc.createElement(tag);
-    if (text !== undefined) node.textContent = text;
-
-    return node;
+  const ui: Ui = {
+    view: width() < 720 ? 'agenda' : 'week',
+    anchor: today(),
+    month: today(),
+    menu: false,
+    visible: true,
+    why: false,
+    choices: new Map(),
+    conflictErrors: new Map(),
+    scrollTo: firstHour(wall(Date.now(), zone).minutes),
   };
+  /** The editor keeps its own draft; it is not rebuilt while it is open. */
+  let editing: { subject: string; element: HTMLElement } | undefined;
+  let countdownTimer: ReturnType<typeof setInterval> | undefined;
+  let lastProblem: Problem | undefined;
 
-  const button = (text: string) => {
-    const node = el('button', text);
-    node.type = 'button';
+  let queued = false;
 
-    return node;
-  };
-
-  const heading = el('h1', 'Calendar');
-  const status = el('p');
-  status.setAttribute('role', 'status');
-  const connect = button('Connect Google Calendar');
-  const refresh = button('Refresh');
-  const choose = el('form');
-  choose.setAttribute('aria-label', 'Choose a calendar');
-  const conflicts = el('section');
-  conflicts.setAttribute('aria-label', 'Conflicts');
-  const review = el('section');
-  review.setAttribute('aria-label', 'Review changes');
-  const results = el('section');
-  results.setAttribute('aria-label', 'Sent changes');
-  root.style.fontFamily = 'system-ui, sans-serif';
-  root.style.padding = '1rem';
-  root.replaceChildren(
-    heading,
-    status,
-    connect,
-    refresh,
-    choose,
-    conflicts,
-    review,
-    results,
-  );
-
-  const list = (items: string[]) => {
-    const ul = el('ul');
-    for (const item of items) ul.append(el('li', item));
-
-    return ul;
-  };
-
-  const renderChoose = (state: Extract<ViewState, { kind: 'choosing' }>) => {
-    const fieldset = el('fieldset');
-    fieldset.append(el('legend', 'Calendar'));
-
-    for (const calendar of state.calendars) {
-      const label = el('label');
-      const radio = el('input');
-      radio.type = 'radio';
-      radio.name = 'calendar';
-      radio.value = calendar.id;
-      radio.checked = calendar.primary;
-      const readOnly =
-        calendar.accessRole === 'reader' ||
-        calendar.accessRole === 'freeBusyReader';
-      label.append(
-        radio,
-        ` ${calendar.summary}${readOnly ? ' (read-only: edits can’t be sent)' : ''}`,
-      );
-      fieldset.append(label, el('br'));
-    }
-
-    // A click, not a form submit: the plugin frame is sandboxed without
-    // allow-forms, so a submit would never be dispatched.
-    const submit = button('Import this calendar');
-    submit.addEventListener('click', () => {
-      const picked = choose.querySelector<HTMLInputElement>(
-        'input[name="calendar"]:checked',
-      );
-      if (picked) void controller.choose(picked.value);
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      render();
     });
-    choose.replaceChildren(fieldset, submit);
   };
 
-  const render = (state: ViewState) => {
-    status.textContent = describe(state);
-    connect.hidden = !(
-      state.kind === 'disconnected' ||
-      (state.kind === 'error' && state.reconnect)
+  const controller = createController(store, () => schedule());
+
+  const set = (patch: Partial<Ui>) => {
+    Object.assign(ui, patch);
+    schedule();
+  };
+
+  const focusSoon = (selector: string) => {
+    setTimeout(() => root.querySelector<HTMLElement>(selector)?.focus(), 0);
+  };
+
+  const ctx = (): Ctx => ({
+    doc,
+    zone,
+    today: today(),
+    now: Date.now(),
+    width: width(),
+    open: (event, from) => openEvent(event, from.dataset.key),
+    goTo: date => set({ anchor: date, month: date }),
+    setView: v =>
+      set({
+        view: v,
+        ...(ui.view === v
+          ? {}
+          : { scrollTo: firstHour(wall(Date.now(), zone).minutes) }),
+      }),
+  });
+
+  function openEvent(event: CalEvent, from?: string) {
+    editing = undefined;
+    set({
+      drawer: {
+        subject: event.subject,
+        mode: 'view',
+        ...(from ? { from } : {}),
+      },
+      menu: false,
+    });
+    focusSoon('#drawer-title');
+  }
+
+  function closeDrawer() {
+    const from = ui.drawer?.from;
+    editing = undefined;
+    set({ drawer: undefined });
+    if (from) focusSoon(`[data-key="${CSS.escape(from)}"]`);
+  }
+
+  function openSheet(sheet: Sheet) {
+    const from = focusKey(doc);
+    set({ sheet, menu: false, ...(from ? { sheetFrom: from } : {}) });
+    focusSoon(`#${sheet}-title`);
+  }
+
+  function closeSheet() {
+    const from = ui.sheetFrom;
+    set({ sheet: undefined, confirming: undefined, sheetFrom: undefined });
+    focusSoon(
+      from ? `[data-key="${CSS.escape(from)}"]` : '[data-key="primary"]',
     );
-    refresh.hidden = !(
-      state.kind === 'ready' ||
-      state.kind === 'refreshing' ||
-      state.kind === 'sending' ||
-      (state.kind === 'error' && !state.reconnect)
-    );
-    refresh.disabled = state.kind === 'refreshing' || state.kind === 'sending';
+  }
 
-    if (state.kind === 'choosing') renderChoose(state);
-    else choose.replaceChildren();
+  /** Month: the table's own Calendar view, in the host. */
+  async function openMonth() {
+    await controller.openInHost().catch(() => {});
+  }
 
-    const summary =
-      state.kind === 'ready' || state.kind === 'sending'
-        ? state.summary
-        : undefined;
+  async function openReview() {
+    openSheet('review');
+    await controller.prepareReview();
+  }
 
-    conflicts.replaceChildren();
-    if (summary?.conflicts.length || summary?.invalid.length)
-      conflicts.append(
-        el('h2', 'Left as is'),
-        list([
-          ...summary.conflicts.map(c => `${c.title}: ${c.fields.join(', ')}`),
-          ...summary.invalid.map(
-            i => `${i.title || '(untitled)'}: not sent, ${i.reason}`,
-          ),
-        ]),
-      );
+  function step(direction: 1 | -1) {
+    const days = ui.view === 'week' ? dayCount(width()) : 7;
+    const anchor = addDays(ui.anchor, direction * days);
+    set({ anchor, month: anchor });
+  }
 
-    review.replaceChildren();
+  function retryIn(seconds: number) {
+    clearInterval(countdownTimer);
+    ui.countdown = seconds;
+    countdownTimer = setInterval(() => {
+      if (!ui.countdown || ui.countdown <= 1) {
+        clearInterval(countdownTimer);
+        ui.countdown = undefined;
+        void controller.refresh();
 
-    if (summary?.review.length) {
-      const items = el('ul');
-
-      for (const pending of summary.review) {
-        const li = el('li');
-        li.append(el('strong', pending.title));
-        li.append(
-          list(pending.fields.map(f => `${f.field}: ${f.before} → ${f.after}`)),
-        );
-        items.append(li);
+        return;
       }
 
-      const sendButton = button(
-        `Send ${summary.review.length} ${summary.review.length === 1 ? 'change' : 'changes'} to Google`,
-      );
-      sendButton.disabled = state.kind === 'sending';
-      sendButton.addEventListener('click', () => void controller.send());
-      review.append(
-        el('h2', 'Review changes before sending'),
-        el(
-          'p',
-          'Only these fields are sent, and only if the event hasn’t changed in Google since this preview. Guests on these events are not emailed about these changes.',
-        ),
-        items,
-        sendButton,
-      );
+      ui.countdown--;
+      schedule();
+    }, 1000);
+  }
+
+  // ---- rendering ---------------------------------------------------------
+
+  function chips(snap: Snapshot): HTMLElement | undefined {
+    if (!snap.meta) return undefined;
+
+    return h(
+      doc,
+      'button',
+      {
+        class: 'chip',
+        'aria-pressed': ui.visible ? 'true' : 'false',
+        'aria-label': `Show ${snap.meta.summary}`,
+        'data-key': 'chip',
+        onclick: () => set({ visible: !ui.visible }),
+      },
+      h(doc, 'span', {
+        class: 'sw',
+        style: `--c:${snap.meta.color}`,
+        'aria-hidden': 'true',
+      }),
+      snap.meta.summary,
+    );
+  }
+
+  function headerRow(snap: Snapshot, narrow: boolean): HTMLElement {
+    const p = pillModel(snap);
+    const count = reviewCount(snap);
+    const busy =
+      snap.state.kind === 'refreshing' || snap.state.kind === 'sending';
+    const opens = p.opens;
+    const changes = `${count} ${count === 1 ? 'change' : 'changes'}`;
+    const action =
+      count > 0
+        ? h(
+            doc,
+            'button',
+            {
+              class: 'btn btn-primary',
+              'data-key': 'primary',
+              'aria-label': `Review ${changes}`,
+              onclick: () => void openReview(),
+            },
+            narrow ? `Review ${count}` : `Review ${changes}`,
+          )
+        : h(
+            doc,
+            'button',
+            {
+              class: 'btn',
+              'data-key': 'primary',
+              disabled: busy || !snap.meta,
+              onclick: () => void controller.refresh(),
+            },
+            'Sync now',
+          );
+
+    return header(doc, {
+      title: 'Calendar',
+      chips: chips(snap),
+      status: pill(doc, {
+        ...p,
+        ...(opens
+          ? {
+              onClick: () => {
+                if (opens === 'review') void openReview();
+                else if (opens === 'conflicts') openSheet('conflicts');
+                else
+                  root
+                    .querySelector<HTMLDetailsElement>('.banner details')
+                    ?.setAttribute('open', '');
+              },
+            }
+          : {}),
+      }),
+      action,
+    });
+  }
+
+  function cbar(snap: Snapshot): HTMLElement {
+    const busy =
+      snap.state.kind === 'refreshing' || snap.state.kind === 'sending';
+    const detailText =
+      snap.state.kind === 'refreshing'
+        ? 'Reading events…'
+        : snap.state.kind === 'sending'
+          ? 'Sending changes…'
+          : snap.at
+            ? `Last synced ${syncedAgo(snap.at).replace(/^at /, '')}`
+            : undefined;
+
+    return connectionBar(doc, {
+      provider: 'Google Calendar',
+      ...(snap.meta?.account ? { account: snap.meta.account } : {}),
+      ...(detailText ? { detail: detailText } : {}),
+      busy,
+      menuOpen: ui.menu,
+      onMenu: open => set({ menu: open }),
+      menu: [
+        {
+          label: 'Sync now',
+          disabled: busy,
+          onSelect: () => void controller.refresh(),
+        },
+        { label: 'Reconnect', onSelect: () => void controller.connect() },
+        {
+          label: 'Choose calendars',
+          hint: 'One calendar per app: add another Calendar app for a second one.',
+          disabled: true,
+          onSelect: () => {},
+        },
+        {
+          label: 'Keyboard shortcuts',
+          onSelect: () => openSheet('shortcuts'),
+        },
+        ...(snap.can.disconnect
+          ? [
+              {
+                label: 'Disconnect',
+                hint: 'This app stops using the connection. Your rows stay here.',
+                onSelect: () => void controller.disconnect(),
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+
+  function banners(snap: Snapshot): HTMLElement | undefined {
+    const state = snap.state;
+
+    if (state.kind !== 'error') {
+      lastProblem = undefined;
+
+      return undefined;
     }
 
-    const outcomes =
-      state.kind === 'ready' || state.kind === 'error'
-        ? (state.outcomes ?? [])
-        : [];
-    results.replaceChildren();
-    if (outcomes.length)
-      results.append(
-        el('h2', 'Sent changes'),
-        list(outcomes.map(o => `${o.title}: ${OUTCOME[o.status]}`)),
+    const problem = state.problem;
+
+    if (problem !== lastProblem) {
+      lastProblem = problem;
+      if (problem.kind === 'rate-limited' && problem.retryAfter)
+        retryIn(problem.retryAfter);
+    }
+
+    const copy = bannerCopy(
+      problem,
+      snap.meta?.summary ?? 'this calendar',
+      ui.countdown,
+    );
+    const reconnect = copy.action?.does === 'reconnect' || state.reconnect;
+    const action =
+      copy.action ?? (reconnect ? { label: 'Reconnect' } : undefined);
+
+    return h(
+      doc,
+      'div',
+      { class: 'banners' },
+      banner(doc, {
+        tone: copy.tone,
+        role: copy.role,
+        title: copy.title,
+        body: copy.body,
+        details: `${problem.status ? `HTTP ${problem.status}: ` : ''}${problem.message}`,
+        ...(action
+          ? {
+              action: {
+                label: reconnect ? 'Reconnect' : action.label,
+                ...(reconnect ? { name: 'Reconnect Google Calendar' } : {}),
+                onClick: () => {
+                  clearInterval(countdownTimer);
+                  ui.countdown = undefined;
+                  if (reconnect) void controller.connect();
+                  else void controller.refresh();
+                },
+              },
+            }
+          : {}),
+      }),
+    );
+  }
+
+  function toolbar(
+    narrow: boolean,
+    from: string,
+    days: number,
+    canOpen: boolean,
+  ): HTMLElement {
+    const nav = h(
+      doc,
+      'span',
+      { class: 'tb-nav' },
+      h(
+        doc,
+        'button',
+        {
+          class: 'icon-btn',
+          'aria-label': ui.view === 'week' ? 'Previous days' : 'Previous week',
+          'data-key': 'prev',
+          onclick: () => step(-1),
+        },
+        svg(doc, ICONS.prev),
+      ),
+      h(
+        doc,
+        'button',
+        {
+          class: 'icon-btn',
+          'aria-label': ui.view === 'week' ? 'Next days' : 'Next week',
+          'data-key': 'next',
+          onclick: () => step(1),
+        },
+        svg(doc, ICONS.next),
+      ),
+    );
+    const title =
+      ui.view === 'agenda'
+        ? monthTitle(ui.anchor)
+        : narrow
+          ? shortRange(from, addDays(from, days - 1))
+          : rangeTitle(from, addDays(from, days - 1));
+
+    return h(
+      doc,
+      'div',
+      { class: 'tb' },
+      narrow
+        ? null
+        : h(
+            doc,
+            'button',
+            {
+              class: 'btn',
+              'data-key': 'today',
+              onclick: () => ctx().goTo(today()),
+            },
+            'Today',
+          ),
+      nav,
+      h(doc, 'h2', { class: 'tb-title', 'aria-live': 'polite' }, title),
+      segmented<'agenda' | 'week' | 'month'>(
+        doc,
+        'View',
+        [
+          { value: 'agenda', label: 'Agenda' },
+          { value: 'week', label: 'Week' },
+          // Month is the host table's own Calendar view (DESIGN.md §11
+          // decision 1): this opens the table in the host.
+          ...(canOpen ? [{ value: 'month' as const, label: 'Month ↗' }] : []),
+        ],
+        ui.view,
+        v => (v === 'month' ? void openMonth() : ctx().setView(v)),
+      ),
+    );
+  }
+
+  function content(snap: Snapshot, c: Ctx, narrow: boolean): HTMLElement {
+    const events = ui.visible ? snap.events : [];
+    const days = ui.view === 'week' ? dayCount(c.width) : 7;
+    const from =
+      ui.view === 'week' && days === 7 ? mondayOf(ui.anchor) : ui.anchor;
+    const firstImport =
+      snap.state.kind === 'refreshing' && !snap.summary && !snap.events.length;
+
+    if (firstImport)
+      return h(
+        doc,
+        'div',
+        { class: 'main' },
+        importing(doc, {
+          calendar: snap.meta?.summary ?? 'Calendar',
+          color: snap.meta?.color ?? '#4986e7',
+          ...(snap.state.kind === 'refreshing' && snap.state.pages
+            ? { pages: snap.state.pages }
+            : {}),
+        }),
       );
-  };
 
-  const controller = createController(store, render);
-  render(controller.state());
-  connect.addEventListener('click', () => void controller.connect());
-  refresh.addEventListener('click', () => void controller.refresh());
+    const rangeDays = ui.view === 'week' ? days : 7;
+    const rangeFrom = ui.view === 'week' ? from : mondayOf(ui.anchor);
+    const empty = busyDays(events, rangeFrom, rangeDays, zone).size === 0;
+    let body: HTMLElement;
 
+    if (empty && snap.summary) {
+      const next = nextEvent(events, addDays(rangeFrom, rangeDays), zone);
+      body = emptyState(doc, {
+        muted: true,
+        title:
+          ui.view === 'week' && days < 7
+            ? 'No events these days'
+            : 'No events this week',
+        ...(next
+          ? {
+              text: `Your next event is ${next.event.title || '(untitled)'} on ${longDay(next.date)}.`,
+            }
+          : !ui.visible
+            ? { text: `${snap.meta?.summary ?? 'The calendar'} is hidden.` }
+            : {}),
+        children: next
+          ? [
+              h(
+                doc,
+                'button',
+                {
+                  class: 'btn btn-primary',
+                  'data-key': 'jump',
+                  onclick: () => c.goTo(next.date),
+                },
+                'Jump to next event',
+              ),
+            ]
+          : [],
+      });
+    } else if (ui.view === 'week')
+      body = week(c, events, from, days, c.width - (c.width >= 900 ? 232 : 0));
+    else
+      body = agenda(
+        c,
+        events,
+        ui.anchor,
+        snap.summary &&
+          (snap.summary.skipped.recurring || snap.summary.skipped.cancelled)
+          ? notShown(snap.summary.skipped)
+          : undefined,
+      );
+
+    return h(
+      doc,
+      'div',
+      { class: 'main' },
+      toolbar(narrow, from, days, snap.can.openResource),
+      ui.view === 'agenda' ? dayStrip(c, events, ui.anchor) : null,
+      ui.view === 'week' && !(empty && snap.summary)
+        ? body
+        : h(doc, 'div', { class: 'view', 'data-scroll': 'view' }, body),
+    );
+  }
+
+  function drawer(
+    snap: Snapshot,
+    c: Ctx,
+    narrow: boolean,
+  ): HTMLElement | undefined {
+    if (!ui.drawer) return undefined;
+    const open = ui.drawer;
+    const event = snap.events.find(e => e.subject === open.subject);
+
+    if (!event) {
+      ui.drawer = undefined;
+      editing = undefined;
+
+      return undefined;
+    }
+
+    if (open.mode === 'edit' && !event.readOnly) {
+      if (editing?.subject !== event.subject)
+        editing = {
+          subject: event.subject,
+          element: editor(c, event, {
+            narrow,
+            onClose: closeDrawer,
+            onCancel: () => {
+              editing = undefined;
+              set({ drawer: { ...open, mode: 'view' } });
+              focusSoon('#drawer-title');
+            },
+            onSave: async value => {
+              await controller.saveEvent(event.subject, value);
+              editing = undefined;
+              set({ drawer: { ...open, mode: 'view' } });
+              focusSoon('#drawer-title');
+            },
+          }),
+        };
+
+      return editing.element;
+    }
+
+    return detail(c, event, {
+      narrow,
+      onClose: closeDrawer,
+      onEdit: () => {
+        set({ drawer: { ...open, mode: 'edit' } });
+        focusSoon('[data-key="f-title"]');
+      },
+      onReview: () => void openReview(),
+      onConflicts: () => openSheet('conflicts'),
+      ...(event.link && snap.can.openExternal
+        ? { onOpenLink: () => void controller.openLink(event) }
+        : {}),
+    });
+  }
+
+  function sheetFor(snap: Snapshot, c: Ctx): HTMLElement | undefined {
+    if (ui.sheet === 'shortcuts') return shortcuts(c, closeSheet);
+    const color = snap.meta?.color ?? '#4986e7';
+
+    if (ui.sheet === 'review') {
+      const state = snap.state;
+      const summary =
+        state.kind === 'sending' || state.kind === 'ready'
+          ? state.summary
+          : (snap.summary ?? EMPTY_SUMMARY);
+
+      return review(c, {
+        summary,
+        ...(state.kind === 'sending' ? { progress: state.progress } : {}),
+        outcomes:
+          state.kind === 'ready' || state.kind === 'error'
+            ? (state.outcomes ?? [])
+            : [],
+        color,
+        busy: state.kind === 'refreshing' || snap.stale,
+        onClose: closeSheet,
+        onDiscard: pending => void controller.discard(pending),
+        onSend: () => void controller.send(),
+        onReviewAgain: () => void controller.refresh(),
+      });
+    }
+
+    if (ui.sheet === 'conflicts')
+      return conflicts(c, {
+        list: snap.summary?.conflicts ?? [],
+        color,
+        choices: ui.choices,
+        ...(ui.confirming ? { confirming: ui.confirming } : {}),
+        errors: ui.conflictErrors,
+        onClose: closeSheet,
+        onChoose: (conflict, field, choice) => {
+          ui.choices.set(conflict, {
+            ...(ui.choices.get(conflict) ?? {}),
+            [field]: choice,
+          });
+          ui.conflictErrors.delete(conflict);
+          schedule();
+        },
+        onResolve: conflict =>
+          void controller
+            .resolve(conflict, ui.choices.get(conflict) ?? {})
+            .catch((error: unknown) => {
+              ui.conflictErrors.set(
+                conflict,
+                error instanceof Error ? error.message : String(error),
+              );
+              schedule();
+            }),
+        onKeep: conflict => void controller.keepAsLocal(conflict),
+        onRemove: conflict => {
+          ui.confirming = undefined;
+          void controller.removeLocal(conflict);
+        },
+        onConfirm: conflict => set({ confirming: conflict }),
+        ...(snap.can.openResource
+          ? {
+              onOpenRow: (conflict: Conflict) =>
+                void controller.openInHost(conflict.subject),
+            }
+          : {}),
+      });
+
+    return undefined;
+  }
+
+  function screen(snap: Snapshot, c: Ctx): Array<HTMLElement | undefined> {
+    const state: ViewState = snap.state;
+    const narrow = c.width < 720;
+
+    switch (state.kind) {
+      case 'loading':
+        return [
+          main(h(doc, 'p', { class: 'sr-only', role: 'status' }, 'Loading…')),
+        ];
+      case 'no-relay':
+        return [main(noRelay(doc))];
+      case 'disconnected':
+      case 'connecting':
+        return [
+          main(
+            firstRun(doc, {
+              connecting: state.kind === 'connecting',
+              onConnect: () => void controller.connect(),
+              onCancel: () => controller.cancelConnect(),
+            }),
+          ),
+        ];
+
+      case 'choosing': {
+        const account = state.calendars.find(x => x.primary)?.id;
+
+        return [
+          h(
+            doc,
+            'header',
+            {},
+            connectionBar(doc, {
+              provider: 'Google Calendar',
+              ...(account ? { account } : {}),
+            }),
+          ),
+          main(
+            picker(doc, {
+              calendars: state.calendars,
+              onImport: id => void controller.choose(id),
+            }),
+          ),
+        ];
+      }
+
+      default:
+    }
+
+    if (!snap.meta)
+      // Listing calendars, or failed before a calendar was chosen.
+      return [
+        h(doc, 'header', {}, headerRow(snap, narrow)),
+        h(
+          doc,
+          'main',
+          { class: 'pl-main' },
+          banners(snap),
+          state.kind === 'error'
+            ? undefined
+            : h(
+                doc,
+                'p',
+                { class: 'fine', style: 'padding:14px', role: 'status' },
+                'Reading your calendars…',
+              ),
+        ),
+      ];
+
+    const days = ui.view === 'week' ? dayCount(c.width) : 7;
+    const from =
+      ui.view === 'week' && days === 7 ? mondayOf(ui.anchor) : ui.anchor;
+
+    return [
+      h(doc, 'header', {}, headerRow(snap, narrow), cbar(snap)),
+      h(
+        doc,
+        'main',
+        { class: 'pl-main' },
+        banners(snap),
+        h(
+          doc,
+          'div',
+          { class: 'shell' },
+          c.width >= 900 && ui.view === 'week'
+            ? sidebar(c, {
+                month: ui.month,
+                selected: ui.anchor,
+                weekFrom: from,
+                weekDays: days,
+                meta: snap.meta,
+                visible: ui.visible,
+                ...(snap.summary ? { summary: snap.summary } : {}),
+                whyOpen: ui.why,
+                onMonth: date => set({ month: date }),
+                onVisible: visible => set({ visible }),
+                onWhy: () => set({ why: !ui.why }),
+              })
+            : null,
+          content(snap, c, narrow),
+          drawer(snap, c, narrow) ?? null,
+        ),
+      ),
+    ];
+  }
+
+  /** A screen without the calendar chrome: one scrolling main landmark. */
+  function main(...children: Array<HTMLElement>): HTMLElement {
+    return h(
+      doc,
+      'main',
+      { class: 'pl-scroll' },
+      h(doc, 'h1', { class: 'sr-only' }, 'Calendar'),
+      ...children,
+    );
+  }
+
+  function render() {
+    const snap = controller.snapshot();
+    const c = ctx();
+    const key = focusKey(doc);
+    const scrollers = new Map<string, number>();
+    for (const node of root.querySelectorAll<HTMLElement>('[data-scroll]'))
+      scrollers.set(node.dataset.scroll!, node.scrollTop);
+
+    const parts = screen(snap, c).filter((p): p is HTMLElement => !!p);
+    const overlay = sheetFor(snap, c);
+    root.replaceChildren(...parts, ...(overlay ? [overlay] : []));
+
+    // Put back what a rebuild would lose: scroll positions and focus.
+    for (const node of root.querySelectorAll<HTMLElement>('[data-scroll]')) {
+      const before = scrollers.get(node.dataset.scroll!);
+      if (before !== undefined) node.scrollTop = before;
+    }
+
+    const grid = root.querySelector<HTMLElement>('[data-scroll="week"]');
+
+    if (grid && ui.scrollTo !== undefined) {
+      // A little higher, so the first hour's label is not under the edge.
+      grid.scrollTop = Math.max(0, ui.scrollTo * ROW - 10);
+      ui.scrollTo = undefined;
+    }
+
+    restoreFocus(root, key);
+  }
+
+  // ---- keyboard (DESIGN.md §6) --------------------------------------------
+
+  doc.addEventListener('keydown', event => {
+    const target = event.target as HTMLElement;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+    if (event.key === 'Escape') {
+      if (ui.menu) set({ menu: false });
+      else if (ui.sheet) closeSheet();
+      else if (ui.drawer) closeDrawer();
+      else return;
+      event.preventDefault();
+
+      return;
+    }
+
+    if (TYPING.test(target.tagName) || target.isContentEditable) return;
+    const snap = controller.snapshot();
+    if (!snap.meta) return;
+
+    if (ui.sheet) {
+      if (event.key === '?') openSheet('shortcuts');
+
+      return;
+    }
+
+    const focused = target.closest<HTMLElement>('[data-subject]');
+    let handled = true;
+
+    switch (event.key) {
+      case 't':
+        ctx().goTo(today());
+        break;
+      case 'ArrowLeft':
+      case 'k':
+        step(-1);
+        break;
+      case 'ArrowRight':
+      case 'j':
+        step(1);
+        break;
+      case 'a':
+        ctx().setView('agenda');
+        break;
+      case 'w':
+        ctx().setView('week');
+        break;
+      case 'm':
+        if (!snap.can.openResource) {
+          handled = false;
+          break;
+        }
+
+        void openMonth();
+        break;
+      case '?':
+        openSheet('shortcuts');
+        break;
+
+      case 'e': {
+        const subject = ui.drawer?.subject ?? focused?.dataset.subject;
+        const e = snap.events.find(x => x.subject === subject);
+
+        if (!e || e.readOnly) {
+          handled = false;
+          break;
+        }
+
+        const from = ui.drawer?.from ?? focused?.dataset.key;
+        set({
+          drawer: {
+            subject: e.subject,
+            mode: 'edit',
+            ...(from ? { from } : {}),
+          },
+        });
+        focusSoon('[data-key="f-title"]');
+        break;
+      }
+
+      default:
+        handled = false;
+    }
+
+    if (handled) event.preventDefault();
+  });
+
+  doc.addEventListener('click', event => {
+    if (ui.menu && !(event.target as HTMLElement).closest('.cbar-menu'))
+      set({ menu: false });
+  });
+
+  // ---- size and time ------------------------------------------------------
+
+  win.addEventListener('resize', () => {
+    if (!editing) schedule();
+  });
+  // The now line and "Synced 4 min ago" move once a minute.
+  setInterval(() => {
+    if (!editing) schedule();
+  }, 60_000);
+
+  render();
   await controller.load().catch((error: unknown) => {
-    status.textContent = `Could not load: ${error instanceof Error ? error.message : String(error)}`;
+    root.replaceChildren(
+      banner(doc, {
+        tone: 'neg',
+        role: 'alert',
+        title: 'The calendar could not load.',
+        body: error instanceof Error ? error.message : String(error),
+      }),
+    );
   });
 }

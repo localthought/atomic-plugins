@@ -5,22 +5,76 @@ import type { HostProxy } from './store.js';
 export const PLATFORM = 'notion';
 
 /**
+ * One relayed request and what came back, for observers that need more than
+ * syncables does: the controller records failures by status and proxy code
+ * (`errors.ts`), and the sync reports progress per data source. `status` is
+ * 0 when the host's call threw; `body` is the parsed body; `code` is the
+ * integration proxy's refusal code, when it refused.
+ */
+export interface RelayExchange {
+  method: string;
+  path: string;
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  code?: string;
+}
+
+export type RelayObserver = (exchange: RelayExchange) => void;
+
+/** Wraps a transport so `observe` sees every exchange; the response is unchanged. */
+export function observedTransport(
+  transport: Transport,
+  observe: RelayObserver,
+): Transport {
+  return async request => {
+    const response = await transport(request);
+    let body: unknown = response.body;
+
+    try {
+      body = JSON.parse(response.body);
+    } catch {
+      // Not JSON: observers get the text.
+    }
+
+    observe({
+      method: request.method,
+      path: `${request.url.pathname}${request.url.search}`,
+      status: response.status,
+      headers: response.headers,
+      body,
+    });
+
+    return response;
+  };
+}
+
+/**
  * The integration proxy's own refusals (`integration-proxy/src/api_error.rs`):
  * `{ error, message }` with one of these codes, answered before the provider
- * is called. The first group means the connection is gone or no longer this
- * app's, so the person has to connect again. `unsupported_authorization`
- * (a retired `Bearer` code) is left out: only a host from before #54 sends
- * one.
+ * is called. `RECONNECT_CODES` mean the connection is gone or no longer this
+ * app's, so the person has to connect again; `ACCESS_CODES` are an access
+ * problem that reconnecting does not fix.
  */
-const RECONNECT_CODES = [
+export const RECONNECT_CODES = [
   'unknown_connection',
   'not_delegated',
   'capability_scope',
   'platform_mismatch',
   'credential_refresh_failed',
+  // Still expired after view-client.js's own single retry with a fresh one.
+  'capability_expired',
+  // A retired `Bearer` code: a connection from before #54 phase 2.
+  'unsupported_authorization',
 ];
+/**
+ * The proxy says this person may not do this with the connection: an access
+ * problem to explain, not something reconnecting fixes.
+ */
+export const ACCESS_CODES = ['unauthorized', 'forbidden'];
 const REFUSAL_CODES = [
   ...RECONNECT_CODES,
+  ...ACCESS_CODES,
   'missing_signature',
   'unsupported_signature_version',
   'invalid_agent',
@@ -29,7 +83,6 @@ const REFUSAL_CODES = [
   'bad_signature',
   'replayed',
   'invalid_capability',
-  'capability_expired',
   'capability_too_long',
   'wrong_audience',
   'capability_key_mismatch',
@@ -37,21 +90,35 @@ const REFUSAL_CODES = [
   'access_denied',
 ];
 
+/** A refusal by the integration proxy itself, carrying its code. */
+export class ProxyRefusal extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ProxyRefusal';
+  }
+}
+
 /** A proxy refusal as an error, or `undefined` for a provider answer. */
 export function proxyRefusal(response: {
   status: number;
   body: unknown;
-}): Error | undefined {
+}): ProxyRefusal | undefined {
   const body = response.body as { error?: unknown; message?: unknown } | null;
   const code = typeof body?.error === 'string' ? body.error : undefined;
   if (response.status < 400 || !code || !REFUSAL_CODES.includes(code))
     return undefined;
   const detail = typeof body?.message === 'string' ? `: ${body.message}` : '';
 
-  return new Error(
+  return new ProxyRefusal(
     RECONNECT_CODES.includes(code)
       ? `The integration proxy refused this connection (${code}${detail}). Connect again.`
       : `The integration proxy refused the request (${code}${detail}).`,
+    code,
+    response.status,
   );
 }
 
@@ -72,6 +139,7 @@ export function syncablesTransport(
   proxy: HostProxy,
   connectionId: string,
   upstream: URL,
+  observe?: RelayObserver,
 ): Transport {
   const base = upstream.pathname.replace(/\/$/, '');
 
@@ -86,15 +154,37 @@ export function syncablesTransport(
     )
       throw new Error(`Refusing a request outside ${upstream.href}`);
 
-    const response = await proxy.request({
-      platform: PLATFORM,
-      connectionId,
-      path: `${url.pathname}${url.search}`,
-      method: request.method,
-      ...(request.body === undefined ? {} : { body: request.body }),
-    });
+    const path = `${url.pathname}${url.search}`;
+    let response;
+
+    try {
+      response = await proxy.request({
+        platform: PLATFORM,
+        connectionId,
+        path,
+        method: request.method,
+        ...(request.body === undefined ? {} : { body: request.body }),
+      });
+    } catch (error) {
+      observe?.({
+        method: request.method,
+        path,
+        status: 0,
+        headers: {},
+        body: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     const refused = proxyRefusal(response);
+    observe?.({
+      method: request.method,
+      path,
+      status: response.status,
+      headers: response.headers ?? {},
+      body: response.body,
+      ...(refused ? { code: refused.code } : {}),
+    });
     if (refused) throw refused;
 
     return {

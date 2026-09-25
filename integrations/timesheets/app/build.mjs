@@ -12,10 +12,35 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
+
+/**
+ * `import css from './x.css?raw'` as the stylesheet's text, run through
+ * esbuild's CSS minifier first (deterministic, so the committed bundle can
+ * still be rebuilt byte for byte). Used by `ui/theme.ts`.
+ */
+export function cssRawPlugin(esbuild) {
+  return {
+    name: 'css-raw-minified',
+    setup(b) {
+      b.onResolve({ filter: /\.css\?raw$/ }, args => ({
+        path: resolve(args.resolveDir, args.path.slice(0, -'?raw'.length)),
+        namespace: 'css-raw',
+      }));
+      b.onLoad({ filter: /.*/, namespace: 'css-raw' }, async args => {
+        const { code } = await esbuild.transform(
+          readFileSync(args.path, 'utf8'),
+          { loader: 'css', minify: true, legalComments: 'none' },
+        );
+
+        return { contents: code.trim(), loader: 'text' };
+      });
+    },
+  };
+}
 
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
@@ -28,12 +53,15 @@ export async function build({ outfile } = {}) {
     platform: 'browser',
     target: 'es2022',
     splitting: false,
+    // With the #89 views the unminified module passed the 64 KB check.
+    minify: true,
     legalComments: 'none',
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
     alias: {
       '@tomic/lib': path('tomic-lib-shim.ts'),
     },
+    plugins: [cssRawPlugin(esbuild)],
     logLevel: 'silent',
   });
   const text = result.outputFiles[0].text;
