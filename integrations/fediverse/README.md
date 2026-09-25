@@ -41,7 +41,7 @@ for unchanged config/resources; there is no snapshot across concurrent changes.
 ## Authorization and bounds
 
 Every manifest route has `principal: anonymous` and `auth: none`. At pinned
-Atomic Server `35504494261f59e922e79d536fd437954451e6a3`, `route_exec.rs` translates
+Atomic Server `69602364b9f9535b7511e228755c59a84b619e60`, `route_exec.rs` translates
 that to `ForAgent::Public`; `host_core.rs::get_resource` also checks installation
 read grants. Thus a configured subject alone does not grant public access.
 There is no fallback to the installation principal, no network permission and
