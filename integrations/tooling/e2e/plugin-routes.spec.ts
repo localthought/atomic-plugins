@@ -230,8 +230,9 @@ async function createGatedPlugin(page: Page) {
     },
     // Unique per run: a release id is a hash of its content, and on a store
     // an earlier run left behind, the same id is already listed under that
-    // run's agent, whose listing this run's agent can't read (installing then
-    // fails with a 401 on the commit). CI's store is always fresh.
+    // run's agent. Before atomic-server#1755 this run's agent couldn't read
+    // that listing and the install commit failed with a 401. CI's store is
+    // always fresh; this keeps local reruns independent of the host.
     { code: `${source}\n// run ${Date.now()}\n`, title: TITLE },
   );
 }

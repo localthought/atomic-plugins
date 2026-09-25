@@ -369,7 +369,7 @@ list (ontola/atomic-server#1535) from these declarations instead of the
 author writing it: a cron/query trigger implies `persistent-host`, non-empty
 `secrets` imply `host-credentials`, and any route or well-known claim
 implies `public-origin` and `plugin-routes:<level>`. That derivation is
-planned in ontola/atomic-server#1712 (implemented in #1732, not yet pinned);
+planned in ontola/atomic-server#1712 (implemented in #1732, which the pin has);
 this repo's catalog and certification support for it is
 [#134](https://github.com/ontola/atomic-plugins/issues/134), described at the
 end of the next section.
@@ -415,14 +415,12 @@ Nothing else is gated: views (A), jobs (B), class-extender hooks (D),
 secrets, and outbound operations to fixed hosts work the same on every
 build. A package that needs a gated surface should keep its ungated parts
 (a view, a job) useful on their own, so it still does something on
-atomic.place. Until ontola/atomic-server#1711 and #1712 are merged and
-pinned, no manifest in this repo can declare a route, and no gated package
-here can be tested against a real host.
+atomic.place. The pinned atomic-server has the gates (#1726), manifest v3
+(#1732), the route registry (#1749) and route execution (#1751), all
+unmerged upstream; they exist only in a build with `--features
+plugin-routes`.
 
-**Tooling for gated packages** ([#134](https://github.com/ontola/atomic-plugins/issues/134))
-is in place for when they are. It was written against
-ontola/atomic-server#1726 (the gates, for #1711) and #1732 (manifest v3, for
-#1712), which are not in `.atomic-server-ref` yet:
+**Tooling for gated packages** ([#134](https://github.com/ontola/atomic-plugins/issues/134)):
 
 - **Catalog.** A gated package's card carries the derived `requires` (see
   [Version and catalog entry](#version-and-catalog-entry)).
