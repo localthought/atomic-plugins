@@ -143,12 +143,16 @@ export function calendarFixture(day = new Date().toISOString().slice(0, 10)) {
       id: 'all-day',
       summary: 'Calendar all-day fixture',
       status: 'confirmed',
+      htmlLink:
+        'https://www.google.com/calendar/event?eid=YWxsLWRheSBzeW50aGV0aWM',
       start: { date: day },
       end: { date: tomorrow },
     },
     {
       id: 'timed',
       summary: 'Calendar timed fixture',
+      htmlLink:
+        'https://www.google.com/calendar/event?eid=dGltZWQgc3ludGhldGlj',
       description: 'Synthetic agenda',
       location: 'Room 4',
       status: 'confirmed',

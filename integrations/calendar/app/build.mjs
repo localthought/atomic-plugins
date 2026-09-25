@@ -18,6 +18,46 @@ import { dirname } from 'node:path';
 
 const path = relative => fileURLToPath(new URL(relative, import.meta.url));
 
+/**
+ * The stylesheets are TS modules exporting CSS strings (`ui/styles.ts`,
+ * `calendarStyles.ts`), so tests and typecheck read them as plain strings.
+ * For the bundle, each module is evaluated once and every exported string
+ * goes through esbuild's own CSS minifier before it is embedded.
+ */
+const minifiedStyles = esbuild => ({
+  name: 'minified-styles',
+  setup(builder) {
+    builder.onLoad(
+      { filter: /[\\/]app[\\/](ui[\\/]styles|calendarStyles)\.ts$/ },
+      async args => {
+        const { outputFiles } = await esbuild.build({
+          entryPoints: [args.path],
+          bundle: true,
+          format: 'esm',
+          write: false,
+          logLevel: 'silent',
+        });
+        const module = await import(
+          `data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`
+        );
+        const lines = [];
+
+        for (const [name, value] of Object.entries(module)) {
+          if (typeof value !== 'string')
+            throw new Error(`${args.path}: ${name} is not a CSS string`);
+          const { code } = await esbuild.transform(value, {
+            loader: 'css',
+            minify: true,
+          });
+          lines.push(`export const ${name} = ${JSON.stringify(code.trim())};`);
+        }
+
+        return { contents: lines.join('\n'), loader: 'js' };
+      },
+    );
+  },
+});
+
 /** Bundles in memory; writes only when `outfile` is given. */
 export async function build({ outfile } = {}) {
   const require = createRequire(path('../../../browser/package.json'));
@@ -30,6 +70,8 @@ export async function build({ outfile } = {}) {
     target: 'es2022',
     splitting: false,
     legalComments: 'none',
+    minify: true,
+    plugins: [minifiedStyles(esbuild)],
     write: false,
     outfile: outfile ?? path('dist/ui.js'),
     logLevel: 'silent',
