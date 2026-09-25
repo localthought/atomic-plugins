@@ -20,6 +20,33 @@ const s = 'https://atomic.example/source',
   out = 'https://atomic.example/candidates',
   title = P.name;
 
+// Relevant invariants from pinned lib/src/import_identity.rs::validate_baseline.
+// This fixture is not evidence of a real host apply.
+function validateBaseline(old, next) {
+  const baseline = next[P.baseline];
+  assert.ok(baseline.values && !Array.isArray(baseline.values));
+  assert.deepEqual(baseline.previous, old?.[P.baseline]?.values ?? {});
+
+  for (const [property, desired] of Object.entries(baseline.values)) {
+    assert.ok(
+      ![
+        P.baseline,
+        P.localId,
+        P.parent,
+        'https://atomicdata.dev/properties/isA',
+        'https://atomicdata.dev/properties/importResolution',
+        'https://atomicdata.dev/properties/importReferenceReview',
+      ].includes(property),
+    );
+
+    if (!old) assert.deepEqual(next[property], desired);
+    else if (next[property] !== old[property]) {
+      assert.deepEqual(old[property], old[P.baseline].values[property]);
+      assert.deepEqual(next[property], desired);
+    }
+  }
+}
+
 function fixture() {
   const config = {
     subjects: [s],
@@ -52,10 +79,14 @@ function fixture() {
 
   const apply = verdict => {
     assert.deepEqual(verdict.problems, []);
-    for (const i of verdict.intents)
+
+    for (const i of verdict.intents) {
+      const old = i.op === 'create' ? undefined : resources.get(i.subject);
+      validateBaseline(old, { ...old, ...i.set });
       if (i.op === 'create')
         resources.set(out + '/candidate', { [P.parent]: i.parent, ...i.set });
       else Object.assign(resources.get(i.subject), i.set);
+    }
   };
 
   return { ctx, resources, apply };
@@ -219,4 +250,48 @@ test('empty, legacy-link and control-containing Atomic subjects are refused', ()
     assert.deepEqual(run(f.ctx).intents, []);
     assert.ok(run(f.ctx).problems.length);
   }
+});
+
+test('baseline carries mutable source values and previous snapshot for host compare-and-set', () => {
+  const f = fixture();
+  const created = run(f.ctx);
+  const first = created.intents[0].set[P.baseline];
+  assert.deepEqual(first.previous, {});
+  assert.deepEqual(
+    Object.keys(first.values).sort(),
+    [P.name, P.description].sort(),
+  );
+  f.apply(created);
+  f.resources.get(s)[title] = 'Next';
+  f.ctx.config.timestamp = '2';
+  const update = run(f.ctx);
+  assert.deepEqual(update.intents[0].set[P.baseline].previous, first.values);
+  const local = f.resources.get(out + '/candidate');
+  local[P.description] = 'Concurrent edit after preview';
+  assert.throws(() => f.apply(update), assert.AssertionError);
+  local[P.description] = first.values[P.description];
+  f.apply(update);
+  assert.deepEqual(run(f.ctx), { intents: [], problems: [] });
+  assert.throws(
+    () =>
+      f.apply({
+        intents: [
+          { ...created.intents[0], op: 'set', subject: out + '/candidate' },
+        ],
+        problems: [],
+      }),
+    assert.AssertionError,
+  );
+});
+
+test('local title edits and old invalid baseline envelopes require reconciliation', () => {
+  const f = fixture();
+  f.apply(run(f.ctx));
+  const stored = f.resources.get(out + '/candidate');
+  stored[P.name] = 'Edited locally';
+  assert.match(run(f.ctx).problems[0].message, /Local candidate edits/);
+  stored[P.name] = stored[P.baseline].values[P.name];
+  delete stored[P.baseline].values;
+  assert.match(run(f.ctx).problems[0].message, /Local candidate edits/);
+  assert.deepEqual(run(f.ctx).intents, []);
 });

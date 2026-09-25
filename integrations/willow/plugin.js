@@ -731,7 +731,14 @@ export function run(ctx) {
         [P.name]: 'Unsigned Willow export: ' + subject,
         [P.description]: serialized,
         [P.localId]: key,
-        [P.baseline]: envelope,
+        [P.baseline]: {
+          ...envelope,
+          values: {
+            [P.name]: 'Unsigned Willow export: ' + subject,
+            [P.description]: serialized,
+          },
+          previous: {},
+        },
       };
 
       if (!matches.length)
@@ -748,7 +755,18 @@ export function run(ctx) {
         if (
           !previous ||
           previous.format !== envelope.format ||
-          existing[P.description] !== canonicalJson(previous)
+          !previous.values ||
+          existing[P.description] !== previous.values[P.description] ||
+          existing[P.name] !== previous.values[P.name] ||
+          previous.values[P.description] !==
+            canonicalJson({
+              format: previous.format,
+              status: previous.status,
+              source: previous.source,
+              mediaType: previous.mediaType,
+              entryHex: previous.entryHex,
+              payloadHex: previous.payloadHex,
+            })
         )
           throw Error('Local candidate edits require manual reconciliation');
         const oldEntry = checkCandidate(
@@ -772,6 +790,7 @@ export function run(ctx) {
           throw Error(
             'Increase logical timestamp before replacing an export candidate',
           );
+        set[P.baseline].previous = previous.values;
         intents.push({ op: 'set', subject: matches[0], set });
       }
     }

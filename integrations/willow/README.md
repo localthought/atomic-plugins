@@ -41,7 +41,11 @@ containing the full Atomic subject; it is never inferred from a display name.
 `run(ctx)` uses that adapter and the existing `ctx.query`/`ctx.read` APIs to
 return real Atomic `create`/`set` intents. After the host previews, approves and
 applies those intents, ordinary resources under `outputParent` hold the unsigned
-candidate in `description` and `importBaseline`, with a stable `localId`. No
+candidate in `description` and `importBaseline`, with a stable `localId`. The
+baseline includes source `values` for name/description and the exact `previous`
+source map required by the host import compare-and-set validator. Local edits
+to either field require reconciliation; an older envelope without a baseline
+map is refused. No
 candidate is sent to a peer. Returning an intent is not evidence it was durably
 stored.
 
@@ -133,7 +137,7 @@ node integrations/tooling/run-lane.mjs willow --tier node
 node --experimental-strip-types integrations/willow/verify-host.mjs /path/to/pinned/atomic-server
 ```
 
-The node lane runs 19 tests, including the 827 independent encoding vectors,
+The node lane runs codec and adapter tests, including the 827 independent encoding vectors,
 export field confinement, unsigned intent generation, monotonic timestamps,
 local-edit/denial handling, payload integrity and bundle reproducibility.
 Fixtures simulate applying intent-shaped objects; this is unit evidence, not
