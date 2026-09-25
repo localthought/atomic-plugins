@@ -1,0 +1,94 @@
+{
+  "source": "https://www.w3.org/TR/turtle/#grammar-production-turtleDoc",
+  "note": "Original test vectors derived from RDF 1.1 Turtle normative grammar; not a claim to run the full W3C test suite.",
+  "cases": [
+    {
+      "name": "IRIREF Unicode escapes and named object",
+      "input": "<https://example.org/\\u0061> <urn:p> <urn:o> .",
+      "graph": [
+        { "@id": "https://example.org/a", "urn:p": [{ "@id": "urn:o" }] }
+      ]
+    },
+    {
+      "name": "predicate list and object list with prefix directive",
+      "input": "@prefix v: <https://example.org/vocab#> .\nv:s v:p \"one\", \"twee\"@nl ; v:q v:o ; .",
+      "graph": [
+        {
+          "@id": "https://example.org/vocab#s",
+          "https://example.org/vocab#p": [
+            { "@value": "one" },
+            { "@value": "twee", "@language": "nl" }
+          ],
+          "https://example.org/vocab#q": [
+            { "@id": "https://example.org/vocab#o" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "case-insensitive SPARQL-style prefix and a predicate",
+      "input": "prefix : <urn:example:>\n:s a :Class . # a denotes rdf:type",
+      "graph": [
+        {
+          "@id": "urn:example:s",
+          "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": [
+            { "@id": "urn:example:Class" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "numeric lexical forms remain exact",
+      "input": "<urn:s> <urn:p> +9007199254740993, -.125, 2.0e-9, true .",
+      "graph": [
+        {
+          "@id": "urn:s",
+          "urn:p": [
+            {
+              "@value": "+9007199254740993",
+              "@type": "http://www.w3.org/2001/XMLSchema#integer"
+            },
+            {
+              "@value": "-.125",
+              "@type": "http://www.w3.org/2001/XMLSchema#decimal"
+            },
+            {
+              "@value": "2.0e-9",
+              "@type": "http://www.w3.org/2001/XMLSchema#double"
+            },
+            {
+              "@value": "true",
+              "@type": "http://www.w3.org/2001/XMLSchema#boolean"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "short single and double strings, ECHAR and supplementary UCHAR",
+      "input": "<urn:s> <urn:p> 'can\\'t', \"line\\n\\t\\\"\\\\\\U0001F600\" .",
+      "graph": [
+        {
+          "@id": "urn:s",
+          "urn:p": [{ "@value": "can't" }, { "@value": "line\n\t\"\\😀" }]
+        }
+      ]
+    },
+    {
+      "name": "typed literal and comment marker inside IRI and literal",
+      "input": "@prefix x: <http://www.w3.org/2001/XMLSchema#> .\n<urn:s#fragment> <urn:p> \"001\"^^x:integer, \"# literal\" . # comment",
+      "graph": [
+        {
+          "@id": "urn:s#fragment",
+          "urn:p": [
+            {
+              "@value": "001",
+              "@type": "http://www.w3.org/2001/XMLSchema#integer"
+            },
+            { "@value": "# literal" }
+          ]
+        }
+      ]
+    }
+  ]
+}

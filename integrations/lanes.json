@@ -30,6 +30,17 @@
       "e2e": ["integrations/issue-tracker/e2e/issue-tracker.spec.ts"]
     },
     {
+      "id": "solid",
+      "index": 11,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": [
+        "integrations/solid/plugin.test.mjs",
+        "integrations/solid/turtle.test.mjs"
+      ],
+      "note": "QuickJS partial Solid resource bridge: reviewed Atomic document import, public reads, RDF validation and fail-closed host gaps."
+    },
+    {
       "id": "localthought",
       "index": 2,
       "platforms": ["pets", "github-issues", "google-calendar", "clockify"],
