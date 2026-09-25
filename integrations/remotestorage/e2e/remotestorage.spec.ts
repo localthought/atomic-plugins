@@ -19,6 +19,10 @@ const DESCRIPTION = 'https://atomicdata.dev/properties/description';
 const BASELINE = 'https://atomicdata.dev/properties/importBaseline';
 const PATH = '/notes/remotestorage-e2e.txt';
 const TITLE = 'remoteStorage text import';
+// plugin-apply adds a fresh crypto.randomUUID() to each approved baseline.
+const approvalMarker = expect.stringMatching(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
 const initial = 'Exact UTF-8: Grüße 🌿\r\nSecond line.\n';
 const updated = 'Updated remote source: café 🌍\r\n';
 
@@ -114,6 +118,7 @@ test.describe('remoteStorage importer', () => {
     expect(stored.description).toBe('Edited locally in Atomic');
     expect(stored.baseline).toEqual({
       protocol: 'remoteStorage-text-v1',
+      approval: approvalMarker,
       path: PATH,
       text: updated,
       contentType: 'text/plain; charset=utf-8',
@@ -311,6 +316,7 @@ async function expectStored(
   expect(stored.description).toBe(text);
   expect(stored.baseline).toEqual({
     protocol: 'remoteStorage-text-v1',
+    approval: approvalMarker,
     path: PATH,
     text,
     contentType: 'text/plain; charset=utf-8',
