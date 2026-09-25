@@ -64,6 +64,11 @@ export async function build({ outfile } = {}) {
   const esbuild = require('esbuild');
   const result = await esbuild.build({
     entryPoints: [path('main.ts')],
+    // esbuild's `// path` comments and any path it embeds are relative to
+    // this, so pin it to the repository root: the bytes (and the catalog's
+    // integrity hash for them) must not depend on the directory the build
+    // was started from.
+    absWorkingDir: path('../../..'),
     bundle: true,
     format: 'esm',
     platform: 'browser',
