@@ -19,6 +19,17 @@ name: atomic-server e2e image
 #     that bumps the pin. It builds linux/amd64 only (the platform CI needs),
 #     never overwrites an existing tag and never moves :latest-pin.
 #
+# Variants: two images per SHA, from the same Dockerfile.
+#   - :<sha>, the default build (`--features wasm-plugins`), for build-server.
+#   - :<sha>-plugin-routes (`--features wasm-plugins,plugin-routes`, build
+#     argument CARGO_FEATURES), for build-server-plugin-routes and the lanes
+#     that declare `pluginRoutes` (docs/design/server-plugin-routes.md,
+#     section 0.2). Only for a SHA whose server/Cargo.toml has the feature
+#     (ontola/atomic-server#1726 on); an older pin gets the default only.
+#     :latest-pin always names the default variant.
+# Each variant is decided, built and tagged on its own, so an existing tag of
+# one never stops the other from being built.
+#
 # Platforms: linux/amd64 on ubuntu-latest, and linux/arm64 on the native
 # ubuntu-24.04-arm runner (free for public repositories), so Apple Silicon
 # hosts don't have to run the amd64 image under Rosetta/QEMU emulation. Each
@@ -76,6 +87,7 @@ jobs:
       build: ${{ steps.decide.outputs.build }}
       latest: ${{ steps.decide.outputs.latest }}
       matrix: ${{ steps.decide.outputs.matrix }}
+      variants: ${{ steps.decide.outputs.variants }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,30 +121,57 @@ jobs:
           # needs the platform CI runs on, and never touches :latest-pin, which
           # belongs to main.
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            matrix='[{"platform":"linux/amd64","runner":"ubuntu-latest"}]'
+            platforms='[{"platform":"linux/amd64","runner":"ubuntu-latest"}]'
             latest=false
           else
-            matrix='[{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]'
+            platforms='[{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]'
             latest=$([ "$sha" = "$pinned" ] && echo true || echo false)
           fi
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
-          exists=false
-          docker buildx imagetools inspect "$IMAGE:$sha" > /dev/null 2>&1 && exists=true
-          # Push to main always rebuilds (see the header). A dispatch rebuilds
-          # only with force, and a PR never overwrites.
-          if [ "$GITHUB_EVENT_NAME" = push ] || [ "$FORCE" = true ] || [ "$exists" = false ]; then
-            build=true
+          # The plugin-routes variant only where the feature exists. A
+          # failed fetch counts as "no feature": the default variant still
+          # gets built, and build-server-plugin-routes builds from source.
+          variants=default
+          if curl -fsSL "https://raw.githubusercontent.com/ontola/atomic-server/$sha/server/Cargo.toml" \
+            | grep -qE '^plugin-routes[[:space:]]*='; then
+            variants="default plugin-routes"
           else
-            build=false
-            echo "$IMAGE:$sha already exists; nothing to do"
+            echo "atomic-server $sha has no plugin-routes feature; the default variant only"
           fi
+
+          selected=''
+          for variant in $variants; do
+            suffix=$([ "$variant" = default ] && echo '' || echo "-$variant")
+            exists=false
+            docker buildx imagetools inspect "$IMAGE:$sha$suffix" > /dev/null 2>&1 && exists=true
+            # Push to main always rebuilds (see the header). A dispatch
+            # rebuilds only with force, and a PR never overwrites.
+            if [ "$GITHUB_EVENT_NAME" = push ] || [ "$FORCE" = true ] || [ "$exists" = false ]; then
+              selected="$selected $variant"
+            else
+              echo "$IMAGE:$sha$suffix already exists; not rebuilding it"
+            fi
+            echo "variant=$variant exists=$exists"
+          done
+
+          # One build per (platform, variant); one tag step per variant.
+          variants_json=$(printf '%s\n' $selected | jq -Rcs '
+            split("\n") | map(select(. != "")) | map({
+              variant: .,
+              suffix: (if . == "default" then "" else "-" + . end),
+              features: (if . == "default" then "wasm-plugins" else "wasm-plugins,plugin-routes" end)
+            })')
+          matrix=$(jq -cn --argjson p "$platforms" --argjson v "$variants_json" \
+            '[$p[] as $x | $v[] as $y | $x + $y]')
+          build=$([ "$variants_json" = '[]' ] && echo false || echo true)
+          echo "variants=$variants_json" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha exists=$exists build=$build latest=$latest matrix=$matrix"
+          echo "sha=$sha build=$build latest=$latest matrix=$matrix"
 
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.variant }} ${{ matrix.platform }}
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
     runs-on: ${{ matrix.runner }}
@@ -179,17 +218,19 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             ATOMIC_SERVER_SHA=${{ needs.resolve.outputs.sha }}
+            CARGO_FEATURES=${{ matrix.features }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Record the digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           PLATFORM: ${{ matrix.platform }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -eu
           mkdir -p digests
           touch "digests/${DIGEST#sha256:}"
-          echo "ARTIFACT_NAME=digest-${PLATFORM//\//-}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=digest-${VARIANT}-${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -199,16 +240,19 @@ jobs:
           if-no-files-found: error
 
   merge:
-    name: Tag ${{ needs.resolve.outputs.sha }}
+    name: Tag ${{ needs.resolve.outputs.sha }}${{ matrix.suffix }}
     needs: [resolve, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.variants) }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: digest-*
+          pattern: digest-${{ matrix.variant }}-*
           path: digests
           merge-multiple: true
 
@@ -224,11 +268,13 @@ jobs:
         working-directory: digests
         env:
           SHA: ${{ needs.resolve.outputs.sha }}
-          LATEST: ${{ needs.resolve.outputs.latest }}
+          SUFFIX: ${{ matrix.suffix }}
+          # :latest-pin names the default variant only.
+          LATEST: ${{ needs.resolve.outputs.latest == 'true' && matrix.variant == 'default' }}
         run: |
           set -eu
-          tags="-t $IMAGE:$SHA"
+          tags="-t $IMAGE:$SHA$SUFFIX"
           [ "$LATEST" = true ] && tags="$tags -t $IMAGE:latest-pin"
           # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $tags $(printf "$IMAGE@sha256:%s " *)
-          docker buildx imagetools inspect "$IMAGE:$SHA"
+          docker buildx imagetools inspect "$IMAGE:$SHA$SUFFIX"
