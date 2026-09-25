@@ -349,5 +349,23 @@
     "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-41Lz+YXgQJNRqGsiGtduk4wE6fVURecH8sK68Rkwz6GS/EvcG974e69xvj3hEN8i",
     "https://atomicdata.dev/integrations/properties/app-row-name": "Pet",
     "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pets"
+  },
+  {
+    "https://atomicdata.dev/properties/localId": "fediverse",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
+    ],
+    "https://atomicdata.dev/properties/shortname": "fediverse",
+    "https://atomicdata.dev/integrations/properties/experimental": true,
+    "https://atomicdata.dev/integrations/properties/enabled": false,
+    "https://atomicdata.dev/properties/name": "Fediverse",
+    "https://atomicdata.dev/properties/description": "Public ActivityStreams actor, Atomic resource projections, outbox and discovery.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Experimental read-only projection. Signed inbox receipt, follower management and durable federation delivery are not implemented.",
+    "https://atomicdata.dev/integrations/properties/requires": [
+      "persistent-host",
+      "plugin-routes:read-write",
+      "public-origin",
+      "wasm-sandbox"
+    ]
   }
 ]
