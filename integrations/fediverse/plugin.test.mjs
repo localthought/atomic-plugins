@@ -346,3 +346,194 @@ test('release builds reproducibly; public routes have anonymous principal and no
   for (const claim of m.http.wellKnown)
     assert.ok(m.http.routes.some(r => r.id === claim.route));
 });
+
+test('Atomic collection query produces independent expected ordered wire objects', () => {
+  const idProperty = 'https://atomicdata.dev/properties/localId';
+  const publishedProperty = 'https://atomic.example/properties/published';
+  const parent = 'https://atomic.example/feed';
+  const c = ctx(
+    { publication: { collection: { parent, idProperty, publishedProperty } } },
+    {
+      [note]: {
+        [P.parent]: parent,
+        [P.isA]: ['https://atomicdata.dev/classes/Message'],
+        [P.description]: 'From atoms',
+        [idProperty]: 'alpha',
+        [publishedProperty]: '2026-09-25T09:00:00.000Z',
+      },
+      [document]: {
+        [P.parent]: parent,
+        [P.isA]: ['https://atomicdata.dev/classes/PlainText'],
+        [P.description]: 'Earlier',
+        [idProperty]: 'beta',
+        [publishedProperty]: '2026-09-24T09:00:00.000Z',
+      },
+    },
+  );
+
+  c.query = (p, v) => {
+    assert.equal(p, P.parent);
+    assert.equal(v, parent);
+
+    return [document, note, privateSubject];
+  };
+
+  const page = body(get(c, '/ap/outbox', { query: { page: '1' } }));
+  assert.deepEqual(page.orderedItems[0], {
+    '@context': AS,
+    id: origin + '/ap/activities/alpha',
+    type: 'Create',
+    actor: origin + '/ap/actor',
+    published: '2026-09-25T09:00:00.000Z',
+    to: [PUBLIC],
+    object: {
+      '@context': AS,
+      id: origin + '/ap/objects/alpha',
+      type: 'Note',
+      attributedTo: origin + '/ap/actor',
+      published: '2026-09-25T09:00:00.000Z',
+      to: [PUBLIC],
+      url: note,
+      content: '<p>From atoms</p>',
+      mediaType: 'text/html',
+    },
+  });
+  assert.equal(page.orderedItems.length, 2);
+  assert.deepEqual(
+    body(get(c, '/ap/objects/alpha')),
+    page.orderedItems[0].object,
+  );
+
+  c.query = () => {
+    throw Error('truncated query');
+  };
+
+  assert.equal(get(c, '/ap/outbox').status, 503);
+});
+
+test('collection identity ambiguity and parent escape fail closed', () => {
+  const parent = 'https://atomic.example/feed',
+    idProperty = 'https://atomicdata.dev/properties/localId',
+    publishedProperty = 'https://atomic.example/published';
+  const row = {
+    [P.parent]: parent,
+    [P.isA]: ['https://atomicdata.dev/classes/Message'],
+    [P.description]: 'text',
+    [idProperty]: 'same',
+    [publishedProperty]: '2026-09-25T09:00:00.000Z',
+  };
+  const c = ctx(
+    { publication: { collection: { parent, idProperty, publishedProperty } } },
+    { [note]: row, [document]: { ...row } },
+  );
+  c.query = () => [note, document];
+  assert.equal(get(c, '/ap/outbox').status, 503);
+  c.query = () => Array(51).fill(note);
+  assert.equal(get(c, '/ap/outbox').status, 503);
+  c.query = () => [profile];
+  assert.equal(body(get(c, '/ap/outbox')).totalItems, 0);
+});
+
+test('conditional representations track content, type, HEAD and precondition priority', () => {
+  const c = ctx();
+  const original = get(c, '/ap/objects/note');
+  const tag = original.headers.etag;
+  assert.match(tag, /^"[a-f0-9]{64}"$/);
+  assert.equal(
+    get(c, '/ap/objects/note', { method: 'HEAD' }).headers.etag,
+    tag,
+  );
+  const unchanged = get(c, '/ap/objects/note', {
+    headers: { 'if-none-match': 'W/' + tag },
+  });
+  assert.equal(unchanged.status, 304);
+  assert.equal(unchanged.body, '');
+  assert.equal(
+    get(c, '/ap/objects/note', { headers: { 'if-match': 'W/' + tag } }).status,
+    412,
+  );
+  assert.equal(
+    get(c, '/ap/objects/note', {
+      headers: { 'if-match': '"stale"', 'if-none-match': tag },
+    }).status,
+    412,
+  );
+  assert.equal(
+    get(c, '/ap/objects/note', { headers: { 'if-none-match': 'broken' } })
+      .status,
+    400,
+  );
+  assert.notEqual(
+    get(c, '/ap/objects/note', { headers: { accept: 'application/ld+json' } })
+      .headers.etag,
+    tag,
+  );
+  const changed = ctx(
+    {},
+    {
+      [note]: {
+        [P.isA]: ['https://atomicdata.dev/classes/Message'],
+        [P.description]: 'Changed',
+      },
+    },
+  );
+  assert.equal(
+    get(changed, '/ap/objects/note', { headers: { 'if-none-match': tag } })
+      .status,
+    200,
+  );
+  assert.notEqual(get(changed, '/ap/objects/note').headers.etag, tag);
+  assert.equal(
+    get(c, '/ap/objects/private', { headers: { 'if-none-match': '*' } }).status,
+    404,
+  );
+});
+
+test('portable ETag hash matches independent SHA256 including Unicode', async () => {
+  const { createHash } = await import('node:crypto');
+  const { sha256 } = await import('./sha256.mjs');
+  for (const input of ['', 'abc', '🌍'.repeat(100), 'x'.repeat(1000)])
+    assert.equal(
+      sha256(input),
+      createHash('sha256').update(input).digest('hex'),
+    );
+});
+
+test('collection paging is independent of Atomic query order', () => {
+  const parent = 'https://atomic.example/feed',
+    idProperty = 'https://atomic.example/id',
+    publishedProperty = 'https://atomic.example/published';
+  const rows = {},
+    subjects = [];
+
+  for (let i = 0; i < 12; i++) {
+    const id = 'item-' + String(i).padStart(2, '0'),
+      subject = 'https://atomic.example/' + id;
+    subjects.push(subject);
+    rows[subject] = {
+      [P.parent]: parent,
+      [P.isA]: ['https://atomicdata.dev/classes/Message'],
+      [P.description]: id,
+      [idProperty]: id,
+      [publishedProperty]: '2026-09-25T09:00:00.000Z',
+    };
+  }
+
+  const c = ctx(
+    { publication: { collection: { parent, idProperty, publishedProperty } } },
+    rows,
+  );
+  c.query = () => subjects.toReversed();
+  const first = body(get(c, '/ap/outbox', { query: { page: '1' } }));
+  c.query = () => subjects;
+  const second = body(get(c, '/ap/outbox', { query: { page: '2' } }));
+  assert.deepEqual(
+    [...first.orderedItems, ...second.orderedItems].map(
+      item => item.object.url,
+    ),
+    subjects,
+  );
+  assert.equal(first.next, origin + '/ap/outbox?page=2');
+  assert.equal(second.prev, origin + '/ap/outbox?page=1');
+  assert.equal(body(get(c, '/ap/outbox')).totalItems, 12);
+});

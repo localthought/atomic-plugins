@@ -25,7 +25,7 @@
       },
       "publication": {
         "type": "object",
-        "description": "Object with objects array of at most 50 explicit {id, subject, published} mappings; UTC ISO timestamps with .000Z."
+        "description": "Either objects: up to50 {id,subject,published} bindings; or collection:{parent,idProperty,publishedProperty} for scoped Atomic query. ISO UTC timestamps with .000Z."
       }
     },
     "required": ["origin", "username", "profile", "publication"]

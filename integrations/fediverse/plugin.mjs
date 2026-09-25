@@ -1,3 +1,5 @@
+import { sha256 } from './sha256.mjs';
+
 /** Dependency-free QuickJS read-only ActivityStreams projection of public atoms. */
 export const AS = 'https://www.w3.org/ns/activitystreams';
 export const PUBLIC = `${AS}#Public`;
@@ -5,6 +7,7 @@ export const P = Object.freeze({
   isA: 'https://atomicdata.dev/properties/isA',
   name: 'https://atomicdata.dev/properties/name',
   description: 'https://atomicdata.dev/properties/description',
+  parent: 'https://atomicdata.dev/properties/parent',
 });
 const NOTE_CLASSES = [
   'https://atomicdata.dev/classes/Message',
@@ -60,7 +63,16 @@ export function html(text) {
 
 function config(ctx) {
   const c = ctx.config ?? {};
-  const objects = c.publication?.objects;
+  const collection = c.publication?.collection;
+  const objects = c.publication?.objects ?? (collection ? [] : undefined);
+  if (
+    collection &&
+    (c.publication.objects !== undefined ||
+      !httpsSubject(collection.parent) ||
+      !httpsSubject(collection.idProperty) ||
+      !httpsSubject(collection.publishedProperty))
+  )
+    throw new Error('Invalid collection configuration');
   if (
     !validText(c.origin, 255) ||
     !/^https:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?$/.test(
@@ -95,6 +107,8 @@ function config(ctx) {
   return {
     ...c,
     objects,
+    collection,
+    resolvedObjects: undefined,
     actor: `${c.origin}/ap/actor`,
     account: `acct:${c.username}@${c.origin.slice(8)}`,
   };
@@ -120,6 +134,13 @@ function profile(ctx, c) {
 export function objectFor(ctx, c, binding) {
   const row = readPublic(ctx, binding.subject);
   if (!row || !Array.isArray(row[P.isA])) return undefined;
+  if (
+    c.collection &&
+    (row[P.parent] !== c.collection.parent ||
+      row[c.collection.idProperty] !== binding.id ||
+      row[c.collection.publishedProperty] !== binding.published)
+  )
+    return undefined;
   const note = row[P.isA].some(t => NOTE_CLASSES.includes(t));
   const article = row[P.isA].some(t => DOCUMENT_CLASSES.includes(t));
   if (!note && !article) return undefined;
@@ -160,8 +181,48 @@ function activity(c, object, id) {
   };
 }
 
+function bindings(ctx, c) {
+  if (!c.collection) return c.objects;
+  if (c.resolvedObjects) return c.resolvedObjects;
+  const spec = c.collection;
+  const subjects = ctx.query(P.parent, spec.parent);
+  if (
+    !Array.isArray(subjects) ||
+    subjects.length > MAX_ITEMS ||
+    new Set(subjects).size !== subjects.length
+  )
+    throw new Error('Incomplete or oversized collection');
+  const ids = new Set();
+  const result = [];
+
+  for (const subject of subjects) {
+    if (!httpsSubject(subject)) throw new Error('Invalid query result');
+    const row = readPublic(ctx, subject);
+    if (!row || row[P.parent] !== spec.parent) continue;
+    const id = row[spec.idProperty],
+      published = row[spec.publishedProperty];
+    // Ordinary siblings without publication metadata are not posts.
+    if (id === undefined || published === undefined) continue;
+    if (
+      !slug(id) ||
+      typeof published !== 'string' ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/.test(published) ||
+      !Number.isFinite(Date.parse(published)) ||
+      new Date(published).toISOString() !== published ||
+      ids.has(id)
+    )
+      throw new Error('Invalid or duplicate collection identity');
+    ids.add(id);
+    result.push({ id, subject, published });
+  }
+
+  c.resolvedObjects = result;
+
+  return result;
+}
+
 function visible(ctx, c) {
-  return c.objects
+  return bindings(ctx, c)
     .map(binding => ({ binding, object: objectFor(ctx, c, binding) }))
     .filter(row => row.object)
     .sort((a, b) =>
@@ -223,7 +284,7 @@ function reply(status, value, method, type = 'application/json') {
   };
 }
 
-export function handle(ctx, request) {
+function dispatch(ctx, request) {
   const method = request.method;
   const path = request.path;
   const q = request.query ?? {};
@@ -376,7 +437,7 @@ export function handle(ctx, request) {
   );
 
   if (match) {
-    const binding = c.objects.find(item => item.id === match[2]);
+    const binding = bindings(ctx, c).find(item => item.id === match[2]);
     const object = binding && objectFor(ctx, c, binding);
     if (object)
       return reply(
@@ -389,6 +450,64 @@ export function handle(ctx, request) {
 
   return reply(404, { error: 'Not found' }, method);
 }
+
 export function run() {
   return { intents: [], problems: [] };
+}
+
+function matchesTag(value, tag, weak) {
+  if (typeof value !== 'string' || value.length > 2048)
+    throw new Error('Invalid condition');
+  if (value.trim() === '*') return true;
+  const tags = value.match(/(?:W\/)?"[^"\s]*"/g) ?? [];
+  if (!tags.length || tags.join(',') !== value.trim().replace(/\s*,\s*/g, ','))
+    throw new Error('Invalid condition');
+
+  return tags.some(
+    candidate => (weak ? candidate.replace(/^W\//, '') : candidate) === tag,
+  );
+}
+
+export function handle(ctx, request) {
+  let response;
+
+  try {
+    response = dispatch(
+      ctx,
+      request.method === 'HEAD' ? { ...request, method: 'GET' } : request,
+    );
+  } catch {
+    response = reply(
+      503,
+      { error: 'Atomic collection unavailable' },
+      request.method,
+    );
+  }
+
+  if (response.status === 200 && ['GET', 'HEAD'].includes(request.method)) {
+    const tag =
+      '"' +
+      sha256(response.headers['content-type'] + '\n' + response.body) +
+      '"';
+    response.headers.etag = tag;
+
+    try {
+      const match = request.headers?.['if-match'];
+      const none = request.headers?.['if-none-match'];
+      if (match !== undefined && !matchesTag(match, tag, false))
+        response = { ...response, status: 412, body: '' };
+      else if (none !== undefined && matchesTag(none, tag, true))
+        response = { ...response, status: 304, body: '' };
+    } catch {
+      response = reply(
+        400,
+        { error: 'Invalid HTTP condition' },
+        request.method,
+      );
+    }
+  }
+
+  if (request.method === 'HEAD') response.body = '';
+
+  return response;
 }

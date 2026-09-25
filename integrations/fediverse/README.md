@@ -149,3 +149,51 @@ Wire shapes follow the [W3C ActivityPub Recommendation](https://www.w3.org/TR/ac
 and [ActivityStreams vocabulary](https://www.w3.org/TR/activitystreams-vocabulary/).
 Discovery follows [WebFinger RFC 7033](https://www.rfc-editor.org/rfc/rfc7033)
 and [NodeInfo 2.1](https://nodeinfo.diaspora.software/protocol.html).
+
+## Atomic collection feeds and conditional reads
+
+Instead of maintaining explicit bindings, `publication` may select one Atomic
+parent and the properties holding each child's stable slug and publication time:
+
+```json
+{
+  "collection": {
+    "parent": "https://atomic.example/public-feed",
+    "idProperty": "https://atomicdata.dev/properties/localId",
+    "publishedProperty": "https://atomic.example/properties/published"
+  }
+}
+```
+
+Set this object as `publication`, exclusively of `publication.objects`. The
+configured properties must already exist on the selected Atomic resources;
+the plugin does not invent a creation timestamp or mutate their metadata.
+`ctx.query(parent-property, configured-parent)` returns subjects, which are
+read anonymously and checked against the parent again. Children lacking
+publication metadata are skipped. Invalid metadata, duplicate IDs, duplicate
+query subjects, more than 50 queried resources or a failed/incomplete host query
+produce 503 instead of a partial collection. Unreadable children are omitted.
+Changing ID/time atoms changes publication identity/order; operators should keep
+those atoms stable. Siblings count towards the 50-resource query limit even
+when they are not publishable posts.
+
+Collection results are sorted by publication time descending then slug ascending,
+independent of host query order, with ten entries per page. An object is
+rechecked for parent, ID and timestamp when projected. This is bounded
+collection paging, not a host snapshot or cursor: concurrent membership/content
+changes can move entries between separate page requests. The host still owns
+query completeness and public/Installation read rights.
+
+Successful GET/HEAD responses include a strong SHA-256 ETag over the exact JSON
+representation and media type. `If-Match` uses strong comparison; `If-None-Match`
+uses weak comparison. Matching cache conditions return bodyless 304, failed
+match preconditions 412, and malformed conditions 400. HEAD has the same ETag
+as GET. Permission/source checks happen before validators, so a revoked resource
+cannot be turned into a successful 304 by supplying an old tag. `no-store`
+remains in effect. Collection-root tags describe the root representation;
+clients must request page representations to validate their content.
+
+The additional Node tests compare independent ActivityStreams wire expectations,
+reverse query order across pages, reject duplicate collection identities, and
+check validators against Node's independent SHA-256 implementation. They remain
+unit/source-contract evidence, not a live QuickJS or server persistence run.
