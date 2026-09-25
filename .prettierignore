@@ -3,3 +3,7 @@
 # issue-tracker/devonian/github-issues/ by its adapter.test.ts), not
 # hand-written source.
 integrations/**/plugin.js
+
+# Byte-for-byte copies of atomic-server shared manifest fixtures (see
+# source.json there), kept identical so a refresh is a plain copy.
+integrations/tooling/fixtures/plugin-manifest/*.json

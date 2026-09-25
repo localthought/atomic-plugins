@@ -79,7 +79,20 @@ export interface HostProxy {
    * settles.
    */
   connect(args: { platform: string }): Promise<ConnectResult>;
+  /**
+   * Takes this app's delegation off the platform's connections; the
+   * connections themselves stay (atomic-server pin 007869464). Optional:
+   * older hosts lack it.
+   */
+  disconnect?(args: { platform: string }): Promise<{
+    status: 'disconnected';
+    platform: string;
+    connectionIds: string[];
+  }>;
 }
+
+/** Whether the host is drawn light or dark (`store.getTheme()`). */
+export type ColorScheme = 'light' | 'dark';
 
 export interface PluginStore {
   getApp(): Promise<string>;
@@ -94,6 +107,26 @@ export interface PluginStore {
   /** `handler` takes no argument; re-fetch via getResource for the new data. */
   subscribe(subject: string, handler: () => void): () => void;
   proxy?: HostProxy;
+  /*
+   * Since atomic-server pin 007869464, feature-detected (older hosts lack
+   * them; the app then falls back as noted where it calls them).
+   */
+  /** Up to 100 subjects in one round trip, in the order asked. */
+  getMany?(
+    subjects: string[],
+  ): Promise<(PluginResource | { subject: string; error: string })[]>;
+  /** Opens an http(s) URL after the host shows the person where it goes. */
+  openExternal?(url: string): Promise<{ status: 'opened' | 'cancelled' }>;
+  /** Shows a resource in the host page, leaving this app. */
+  openResource?(
+    subject: string,
+  ): Promise<{ status: 'opened'; subject: string }>;
+  /** The host's light/dark setting. */
+  getTheme?(): { colorScheme?: ColorScheme };
+  /** Calls back when the person switches light/dark; returns a stop function. */
+  onThemeChange?(
+    handler: (theme: { colorScheme?: ColorScheme }) => void,
+  ): () => void;
 }
 
 export interface ViewArgs {

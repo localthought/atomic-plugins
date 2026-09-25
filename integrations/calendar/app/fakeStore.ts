@@ -13,6 +13,7 @@
  */
 import { calendarFixture } from '../fixtures/google-calendar/scenario.mjs';
 import type {
+  ColorScheme,
   HostProxy,
   HostProxyRequest,
   JSONValue,
@@ -40,12 +41,29 @@ export interface FakeStore extends PluginStore {
   reconnect(): void;
   /** The delegation of `connectionId` revoked at the proxy, elsewhere. */
   revoke(connectionId: string): void;
+  /** The next relay call answers with this status instead of reaching the fixture. */
+  answerNext(status: number, headers?: Record<string, string>): void;
+  /** The next relay call throws, as a failed fetch in the page would. */
+  throwNext(message: string): void;
+  /** What the app asked the host to open (`openExternal`, `openResource`). */
+  readonly opened: { external: string[]; resources: string[] };
+  /** The person switches the host between light and dark. */
+  setTheme(scheme: ColorScheme): void;
 }
 
 export function fakeStore({
   connected = true,
   relay = true,
-}: { connected?: boolean; relay?: boolean } = {}): FakeStore {
+  hostOps = true,
+}: {
+  connected?: boolean;
+  relay?: boolean;
+  /** The operations of pin 007869464: open links and resources, theme, disconnect. */
+  hostOps?: boolean;
+} = {}): FakeStore {
+  const opened: FakeStore['opened'] = { external: [], resources: [] };
+  let scheme: ColorScheme = 'light';
+  const themeListeners = new Set<(t: { colorScheme: ColorScheme }) => void>();
   const resources = new Map<string, Record<string, JSONValue>>([
     [APP, { [NAME]: 'New app' }],
     [ONTOLOGY, { [PARENT]: APP, [PROPERTIES]: [] }],
@@ -57,6 +75,10 @@ export function fakeStore({
   const google = calendarFixture(DAY);
   let next = 0;
   let loseResponse = false;
+  let canned:
+    | { status: number; headers: Record<string, string> }
+    | { throws: string }
+    | undefined;
   const connections = connected ? ['c1'] : [];
   const revoked = new Set<string>();
 
@@ -65,6 +87,7 @@ export function fakeStore({
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = { ...stored };
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -74,16 +97,21 @@ export function fakeStore({
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
       async save() {
-        resources.set(subject, { ...(resources.get(subject) ?? {}), ...props });
+        const merged = { ...(resources.get(subject) ?? {}), ...props };
+        for (const property of removed) delete merged[property];
+        removed.clear();
+        resources.set(subject, merged);
         writes.push({ op: 'save', subject });
 
         return this;
@@ -110,6 +138,19 @@ export function fakeStore({
             message: 'the signing agent has no delegation for this connection',
           },
         };
+
+      if (canned) {
+        const answer = canned;
+        canned = undefined;
+        if ('throws' in answer) throw new Error(answer.throws);
+
+        return {
+          status: answer.status,
+          headers: answer.headers,
+          body: { error: { code: answer.status, message: 'Canned' } },
+        };
+      }
+
       const url = new URL(
         `/proxy/${request.platform}${request.path}`,
         'http://mock-proxy.test',
@@ -147,6 +188,15 @@ export function fakeStore({
       return connections.map(connectionId => ({ connectionId, platform }));
     },
     connect: () => new Promise(() => {}),
+    ...(hostOps
+      ? {
+          async disconnect({ platform }: { platform: string }) {
+            const connectionIds = connections.splice(0);
+
+            return { status: 'disconnected' as const, platform, connectionIds };
+          },
+        }
+      : {}),
   };
 
   return {
@@ -162,6 +212,12 @@ export function fakeStore({
     },
     revoke: connectionId => {
       revoked.add(connectionId);
+    },
+    answerNext: (status, headers = {}) => {
+      canned = { status, headers };
+    },
+    throwNext: message => {
+      canned = { throws: message };
     },
     getApp: async () => APP,
     getData: async () => ({ table: TABLE, rowClass: ROW_CLASS }),
@@ -186,5 +242,30 @@ export function fakeStore({
     },
     subscribe: () => () => {},
     ...(relay ? { proxy } : {}),
+    opened,
+    setTheme: chosen => {
+      scheme = chosen;
+      for (const listener of themeListeners) listener({ colorScheme: chosen });
+    },
+    ...(hostOps
+      ? {
+          async openExternal(url: string) {
+            opened.external.push(url);
+
+            return { status: 'opened' as const };
+          },
+          async openResource(subject: string) {
+            opened.resources.push(subject);
+
+            return { status: 'opened' as const, subject };
+          },
+          getTheme: () => ({ colorScheme: scheme }),
+          onThemeChange(handler: (t: { colorScheme: ColorScheme }) => void) {
+            themeListeners.add(handler);
+
+            return () => themeListeners.delete(handler);
+          },
+        }
+      : {}),
   };
 }

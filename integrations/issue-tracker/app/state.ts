@@ -20,6 +20,14 @@
 import type { KnownSubjects } from './frameStore.js';
 import type { PluginResource } from './store.js';
 
+/** What the view remembers per installation; never a credential. */
+export interface ViewPrefs {
+  /** An explicit Board/List choice; absent means "by width". */
+  layout?: 'board' | 'list';
+  search?: string;
+  label?: string;
+}
+
 export interface PersistedState {
   version: 1;
   snapshot?: unknown;
@@ -27,6 +35,8 @@ export interface PersistedState {
   known: KnownSubjects;
   /** Connection ids that GitHub or the host refused; skipped on load. */
   stale: string[];
+  /** Board/List choice and filters (IT-14). Kept here, not in frame storage, which a null-origin frame lacks. */
+  view?: ViewPrefs;
 }
 
 const empty = (): PersistedState => ({

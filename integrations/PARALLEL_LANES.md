@@ -112,6 +112,38 @@ Add a `lanes.test.mjs` case asserting every directory under `integrations/`
 that is not `tooling/` has a lane entry — that is the check that would have
 caught `calendar/`.
 
+Two optional fields came later ([#134](https://github.com/ontola/atomic-plugins/issues/134)):
+
+- `pluginRoutes`: a `--plugin-routes` level (`off`, `read-only`,
+  `read-write`) or a list of distinct ones, for a lane that needs
+  atomic-server built with the `plugin-routes` Cargo feature
+  (`docs/design/server-plugin-routes.md`, section 0). Its live and e2e tiers
+  run once per level, each on a fresh server started with
+  `--plugin-routes <level> --routes-origin http://routes.localhost:<port>`,
+  and the tests read `PLUGIN_ROUTES_LEVEL` and `PLUGIN_ROUTES_ORIGIN`. The
+  server comes from `ATOMIC_SERVER_ROUTES_BINARY` in CI; locally from the
+  `:<sha>-plugin-routes` image when `ATOMIC_SERVER_IMAGE` (or
+  `ATOMIC_SERVER_ROUTES_IMAGE`) is set, with the flags as container
+  arguments; otherwise, or when that image is missing or lacks the feature,
+  from `~/.cache/atomic-plugins/atomic-server/<sha>-plugin-routes`, which
+  `tooling/server-build.mjs` builds on first use under a `<dir>.lock` lock. In CI only a run whose matrix
+  holds such a lane starts `build-server-plugin-routes`, which pulls
+  `ghcr.io/ontola/atomic-server-e2e:<sha>-plugin-routes` (the e2e image
+  workflow's second variant) and builds from source only without it.
+  `build-server` and the `:<sha>` image stay the default build. Lanes
+  without the field are unchanged.
+- `dir`: a tooling lane (not a plugin) lives in `integrations/tooling` or a
+  directory under it instead of `integrations/<id>`. Its filter is only its
+  `paths`, which must be listed and may name files under
+  `integrations/tooling/`, `.atomic-server-ref` and shared packages. The
+  `shared` filter does not select it, so a tooling change that it doesn't
+  depend on doesn't run it; a merge-queue or manual run (`all`) does. The
+  `plugin-routes` lane is one: it names its spec, its fixtures,
+  `manifest-http.mjs`, `catalog-requires.mjs`, `server-build.mjs`,
+  `serve.mjs`, `run-lane.mjs` and the pin, because each run costs a
+  feature build or image pull. The node tests of those files run in
+  shared-checks with every other tooling test.
+
 ## 2. Job graph: build once, fan out
 
 The expensive part is `cargo build --profile e2e` plus `build.rs`'s embedded

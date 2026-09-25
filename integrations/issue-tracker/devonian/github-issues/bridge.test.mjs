@@ -266,3 +266,97 @@ it('resolves a same-field conflict in favour of either side and keeps other edit
     'Keep either',
   );
 });
+
+it('describes a conflict per field and settles each field for its own side', async () => {
+  const f = fixture();
+  f.remote.rows.set(1, issue(1));
+  await f.open().sync();
+  f.local.rows.get(1).value.title = 'Local title';
+  f.remote.rows.get(1).value.title = 'Remote title';
+  f.local.rows.get(1).value.status = 'Done';
+  f.remote.rows.get(1).value.status = 'Doing';
+  const error = await f
+    .open()
+    .sync()
+    .catch(e => e);
+  expect(error.fields).toEqual(['title', 'status']);
+  const writes = f.local.writes + f.remote.writes;
+
+  expect(await f.open().describeConflict(error.subject)).toEqual([
+    {
+      field: 'title',
+      base: 'Same title',
+      local: 'Local title',
+      remote: 'Remote title',
+    },
+    { field: 'status', base: 'Todo', local: 'Done', remote: 'Doing' },
+  ]);
+  // A partial choice is refused, and nothing is sent before Apply.
+  await expect(
+    f.open().resolveConflict(error.subject, { title: 'local' }),
+  ).rejects.toThrow('Choose a side for status');
+  await expect(
+    f.open().resolveConflict(error.subject, { title: 'local', status: 'x' }),
+  ).rejects.toThrow('Keep either');
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+
+  await expect(
+    f.open().resolveConflict(error.subject, {
+      title: 'local',
+      status: 'remote',
+    }),
+  ).resolves.toEqual(['title', 'status']);
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+  await f.open().sync();
+  expect(f.local.rows.get(1).value).toEqual(f.remote.rows.get(1).value);
+  expect(f.remote.rows.get(1).value).toEqual({
+    title: 'Local title',
+    body: '',
+    status: 'Doing',
+  });
+});
+
+it('keeps a record gone from GitHub local-only, then binds it back to the same subject', async () => {
+  const f = fixture();
+  f.remote.rows.set(1, issue(1));
+  await f.open().sync();
+  const removed = f.remote.rows.get(1);
+  f.remote.rows.delete(1);
+  const error = await f
+    .open()
+    .sync()
+    .catch(e => e);
+  expect(error.message).toMatch(/^Missing remote record: /);
+  const subject = error.message.slice('Missing remote record: '.length);
+
+  expect(await f.open().keepLocalOnly(subject)).toBe(1);
+  const writes = f.local.writes + f.remote.writes;
+  await f.open().sync();
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+  expect(f.remote.rows.size).toBe(0);
+
+  f.remote.rows.set(1, removed);
+  const bridge = f.open();
+  await bridge.sync();
+  expect(bridge.id('remote', 'issue', subject)).toBe(1);
+  expect(bridge.records[subject].localOnly).toBeUndefined();
+  expect(f.local.rows.size).toBe(1);
+});
+
+it('forgets a record gone from GitHub on both sides', async () => {
+  const f = fixture();
+  f.remote.rows.set(1, issue(1));
+  await f.open().sync();
+  f.remote.rows.delete(1);
+  const error = await f
+    .open()
+    .sync()
+    .catch(e => e);
+  const subject = error.message.slice('Missing remote record: '.length);
+  expect(await f.open().forget(subject)).toEqual([1]);
+  f.local.rows.delete(1);
+  const writes = f.local.writes + f.remote.writes;
+  await f.open().sync();
+  expect(f.local.writes + f.remote.writes).toBe(writes);
+  expect(f.open().records[subject]).toBeUndefined();
+});

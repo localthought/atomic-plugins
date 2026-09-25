@@ -1,33 +1,85 @@
 // @wc-ignore-file
 import { endpoint } from '../devonian/github-issues/adapter.js';
-import { SyncState } from './state.js';
+import { frameStore } from './frameStore.js';
+import { SyncState, type ViewPrefs } from './state.js';
 import type { Overlay } from './frameStore.js';
 import type { PluginResource, PluginStore } from './store.js';
 import {
+  describeConflict,
+  keepLocalOnly,
+  readRows,
+  removeFromBoard,
   resolveConflict,
   runPass,
+  type ConflictField,
   type Held,
+  type IssueRow,
   type PassError,
   type PassResult,
+  type Side,
+  type Status,
 } from './sync.js';
-import { boundRepository, provision, type Tracker } from './tracker.js';
-import { PLATFORM } from './transport.js';
+import {
+  ABOUT,
+  DESCRIPTION,
+  LOCAL_ID,
+  MESSAGE,
+  NAME,
+  PARENT,
+  boundRepository,
+  provision,
+  type Tracker,
+} from './tracker.js';
+import { listRepositories, PLATFORM, type Repository } from './transport.js';
 
 /**
  * Everything the view shows, as data, so it is testable without a DOM.
  * `main.ts` renders a `ViewState` and wires the buttons.
  */
+export type PausedReason =
+  /** A GitHub write got no answer; it may or may not have landed. */
+  | 'uncertain'
+  /** A record bound on both sides is gone from one of them. */
+  | 'missing'
+  /** AtomicServer refused a write into the table. */
+  | 'rejected'
+  | 'other';
+
 export type Problem =
-  /** Same field changed on both sides; `keep` settles it. */
-  | { kind: 'conflict'; message: string; subject: string; fields: string[] }
+  /** Same field changed on both sides; `keep`/`resolve` settles it. */
+  | {
+      kind: 'conflict';
+      message: string;
+      subject: string;
+      fields: string[];
+      /** The table row (or comment Message) it is about. */
+      local?: string;
+    }
   /** GitHub or the host refused the connection: connect again. */
   | { kind: 'reconnect'; message: string }
   /** A person must look first (uncertain write, missing record, …). */
-  | { kind: 'paused'; message: string }
+  | {
+      kind: 'paused';
+      message: string;
+      reason: PausedReason;
+      /** For `missing`: the record, the side it is gone from, and its row. */
+      missing?: {
+        side: 'local' | 'remote';
+        subject: string;
+        entity?: string;
+        local?: string;
+      };
+    }
   /** Anything else; "Sync now" retries. */
   | { kind: 'failed'; message: string };
 
 export type Busy = 'syncing' | 'sending' | 'resolving';
+
+export type RepositoryListing =
+  | { kind: 'loading' }
+  | { kind: 'listed'; repositories: Repository[] }
+  /** The proxy would not list them; the person types owner/name instead. */
+  | { kind: 'unavailable'; message: string };
 
 export type ViewState =
   | { kind: 'loading' }
@@ -40,6 +92,7 @@ export type ViewState =
       error?: string;
       /** Creating the table's columns for this repository. */
       settingUp?: string;
+      listing?: RepositoryListing;
     }
   | {
       kind: 'ready';
@@ -48,17 +101,58 @@ export type ViewState =
       busy?: Busy;
       last?: { at: number; result: PassResult };
       problem?: Problem;
+      /**
+       * Rows edited in this view that no pass has seen yet, so the view can
+       * mark them "Waiting to send" before the pass that holds them returns.
+       */
+      touched?: string[];
     };
+
+export type Ready = Extract<ViewState, { kind: 'ready' }>;
+
+export interface IssueInput {
+  title: string;
+  body: string;
+  status: Status;
+}
 
 export interface Controller {
   state(): ViewState;
   load(): Promise<ViewState>;
   connect(): Promise<ViewState>;
+  /**
+   * Takes this app's delegation off its GitHub connection (the host's
+   * `proxy.disconnect`); the table and its issues stay. Unsupported on
+   * hosts from before pin 007869464.
+   */
+  disconnect(): Promise<ViewState>;
+  /** Lists the connection's repositories for the picker (state 3). */
+  listRepositories(): Promise<ViewState>;
   choose(repository: string): Promise<ViewState>;
   sync(): Promise<ViewState>;
   /** Approve every write the last pass held, then sync once. */
   send(): Promise<ViewState>;
-  keep(side: 'local' | 'remote'): Promise<ViewState>;
+  keep(side: Side): Promise<ViewState>;
+  /** The paused conflict, field by field; undefined when there is none. */
+  conflict(): Promise<ConflictField[] | undefined>;
+  /** Settles the paused conflict for one side, or one side per field, then syncs. */
+  resolve(choices: Side | Record<string, Side>): Promise<ViewState>;
+  /** Writes an edit into the row, shows it at once, then syncs (held for review). */
+  edit(subject: string, patch: Partial<IssueInput>): Promise<ViewState>;
+  /** Adds a comment Message about the row, then syncs (held for review). */
+  comment(subject: string, body: string): Promise<ViewState>;
+  /** Adds a row to the table; resolves with its subject once written. */
+  create(input: IssueInput): Promise<{ state: ViewState; subject?: string }>;
+  /**
+   * For an issue GitHub no longer has (the paused `missing` problem): keep
+   * it in the table only, or remove it from the board. Neither sends
+   * anything to GitHub. Both sync again afterwards.
+   */
+  keepHereOnly(): Promise<ViewState>;
+  removeFromBoard(): Promise<ViewState>;
+  /** Board/list choice and filters, kept per installation. */
+  prefs(): ViewPrefs;
+  savePrefs(prefs: ViewPrefs): Promise<void>;
 }
 
 const RECONNECT = [
@@ -66,29 +160,53 @@ const RECONNECT = [
   /is delegated to this app/,
   /^The integration proxy refused this connection/,
 ];
-const PAUSED = [
-  /^Uncertain GitHub write/,
-  /^Operation identity reused/,
-  /^Missing (local|remote) record/,
-  /^State belongs to another connection/,
-  /^Duplicate /,
-  /^Recovered Atomic create was edited/,
-  /^Conflict during saved operation/,
-  /^Concurrent edit after write/,
-  /^Choose exactly one Todo\/Doing\/Done status/,
-  /^Invalid Atomic issue/,
-  /may only write its own data/,
-  /^Proxy request failed/,
+const PAUSED: [RegExp, PausedReason][] = [
+  [/^Uncertain GitHub write/, 'uncertain'],
+  [/^Proxy request failed/, 'uncertain'],
+  [/^Operation identity reused/, 'other'],
+  [/^Missing (local|remote) record/, 'missing'],
+  [/^State belongs to another connection/, 'other'],
+  [/^Duplicate /, 'other'],
+  [/^Recovered Atomic create was edited/, 'other'],
+  [/^Conflict during saved operation/, 'other'],
+  [/^Concurrent edit after write/, 'other'],
+  [/^Choose exactly one Todo\/Doing\/Done status/, 'other'],
+  [/^Invalid Atomic issue/, 'other'],
+  [/^Atomic write (rejected|not acknowledged)/, 'rejected'],
+  [/may only write its own data/, 'rejected'],
+  // Signature, capability or access refusals: retrying on a timer would
+  // only repeat them, so they pause with the proxy's code in Details.
+  [/^The integration proxy refused the request/, 'other'],
 ];
 
 export function classify(error: unknown): Problem {
   const e = error as PassError;
   const message = error instanceof Error ? error.message : String(error);
   if (e?.subject && Array.isArray(e.fields))
-    return { kind: 'conflict', message, subject: e.subject, fields: e.fields };
+    return {
+      kind: 'conflict',
+      message,
+      subject: e.subject,
+      fields: e.fields,
+      ...(e.local ? { local: e.local } : {}),
+    };
   if (RECONNECT.some(p => p.test(message)))
     return { kind: 'reconnect', message };
-  if (PAUSED.some(p => p.test(message))) return { kind: 'paused', message };
+  const paused = PAUSED.find(([p]) => p.test(message));
+  if (paused)
+    return {
+      kind: 'paused',
+      message,
+      reason: paused[1],
+      ...(e?.missing
+        ? {
+            missing: {
+              ...e.missing,
+              ...(e.local ? { local: e.local } : {}),
+            },
+          }
+        : {}),
+    };
 
   return { kind: 'failed', message };
 }
@@ -100,13 +218,20 @@ interface Session {
   overlay: Overlay;
 }
 
+const statusOf = (value: unknown): Status | undefined =>
+  value === 'Todo' || value === 'Doing' || value === 'Done' ? value : undefined;
+
 export function createController(
   store: PluginStore,
   onChange: (state: ViewState) => void = () => {},
   now: () => number = Date.now,
 ): Controller {
   let current: ViewState = { kind: 'loading' };
-  let running = false;
+  /**
+   * One pass or table write at a time. Edits made while a pass runs wait
+   * for it, so the Bridge never sees a row change under its own write.
+   */
+  let queue: Promise<unknown> = Promise.resolve();
   /**
    * Built on the first pass and kept for the life of the view. The host's
    * reads can lag the app's own writes (see frameStore.ts), so re-reading
@@ -114,6 +239,9 @@ export function createController(
    */
   let session: Session | undefined;
   let conflict: Problem | undefined;
+  let prefs: ViewPrefs = {};
+  /** Optimistic changes per touched row, re-applied until a pass has seen it. */
+  const changes = new Map<string, (row: IssueRow) => IssueRow>();
 
   const set = (next: ViewState) => {
     current = next;
@@ -122,18 +250,27 @@ export function createController(
     return next;
   };
 
+  const serial = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = queue.then(work, work);
+    queue = next.catch(() => {});
+
+    return next;
+  };
+
   const open = async (repository?: string): Promise<Session> => {
     if (session) return session;
     const provisioned = await provision(store, repository);
+    const state = new SyncState(
+      provisioned.sync,
+      provisioned.tracker.properties.syncState,
+    );
     session = {
       tracker: provisioned.tracker,
       sync: provisioned.sync,
-      state: new SyncState(
-        provisioned.sync,
-        provisioned.tracker.properties.syncState,
-      ),
+      state,
       overlay: new Map(),
     };
+    prefs = { ...state.state.view };
 
     return session;
   };
@@ -152,51 +289,148 @@ export function createController(
     overlay: s.overlay,
   });
 
+  /** The frame store the Bridge uses, so the app's own edits read back. */
+  const tableStore = (s: Session) =>
+    frameStore(store, {
+      known: s.state.state.known,
+      indexed: [PARENT, ABOUT, LOCAL_ID],
+      overlay: s.overlay,
+    });
+
+  const latest = (fallback: Ready): Ready =>
+    current.kind === 'ready' ? current : fallback;
+
   /** One guarded run; `work` returns the new `last`, or throws. */
-  const run = async (
+  const run = (
     busy: Busy,
-    work: (
-      s: Session,
-      ready: Extract<ViewState, { kind: 'ready' }>,
-    ) => Promise<PassResult | undefined>,
-  ) => {
-    if (current.kind !== 'ready' || running || !store.proxy) return current;
-    running = true;
+    work: (s: Session, ready: Ready) => Promise<PassResult | undefined>,
+  ) =>
+    serial(async () => {
+      if (current.kind !== 'ready' || !store.proxy) return current;
+      const ready = current;
+      set({ ...ready, busy });
+
+      try {
+        const s = await open(ready.repository);
+        const result = await work(s, ready);
+        conflict = undefined;
+        const after = latest(ready);
+        // Rows touched while this pass ran are not in its result yet.
+        const touched = (after.touched ?? []).filter(
+          t => !(ready.touched ?? []).includes(t),
+        );
+        for (const subject of changes.keys())
+          if (!touched.includes(subject)) changes.delete(subject);
+
+        return set({
+          kind: 'ready',
+          connectionId: ready.connectionId,
+          repository: ready.repository,
+          ...(result
+            ? { last: { at: now(), result: withChanges(result) } }
+            : after.last
+              ? { last: after.last }
+              : {}),
+          ...(touched.length ? { touched } : {}),
+        });
+      } catch (error) {
+        const problem = classify(error);
+        if (problem.kind === 'conflict') conflict = problem;
+        const after = latest(ready);
+        let last = after.last;
+
+        // Still show the table as it is now, e.g. after a reload into a
+        // paused sync. `at: 0` (no completed pass) keeps moving disabled.
+        if (session) {
+          try {
+            const rows = await readRows(
+              passOptions(session, ready.connectionId, ready.repository),
+            );
+            last = {
+              at: after.last?.at ?? 0,
+              result: withChanges({
+                ...(after.last?.result ?? emptyResult()),
+                rows,
+              }),
+            };
+          } catch {
+            // Keep what was shown.
+          }
+        }
+
+        return set({
+          kind: 'ready',
+          connectionId: ready.connectionId,
+          repository: ready.repository,
+          ...(last ? { last } : {}),
+          ...(after.touched?.length ? { touched: after.touched } : {}),
+          problem,
+        });
+      }
+    });
+
+  const apply = (
+    rows: IssueRow[],
+    subject: string,
+    change: (row: IssueRow) => IssueRow,
+  ) =>
+    rows.some(r => r.subject === subject)
+      ? rows.map(r => (r.subject === subject ? change(r) : r))
+      : [...rows, change(blankRow(subject))];
+
+  /** A pass result with the edits it has not seen yet laid over it. */
+  const withChanges = (result: PassResult): PassResult => {
+    let rows = result.rows;
+    for (const [subject, change] of changes)
+      rows = apply(rows, subject, change);
+
+    return rows === result.rows ? result : { ...result, rows };
+  };
+
+  /** Shows `change` on the row at once, marked as touched. */
+  const optimistic = (subject: string, change: (row: IssueRow) => IssueRow) => {
+    if (current.kind !== 'ready') return;
     const ready = current;
-    set({ ...ready, busy });
+    const earlier = changes.get(subject);
+    changes.set(subject, earlier ? row => change(earlier(row)) : change);
+    set({
+      ...ready,
+      last: {
+        at: ready.last?.at ?? 0,
+        result: {
+          ...(ready.last?.result ?? emptyResult()),
+          rows: apply(ready.last?.result.rows ?? [], subject, change),
+        },
+      },
+      touched: [...new Set([...(ready.touched ?? []), subject])],
+    });
+  };
 
+  /** A table write, in turn with passes; a refusal becomes the problem. */
+  const write = async (
+    ready: Ready,
+    work: (s: Session) => Promise<void>,
+  ): Promise<boolean> => {
     try {
-      const s = await open(ready.repository);
-      const result = await work(s, ready);
-      conflict = undefined;
+      await serial(async () => work(await open(ready.repository)));
 
-      return set({
-        kind: 'ready',
-        connectionId: ready.connectionId,
-        repository: ready.repository,
-        ...(result
-          ? { last: { at: now(), result } }
-          : ready.last
-            ? { last: ready.last }
-            : {}),
-      });
+      return true;
     } catch (error) {
-      const problem = classify(error);
-      if (problem.kind === 'conflict') conflict = problem;
+      set({ ...latest(ready), problem: classify(error) });
 
-      return set({
-        kind: 'ready',
-        connectionId: ready.connectionId,
-        repository: ready.repository,
-        ...(ready.last ? { last: ready.last } : {}),
-        problem,
-      });
-    } finally {
-      running = false;
+      return false;
     }
   };
 
-  return {
+  /** The issue record a paused pass found gone from GitHub, if any. */
+  const missingIssue = () => {
+    const p = current.kind === 'ready' ? current.problem : undefined;
+    const m = p?.kind === 'paused' ? p.missing : undefined;
+
+    return m?.side === 'remote' && m.entity === 'issue' ? m.subject : undefined;
+  };
+
+  const controller: Controller = {
     state: () => current,
 
     async load() {
@@ -248,10 +482,42 @@ export function createController(
       return this.load();
     },
 
+    async disconnect() {
+      const proxy = store.proxy;
+      if (!proxy?.disconnect || current.kind !== 'ready') return current;
+      await serial(() => proxy.disconnect!({ platform: PLATFORM }));
+
+      return this.load();
+    },
+
+    async listRepositories() {
+      if (current.kind !== 'choose-repository' || !store.proxy) return current;
+      const { connectionId } = current;
+      set({ ...current, listing: { kind: 'loading' } });
+      let listing: RepositoryListing;
+
+      try {
+        listing = {
+          kind: 'listed',
+          repositories: await listRepositories(store.proxy, connectionId),
+        };
+      } catch (error) {
+        listing = {
+          kind: 'unavailable',
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+
+      if (current.kind !== 'choose-repository') return current;
+
+      return set({ ...current, listing });
+    },
+
     async choose(repository) {
       if (current.kind !== 'choose-repository' || current.settingUp)
         return current;
-      const { connectionId } = current;
+      const { connectionId, listing } = current;
+      const keep = listing ? { listing } : {};
       const name = repository.trim();
 
       try {
@@ -260,12 +526,18 @@ export function createController(
         return set({
           kind: 'choose-repository',
           connectionId,
+          ...keep,
           error:
             'Enter the repository as owner/name, for example octocat/hello-world.',
         });
       }
 
-      set({ kind: 'choose-repository', connectionId, settingUp: name });
+      set({
+        kind: 'choose-repository',
+        connectionId,
+        ...keep,
+        settingUp: name,
+      });
 
       try {
         await open(name);
@@ -273,6 +545,7 @@ export function createController(
         return set({
           kind: 'choose-repository',
           connectionId,
+          ...keep,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -300,16 +573,161 @@ export function createController(
     },
 
     keep(side) {
+      return this.resolve(side);
+    },
+
+    async conflict() {
+      const paused = conflict;
+      if (paused?.kind !== 'conflict' || current.kind !== 'ready')
+        return undefined;
+      const ready = current;
+
+      return serial(async () => {
+        const s = await open(ready.repository);
+
+        return describeConflict(
+          passOptions(s, ready.connectionId, ready.repository),
+          paused.subject,
+        );
+      });
+    },
+
+    resolve(choices) {
       const settled = conflict;
       if (settled?.kind !== 'conflict') return Promise.resolve(current);
 
       return run('resolving', async (s, ready) => {
         const options = passOptions(s, ready.connectionId, ready.repository);
-        await resolveConflict(options, settled.subject, side);
+        await resolveConflict(options, settled.subject, choices);
 
         return runPass(options);
       });
     },
+
+    async edit(subject, patch) {
+      if (current.kind !== 'ready') return current;
+      const ready = current;
+      optimistic(subject, row => ({
+        ...row,
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.body !== undefined ? { body: patch.body } : {}),
+        ...(patch.status ? { status: patch.status } : {}),
+      }));
+      const ok = await write(ready, async s => {
+        const row = await tableStore(s).getResource(subject);
+        if (patch.title !== undefined) row.set(NAME, patch.title);
+        if (patch.body !== undefined) row.set(DESCRIPTION, patch.body);
+        const status = statusOf(patch.status);
+        if (status)
+          row.set(s.tracker.properties.status, [s.tracker.tags[status]]);
+        await row.save();
+      });
+
+      return ok ? this.sync() : current;
+    },
+
+    async comment(subject, body) {
+      if (current.kind !== 'ready' || !body.trim()) return current;
+      const ready = current;
+      let created = '';
+      const ok = await write(ready, async s => {
+        const message = await tableStore(s).newResource({
+          parent: s.tracker.commentsFolder,
+          isA: [MESSAGE],
+          propVals: { [DESCRIPTION]: body, [ABOUT]: subject },
+        });
+        created = message.subject;
+      });
+      if (!ok) return current;
+      optimistic(subject, row => ({
+        ...row,
+        comments: [...row.comments, { subject: created, body }],
+      }));
+
+      return this.sync();
+    },
+
+    async create(input) {
+      if (current.kind !== 'ready') return { state: current };
+      const ready = current;
+      let subject = '';
+      const ok = await write(ready, async s => {
+        const row = await tableStore(s).newResource({
+          parent: s.tracker.table,
+          isA: [s.tracker.rowClass],
+          propVals: {
+            [NAME]: input.title,
+            [DESCRIPTION]: input.body,
+            [s.tracker.properties.status]: [s.tracker.tags[input.status]],
+          },
+        });
+        subject = row.subject;
+      });
+      if (!ok) return { state: current };
+      optimistic(subject, row => ({ ...row, ...input }));
+
+      return { state: await this.sync(), subject };
+    },
+
+    keepHereOnly() {
+      const gone = missingIssue();
+      if (!gone) return Promise.resolve(current);
+
+      return run('resolving', async (s, ready) => {
+        const options = passOptions(s, ready.connectionId, ready.repository);
+        await keepLocalOnly(options, gone);
+
+        return runPass(options);
+      });
+    },
+
+    removeFromBoard() {
+      const gone = missingIssue();
+      if (!gone) return Promise.resolve(current);
+
+      return run('resolving', async (s, ready) => {
+        const options = passOptions(s, ready.connectionId, ready.repository);
+        await removeFromBoard(options, gone);
+
+        return runPass(options);
+      });
+    },
+
+    prefs: () => ({ ...prefs }),
+
+    async savePrefs(next) {
+      prefs = { ...next };
+      if (!session) return;
+      const s = session;
+      s.state.state.view = { ...next };
+      await serial(() => s.state.flush());
+    },
+  };
+
+  return controller;
+}
+
+function emptyResult(): PassResult {
+  return {
+    issues: 0,
+    comments: 0,
+    addedHere: 0,
+    updatedHere: 0,
+    sentToGitHub: 0,
+    held: [],
+    rows: [],
+  };
+}
+
+function blankRow(subject: string): IssueRow {
+  return {
+    subject,
+    title: '',
+    status: 'Todo',
+    body: '',
+    labels: [],
+    assignees: [],
+    comments: [],
   };
 }
 
