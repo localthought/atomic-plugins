@@ -423,7 +423,18 @@ textarea.m-input { min-height: 64px; resize: vertical; }
 .m-arrow { color: var(--pl-muted); font-weight: 400; }
 .m-ok { font-size: 12.5px; color: var(--pl-pos); font-weight: 600; }
 .m-ok::before { content: '✓ '; }
-.m-subtabs { display: flex; gap: 4px; border-bottom: 1px solid var(--pl-hair); overflow-x: auto; }
+/* Sticky: a long list scrolls under the tabs, never the tabs away. */
+.m-subtabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--pl-hair);
+  overflow-x: auto;
+  position: sticky;
+  top: -16px;
+  z-index: 1;
+  background: var(--pl-surface);
+  padding-top: 4px;
+}
 .m-subtabs button {
   border: 0;
   background: none;
