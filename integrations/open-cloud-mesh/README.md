@@ -166,3 +166,17 @@ there is no transaction/snapshot guarantee. OCM1.3 has no notification event ID
 in this schema, so idempotency here recognizes repeated resulting decisions,
 not an authenticated durable inbox log. Live host and peer interoperability
 remain unverified.
+
+Peer origins are canonicalized before policy checks and identity lookup: HTTPS
+scheme/DNS case are normalized, port 443 is omitted, and other numeric ports
+must be 1–65535. Policy keys undergo the same normalization; contradictory
+allow/deny aliases fail closed. Malformed DNS labels, IP spellings, trailing
+dots, credentials, paths and query strings are not accepted by this deliberately
+restricted parser. An old receipt keyed with explicit `:443` is refused for
+manual reconciliation rather than silently migrated or duplicated; these
+unpublished changes provide no deployed-data migration guarantee.
+
+Document references support canonical `atomic:<genesis>` resource subjects,
+legacy `did:ad:` subjects and HTTP(S) resource URLs. The configured subject is
+passed unchanged to actual host reads and remains subject to resource type and
+permission checks; recognizing its scheme grants no access.

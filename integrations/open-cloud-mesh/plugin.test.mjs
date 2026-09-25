@@ -400,3 +400,112 @@ test('legacy receipts migrate only by exact reviewed reimport, and HTTP remains 
     501,
   );
 });
+
+test('origin aliases share canonical identity and policy decisions', () => {
+  for (const alias of [
+    'https://CLOUD.Example',
+    'HTTPS://cloud.example:443',
+    'https://cloud.example:00443',
+  ])
+    assert.equal(origin(alias), peer);
+  assert.equal(
+    origin('https://CLOUD.example:08443'),
+    'https://cloud.example:8443',
+  );
+  for (const invalid of [
+    'https://cloud..example',
+    'https://-cloud.example',
+    'https://cloud-.example',
+    'https://cloud.example.',
+    'https://cloud.example:65536',
+    'https://cloud.example:0',
+    'https://127.0.0.1',
+    'https://' + 'x'.repeat(64) + '.example',
+  ])
+    assert.throws(() => origin(invalid));
+  const original = savedReceipt();
+  const aliases = {
+    peerOrigin: 'https://CLOUD.example:443',
+    allowedPeers: { 'HTTPS://Cloud.Example:443': true },
+  };
+  assert.deepEqual(run(host(aliases, { receipt: original })), {
+    intents: [],
+    problems: [],
+  });
+  assert.equal(
+    notify(original, 'SHARE_ACCEPTED', aliases).intents[0].set[P.baseline].peer,
+    peer,
+  );
+  assert.deepEqual(
+    run(host({ allowedPeers: { [peer]: true, [peer + ':443']: false } }))
+      .intents,
+    [],
+  );
+  assert.equal(
+    run(host({ allowedPeers: { [peer]: true, [peer + ':443']: true } })).intents
+      .length,
+    1,
+  );
+});
+test('precanonical default-port receipts fail closed rather than duplicate', () => {
+  const legacy = savedReceipt();
+  legacy[P.localId] = JSON.stringify([
+    'ocm-receipt-v1',
+    peer + ':443',
+    share.providerId,
+    share.shareWith,
+  ]);
+  const result = run(host({}, { legacy }));
+  assert.deepEqual(result.intents, []);
+  assert.match(result.problems[0].message, /Legacy origin alias/);
+  assert.deepEqual(notify(legacy).intents, []);
+});
+
+test('canonical Atomic document subjects work for import and lifecycle', () => {
+  const atomicDocument = 'atomic:7c084226d9a111e6bf26cec0c932ce01';
+  const c = host(
+    { document: atomicDocument },
+    {
+      [atomicDocument]: {
+        [P.isA]: ['https://atomicdata.dev/classes/DocumentV2'],
+      },
+    },
+  );
+  const created = run(c);
+  assert.deepEqual(created.problems, []);
+  const intent = created.intents[0];
+  assert.equal(intent.parent, atomicDocument);
+  assert.equal(intent.set[P.about], atomicDocument);
+  const row = {
+    ...intent.set,
+    [P.parent]: atomicDocument,
+    [P.isA]: intent.isA,
+  };
+  const n = host(
+    {
+      document: atomicDocument,
+      mode: 'apply-reviewed-notification',
+      expectedState: 'recorded',
+      notificationJson:
+        '{"notificationType":"SHARE_ACCEPTED","resourceType":"file","providerId":"share-123"}',
+    },
+    {
+      receipt: row,
+      [atomicDocument]: {
+        [P.isA]: ['https://atomicdata.dev/classes/DocumentV2'],
+      },
+    },
+  );
+  assert.equal(run(n).intents[0].set[P.baseline].document, atomicDocument);
+  n.read = () => {
+    throw Error('Denied by host');
+  };
+  assert.deepEqual(run(n).intents, []);
+  for (const document of [
+    'atomic:',
+    'atomic://legacy',
+    'atomic:bad name',
+    'atomic:x?query',
+  ])
+    assert.deepEqual(run(host({ document })).intents, []);
+});

@@ -31,21 +31,69 @@ function text(value, field, max = 1024) {
 // Deliberately restrictive HTTPS DNS origins. URL is not a QuickJS global.
 export function origin(value) {
   text(value, 'origin', 255);
-  if (
-    !/^https:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?$/.test(
-      value,
-    )
-  )
+  const match = /^https:\/\/([a-z0-9.-]+)(?::([0-9]{1,5}))?$/i.exec(value);
+  if (!match)
     throw new Error(
-      'Expected an HTTPS origin without credentials, path or query',
+      'Expected an HTTPS DNS origin without credentials, path or query',
     );
+  const host = match[1].toLowerCase();
+  const labels = host.split('.');
+  if (
+    host.length > 253 ||
+    labels.some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+  )
+    throw new Error('Invalid DNS origin');
+  // Numeric IPv4 spellings and IDNA conversion are deliberately unsupported;
+  // accepting them would require a complete URL host parser in QuickJS.
+  if (/^(?:[0-9]+|0x[0-9a-f]+)$/.test(labels[labels.length - 1]))
+    throw new Error('Expected a DNS origin');
+  const port = match[2] === undefined ? 443 : Number(match[2]);
+  if (port < 1 || port > 65535) throw new Error('Invalid origin port');
 
-  return value;
+  return 'https://' + host + (port === 443 ? '' : ':' + port);
+}
+
+function approvedPeer(policy, peer) {
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy))
+    throw new Error('Peer is not allowed');
+  const decisions = new Map();
+
+  for (const [raw, decision] of Object.entries(policy)) {
+    const canonical = origin(raw);
+    if (
+      typeof decision !== 'boolean' ||
+      (decisions.has(canonical) && decisions.get(canonical) !== decision)
+    )
+      throw new Error('Conflicting peer policy aliases');
+    decisions.set(canonical, decision);
+  }
+
+  if (decisions.get(peer) !== true) throw new Error('Peer is not allowed');
+}
+
+function receiptMatches(ctx, identity, peer, providerId, recipient) {
+  // Earlier unpublished code accepted explicit :443 as a separate identity.
+  // Refuse that legacy record rather than silently duplicate or migrate it.
+  if (!/:\d+$/.test(peer)) {
+    const legacy = ctx.query(
+      P.localId,
+      JSON.stringify(['ocm-receipt-v1', peer + ':443', providerId, recipient]),
+    );
+    if (!Array.isArray(legacy) || legacy.length)
+      throw new Error(
+        'Legacy origin alias receipt needs manual reconciliation',
+      );
+  }
+
+  return ctx.query(P.localId, identity);
 }
 
 function subject(value, field) {
   text(value, field, 2048);
-  if (!/^(https?:\/\/|did:ad:)/.test(value))
+  if (
+    !/^(https?:\/\/|did:ad:)/.test(value) &&
+    !/^atomic:(?!\/\/)[^\s?#]+$/.test(value)
+  )
     throw new Error(`Invalid ${field} subject`);
 
   return value;
@@ -222,7 +270,13 @@ function reviewedNotification(ctx, c, peer, document) {
     notification.providerId,
     recipient,
   ]);
-  const matches = ctx.query(P.localId, identity);
+  const matches = receiptMatches(
+    ctx,
+    identity,
+    peer,
+    notification.providerId,
+    recipient,
+  );
   if (!Array.isArray(matches) || matches.length !== 1)
     throw new Error('Notification needs one existing receipt');
   const existing = ctx.read(matches[0]);
@@ -302,13 +356,7 @@ export function run(ctx) {
         'Set mode to import-reviewed-share for an operator-reviewed metadata import',
       );
     const peer = origin(c.peerOrigin);
-    if (
-      !c.allowedPeers ||
-      Array.isArray(c.allowedPeers) ||
-      !Object.prototype.hasOwnProperty.call(c.allowedPeers, peer) ||
-      c.allowedPeers[peer] !== true
-    )
-      throw new Error('Peer is not allowed');
+    approvedPeer(c.allowedPeers, peer);
     const document = subject(c.document, 'document');
     const target = ctx.read(document);
     if (
@@ -332,7 +380,13 @@ export function run(ctx) {
       share.providerId,
       share.shareWith,
     ]);
-    const matches = ctx.query(P.localId, identity);
+    const matches = receiptMatches(
+      ctx,
+      identity,
+      peer,
+      share.providerId,
+      share.shareWith,
+    );
     if (!Array.isArray(matches) || matches.length > 1)
       throw new Error('Ambiguous existing share receipt');
     const escape = value =>
