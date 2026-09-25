@@ -114,3 +114,55 @@ provides a useful protocol reference, but cannot be linked into QuickJS. This
 implementation uses JavaScript and the OCM specification directly; no Rust
 source or dependency is bundled. The [accepted route design](../../docs/design/server-plugin-routes.md)
 provides the intended C receiver/B delivery placement.
+
+## Reviewed notification lifecycle
+
+The OCM 1.3 `NewNotification` schema requires `notificationType`, `resourceType`
+and `providerId`; it permits an optional protocol-specific `notification`
+object. This implementation supports the named file notifications
+`SHARE_ACCEPTED`, `SHARE_DECLINED` and `SHARE_UNSHARED`. Other notification types
+and resource types are refused. Optional notification parameters are validated
+as an object but never persisted: the specification explicitly permits a
+`sharedSecret` there. This is a metadata workflow, not token processing.
+
+For a previously imported receipt, run the normal reviewed job with the same
+peer policy, recipient and document configuration, changing these fields:
+
+```json
+{
+  "mode": "apply-reviewed-notification",
+  "expectedState": "recorded",
+  "notificationJson": "{\"notificationType\":\"SHARE_ACCEPTED\",\"resourceType\":\"file\",\"providerId\":\"share-123\"}"
+}
+```
+
+The notification does not carry a recipient in this spec. The operator must
+identify and review both its peer provenance and recipient; neither is inferred
+or authenticated from the notification JSON. The job looks up the exact persisted
+peer/provider-ID/recipient tuple, requires one matching Message, checks its
+parent and `about` link against the configured existing document, and checks
+that the receipt text has not been locally edited.
+
+New receipts persist lifecycle metadata in the host's existing JSON
+`importBaseline` property. States are `recorded`, `accepted`, `declined` and
+`unshared`. The local policy permits recorded → accepted/declined/unshared and
+accepted → unshared. Declined/unshared are terminal; this conservative policy
+is ours, not a state machine defined by OCM. A repeat of the recorded last
+notification is a no-op; conflicting or stale transitions fail without intents.
+A later share reimport preserves the existing lifecycle instead of resetting it.
+Exact pre-lifecycle receipts can gain their baseline through another reviewed
+share import; edited or ambiguously bound legacy receipts cannot.
+
+A transition proposes only two property changes on the existing receipt:
+`importBaseline` and its readable description. It does not change the
+underlying document, permissions, content, credentials or remote share. In
+particular an `unshared` receipt is **not enforcement of remote or Atomic access
+revocation**. No notification is sent or acknowledged over the network. POST
+`/ocm/notifications` is explicitly 501 behind the same host gates as shares.
+
+`expectedState` is checked while planning, not an atomic compare-and-swap at
+commit. Serialize reviewed jobs and resolve concurrent plans before application;
+there is no transaction/snapshot guarantee. OCM1.3 has no notification event ID
+in this schema, so idempotency here recognizes repeated resulting decisions,
+not an authenticated durable inbox log. Live host and peer interoperability
+remain unverified.

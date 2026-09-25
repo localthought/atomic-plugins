@@ -17,7 +17,7 @@
       },
       "mode": {
         "type": "string",
-        "description": "import-reviewed-share enables the manual metadata import job."
+        "description": "import-reviewed-share or apply-reviewed-notification: operator-reviewed metadata jobs, never an incoming HTTP identity."
       },
       "peerOrigin": {
         "type": "string",
@@ -38,6 +38,14 @@
       "shareJson": {
         "type": "string",
         "description": "Operator-reviewed share metadata JSON. Remove all protocol credentials before configuring."
+      },
+      "notificationJson": {
+        "type": "string",
+        "description": "Reviewed OCM1.3 file notification JSON; remove secrets first."
+      },
+      "expectedState": {
+        "type": "string",
+        "description": "Previously reviewed receipt state; recorded or accepted for a transition."
       }
     },
     "required": ["publicOrigin"]
@@ -55,6 +63,16 @@
       {
         "id": "shares-unavailable",
         "path": "/ocm/shares",
+        "methods": ["POST"],
+        "principal": "anonymous",
+        "auth": "none",
+        "maxBodyBytes": 16384,
+        "body": "json",
+        "accept": ["application/json"]
+      },
+      {
+        "id": "notifications-unavailable",
+        "path": "/ocm/notifications",
         "methods": ["POST"],
         "principal": "anonymous",
         "auth": "none",

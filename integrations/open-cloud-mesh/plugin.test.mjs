@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-import { handle, parseShare, run, P, origin } from './plugin.mjs';
+import {
+  handle,
+  parseShare,
+  parseNotification,
+  run,
+  P,
+  origin,
+} from './plugin.mjs';
 const doc = 'https://atomic.example/docs/project';
 const peer = 'https://cloud.example';
 const share = {
@@ -217,4 +224,179 @@ test('self-contained release rebuilds reproducibly with executable manifest rout
       404,
     );
   }
+});
+
+function savedReceipt() {
+  const intent = run(host()).intents[0];
+
+  return { ...intent.set, [P.parent]: intent.parent, [P.isA]: intent.isA };
+}
+
+function notify(row, type = 'SHARE_ACCEPTED', overrides = {}) {
+  return run(
+    host(
+      {
+        mode: 'apply-reviewed-notification',
+        expectedState: 'recorded',
+        notificationJson: JSON.stringify({
+          notificationType: type,
+          resourceType: 'file',
+          providerId: 'share-123',
+          notification: {
+            message: 'Reviewed by operator',
+            sharedSecret: 'NEVER-PUBLISH',
+          },
+        }),
+        ...overrides,
+      },
+      { receipt: row },
+    ),
+  );
+}
+
+test('OCM1.3 notification fixture projects only the required public identity', () => {
+  assert.deepEqual(
+    parseNotification(
+      '{"notificationType":"SHARE_ACCEPTED","resourceType":"file","providerId":"share-123","notification":{"sharedSecret":"secret"}}',
+    ),
+    {
+      notificationType: 'SHARE_ACCEPTED',
+      resourceType: 'file',
+      providerId: 'share-123',
+    },
+  );
+  for (const value of [
+    JSON.stringify({
+      notificationType: ['SHARE_ACCEPTED'],
+      resourceType: 'file',
+      providerId: 'x',
+    }),
+    'null',
+    '[]',
+    '{',
+    JSON.stringify({
+      notificationType: 'USER_REMOVED',
+      resourceType: 'user',
+      providerId: 'x',
+    }),
+    JSON.stringify({
+      notificationType: 'REQUEST_RESHARE',
+      resourceType: 'file',
+      providerId: 'x',
+    }),
+    JSON.stringify({
+      notificationType: 'SHARE_DECLINED',
+      resourceType: 'file',
+      providerId: 'x',
+      notification: [],
+    }),
+    ' '.repeat(16385),
+  ])
+    assert.throws(() => parseNotification(value));
+});
+test('reviewed acceptance updates only persisted receipt metadata, then deduplicates', () => {
+  const row = savedReceipt();
+  const result = notify(row);
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.intents.length, 1);
+  const change = result.intents[0];
+  assert.equal(change.op, 'set');
+  assert.equal(change.subject, 'receipt');
+  assert.deepEqual(
+    Object.keys(change.set).sort(),
+    [P.baseline, P.description].sort(),
+  );
+  assert.equal(change.set[P.baseline].state, 'accepted');
+  assert.equal(change.set[P.baseline].lastNotification, 'SHARE_ACCEPTED');
+  assert.equal(change.set[P.baseline].document, doc);
+  assert.ok(!JSON.stringify(result).includes('NEVER-PUBLISH'));
+  const persisted = { ...row, ...change.set };
+  assert.deepEqual(notify(persisted), { intents: [], problems: [] });
+  assert.deepEqual(run(host({}, { receipt: persisted })), {
+    intents: [],
+    problems: [],
+  });
+});
+test('decline and unshare are conservative terminal receipt states', () => {
+  const initial = savedReceipt();
+  const declined = {
+    ...initial,
+    ...notify(initial, 'SHARE_DECLINED').intents[0].set,
+  };
+  assert.equal(declined[P.baseline].state, 'declined');
+  const reopen = notify(declined, 'SHARE_ACCEPTED', {
+    expectedState: 'declined',
+  });
+  assert.deepEqual(reopen.intents, []);
+  assert.match(reopen.problems[0].message, /terminal/);
+  const accepted = { ...initial, ...notify(initial).intents[0].set };
+  const revoke = notify(accepted, 'SHARE_UNSHARED', {
+    expectedState: 'accepted',
+  });
+  assert.equal(revoke.intents[0].set[P.baseline].state, 'unshared');
+  const revoked = { ...accepted, ...revoke.intents[0].set };
+  assert.deepEqual(
+    notify(revoked, 'SHARE_UNSHARED', { expectedState: 'accepted' }),
+    { intents: [], problems: [] },
+  );
+  assert.deepEqual(
+    notify(revoked, 'SHARE_ACCEPTED', { expectedState: 'unshared' }).intents,
+    [],
+  );
+  assert.equal(
+    notify(initial, 'SHARE_UNSHARED').intents[0].set[P.baseline].state,
+    'unshared',
+  );
+});
+test('notification binding, expected-state and local-edit conflicts cannot mutate receipts', () => {
+  const row = savedReceipt();
+  for (const overrides of [
+    { recipient: 'somebody-else' },
+    {
+      peerOrigin: 'https://other.example',
+      allowedPeers: { 'https://other.example': true },
+    },
+    { expectedState: 'accepted' },
+    {
+      notificationJson:
+        '{"notificationType":"SHARE_ACCEPTED","resourceType":"file","providerId":"another-share"}',
+    },
+  ])
+    assert.deepEqual(notify(row, 'SHARE_ACCEPTED', overrides).intents, []);
+  assert.deepEqual(
+    notify({ ...row, [P.description]: 'Locally edited' }).intents,
+    [],
+  );
+  assert.deepEqual(
+    notify({ ...row, [P.about]: 'https://atomic.example/other' }).intents,
+    [],
+  );
+  const duplicateHost = host(
+    {
+      mode: 'apply-reviewed-notification',
+      expectedState: 'recorded',
+      notificationJson:
+        '{"notificationType":"SHARE_ACCEPTED","resourceType":"file","providerId":"share-123"}',
+    },
+    { a: row, b: row },
+  );
+  assert.deepEqual(run(duplicateHost).intents, []);
+});
+test('legacy receipts migrate only by exact reviewed reimport, and HTTP remains unavailable', () => {
+  const row = savedReceipt();
+  delete row[P.baseline];
+  assert.deepEqual(notify(row).intents, []);
+  const migration = run(host({}, { receipt: row }));
+  assert.deepEqual(migration.problems, []);
+  assert.deepEqual(Object.keys(migration.intents[0].set), [P.baseline]);
+  assert.equal(migration.intents[0].set[P.baseline].state, 'recorded');
+  assert.equal(
+    handle(host(), {
+      method: 'POST',
+      path: '/ocm/notifications',
+      body: '{"notificationType":"SHARE_UNSHARED"}',
+      caller: 'pretend-peer',
+    }).status,
+    501,
+  );
 });
