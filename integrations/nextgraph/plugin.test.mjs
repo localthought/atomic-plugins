@@ -137,9 +137,11 @@ test('duplicate, incomplete and denied snapshot lookups cannot produce intents',
   }
 
   c.query = () => ['urn:private'];
+
   c.read = () => {
     throw Error('denied');
   };
+
   assert.throws(() => run(c), /denied/);
 });
 test('blank labels are remapped consistently and cannot inject SPARQL', () => {
