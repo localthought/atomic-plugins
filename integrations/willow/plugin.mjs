@@ -83,8 +83,27 @@ export const manifest = {
     ],
   },
 };
-const subjectId = value =>
-  typeof value === 'string' && /^(https?:\/\/|did:ad:)/.test(value);
+
+// Match the host's canonical atomic: scheme and legacy did:ad: alias without
+// imposing a signature alphabet. The host owns deeper identifier validation.
+function subjectId(value) {
+  if (
+    typeof value !== 'string' ||
+    /\s/.test(value) ||
+    [...value].some(
+      char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    )
+  )
+    return false;
+  if (/^https?:\/\/[^/?#]+/.test(value)) return true;
+  const body = value.startsWith('atomic:')
+    ? value.slice(7)
+    : value.startsWith('did:ad:')
+      ? value.slice(7)
+      : '';
+
+  return body.split(/[?#]/)[0].length > 0 && !body.startsWith('//');
+}
 
 function decimal(value) {
   if (

@@ -183,3 +183,40 @@ test('bundle reproduces from current codec, plugin and shared WILLIAM3 source', 
   assert.doesNotMatch(source, /^\s*import\s/m);
   assert.doesNotMatch(source, /\b(?:fetch\(|Buffer\.|process\.|require\()/);
 });
+
+test('canonical Atomic parent and source IDs produce valid export candidates', () => {
+  const f = fixture();
+  const subject = 'atomic:' + Buffer.alloc(64, 1).toString('base64');
+  const parent = 'atomic:' + Buffer.alloc(64, 2).toString('base64');
+  f.resources.set(subject, f.resources.get(s));
+  f.ctx.config.subjects = [subject];
+  f.ctx.config.outputParent = parent;
+  const verdict = run(f.ctx);
+  assert.deepEqual(verdict.problems, []);
+  assert.equal(verdict.intents[0].parent, parent);
+  const candidate = exportCandidate(f.ctx, f.ctx.config, subject);
+  assert.equal(
+    JSON.parse(Buffer.from(candidate.payload).toString())['@id'],
+    subject,
+  );
+});
+
+test('empty, legacy-link and control-containing Atomic subjects are refused', () => {
+  for (const subject of [
+    'atomic:',
+    'atomic:?drive=x',
+    'atomic://host/path',
+    'atomic:bad\nvalue',
+    'did:ad:',
+    'https://',
+  ]) {
+    const f = fixture();
+    f.ctx.config.outputParent = subject;
+    assert.deepEqual(run(f.ctx).intents, []);
+    assert.ok(run(f.ctx).problems.length);
+    f.ctx.config.outputParent = out;
+    f.ctx.config.subjects = [subject];
+    assert.deepEqual(run(f.ctx).intents, []);
+    assert.ok(run(f.ctx).problems.length);
+  }
+});
