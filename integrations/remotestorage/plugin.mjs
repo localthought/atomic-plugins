@@ -225,11 +225,21 @@ function baseline(resource) {
   const data = resource[P.baseline];
   if (!data || data.protocol !== 'remoteStorage-text-v1') return null;
 
-  return validateDocument(data);
+  const doc = validateDocument(data);
+  if (canonical(data.values) !== canonical(sourceValues(doc)))
+    fail('Local document edits or legacy baseline require review');
+
+  return doc;
+}
+
+function sourceValues(doc) {
+  return { [P.name]: doc.path.split('/').pop(), [P.content]: doc.text };
 }
 
 function sameDisplay(resource, doc) {
-  return resource[P.content] === doc.text;
+  return Object.entries(sourceValues(doc)).every(
+    ([property, value]) => resource[property] === value,
+  );
 }
 
 // Match the host's canonical atomic: scheme and legacy did:ad: alias without
@@ -299,7 +309,14 @@ export function run(ctx) {
         [P.name]: doc.path.split('/').pop(),
         [P.localId]: key,
         [P.content]: doc.text,
-        [P.baseline]: { protocol: 'remoteStorage-text-v1', ...doc },
+        [P.baseline]: {
+          protocol: 'remoteStorage-text-v1',
+          ...doc,
+          values: sourceValues(doc),
+          previous: matches.length
+            ? { ...matches[0].resource[P.baseline]?.values }
+            : {},
+        },
       };
 
       if (!matches.length)

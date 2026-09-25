@@ -13,7 +13,9 @@ QuickJS invocation or real host persistence round trip has been verified.
   host to validate, preview, approve and commit to its actual atom store. Returning
   an intent is not a durable HTTP write acknowledgment.
 - Each text document is an Atomic resource under `config.table`, with `name`,
-  `description`, `localId` and `importBaseline` atoms. The baseline retains the
+  `description`, `localId` and `importBaseline` atoms. The baseline supplies
+  the host-required `values` and `previous` snapshots for signed commit conflict
+  checks, covering both the title and text. It also retains the
   exact source text, path and media type, including CRLF and Unicode. These are
   ordinary resources, **not DocumentV2 rich-text documents**: the current editor
   reads a Loro `doc` map which sandbox intents cannot construct. No Tiptap JSON

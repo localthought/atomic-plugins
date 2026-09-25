@@ -324,3 +324,48 @@ test('empty, legacy-link and control-containing parent subjects are refused', ()
     assert.equal(handle(f.ctx, request()).status, 503);
   }
 });
+
+test('import baselines carry source values and the observed previous values for host commit checks', () => {
+  const f = fixture();
+  const first = f.proposal([document()]);
+  const source = { [P.name]: 'a.txt', [P.content]: 'hello' };
+  assert.deepEqual(first.intents[0].set[P.baseline].values, source);
+  assert.deepEqual(first.intents[0].set[P.baseline].previous, {});
+  f.apply(first);
+  const update = f.proposal([document(undefined, 'second')]);
+  assert.deepEqual(update.intents[0].set[P.baseline].previous, source);
+  assert.deepEqual(update.intents[0].set[P.baseline].values, {
+    ...source,
+    [P.content]: 'second',
+  });
+  f.apply(update);
+  assert.deepEqual(f.proposal([document(undefined, 'second')]).intents, []);
+  const third = f.proposal([document(undefined, 'third')]);
+  assert.deepEqual(
+    third.intents[0].set[P.baseline].previous,
+    update.intents[0].set[P.baseline].values,
+  );
+  // A held preview keeps the original source snapshot so the host can reject
+  // it if another import updates the baseline before Apply.
+  assert.deepEqual(update.intents[0].set[P.baseline].previous, source);
+});
+
+test('local name edits and malformed legacy source baselines require review', () => {
+  for (const mutate of [
+    row => {
+      row[P.name] = 'local title';
+    },
+    row => {
+      delete row[P.baseline].values;
+    },
+    row => {
+      row[P.baseline].values[P.content] = 'tampered';
+    },
+  ]) {
+    const f = fixture([document()]);
+    mutate([...f.resources.values()][0]);
+    const result = f.proposal([document(undefined, 'remote update')]);
+    assert.deepEqual(result.intents, []);
+    assert.match(result.problems[0].message, /review/);
+  }
+});

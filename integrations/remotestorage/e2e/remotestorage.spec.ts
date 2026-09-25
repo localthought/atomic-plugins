@@ -81,7 +81,7 @@ test.describe('remoteStorage importer', () => {
     await expectStored(page, subject, initial);
     await apply(page);
     await page.reload();
-    await expectStored(page, subject, updated);
+    await expectStored(page, subject, updated, initial);
     expect(await matchingRows(page, parent)).toEqual([subject]);
 
     // A real signed local edit must survive the next attempted source update.
@@ -117,6 +117,8 @@ test.describe('remoteStorage importer', () => {
       path: PATH,
       text: updated,
       contentType: 'text/plain; charset=utf-8',
+      values: { [NAME]: PATH.split('/').pop(), [DESCRIPTION]: updated },
+      previous: { [NAME]: PATH.split('/').pop(), [DESCRIPTION]: initial },
     });
     expect(await matchingRows(page, parent)).toEqual([subject]);
   });
@@ -299,7 +301,12 @@ async function readAtoms(page: Page, resourceSubject: string) {
   );
 }
 
-async function expectStored(page: Page, subject: string, text: string) {
+async function expectStored(
+  page: Page,
+  subject: string,
+  text: string,
+  previous?: string,
+) {
   const stored = await readAtoms(page, subject);
   expect(stored.description).toBe(text);
   expect(stored.baseline).toEqual({
@@ -307,5 +314,10 @@ async function expectStored(page: Page, subject: string, text: string) {
     path: PATH,
     text,
     contentType: 'text/plain; charset=utf-8',
+    values: { [NAME]: PATH.split('/').pop(), [DESCRIPTION]: text },
+    previous:
+      previous === undefined
+        ? {}
+        : { [NAME]: PATH.split('/').pop(), [DESCRIPTION]: previous },
   });
 }
