@@ -12,7 +12,7 @@ atomic-server#1657), for platform `google-calendar`. The frame names a
 connection id, never a credential. The same shape as the Pets and Notion
 drive apps.
 
-1. **Install.** From the catalog: entry `calendar` (experimental), under the
+1. **Install.** From the catalog: entry `calendar` (experimental; published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it). Once enabled it is listed under the
    Integrations page's **Drive apps**. The host downloads
    `apps/calendar/<version>/ui.js` (`app/build.mjs`'s bundle, minified,
    103,857 bytes for 0.1.0) from GitHub Pages and refuses it unless it

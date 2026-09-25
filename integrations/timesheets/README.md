@@ -1,7 +1,7 @@
 # Clockify
 
 The supported path is the **drive app** in `app/` (below): catalog entry
-`timesheets`, installed from the Integrations page's **Drive apps** section
+`timesheets` (published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it), installed once enabled from the Integrations page's **Drive apps** section
 (experimental plugins shown), which downloads
 `apps/timesheets/<version>/ui.js` from GitHub Pages and checks it against the
 catalog's integrity hash (see

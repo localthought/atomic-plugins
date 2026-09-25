@@ -215,7 +215,7 @@ read in `hostStore.ts`, `proxyConnections.ts`, `collection.ts`;
   `store.getMany` in batches of 100.
 - Search, keyboard and drag were checked in jsdom and the e2e; drag and drop
   was not exercised in an automated test.
-- **Install.** From the catalog: entry `issue-tracker` (experimental), under
+- **Install.** From the catalog: entry `issue-tracker` (experimental; published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it). Once enabled it is listed under
   the Integrations page's **Drive apps**, which downloads
   `apps/issue-tracker/<version>/ui.js` from GitHub Pages and checks it
   against the entry's integrity hash (see

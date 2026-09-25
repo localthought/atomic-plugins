@@ -7,7 +7,7 @@ Notion code (branch `claude/remove-notion-code`). There are two paths:
   is the direction for #8 and #68: an iframe plugin that reads Notion through
   `syncables/browser` over the host's integration-proxy relay, and maps it to
   Atomic rows through a Devonian lens (`devonian/notion/`). It is the one
-  with an entry point: the `notion` catalog entry (experimental) installs it
+  with an entry point: the `notion` catalog entry (experimental; published but disabled pending launch: the catalog entry carries the module and its integrity with `enabled: false`, so the Integrations page does not offer it yet; the lanes' dev-server serves it enabled (`DEV_SERVER_ENABLE_APPS`), which is how the e2e installs it) installs it
   from the Integrations page's **Drive apps**, downloading
   `apps/notion/<version>/ui.js` from GitHub Pages and checking it against the
   entry's integrity hash (see
