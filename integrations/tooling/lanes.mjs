@@ -136,6 +136,7 @@ export function validateConfig(config) {
       for (const path of lane.paths)
         if (
           !SHARED_PACKAGES.some(pkg => path.startsWith(`${pkg}/`)) &&
+          !PLUGIN_BUILD_DEPENDENCIES[lane.id]?.includes(path) &&
           !(lane.dir !== undefined && toolingLanePath(path))
         )
           throw new Error(
@@ -185,9 +186,15 @@ export const sharedPorts = config =>
  */
 export const SHARED_PACKAGES = ['devonian', 'syncables', 'reflector'];
 
+// Reviewed exact build dependency: reuse the existing WILLIAM3 primitive without
+// duplicating cryptographic source or granting arbitrary sibling-folder globs.
+export const PLUGIN_BUILD_DEPENDENCIES = Object.freeze({
+  willow: ['integrations/willow-drop/william3.ts'],
+});
+
 /**
  * The paths a lane runs on, for dorny/paths-filter: its own directory, plus
- * any shared-package `paths` it declares.
+ * any shared-package or explicitly approved build-dependency `paths`.
  */
 export const laneFilter = lane =>
   lane.dir !== undefined

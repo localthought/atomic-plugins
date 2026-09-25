@@ -80,6 +80,18 @@
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
     {
+      "id": "willow",
+      "index": 14,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": [
+        "integrations/willow/codec.test.mjs",
+        "integrations/willow/plugin.test.mjs"
+      ],
+      "paths": ["integrations/willow-drop/william3.ts"],
+      "note": "Willow25 unsigned Entry codecs and Atomic signing-candidate export, verified against official encoding vectors. No Meadowcap signing, transport, WGPS or live interoperability."
+    },
+    {
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
