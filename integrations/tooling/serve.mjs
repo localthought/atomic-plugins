@@ -50,7 +50,6 @@ import {
   sharedPorts,
   root,
 } from './lanes.mjs';
-import { ensureRoutesBinary } from './server-build.mjs';
 
 export const serverCheckout = () =>
   process.env.ATOMIC_SERVER_CHECKOUT ?? '/tmp/atomic-server';
@@ -361,14 +360,19 @@ export async function bringUp({
       ? undefined
       : routesImageFor(process.env, readPin());
     image = routesImage && usableRoutesImage(routesImage);
+
     if (image) {
       const problem = imagePinProblem(image, readPin());
       if (problem) console.warn(`warning: ${problem}`);
-    } else
+    } else {
+      // Loaded only here, so a lane on the default build (and anything that
+      // copies serve.mjs without it) never needs server-build.mjs.
+      const { ensureRoutesBinary } = await import('./server-build.mjs');
       binary = await ensureRoutesBinary({
         checkout: serverCheckout(),
         pin: readPin(),
       });
+    }
   } else if (image) {
     const problem = imagePinProblem(image, readPin());
     if (problem) console.warn(`warning: ${problem}`);

@@ -310,9 +310,10 @@ test('only a run with a pluginRoutes lane asks for the plugin-routes build', () 
   assert.equal(needsPluginRoutesBuild(both, []), false);
 });
 
-test('the plugin-routes lane runs its e2e at off and read-only', () => {
+test('the plugin-routes lane runs its e2e at read-only, then off', () => {
   const routes = config.lanes.find(l => l.id === 'plugin-routes');
-  assert.deepEqual(pluginRoutesLevels(routes), ['off', 'read-only']);
+  // read-only first: the off run checks that its installation is degraded.
+  assert.deepEqual(pluginRoutesLevels(routes), ['read-only', 'off']);
   assert.equal(laneDir(routes), 'integrations/tooling');
   assert.deepEqual(routes.platforms, []);
   // Not every tooling change: only what the lane depends on.

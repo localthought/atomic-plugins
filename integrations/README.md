@@ -438,9 +438,11 @@ ontola/atomic-server#1726 (the gates, for #1711) and #1732 (manifest v3, for
   list of levels); its live and e2e tiers then run on a build with the
   feature, once per level (see [PARALLEL_LANES.md](PARALLEL_LANES.md)).
   The `plugin-routes` lane uses that to check, against a real host, that
-  pinning `tooling/fixtures/gated-plugin/` is refused at `off` and allowed at
-  `read-only`. It does not test a route answering, because no host serves
-  routes yet (ontola/atomic-server#1714, #1715).
+  `tooling/fixtures/gated-plugin/` pins, installs through the review dialog
+  and answers its `drive-prefix` route (`/_routes/<slug>/hello`) at
+  `read-only`, and that at `off` pinning is refused, Install is disabled and
+  that installation's handler no longer runs. It covers no other mount,
+  no well-known claim and nothing that needs `read-write`.
 
 ## Building an uploader plugin
 
