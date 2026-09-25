@@ -148,7 +148,7 @@ QuickJS run, host transaction or browser client exchange. `build.mjs --check`
 checks both generated artifacts without rewriting them.
 
 The E2E tier uses the normal host file-import UI and the unchanged production
-bundle. It publishes a release, creates/configures a draft, uploads text,
+bundle. It publishes a release, configures its original source draft, uploads text,
 captures the actual `/plugin-run` response, confirms preview alone writes
 nothing, approves the change and reloads the resulting atom values. It then
 checks duplicate import, source update and preservation of a real local edit.
@@ -159,3 +159,8 @@ HTTP interoperability, blob support or independent client compatibility.
 Test discovery, lint and lane configuration checks pass. Runtime execution is
 being verified separately; a locally built binary of unknown commit provenance
 is only a development probe, not certification against `.atomic-server-ref`.
+
+The standard E2E server lacks the optional `plugin-routes` feature, so the
+production HTTP release is correctly hidden from installable catalog cards.
+The importer test runs its unchanged source draft through `/plugin-run`; it
+does not certify route installation or bypass the catalog feature gate.

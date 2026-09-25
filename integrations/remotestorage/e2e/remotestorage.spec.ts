@@ -37,22 +37,14 @@ test.describe('remoteStorage importer', () => {
     page,
   }) => {
     test.setTimeout(300_000);
-    await publishBundle(page);
-    await page
-      .getByRole('checkbox', { name: 'Show experimental plugins' })
-      .check();
-    const card = page.locator('[data-release]').filter({
-      has: page.getByRole('heading', { name: TITLE, exact: true }),
-    });
-    await card.getByRole('button', { name: 'Open', exact: true }).click();
-    await page
-      .locator('dialog[open]')
-      .getByRole('button', { name: 'Create draft', exact: true })
-      .click();
+    const importer = await publishBundle(page);
+    // The unchanged v3 release correctly requires the optional plugin-routes
+    // feature for installation. Its original source draft can still exercise
+    // the independent file importer through the real QuickJS /plugin-run API.
+    await page.goto(importer);
     await expect(
       page.getByRole('main').getByRole('heading', { name: TITLE, level: 1 }),
     ).toBeVisible({ timeout: 45_000 });
-    const importer = page.url();
     const parent = await configureParent(page);
     await page.reload();
     await expect(page.getByLabel('File to import')).toBeVisible({
@@ -130,7 +122,7 @@ test.describe('remoteStorage importer', () => {
   });
 });
 
-async function publishBundle(page: Page) {
+async function publishBundle(page: Page): Promise<string> {
   await createFromCatalog(page, 'Plugin');
   await expect(
     page
@@ -153,6 +145,7 @@ async function publishBundle(page: Page) {
     },
     { source: bundle, title: TITLE },
   );
+  const sourceDraft = page.url();
   await page.getByRole('tab', { name: 'Code', exact: true }).click();
   const published = page.waitForResponse(
     response =>
@@ -167,6 +160,8 @@ async function publishBundle(page: Page) {
   await expect(
     page.getByRole('heading', { name: 'Integrations', exact: true }),
   ).toBeVisible();
+
+  return sourceDraft;
 }
 
 async function configureParent(page: Page): Promise<string> {
@@ -188,8 +183,7 @@ async function configureParent(page: Page): Promise<string> {
         schemasProperty = property;
     }
 
-    if (!schemasProperty)
-      throw new Error('Installed plugin lacks plugin-schemas');
+    if (!schemasProperty) throw new Error('Source draft lacks plugin-schemas');
     const folder = await store.newResource({
       parent: plugin.subject,
       isA: 'https://atomicdata.dev/classes/Folder',
