@@ -5,7 +5,7 @@ and what evidence backs that. Checked against atomic-plugins `main` and the
 pinned atomic-server commit in [`.atomic-server-ref`](../.atomic-server-ref)
 (`bae5cdbe3`, `feat/plugin-debug`, 2026-09-23). The drive app rows (Pets,
 Notion, Clockify, Google Calendar, GitHub issues) and "Drive apps" below were
-rechecked at pin `69602364b` on 2026-09-25. When the pin or a plugin
+rechecked at pin `bc39dac4b` on 2026-09-25. When the pin or a plugin
 changes, update this file in the same PR.
 
 Evidence levels are kept apart. None of them implies the next one:
