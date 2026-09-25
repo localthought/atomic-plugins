@@ -19,6 +19,6 @@
       ]
     }
   },
-  "include": ["*.ts"],
-  "exclude": ["*.test.ts", "fakeStore.ts"]
+  "include": ["*.ts", "ui/*.ts"],
+  "exclude": ["*.test.ts", "ui/*.test.ts", "fakeStore.ts"]
 }

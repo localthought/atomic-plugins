@@ -19,6 +19,7 @@ import {
   evaluateRust,
   formatFailureSummary,
   parseArgs,
+  sandboxFeatures,
   summarizeFailure,
 } from './certify.mjs';
 test('the js layer is the default; sandbox and all stay selectable', () => {
@@ -251,4 +252,122 @@ test('bundles are reproducible with CI browser and integration symlinks', () => 
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+});
+
+test('a gated package is refused without the derived requires, and certified with it on a plugin-routes build', () => {
+  const base = mkdtempSync(join(tmpdir(), 'atomic-certification-gated-'));
+  const REQUIRES = 'https://atomicdata.dev/integrations/properties/requires';
+  const derived = [
+    'persistent-host',
+    'plugin-routes:read-only',
+    'public-origin',
+    'wasm-sandbox',
+  ];
+
+  try {
+    const dir = join(base, 'integrations/gated');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        atomicCertification: {
+          owner: 'Fixture',
+          support: 'experimental',
+          apiVersion: 'fixture-v1',
+          capabilities: ['fixture:serve'],
+          sandboxTests: ['plugins::fixture_tests::fixture_test'],
+        },
+      }),
+    );
+    for (const file of [
+      'plugin.ts',
+      'tsconfig.json',
+      'vitest.config.ts',
+      'README.md',
+    ])
+      writeFileSync(join(dir, file), '');
+    writeFileSync(
+      join(dir, 'plugin.js'),
+      readFileSync(
+        join(root, 'integrations/tooling/fixtures/gated-plugin/plugin.js'),
+      ),
+    );
+    const card = extra => [
+      {
+        'https://atomicdata.dev/properties/shortname': 'gated',
+        'https://atomicdata.dev/integrations/properties/version': '1.0.0',
+        ...extra,
+      },
+    ];
+
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify(card({})),
+    );
+    assert.throws(
+      () => discover(base),
+      /integrations\/gated: a gated plugin \(needs plugin-routes:read-only\) has no requires in catalog\.json/,
+    );
+
+    writeFileSync(
+      join(base, 'integrations/catalog.json'),
+      JSON.stringify(card({ [REQUIRES]: derived })),
+    );
+    const [found] = discover(base);
+    assert.equal(found.schemaVersion, 3);
+    assert.equal(found.pluginRoutes, 'read-only');
+    assert.deepEqual(found.requires, derived);
+    assert.equal(sandboxFeatures(found), 'light,wasm-plugins,plugin-routes');
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('ungated packages keep the default sandbox features', () => {
+  for (const p of discover()) {
+    assert.equal(p.pluginRoutes, 'none', p.id);
+    assert.equal(sandboxFeatures(p), 'light,wasm-plugins');
+  }
+});
+
+test('a gated plugin has no evidence until a plugin-routes build at its level is recorded', async () => {
+  const { assessEvidence, neededLevel } = await import('./evidence.mjs');
+  const now = Date.now();
+  const item = hostFeatures => ({
+    id: 'gated',
+    owner: 'Fixture',
+    version: '1.0.0',
+    status: 'passed',
+    bundleSha256: 'expected',
+    requires: ['plugin-routes:read-write', 'wasm-sandbox'],
+    ...(hostFeatures ? { hostFeatures } : {}),
+    checks: [
+      'reproducible-bundle',
+      'typecheck',
+      'fixtures',
+      'plugins::fixture::test',
+    ].map(name => ({ name, status: 'passed' })),
+  });
+  const report = hostFeatures => ({
+    schemaVersion: 1,
+    layer: 'all',
+    status: 'passed',
+    generatedAt: new Date(now).toISOString(),
+    integrations: [item(hostFeatures)],
+  });
+  const assess = hostFeatures =>
+    assessEvidence(report(hostFeatures), 'gated', 'expected', now);
+  const features = ['light', 'wasm-plugins', 'plugin-routes'];
+
+  assert.equal(neededLevel(item()), 'read-write');
+  assert.equal(assess(undefined), null);
+  // What certify.mjs records: the feature, but no running level.
+  assert.equal(assess({ features, pluginRoutes: null }), null);
+  assert.equal(assess({ features, pluginRoutes: 'read-only' }), null);
+  assert.equal(
+    assess({ features: ['light', 'wasm-plugins'], pluginRoutes: 'read-write' }),
+    null,
+  );
+  assert.ok(assess({ features, pluginRoutes: 'read-write' }));
 });
