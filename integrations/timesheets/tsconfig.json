@@ -12,6 +12,6 @@
       "@tomic/lib": ["../../browser/lib/src/index.ts"]
     }
   },
-  "include": ["localthought.ts", "app/*.ts"],
-  "exclude": ["app/*.test.ts", "app/fixtureProxy.ts"]
+  "include": ["localthought.ts", "app/**/*.ts"],
+  "exclude": ["app/**/*.test.ts", "app/fixtureProxy.ts"]
 }
