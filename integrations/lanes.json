@@ -9,6 +9,14 @@
 
   "lanes": [
     {
+      "id": "open-cloud-mesh",
+      "index": 16,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/open-cloud-mesh/plugin.test.mjs"],
+      "note": "Executable OCM discovery, bounded metadata parser and reviewed Atomic document receipt importer. Network receipt remains unavailable pending host authorization and writes; no live interoperability claim."
+    },
+    {
       "id": "calendar",
       "index": 0,
       "platforms": ["google-calendar"],
@@ -30,10 +38,29 @@
       "e2e": ["integrations/issue-tracker/e2e/issue-tracker.spec.ts"]
     },
     {
+      "id": "solid",
+      "index": 11,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": [
+        "integrations/solid/plugin.test.mjs",
+        "integrations/solid/turtle.test.mjs"
+      ],
+      "note": "QuickJS partial Solid resource bridge: reviewed Atomic document import, public reads, RDF validation and fail-closed host gaps."
+    },
+    {
       "id": "localthought",
       "index": 2,
       "platforms": ["pets", "github-issues", "google-calendar", "clockify"],
       "tiers": ["typecheck", "unit"]
+    },
+    {
+      "id": "atproto",
+      "index": 12,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/atproto/plugin.test.mjs"],
+      "note": "Executable QuickJS handle-to-DID route checks and reproducible bundle; no live resolver verification."
     },
     {
       "id": "money",
@@ -61,12 +88,32 @@
       "liveEnv": "ATOMIC_NOTION_TEST_SERVER"
     },
     {
+      "id": "willow",
+      "index": 14,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": [
+        "integrations/willow/codec.test.mjs",
+        "integrations/willow/plugin.test.mjs"
+      ],
+      "paths": ["integrations/willow-drop/william3.ts"],
+      "note": "Willow25 unsigned Entry codecs and Atomic signing-candidate export, verified against official encoding vectors. No Meadowcap signing, transport, WGPS or live interoperability."
+    },
+    {
       "id": "pets",
       "index": 5,
       "platforms": ["pets"],
       "tiers": ["e2e"],
       "note": "e2e drives the Pets drive app (integrations/pets/app/) in its plugin iframe: connect through the host's consent bar and the mock proxy, then import through the host proxy relay (#52). It needs an .atomic-server-ref that includes the relay (atomic-server#1657, for #1624, merged into feat/plugin-debug; the pin has it); against an older pin the app reports that the host cannot reach the proxy and the spec fails at 'Not connected'.",
       "e2e": ["integrations/pets/e2e/pets.spec.ts"]
+    },
+    {
+      "id": "nextgraph",
+      "index": 15,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/nextgraph/plugin.test.mjs"],
+      "note": "Executable RDF interchange and reviewed Atomic snapshot storage; no live NextGraph broker verification."
     },
     {
       "id": "timesheets",

@@ -17,6 +17,7 @@ import {
   needsPluginRoutesBuild,
   pluginRoutesLevels,
   root,
+  PLUGIN_BUILD_DEPENDENCIES,
 } from './lanes.mjs';
 
 const config = loadLanes();
@@ -86,7 +87,7 @@ test('a lane declaring typecheck or unit has the config that tier runs', () => {
   }
 });
 
-test('a lane filter covers its own directory and no other plugin', () => {
+test('a lane filter covers its own directory and only explicit sibling dependencies', () => {
   for (const lane of config.lanes) {
     // A tooling lane names its files; none of them is a plugin's.
     if (lane.dir) {
@@ -103,7 +104,11 @@ test('a lane filter covers its own directory and no other plugin', () => {
     const [own, ...extra] = laneFilter(lane);
     assert.equal(own, `integrations/${lane.id}/**`);
     for (const path of extra)
-      assert.ok(!path.startsWith('integrations/'), `${lane.id} claims ${path}`);
+      assert.ok(
+        !path.startsWith('integrations/') ||
+          PLUGIN_BUILD_DEPENDENCIES[lane.id]?.includes(path),
+        `${lane.id} claims ${path}`,
+      );
   }
 });
 
@@ -173,6 +178,23 @@ test('lane paths are limited to shared packages', () => {
     () => validateConfig(cfg(lane({ paths: 'devonian/**' }))),
     /paths must be an array/,
   );
+});
+
+test('Willow WILLIAM3 dependency is exact, lane-specific and included in CI filters', () => {
+  const path = 'integrations/willow-drop/william3.ts';
+  const approved = lane({ id: 'willow', paths: [path] });
+  assert.doesNotThrow(() => validateConfig(cfg(approved)));
+  assert.ok(laneFilter(approved).includes(path));
+  assert.match(
+    filtersYaml(cfg(approved)),
+    /integrations\/willow-drop\/william3\.ts/,
+  );
+  for (const wrong of [
+    lane({ id: 'other', paths: [path] }),
+    lane({ id: 'willow', paths: ['integrations/willow-drop/**'] }),
+    lane({ id: 'willow', paths: ['integrations/willow-drop/drop.ts'] }),
+  ])
+    assert.throws(() => validateConfig(cfg(wrong)), /not in a shared package/);
 });
 
 // build-server, which every lane job needs, runs only when `any` matched, so

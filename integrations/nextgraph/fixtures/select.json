@@ -1,0 +1,21 @@
+{
+  "head": { "vars": ["s", "p", "o"] },
+  "results": {
+    "bindings": [
+      {
+        "s": { "type": "uri", "value": "did:ng:z:alice" },
+        "p": { "type": "uri", "value": "http://xmlns.com/foaf/0.1/name" },
+        "o": { "type": "literal", "value": "Alice", "xml:lang": "en" }
+      },
+      {
+        "s": { "type": "uri", "value": "did:ng:z:alice" },
+        "p": { "type": "uri", "value": "did:ng:z:balance" },
+        "o": {
+          "type": "literal",
+          "value": "9007199254740993.123456789",
+          "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+        }
+      }
+    ]
+  }
+}
