@@ -25,7 +25,8 @@
       "https://atomicdata.dev/integrations/properties/app-module",
       "https://atomicdata.dev/integrations/properties/app-module-integrity",
       "https://atomicdata.dev/integrations/properties/app-row-name",
-      "https://atomicdata.dev/integrations/properties/app-row-name-plural"
+      "https://atomicdata.dev/integrations/properties/app-row-name-plural",
+      "https://atomicdata.dev/integrations/properties/requires"
     ]
   },
   {
@@ -57,7 +58,8 @@
       "https://atomicdata.dev/integrations/properties/app-module",
       "https://atomicdata.dev/integrations/properties/app-module-integrity",
       "https://atomicdata.dev/integrations/properties/app-row-name",
-      "https://atomicdata.dev/integrations/properties/app-row-name-plural"
+      "https://atomicdata.dev/integrations/properties/app-row-name-plural",
+      "https://atomicdata.dev/integrations/properties/requires"
     ]
   },
   {
@@ -276,6 +278,16 @@
     "https://atomicdata.dev/properties/shortname": "version",
     "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/string",
     "https://atomicdata.dev/properties/description": "The version of this integration currently published in this repository, mirrored from its package.json (see integrations/README.md). Omitted for an entry with no local package.json, such as one reached through the generic LocalThought/Devonian bridge or fetched from pluginUrl. A host compares this against what an installation has pinned to offer an update."
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/properties/requires",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/classes/Property"
+    ],
+    "https://atomicdata.dev/properties/parent": "https://atomicdata.dev/integrations/ontology/catalog",
+    "https://atomicdata.dev/properties/shortname": "requires",
+    "https://atomicdata.dev/properties/datatype": "https://atomicdata.dev/datatypes/json",
+    "https://atomicdata.dev/properties/description": "What this plugin needs from the node, derived from its manifest and never written by hand: a sorted JSON array such as [\"persistent-host\", \"plugin-routes:read-only\", \"public-origin\", \"wasm-sandbox\"], with `plugin-routes:<level>`, `operator-listener:<name>` and `operator-sidecar:<name>` for the gated surfaces of docs/design/server-plugin-routes.md section 0. The same list the host puts on each /plugin-catalog entry (atomic-server#1732), so a client can compare it with the node's `hostFeatures` without parsing manifests. Required on the entry of a package whose manifest is version 3 or needs the plugin-routes feature; integrations/tooling/catalog-requires.mjs checks it and writes it."
   },
   {
     "@id": "https://atomicdata.dev/integrations/properties/app-module",

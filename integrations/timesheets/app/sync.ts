@@ -1,5 +1,9 @@
 // @wc-ignore-file
-import { fetchAccountContext, fetchNamed } from './clockifyApi.js';
+import {
+  fetchAccountContext,
+  fetchNamed,
+  type RawNamed,
+} from './clockifyApi.js';
 import {
   absenceCandidates,
   MARGIN_MS,
@@ -13,6 +17,7 @@ import {
 } from './clockifyObserve.js';
 import type { Settings } from './config.js';
 import { ObservationLog } from './observationLog.js';
+import type { Mirror } from './observations.js';
 import { atomic, NAME, type RowKey } from './ontology.js';
 import { projectEntries, type ProjectedEntry } from './project.js';
 import type { CompleteSchema } from './schema.js';
@@ -32,7 +37,25 @@ export interface SyncResult {
   log: LogReport;
   /** The profile time zone used for the window, and the workspace's
    * forceProjects, as read this pass (absent when unknown). */
-  account: { timeZone?: string; forceProjects?: boolean };
+  account: {
+    timeZone?: string;
+    forceProjects?: boolean;
+    weekStart?: string;
+    userName?: string;
+    workspaceName?: string;
+  };
+  /** The mirror after this pass, and the names read for it: what the
+   * timesheet views show (#89). */
+  mirror: Mirror;
+  projects: RawNamed[];
+  members: RawNamed[];
+}
+
+/** Saving rows: `done` of `total` projected entries (#89 frame H). */
+export interface SyncProgress {
+  phase: 'save';
+  done: number;
+  total: number;
 }
 
 export interface LogReport {
@@ -52,6 +75,7 @@ export interface SyncOptions {
   newId?: () => string;
   /** Names this app instance in the log. Defaults to a random id. */
   device?: string;
+  onProgress?: (progress: SyncProgress) => void;
 }
 
 const randomHex = (bytes: number) =>
@@ -181,6 +205,7 @@ export async function syncClockify(
     log,
     projects.items,
     members.items,
+    options.onProgress,
   );
 
   return {
@@ -197,7 +222,15 @@ export async function syncClockify(
       ...(account.forceProjects !== undefined
         ? { forceProjects: account.forceProjects }
         : {}),
+      ...(account.weekStart ? { weekStart: account.weekStart } : {}),
+      ...(account.userName ? { userName: account.userName } : {}),
+      ...(account.workspaceName
+        ? { workspaceName: account.workspaceName }
+        : {}),
     },
+    mirror: log.mirror,
+    projects: projects.items,
+    members: members.items,
   };
 }
 
@@ -207,6 +240,7 @@ async function projectRows(
   log: ObservationLog,
   projects: Parameters<typeof projectEntries>[1],
   members: Parameters<typeof projectEntries>[2],
+  onProgress?: SyncOptions['onProgress'],
 ) {
   const result = { created: 0, updated: 0, unchanged: 0, removed: 0 };
   const own = new Set(
@@ -231,7 +265,8 @@ async function projectRows(
     members,
   ).sort((a, b) => a.start - b.start || (a.entryId < b.entryId ? -1 : 1));
 
-  for (const entry of projected) {
+  for (const [done, entry] of projected.entries()) {
+    onProgress?.({ phase: 'save', done, total: projected.length });
     const values = rowValues(entry, schema.row);
     const subject = await rowOf(entry.entryId);
 

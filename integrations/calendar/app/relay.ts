@@ -175,6 +175,8 @@ export interface CalendarEntry {
   primary: boolean;
   /** Google's `accessRole`: owner, writer, reader or freeBusyReader. */
   accessRole: string;
+  /** Google's colour for the calendar, when it gave one. */
+  backgroundColor?: string;
 }
 
 /** The person's calendar list, every page (at most 10 pages of 250). */
@@ -200,7 +202,15 @@ export async function listCalendars(
       url: url.href,
     });
     if (receipt.status < 200 || receipt.status >= 300)
-      throw new Error(`Google Calendar returned ${receipt.status}`);
+      throw Object.assign(
+        new Error(`Google Calendar returned ${receipt.status}`),
+        {
+          status: receipt.status,
+          ...(host.last?.headers?.['retry-after']
+            ? { retryAfter: host.last.headers['retry-after'] }
+            : {}),
+        },
+      );
     const page = JSON.parse(receipt.body) as {
       items?: Array<Partial<CalendarEntry> & { id?: unknown }>;
       nextPageToken?: string;
@@ -216,6 +226,10 @@ export async function listCalendars(
           primary: item.primary === true,
           accessRole:
             typeof item.accessRole === 'string' ? item.accessRole : 'reader',
+          ...(typeof item.backgroundColor === 'string' &&
+          /^#[0-9a-f]{6}$/i.test(item.backgroundColor)
+            ? { backgroundColor: item.backgroundColor }
+            : {}),
         });
 
     pageToken = page.nextPageToken;

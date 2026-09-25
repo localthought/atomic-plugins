@@ -3,7 +3,6 @@ import { readPlatform } from 'syncables/browser';
 import { describe, expect, it } from 'vitest';
 import { notionFieldShortname } from '../devonian/notion/index.js';
 import { DATA_SOURCE, pages } from '../fixtures/notion/scenario.mjs';
-import { createController, describe as describeState } from './controller.js';
 import {
   APP,
   fakeStore,
@@ -204,35 +203,148 @@ describe('syncNotion', () => {
   });
 });
 
-describe('controller', () => {
-  it('reports a host without the relay and fetches nothing', async () => {
-    const controller = createController(fakeStore());
-    expect((await controller.load()).kind).toBe('no-proxy');
-    expect(describeState(controller.state())).toMatch(/cannot reach/);
-  });
-
-  it('finds the connection, imports, and reports the counts', async () => {
+describe('syncNotion progress (N3)', () => {
+  it('reports listing, then reading per query page, then writing and done', async () => {
     const proxy = fixtureProxy();
-    const controller = createController(
-      fakeStore({ proxy }),
-      () => {},
-      () => 0,
+    const store = fakeStore({ proxy });
+    const events: unknown[] = [];
+    await syncNotion(
+      store,
+      syncablesTransport(proxy, 'conn-1', upstream),
+      undefined,
+      { onProgress: e => events.push({ ...e }) },
     );
-    expect(await controller.load()).toEqual({
-      kind: 'ready',
-      connectionId: 'conn-1',
-    });
-    const state = await controller.sync();
-    expect(state).toMatchObject({ kind: 'ready', last: { ok: true } });
-    expect(describeState(state)).toMatch(
-      /3 created, 0 updated, 0 unchanged, from 1 database\./,
-    );
+    // The fixture serves two pages per query page: 2, then 3.
+    expect(events).toEqual([
+      { dataSource: DATA_SOURCE, title: 'Roadmap', phase: 'listing', pages: 0 },
+      { dataSource: DATA_SOURCE, title: 'Roadmap', phase: 'reading', pages: 2 },
+      { dataSource: DATA_SOURCE, title: 'Roadmap', phase: 'reading', pages: 3 },
+      { dataSource: DATA_SOURCE, title: 'Roadmap', phase: 'writing', pages: 3 },
+      { dataSource: DATA_SOURCE, title: 'Roadmap', phase: 'done', pages: 3 },
+    ]);
   });
 
-  it('asks to connect when there is no connection', async () => {
-    const proxy = { ...fixtureProxy(), connections: async () => [] };
-    const controller = createController(fakeStore({ proxy }));
-    expect((await controller.load()).kind).toBe('not-connected');
-    expect((await controller.connect()).kind).toBe('not-connected');
+  it('keeps the first data source’s rows when writing the second one throws', async () => {
+    const proxy = fixtureProxy('conn-1', { scenario: 'two-sources' });
+    const store = fakeStore({ proxy });
+    const create = store.newResource.bind(store);
+
+    store.newResource = async args => {
+      if (args?.propVals?.[atomic.name] === 'Thinking in Systems')
+        throw new Error('host refused the write');
+
+      return create(args);
+    };
+
+    const events: { phase: string; title: string }[] = [];
+    await expect(
+      syncNotion(
+        store,
+        syncablesTransport(proxy, 'conn-1', upstream),
+        undefined,
+        {
+          onProgress: e => events.push(e),
+        },
+      ),
+    ).rejects.toThrow(/refused/);
+    const rows = [...store.resources.values()].filter(p => p[PARENT] === TABLE);
+    expect(rows.map(r => r[atomic.name])).toEqual([
+      'Launch plan',
+      'Write changelog',
+      'Retrospective',
+    ]);
+    expect(events.filter(e => e.phase === 'done').map(e => e.title)).toEqual([
+      'Roadmap',
+    ]);
+  });
+});
+
+describe('syncNotion per data source (N6, N7, N10)', () => {
+  it('reports each database’s schema in Notion order, with options and skipped types', async () => {
+    const proxy = fixtureProxy('conn-1', { scenario: 'two-sources' });
+    const store = fakeStore({ proxy });
+    const result = await syncNotion(
+      store,
+      syncablesTransport(proxy, 'conn-1', upstream),
+    );
+    expect(result.dataSources).toBe(2);
+    const [roadmap, reading] = result.perDataSource;
+    expect(roadmap).toMatchObject({
+      id: DATA_SOURCE,
+      title: 'Roadmap',
+      pages: 3,
+      created: 3,
+      formatted: [
+        { page: pages[2]!.id, title: 'Retrospective', property: 'Notes' },
+      ],
+      archived: [],
+    });
+    expect(roadmap!.properties.map(p => p.name)).toEqual([
+      'Name',
+      'Status',
+      'Done',
+      'Points',
+      'Tags',
+      'Notes',
+    ]);
+    expect(roadmap!.properties[1]).toMatchObject({
+      type: 'status',
+      shortname: notionFieldShortname('%3AUPp'),
+      options: [
+        { name: 'Not started', color: 'default' },
+        { name: 'In progress', color: 'blue' },
+        { name: 'Done', color: 'green' },
+      ],
+    });
+    expect(reading).toMatchObject({
+      title: 'Reading list',
+      pages: 2,
+      created: 2,
+    });
+    // Types the lens does not project are listed, without a column.
+    expect(
+      reading!.properties.filter(p => !p.shortname).map(p => [p.name, p.type]),
+    ).toEqual([
+      ['Recommended by', 'people'],
+      ['Date read', 'date'],
+    ]);
+    // Two "Status" properties with different ids stay two columns.
+    const statuses = result.perDataSource.map(
+      r => r.properties.find(p => p.name === 'Status')!.shortname,
+    );
+    expect(new Set(statuses).size).toBe(2);
+  });
+
+  it('picks up a renamed option from the schema with no row writes', async () => {
+    const proxy = fixtureProxy();
+    const store = fakeStore({ proxy });
+    const transport = syncablesTransport(proxy, 'conn-1', upstream);
+    await syncNotion(store, transport);
+    const writes = store.writes.length;
+    proxy.api.renameOption('b1f5a3c2-0001-4000-8000-000000000003', 'Shipped');
+    const again = await syncNotion(store, transport);
+    expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 3 });
+    expect(store.writes.length).toBe(writes);
+    const status = again.perDataSource[0]!.properties.find(
+      p => p.name === 'Status',
+    )!;
+    expect(status.options!.map(o => o.name)).toEqual([
+      'Not started',
+      'In progress',
+      'Shipped',
+    ]);
+  });
+
+  it('reports zero data sources when Notion shares none', async () => {
+    const proxy = fixtureProxy('conn-1', { scenario: 'empty' });
+    const result = await syncNotion(
+      fakeStore({ proxy }),
+      syncablesTransport(proxy, 'conn-1', upstream),
+    );
+    expect(result).toMatchObject({
+      dataSources: 0,
+      created: 0,
+      perDataSource: [],
+    });
   });
 });
