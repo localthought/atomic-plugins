@@ -32,7 +32,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { Agent, signRequest } from '@tomic/lib';
+import { Agent } from '@tomic/lib';
 import {
   before,
   createFromCatalog,
@@ -40,6 +40,7 @@ import {
   SERVER_URL,
 } from '../../../browser/e2e/tests/test-utils';
 import { enableIntegrationDiscovery } from '../../../browser/e2e/tests/integration-settings-utils';
+import { signedPost } from './signed-post';
 
 // Playwright loads this spec as CommonJS (no package.json above it), so
 // __dirname rather than import.meta.
@@ -281,30 +282,7 @@ function routeSlug(subject: string) {
     .slice(0, 32);
 }
 
-/** A POST signed as the test's agent, as `@tomic/lib`'s plugin-connection does. */
-async function post(agent: Agent, path: string, body: unknown) {
-  const url = `${SERVER_URL}${path}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      ...(await signRequest(url, agent, {})),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  let json: unknown;
-
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = undefined;
-  }
-
-  return {
-    status: response.status,
-    contentType: response.headers.get('content-type') ?? '',
-    text,
-    json,
-  };
+/** A POST signed (version 2) as the test's agent. */
+function post(agent: Agent, path: string, body: unknown) {
+  return signedPost(agent, `${SERVER_URL}${path}`, body);
 }

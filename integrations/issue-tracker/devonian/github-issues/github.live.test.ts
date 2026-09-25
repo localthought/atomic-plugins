@@ -8,7 +8,7 @@ import {
   core,
   ensureSchema,
   pluginSchema,
-  signRequest,
+  signedRequestInit,
   planVerdict,
   planHostFromStore,
   applyPlan,
@@ -87,14 +87,16 @@ it.skipIf(process.env.ATOMIC_LIVE_GITHUB_REPO !== repository)(
 
     const post = async (path: string, body: unknown) => {
       const url = serverUrl + path;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          ...(await signRequest(url, agent, {})),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+      // `/plugin-run` and `/plugin-trigger` take only a version 2 signature
+      // (atomic-server#1832), and each signature once: sign every call.
+      const res = await fetch(
+        url,
+        await signedRequestInit(url, agent, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
       if (!res.ok)
         throw new Error(`${path}: ${res.status} ${await res.text()}`);
 
