@@ -65,10 +65,13 @@ export function proxyRefusal(response: {
  *
  * syncables builds absolute upstream URLs under the document's
  * `servers[0].url` (and follows `Link: rel="next"` URLs the provider sends).
- * The proxy wants the provider path after `/proxy/<connection>/<platform>`, so the
- * upstream base is stripped. Anything outside that base is refused here,
- * before it reaches the host: a provider-sent link must not be able to steer
- * the connection somewhere else.
+ * The proxy wants the provider path after `/proxy/<connection>/<platform>`,
+ * which keeps the server URL's own base path: integration-proxy matches the
+ * catalog's paths after that base (`catalog.rs` `allows`), so for the demo
+ * provider it allows `/atomic-plugins/overlays/pets-demo/1.0.0/api/pets`,
+ * not `/pets`. Only the origin is dropped. Anything outside that base is
+ * refused here, before it reaches the host: a provider-sent link must not be
+ * able to steer the connection somewhere else.
  */
 export function relayTransport(
   proxy: HostProxy,
@@ -89,7 +92,7 @@ export function relayTransport(
     )
       throw new Error(`Refusing a request outside ${upstream}: ${url.href}`);
 
-    const path = `${url.pathname.slice(prefix.length) || '/'}${url.search}`;
+    const path = `${url.pathname}${url.search}`;
     const response = await proxy.request({
       ...reference,
       path,

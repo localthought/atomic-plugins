@@ -1,14 +1,16 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Pets",
-    "version": "1.0.0"
+    "title": "Pets demo",
+    "version": "1.0.0",
+    "description": "A static, read-only demo API published by GitHub Pages from ontola/atomic-plugins (overlays/pets-demo/1.0.0/api/). It needs no account and no credential. GET /pets answers five synthetic pets in one page."
   },
   "servers": [
     {
-      "url": "https://pets.example"
+      "url": "https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/api"
     }
   ],
+  "security": [],
   "paths": {
     "/pets": {
       "get": {

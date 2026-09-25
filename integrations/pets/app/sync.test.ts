@@ -1,12 +1,14 @@
 // @wc-ignore-file
 import { describe as describePlatform } from 'vitest';
 import { expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createController, describe, type ViewState } from './controller.js';
 import { fakeStore, ONTOLOGY, ROW_CLASS, TABLE } from './fakeStore.js';
 import {
   DATATYPE,
   NAME,
   PARENT,
+  PETS_DOCUMENT,
   PROPERTIES,
   RECOMMENDS,
   SHORTNAME,
@@ -15,11 +17,16 @@ import {
 import { relayTransport } from './transport.js';
 
 const DT = 'https://atomicdata.dev/datatypes';
+/** The demo provider on GitHub Pages, as the app's document names it. */
+const UPSTREAM = (PETS_DOCUMENT as unknown as { servers: { url: string }[] })
+  .servers[0].url;
+/** Its base path, which the proxy wants kept in every request path. */
+const BASE = new URL(UPSTREAM).pathname;
 const transportFor = (store: ReturnType<typeof fakeStore>) =>
   relayTransport(
     store.proxy!,
     { platform: 'pets', connectionId: 'c1' },
-    'https://pets.example',
+    UPSTREAM,
   );
 
 describePlatform('syncPets', () => {
@@ -34,8 +41,11 @@ describePlatform('syncPets', () => {
       errors: [],
     });
     // Two pages: the second came from the provider's Link header, relayed
-    // as a proxy path, never as an absolute URL.
-    expect(store.calls.map(c => c.path)).toEqual(['/pets', '/pets?page=2']);
+    // as a proxy path (with the API base path), never as an absolute URL.
+    expect(store.calls.map(c => c.path)).toEqual([
+      `${BASE}/pets`,
+      `${BASE}/pets?page=2`,
+    ]);
     expect(store.calls.every(c => c.connectionId === 'c1')).toBe(true);
 
     const props = Object.fromEntries(
@@ -112,7 +122,46 @@ describePlatform('relayTransport', () => {
       method: 'GET',
       headers: {},
     });
-    expect(store.calls.at(-1)!.path).toBe('/pets?page=2');
+    // The proxy matches catalog paths after the server's base path, so the
+    // base path is kept; only the origin is dropped.
+    expect(store.calls.at(-1)!.path).toBe('/v1/pets?page=2');
+  });
+
+  it('asks for exactly the path the proxy catalog allows for the demo provider', async () => {
+    // The proxy's `pets` platform is overlays/pets-demo/1.0.0/openapi.json
+    // (overlays/catalog.json); the app bundles the same document.
+    const published = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../overlays/pets-demo/1.0.0/openapi.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    expect(PETS_DOCUMENT).toEqual(published);
+    expect(UPSTREAM).toBe(
+      'https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/api',
+    );
+    // What GitHub Pages serves at that path: the demo provider's one page.
+    const served = JSON.parse(
+      readFileSync(
+        new URL('../../../overlays/pets-demo/1.0.0/api/pets', import.meta.url),
+        'utf8',
+      ),
+    );
+    const store = fakeStore();
+    await transportFor(store)({
+      url: new URL(`${UPSTREAM}/pets`),
+      method: 'GET',
+      headers: {},
+    });
+    expect(store.calls.at(-1)!.path).toBe(
+      '/atomic-plugins/overlays/pets-demo/1.0.0/api/pets',
+    );
+    // The same five pets as the e2e fixture, in one page (no Link header).
+    const { pets } = await import('../fixtures/pets/scenario.mjs');
+    expect(served).toEqual(pets);
   });
 
   it("throws the integration proxy's own refusals instead of passing them on as Pets' answer", async () => {

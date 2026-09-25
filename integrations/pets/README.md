@@ -3,8 +3,9 @@
 This folder holds two independent things:
 
 1. **`app/`: the Pets drive app** (atomic-plugins#52). It is a browser-only
-   iframe plugin that reads Pets through the LocalThought integration proxy.
-   It never holds a credential. See [Drive app](#drive-app-app) below.
+   iframe plugin that reads the Pets demo provider through the integration
+   proxy. It never holds a credential, and the demo provider needs none. See
+   [Drive app](#drive-app-app) below.
 2. **`plugin.ts`: the static sandbox demo**, described next. It has five
    built-in pets and no network access.
 
@@ -20,8 +21,7 @@ Historically, Integrations → Pets → Set up connection created a Pets table
 beneath the installed connection and imported the five demo pets; re-running
 skipped unchanged pets. atomic-server `4bab16ee6` removed that dialog
 (`ConnectPets`), so at the current pin nothing installs or runs this bundle.
-The catalog's `pets` card still describes this demo rather than the drive
-app.
+The catalog's `pets` card describes the drive app below, not this bundle.
 
 ## Architecture
 
@@ -50,6 +50,18 @@ plugin frame calls inside a null-origin, `allow-scripts`-only iframe. It
 follows `integrations/timesheets/app/`: plain DOM, no framework, and no
 stylesheet.
 
+- **Provider.** The `pets` platform in the proxy's default catalog
+  (`overlays/catalog.json`, atomic-plugins#174) is a static, read-only JSON
+  API that GitHub Pages publishes from this repository:
+  `GET https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/api/pets`
+  answers the five pets in `fixtures/pets/scenario.mjs`, in one page (no
+  `Link` header). Its document, `overlays/pets-demo/1.0.0/openapi.json`,
+  declares `security: []`, so the proxy's consent page asks for nothing and
+  the connection holds no credential. That needs `atomic-integration-proxy`
+  0.2.2 or later; 0.2.1 lists `pets` but refuses to connect it. Pages serves
+  the file as `application/octet-stream`; the host and syncables parse the
+  body as JSON regardless. `app/openapi.json` is the same document
+  (`app/sync.test.ts` checks this).
 - **Reading.** `syncables/browser`'s `readPlatform` walks the bundled Pets
   OpenAPI document (`app/openapi.json`, the same file the mock proxy serves)
   and follows the `Link: rel="next"` pagination. The document's
@@ -64,7 +76,10 @@ stylesheet.
   owned by the signed-in user and delegated to this app; the host's frame
   client calls the proxy with a short-lived capability from the page and a
   key only it holds, and returns `{ status, headers, body }`. A refusal by
-  the proxy itself is thrown, not read as Pets' answer. `transport.ts` refuses any URL outside
+  the proxy itself is thrown, not read as Pets' answer. The path keeps the
+  server URL's base path (`/atomic-plugins/overlays/pets-demo/1.0.0/api/pets`),
+  because the proxy matches catalog paths after it; 0.1.1 and earlier sent
+  `/pets`, which only a mock proxy accepts. `transport.ts` refuses any URL outside
   the document's `servers[0].url`, including provider-sent links. The bundle
   contains no `fetch`, storage or `Authorization` handling
   (`app/build.test.ts` checks this).
@@ -94,8 +109,8 @@ the 0.2 proxy.
 
 **Install.** The `pets` catalog entry is a drive app entry (#94):
 `app-module` is
-`https://ontola.github.io/atomic-plugins/apps/pets/0.1.0/ui.js`, the
-committed `apps/pets/0.1.0/ui.js` (`app/build.mjs`'s output) as GitHub Pages
+`https://ontola.github.io/atomic-plugins/apps/pets/0.1.2/ui.js`, the
+committed `apps/pets/0.1.2/ui.js` (`app/build.mjs`'s output) as GitHub Pages
 serves it, and `app-module-integrity` pins its bytes. Open
 Integrations, turn on "Show experimental plugins", and choose **Install** on
 the Pets card under **Drive apps**. See
@@ -108,8 +123,8 @@ creates nothing.
 The e2e (`e2e/pets.spec.ts`) goes through the catalog, with the lane's
 dev-server standing in for GitHub Pages: discover the card → install → connect through
 the mock proxy → first import (five rows, typed columns) → reopen from the
-card ("Installed 0.1.0", re-sync unchanged) → update from a rewound "0.0.1"
-back to 0.1.0 with the rows kept. It no longer replaces the app's source
+card ("Installed 0.1.2", re-sync unchanged) → update from a rewound "0.0.1"
+back to 0.1.2 with the rows kept. It no longer replaces the app's source
 from the test.
 
 **Shared code.** `app/store.ts` (the host store types) is a copy of
