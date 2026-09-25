@@ -18,7 +18,7 @@ profile's Atomic `name` and `description`. Actor type is `Service` because this
 is an operator-curated publication feed, not an assertion that the source
 resource is a human Agent.
 
-Each binding has a stable local ID, an existing HTTPS Atomic subject and an
+Each binding has a stable local ID, an existing Atomic subject and an
 operator-provided publication time. Only selected properties are projected:
 
 | Atomic resource        | ActivityStreams object | Data                                                               |
@@ -49,6 +49,16 @@ no traversal of referenced properties. A denied/missing object returns 404 and
 is omitted from counts and outbox pages. An unreadable profile hides the actor,
 all objects and discovery. Host errors are not returned to strangers.
 
+For canonical identifiers, ActivityStreams `url` fields use the actual host
+resolution endpoint `${origin}/resource?subject=<encoded canonical subject>`;
+protocol actor/object/activity IDs remain HTTPS URLs under the configured origin.
+The configured origin must be the Atomic host that resolves these resources.
+This follows `browser/lib/src/client.ts::fetchResourceHTTP`,
+`browser/lib/src/subject.ts::isIdentifierHttpEndpoint` and the data browser's
+`DataRoute.tsx`. HTTPS source subjects retain their original URLs. Profiles,
+collection parents/properties, stored parent references and query-result subjects
+all use the same canonical identifier handling; a configured ID grants no access.
+
 The class/property mapping was inspected against the pinned
 `lib/defaults/chatroom.json` Message schema and
 `browser/lib/src/ontologies/dataBrowser.ts` document/PlainText definitions.
@@ -57,8 +67,11 @@ Document Loro/Yjs bytes and arbitrary Atomic fields never enter responses.
 
 Limits: 50 configured objects, 10 entries per outbox page, 8,192 characters per
 text field, 255 per name and 2,048 per source URL/Accept header. Unsupported
-classes and oversized content are omitted. Public HTTPS subjects only; other
-subject encodings are not supported in this slice. Config uses exact UTC times
+classes and oversized content are omitted. Local subjects may be HTTPS URLs or canonical `atomic:` identifiers (including
+agent/commit/blob/node kinds); legacy `did:ad:` spellings normalize to `atomic:`.
+Empty identifiers, unknown kinds, `atomic://` links, whitespace and query/fragment
+suffixes are rejected. Signature validity and resource existence remain host checks.
+Alias normalization also prevents duplicate static/query bindings for the same ID. Config uses exact UTC times
 such as `2026-09-24T12:00:00.000Z` and rejects normalized invalid calendar dates.
 Duplicate IDs/subjects and malformed configuration yield a generic 503.
 

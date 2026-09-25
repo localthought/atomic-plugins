@@ -537,3 +537,225 @@ test('collection paging is independent of Atomic query order', () => {
   assert.equal(second.prev, origin + '/ap/outbox?page=1');
   assert.equal(body(get(c, '/ap/outbox')).totalItems, 12);
 });
+
+test('canonical Atomic profile and objects retain HTTPS protocol IDs and resolution links', () => {
+  const canonicalProfile = 'atomic:agent:profileKey';
+  const canonicalNote = 'atomic:noteGenesis';
+  const canonicalDocument = 'atomic:genesis+/==';
+  const reads = [];
+  const c = ctx(
+    {
+      profile: canonicalProfile,
+      objects: [
+        {
+          id: 'note',
+          subject: canonicalNote,
+          published: '2026-09-24T12:00:00.000Z',
+        },
+        {
+          id: 'document',
+          subject: canonicalDocument,
+          published: '2026-09-24T11:00:00.000Z',
+        },
+      ],
+    },
+    {
+      [canonicalProfile]: { [P.name]: 'Canonical actor' },
+      [canonicalNote]: {
+        [P.isA]: ['https://atomicdata.dev/classes/PlainText'],
+        [P.description]: 'Actual atom content',
+      },
+      [canonicalDocument]: {
+        [P.isA]: ['https://atomicdata.dev/classes/DocumentV2'],
+        [P.name]: 'Native document',
+      },
+    },
+  );
+  const read = c.read;
+
+  c.read = subject => {
+    reads.push(subject);
+
+    return read(subject);
+  };
+
+  const actor = body(get(c, '/ap/actor'));
+  assert.equal(actor.id, origin + '/ap/actor');
+  assert.equal(
+    actor.url,
+    origin + '/resource?subject=' + encodeURIComponent(canonicalProfile),
+  );
+  const projected = body(get(c, '/ap/objects/note'));
+  assert.equal(projected.content, '<p>Actual atom content</p>');
+  assert.equal(
+    projected.url,
+    origin + '/resource?subject=' + encodeURIComponent(canonicalNote),
+  );
+  const article = body(get(c, '/ap/objects/document'));
+  assert.equal(
+    article.url,
+    origin + '/resource?subject=' + encodeURIComponent(canonicalDocument),
+  );
+  assert.equal(article.type, 'Article');
+  assert.ok(reads.includes(canonicalProfile));
+  assert.ok(reads.includes(canonicalNote));
+});
+
+test('legacy subject aliases canonicalize before reads and duplicate identity checks', () => {
+  const c = ctx(
+    {
+      profile: 'did:ad:profileKey',
+      objects: [
+        {
+          id: 'note',
+          subject: 'did:ad:noteKey',
+          published: '2026-09-24T12:00:00.000Z',
+        },
+      ],
+    },
+    {
+      'atomic:profileKey': { [P.name]: 'Alias actor' },
+      'atomic:noteKey': {
+        [P.isA]: ['https://atomicdata.dev/classes/PlainText'],
+        [P.description]: 'Alias note',
+      },
+    },
+  );
+  assert.equal(
+    body(get(c, '/ap/objects/note')).url,
+    origin + '/resource?subject=atomic%3AnoteKey',
+  );
+  c.config.publication.objects.push({
+    id: 'duplicate',
+    subject: 'atomic:noteKey',
+    published: '2026-09-24T12:00:00.000Z',
+  });
+  assert.equal(get(c, '/ap/actor').status, 503);
+});
+
+test('collection canonical parent/property subjects and canonical query results publish native resources', () => {
+  const parent = 'atomic:collectionGenesis',
+    publishedProperty = 'atomic:publishedProperty';
+  const c = ctx(
+    {
+      publication: {
+        collection: {
+          parent: 'did:ad:collectionGenesis',
+          idProperty: 'did:ad:idProperty',
+          publishedProperty,
+        },
+      },
+    },
+    {
+      'atomic:noteKey': {
+        [P.parent]: 'did:ad:collectionGenesis',
+        [P.isA]: ['https://atomicdata.dev/classes/PlainText'],
+        [P.description]: 'Canonical collection content',
+        'did:ad:idProperty': 'native',
+        [publishedProperty]: '2026-09-24T12:00:00.000Z',
+      },
+    },
+  );
+
+  c.query = (property, value) => {
+    assert.equal(property, P.parent);
+    assert.equal(value, parent);
+
+    return ['did:ad:noteKey'];
+  };
+
+  const page = body(get(c, '/ap/outbox', { query: { page: '1' } }));
+  assert.equal(page.orderedItems.length, 1);
+  assert.equal(page.orderedItems[0].object.id, origin + '/ap/objects/native');
+  assert.equal(
+    page.orderedItems[0].object.url,
+    origin + '/resource?subject=atomic%3AnoteKey',
+  );
+  c.query = () => ['did:ad:noteKey', 'atomic:noteKey'];
+  assert.equal(get(c, '/ap/outbox').status, 503);
+});
+
+test('private canonical resources stay hidden even with a previously valid ETag', () => {
+  const c = ctx(
+    {
+      objects: [
+        {
+          id: 'private',
+          subject: 'atomic:privateNote',
+          published: '2026-09-24T12:00:00.000Z',
+        },
+      ],
+    },
+    {
+      'atomic:privateNote': {
+        [P.isA]: ['https://atomicdata.dev/classes/PlainText'],
+        [P.description]: 'Previously public',
+      },
+    },
+  );
+  const etag = get(c, '/ap/objects/private').headers.etag;
+  const read = c.read;
+
+  c.read = subject => {
+    if (subject === 'atomic:privateNote') throw Error('Now private');
+
+    return read(subject);
+  };
+
+  assert.equal(
+    get(c, '/ap/objects/private', { headers: { 'if-none-match': etag } })
+      .status,
+    404,
+  );
+  assert.equal(body(get(c, '/ap/outbox')).totalItems, 0);
+});
+
+test('malformed Atomic identifiers and links are not valid local publication subjects', () => {
+  for (const invalid of [
+    'atomic:',
+    'did:ad:',
+    'atomic://open/foo',
+    'atomic:agent:',
+    'atomic:unknown:foo',
+    'atomic:has space',
+    'atomic:line\nbreak',
+    'atomic:a?query=1',
+    'atomic:a#fragment',
+    'atomic:%61',
+    'atomic:a===',
+    'javascript:alert(1)',
+  ]) {
+    assert.equal(
+      get(ctx({ profile: invalid }), '/ap/actor').status,
+      503,
+      invalid,
+    );
+    assert.equal(
+      get(
+        ctx({
+          objects: [
+            {
+              id: 'invalid',
+              subject: invalid,
+              published: '2026-09-24T12:00:00.000Z',
+            },
+          ],
+        }),
+        '/ap/outbox',
+      ).status,
+      503,
+      invalid,
+    );
+    const c = ctx({
+      publication: {
+        collection: {
+          parent: 'atomic:parent',
+          idProperty: 'atomic:id',
+          publishedProperty: 'atomic:published',
+        },
+      },
+    });
+    c.query = () => [invalid];
+    assert.equal(get(c, '/ap/outbox').status, 503, invalid);
+  }
+});

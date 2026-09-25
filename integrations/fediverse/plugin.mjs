@@ -45,6 +45,36 @@ function httpsSubject(value) {
   );
 }
 
+/** Local Atomic identifiers are store keys, not HTTP URLs. Signature/existence
+ * validation remains the host's job. Accept both base64url and legacy base64 bodies.
+ */
+export function localSubject(value) {
+  if (!validText(value, 2048)) return undefined;
+  if (httpsSubject(value)) return value;
+  if (value.startsWith('atomic://')) return undefined;
+  if (
+    !/^(?:atomic:|did:ad:)(?:(?:agent|commit|blob|node):)?[A-Za-z0-9_+/-]+={0,2}$/.test(
+      value,
+    )
+  )
+    return undefined;
+
+  return value.startsWith('did:ad:') ? 'atomic:' + value.slice(7) : value;
+}
+
+function resourceUrl(c, subject) {
+  return subject.startsWith('atomic:')
+    ? `${c.origin}/resource?subject=${encodeURIComponent(subject)}`
+    : subject;
+}
+
+function propertyValue(row, property) {
+  if (Object.prototype.hasOwnProperty.call(row, property)) return row[property];
+  if (property.startsWith('atomic:')) return row['did:ad:' + property.slice(7)];
+
+  return undefined;
+}
+
 export function html(text) {
   return text
     .replace(
@@ -63,14 +93,25 @@ export function html(text) {
 
 function config(ctx) {
   const c = ctx.config ?? {};
-  const collection = c.publication?.collection;
-  const objects = c.publication?.objects ?? (collection ? [] : undefined);
+  const rawCollection = c.publication?.collection;
+  const collection = rawCollection && {
+    parent: localSubject(rawCollection.parent),
+    idProperty: localSubject(rawCollection.idProperty),
+    publishedProperty: localSubject(rawCollection.publishedProperty),
+  };
+  const rawObjects = c.publication?.objects ?? (collection ? [] : undefined);
+  const objects = Array.isArray(rawObjects)
+    ? rawObjects.map(
+        item => item && { ...item, subject: localSubject(item.subject) },
+      )
+    : rawObjects;
+  const profileSubject = localSubject(c.profile);
   if (
     collection &&
     (c.publication.objects !== undefined ||
-      !httpsSubject(collection.parent) ||
-      !httpsSubject(collection.idProperty) ||
-      !httpsSubject(collection.publishedProperty))
+      !localSubject(collection.parent) ||
+      !localSubject(collection.idProperty) ||
+      !localSubject(collection.publishedProperty))
   )
     throw new Error('Invalid collection configuration');
   if (
@@ -79,7 +120,7 @@ function config(ctx) {
       c.origin,
     ) ||
     !slug(c.username) ||
-    !httpsSubject(c.profile)
+    !profileSubject
   )
     throw new Error('Invalid actor configuration');
   if (!Array.isArray(objects) || objects.length > MAX_ITEMS)
@@ -91,7 +132,7 @@ function config(ctx) {
     if (
       !item ||
       !slug(item.id) ||
-      !httpsSubject(item.subject) ||
+      !localSubject(item.subject) ||
       typeof item.published !== 'string' ||
       !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/.test(item.published) ||
       !Number.isFinite(Date.parse(item.published)) ||
@@ -106,6 +147,7 @@ function config(ctx) {
 
   return {
     ...c,
+    profile: profileSubject,
     objects,
     collection,
     resolvedObjects: undefined,
@@ -136,9 +178,9 @@ export function objectFor(ctx, c, binding) {
   if (!row || !Array.isArray(row[P.isA])) return undefined;
   if (
     c.collection &&
-    (row[P.parent] !== c.collection.parent ||
-      row[c.collection.idProperty] !== binding.id ||
-      row[c.collection.publishedProperty] !== binding.published)
+    (localSubject(row[P.parent]) !== c.collection.parent ||
+      propertyValue(row, c.collection.idProperty) !== binding.id ||
+      propertyValue(row, c.collection.publishedProperty) !== binding.published)
   )
     return undefined;
   const note = row[P.isA].some(t => NOTE_CLASSES.includes(t));
@@ -155,7 +197,7 @@ export function objectFor(ctx, c, binding) {
     attributedTo: c.actor,
     published: binding.published,
     to: [PUBLIC],
-    url: binding.subject,
+    url: resourceUrl(c, binding.subject),
     ...(validText(row[P.name], 255) ? { name: row[P.name] } : {}),
     ...(note
       ? {
@@ -185,7 +227,8 @@ function bindings(ctx, c) {
   if (!c.collection) return c.objects;
   if (c.resolvedObjects) return c.resolvedObjects;
   const spec = c.collection;
-  const subjects = ctx.query(P.parent, spec.parent);
+  const found = ctx.query(P.parent, spec.parent);
+  const subjects = Array.isArray(found) ? found.map(localSubject) : found;
   if (
     !Array.isArray(subjects) ||
     subjects.length > MAX_ITEMS ||
@@ -196,11 +239,11 @@ function bindings(ctx, c) {
   const result = [];
 
   for (const subject of subjects) {
-    if (!httpsSubject(subject)) throw new Error('Invalid query result');
+    if (!subject) throw new Error('Invalid query result');
     const row = readPublic(ctx, subject);
-    if (!row || row[P.parent] !== spec.parent) continue;
-    const id = row[spec.idProperty],
-      published = row[spec.publishedProperty];
+    if (!row || localSubject(row[P.parent]) !== spec.parent) continue;
+    const id = propertyValue(row, spec.idProperty),
+      published = propertyValue(row, spec.publishedProperty);
     // Ordinary siblings without publication metadata are not posts.
     if (id === undefined || published === undefined) continue;
     if (
@@ -379,7 +422,7 @@ function dispatch(ctx, request) {
         summary: validText(source[P.description])
           ? html(source[P.description])
           : '',
-        url: c.profile,
+        url: resourceUrl(c, c.profile),
         inbox: `${c.origin}/ap/inbox`,
         outbox: `${c.origin}/ap/outbox`,
       },

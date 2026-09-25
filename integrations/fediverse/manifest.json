@@ -13,7 +13,7 @@
     "properties": {
       "origin": {
         "type": "string",
-        "description": "HTTPS drive-host origin; stable base for ActivityStreams identities."
+        "description": "HTTPS Atomic drive-host origin; stable protocol identities and /resource?subject= links for canonical local resources."
       },
       "username": {
         "type": "string",
@@ -21,7 +21,7 @@
       },
       "profile": {
         "type": "string",
-        "description": "Public Atomic profile subject; only name and description are projected."
+        "description": "Public HTTPS or canonical atomic: profile subject; only name and description are projected."
       },
       "publication": {
         "type": "object",
