@@ -204,7 +204,7 @@ export function review(
   if (!items.length)
     return sheet(doc, {
       id: 'review',
-      title: 'Nothing to send',
+      title: busy ? 'Checking your changes…' : 'Nothing to send',
       subtitle: busy
         ? 'Reading your calendar to see what changed here…'
         : 'No event here differs from Google Calendar.',
