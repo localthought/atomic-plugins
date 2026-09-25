@@ -367,5 +367,22 @@
       "public-origin",
       "wasm-sandbox"
     ]
+  },
+  {
+    "@id": "https://atomicdata.dev/integrations/remotestorage",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
+    ],
+    "https://atomicdata.dev/properties/shortname": "remotestorage",
+    "https://atomicdata.dev/properties/name": "remoteStorage",
+    "https://atomicdata.dev/integrations/properties/experimental": true,
+    "https://atomicdata.dev/integrations/properties/enabled": false,
+    "https://atomicdata.dev/integrations/properties/requires": [
+      "persistent-host",
+      "plugin-routes:read-only",
+      "public-origin",
+      "wasm-sandbox"
+    ],
+    "https://atomicdata.dev/integrations/properties/limitation": "Experimental reviewed text imports and public reads only; bearer authentication, HTTP writes and blob storage are not implemented."
   }
 ]
