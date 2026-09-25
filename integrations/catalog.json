@@ -349,5 +349,23 @@
     "https://atomicdata.dev/integrations/properties/app-module-integrity": "sha384-41Lz+YXgQJNRqGsiGtduk4wE6fVURecH8sK68Rkwz6GS/EvcG974e69xvj3hEN8i",
     "https://atomicdata.dev/integrations/properties/app-row-name": "Pet",
     "https://atomicdata.dev/integrations/properties/app-row-name-plural": "Pets"
+  },
+  {
+    "https://atomicdata.dev/properties/localId": "open-cloud-mesh",
+    "https://atomicdata.dev/properties/isA": [
+      "https://atomicdata.dev/integrations/classes/PluginCatalogEntry"
+    ],
+    "https://atomicdata.dev/properties/shortname": "open-cloud-mesh",
+    "https://atomicdata.dev/integrations/properties/experimental": true,
+    "https://atomicdata.dev/integrations/properties/enabled": false,
+    "https://atomicdata.dev/properties/name": "Open Cloud Mesh",
+    "https://atomicdata.dev/properties/description": "Reviewed OCM share metadata and lifecycle receipts linked to existing Atomic documents.",
+    "https://atomicdata.dev/integrations/properties/limitation": "Experimental reviewed jobs only. HTTP receiving, file exchange, peer authentication and access revocation are not implemented.",
+    "https://atomicdata.dev/integrations/properties/requires": [
+      "persistent-host",
+      "plugin-routes:read-write",
+      "public-origin",
+      "wasm-sandbox"
+    ]
   }
 ]

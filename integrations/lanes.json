@@ -9,6 +9,14 @@
 
   "lanes": [
     {
+      "id": "open-cloud-mesh",
+      "index": 16,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/open-cloud-mesh/plugin.test.mjs"],
+      "note": "Executable OCM discovery, bounded metadata parser and reviewed Atomic document receipt importer. Network receipt remains unavailable pending host authorization and writes; no live interoperability claim."
+    },
+    {
       "id": "calendar",
       "index": 0,
       "platforms": ["google-calendar"],
