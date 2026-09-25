@@ -120,6 +120,17 @@ fn fill(template: &str, values: &[(&str, &str)]) -> String {
     out
 }
 
+/// What the consent screen asks for, from the platform's security scheme.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConnectKind {
+    /// Continue to the provider's own authorization.
+    OAuth,
+    /// Paste an API key here.
+    ApiKey,
+    /// Nothing: the platform's document requires no security.
+    NoCredential,
+}
+
 /// Renders the consent screen for one selected platform. `destination` is
 /// where the browser returns to (an origin, or the app's deep link).
 pub fn render_platform_connect(
@@ -127,23 +138,27 @@ pub fn render_platform_connect(
     platform: &str,
     destination: &str,
     csrf: &str,
-    requires_api_key: bool,
+    kind: ConnectKind,
 ) -> String {
-    let (api_key_field, button_label) = if requires_api_key {
-        (
+    let (api_key_field, button_label) = match kind {
+        ConnectKind::ApiKey => (
             r#"<p class="secret-help">Find this in your account settings on the platform's own site. It is stored encrypted on this proxy and never sent back to the destination.</p>
                <input class="button" style="background:white;color:#202124;border:1px solid #ccc" type="password" name="api_key" autocomplete="off" placeholder="API key" required />"#,
             format!("Connect {}", escape(&platform_label(platform))),
-        )
-    } else {
-        (
+        ),
+        ConnectKind::OAuth | ConnectKind::NoCredential => (
             "",
             format!(
                 "Use {} to sync {} with this destination",
                 escape(&operator.name),
                 escape(&platform_label(platform))
             ),
-        )
+        ),
+    };
+    let what = if kind == ConnectKind::NoCredential {
+        "{platform} needs no account: this proxy reads it without a credential and stores none. Connecting only records the connection."
+    } else {
+        "Connecting lets this proxy use your {platform} account on your behalf."
     };
     let run_by = if operator.is_named() {
         operator.linked_name()
@@ -156,7 +171,7 @@ pub fn render_platform_connect(
           <h1>Connect {platform}</h1>
           <p class="operator">Integration proxy <strong>{host}</strong>, run by {run_by}.</p>
           <p>Destination: <span class="email">{destination}</span></p>
-          <p class="secret-help">Connecting lets this proxy use your {platform} account on your behalf. The destination finishes connecting by signing with your Atomic key; it becomes the connection's owner.</p>
+          <p class="secret-help">{what} The destination finishes connecting by signing with your Atomic key; it becomes the connection's owner.</p>
           <form method="post" action="/connect/authorize">
             <input type="hidden" name="csrf" value="{csrf}" />
             {api_key_field}
@@ -168,6 +183,7 @@ pub fn render_platform_connect(
         host = escape(&operator.host),
         destination = escape(destination),
         csrf = escape(csrf),
+        what = what.replace("{platform}", &escape(&platform_label(platform))),
     );
     page(
         operator,
@@ -342,7 +358,7 @@ mod tests {
             "google-calendar",
             "https://hub.example/\"><script>alert(1)</script>",
             "csrf&<\"'",
-            false,
+            ConnectKind::OAuth,
         );
         assert!(html.contains("Google Calendar"));
         assert!(html
@@ -362,7 +378,7 @@ mod tests {
             "google-calendar",
             "https://hub.example",
             "csrf",
-            false,
+            ConnectKind::OAuth,
         );
         assert!(html.contains("<title>Connect Google Calendar · integrations.atomic.place</title>"));
         assert!(html.contains(
@@ -374,8 +390,13 @@ mod tests {
 
     #[test]
     fn consent_page_without_an_operator_name_still_shows_the_host() {
-        let html =
-            render_platform_connect(&unnamed(), "clockify", "https://hub.example", "csrf", true);
+        let html = render_platform_connect(
+            &unnamed(),
+            "clockify",
+            "https://hub.example",
+            "csrf",
+            ConnectKind::ApiKey,
+        );
         assert!(html.contains(
             "Integration proxy <strong>proxy.example.org</strong>, run by an operator it does not name."
         ));
@@ -393,7 +414,7 @@ mod tests {
             "google-calendar",
             "https://hub.example",
             "csrf",
-            false,
+            ConnectKind::OAuth,
         );
         assert!(!html.contains("<script>"));
         assert!(!html.contains("<img src=x"));
@@ -408,10 +429,33 @@ mod tests {
 
     #[test]
     fn api_key_platforms_ask_for_the_key_on_the_proxy_page() {
-        let html =
-            render_platform_connect(&unnamed(), "clockify", "https://hub.example", "csrf", true);
+        let html = render_platform_connect(
+            &unnamed(),
+            "clockify",
+            "https://hub.example",
+            "csrf",
+            ConnectKind::ApiKey,
+        );
         assert!(html.contains(r#"name="api_key""#));
         assert!(html.contains("Connect Clockify"));
+    }
+
+    #[test]
+    fn no_credential_platforms_ask_for_nothing_and_say_so() {
+        let html = render_platform_connect(
+            &unnamed(),
+            "pets",
+            "https://hub.example",
+            "csrf",
+            ConnectKind::NoCredential,
+        );
+        assert!(!html.contains("api_key"));
+        assert!(html.contains(
+            "Pets needs no account: this proxy reads it without a credential and stores none."
+        ));
+        assert!(!html.contains("use your Pets account"));
+        assert!(!html.contains("{platform}"));
+        assert!(html.contains("Use this integration proxy to sync Pets with this destination"));
     }
 
     #[test]

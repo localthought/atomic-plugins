@@ -67,6 +67,18 @@ redemptions fail. Responses are `no-store`.
 For an API-key platform the key is typed into the proxy's own consent page
 and sealed like an OAuth token; it is never returned to the hub.
 
+A platform whose composed document declares top-level `security: []`, no
+security scheme, and no operation that requires one (0.2.2 and later)
+connects on consent alone: the connection seals only the platform name and
+requests are forwarded with no credential. Everything else is unchanged: the
+redeem and every proxied request are signed (or carry a frame capability),
+the owner/delegation checks and the access policy apply, and only the
+catalog's methods and paths under its server URL are forwarded, so such a
+platform is not an open relay. A document that merely lacks security (for
+example a base OAD whose auth overlay is missing) is refused as before. If
+the catalog later gives the platform a scheme, existing connections answer
+`401 credential_refresh_failed` until the person connects again.
+
 ## Admission
 
 An `AccessPolicy` is asked about the connection owner at redeem and on every

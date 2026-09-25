@@ -620,7 +620,7 @@ mod tests {
                 assert_eq!(scheme.name, "X-Api-Key");
                 assert_eq!(scheme.location, crate::providers::ApiKeyLocation::Header);
             }
-            crate::providers::SecurityScheme::OAuth(_) => panic!("expected an apiKey scheme"),
+            _ => panic!("expected an apiKey scheme"),
         }
         assert!(catalog
             .allows(
