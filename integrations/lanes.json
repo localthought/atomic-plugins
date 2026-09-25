@@ -47,6 +47,14 @@
       "tiers": ["typecheck", "unit"]
     },
     {
+      "id": "atproto",
+      "index": 12,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/atproto/plugin.test.mjs"],
+      "note": "Executable QuickJS handle-to-DID route checks and reproducible bundle; no live resolver verification."
+    },
+    {
       "id": "money",
       "index": 3,
       "platforms": ["moneybird"],
