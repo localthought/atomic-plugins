@@ -25,6 +25,15 @@
       "e2e": ["integrations/calendar/e2e/calendar.spec.ts"]
     },
     {
+      "id": "remotestorage",
+      "index": 10,
+      "platforms": [],
+      "tiers": ["node", "e2e"],
+      "nodeTests": ["integrations/remotestorage/plugin.test.mjs"],
+      "e2e": ["integrations/remotestorage/e2e/remotestorage.spec.ts"],
+      "note": "QuickJS-targeted reviewed text import intents, actual Atomic read adapter, public remoteStorage reads and deterministic bundle checks. The e2e tier runs real host QuickJS text imports with approved atom persistence; private bearer writes and blobs await host support."
+    },
+    {
       "id": "issue-tracker",
       "index": 1,
       "platforms": ["github-issues", "todoist"],
@@ -69,6 +78,14 @@
       "tiers": ["e2e"],
       "note": "e2e drives the Bank statements importer through the host's generic file entry point (atomic-server#1653: manifest accepts/destination, PluginPage Import tab): publish, discover, set up, MT940 and camt.053 import, reload, reimport, local edit, conflict and refused files. The pin includes that change (atomic-server#1691); against an older host, publishing the bundle fails on the unknown manifest field. No typecheck/unit tier: money has an atomicCertification block, so the unsharded certification step in shared-checks already runs exactly its typecheck (tsconfig.json) and unit (vitest.config.ts) on every integrations/** change, plus bundle reproducibility. moneybird is listed for a future Moneybird fixture in integrations/money/fixtures/moneybird/ (plugin-specific files stay in the plugin folder); integrations/money/ has no Moneybird runtime code.",
       "e2e": ["integrations/money/e2e/money.spec.ts"]
+    },
+    {
+      "id": "fediverse",
+      "index": 13,
+      "platforms": [],
+      "tiers": ["node"],
+      "nodeTests": ["integrations/fediverse/plugin.test.mjs"],
+      "note": "Executable public Atomic ActivityStreams actor, object/outbox and discovery checks. Signed federation and inbox receipt remain unavailable; no live interoperability claim."
     },
     {
       "id": "notion",

@@ -1,0 +1,556 @@
+import { sha256 } from './sha256.mjs';
+
+/** Dependency-free QuickJS read-only ActivityStreams projection of public atoms. */
+export const AS = 'https://www.w3.org/ns/activitystreams';
+export const PUBLIC = `${AS}#Public`;
+export const P = Object.freeze({
+  isA: 'https://atomicdata.dev/properties/isA',
+  name: 'https://atomicdata.dev/properties/name',
+  description: 'https://atomicdata.dev/properties/description',
+  parent: 'https://atomicdata.dev/properties/parent',
+});
+const NOTE_CLASSES = [
+  'https://atomicdata.dev/classes/Message',
+  'https://atomicdata.dev/classes/PlainText',
+];
+const DOCUMENT_CLASSES = [
+  'https://atomicdata.dev/classes/Document',
+  'https://atomicdata.dev/classes/DocumentV2',
+];
+const MIME = 'application/activity+json';
+const LD = `application/ld+json; profile="${AS}"`;
+const SCHEMA = 'http://nodeinfo.diaspora.software/ns/schema/2.1';
+const PAGE_SIZE = 10;
+const MAX_ITEMS = 50;
+const MAX_TEXT = 8192;
+
+function validText(value, max = MAX_TEXT) {
+  // Intentionally reject control characters while allowing normal text whitespace.
+  // eslint-disable-next-line no-control-regex
+  const forbidden = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
+
+  return (
+    typeof value === 'string' && value.length <= max && !forbidden.test(value)
+  );
+}
+
+function slug(value) {
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value);
+}
+
+function httpsSubject(value) {
+  return (
+    validText(value, 2048) &&
+    /^https:\/\/[a-z0-9.-]+(?::[1-9][0-9]{0,4})?(?:\/[^\s\\]*)?$/.test(value)
+  );
+}
+
+/** Local Atomic identifiers are store keys, not HTTP URLs. Signature/existence
+ * validation remains the host's job. Accept both base64url and legacy base64 bodies.
+ */
+export function localSubject(value) {
+  if (!validText(value, 2048)) return undefined;
+  if (httpsSubject(value)) return value;
+  if (value.startsWith('atomic://')) return undefined;
+  if (
+    !/^(?:atomic:|did:ad:)(?:(?:agent|commit|blob|node):)?[A-Za-z0-9_+/-]+={0,2}$/.test(
+      value,
+    )
+  )
+    return undefined;
+
+  return value.startsWith('did:ad:') ? 'atomic:' + value.slice(7) : value;
+}
+
+function resourceUrl(c, subject) {
+  return subject.startsWith('atomic:')
+    ? `${c.origin}/resource?subject=${encodeURIComponent(subject)}`
+    : subject;
+}
+
+function propertyValue(row, property) {
+  if (Object.prototype.hasOwnProperty.call(row, property)) return row[property];
+  if (property.startsWith('atomic:')) return row['did:ad:' + property.slice(7)];
+
+  return undefined;
+}
+
+export function html(text) {
+  return text
+    .replace(
+      /[&<>"']/g,
+      c =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[c],
+    )
+    .replace(/\r?\n/g, '<br>');
+}
+
+function config(ctx) {
+  const c = ctx.config ?? {};
+  const rawCollection = c.publication?.collection;
+  const collection = rawCollection && {
+    parent: localSubject(rawCollection.parent),
+    idProperty: localSubject(rawCollection.idProperty),
+    publishedProperty: localSubject(rawCollection.publishedProperty),
+  };
+  const rawObjects = c.publication?.objects ?? (collection ? [] : undefined);
+  const objects = Array.isArray(rawObjects)
+    ? rawObjects.map(
+        item => item && { ...item, subject: localSubject(item.subject) },
+      )
+    : rawObjects;
+  const profileSubject = localSubject(c.profile);
+  if (
+    collection &&
+    (c.publication.objects !== undefined ||
+      !localSubject(collection.parent) ||
+      !localSubject(collection.idProperty) ||
+      !localSubject(collection.publishedProperty))
+  )
+    throw new Error('Invalid collection configuration');
+  if (
+    !validText(c.origin, 255) ||
+    !/^https:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?$/.test(
+      c.origin,
+    ) ||
+    !slug(c.username) ||
+    !profileSubject
+  )
+    throw new Error('Invalid actor configuration');
+  if (!Array.isArray(objects) || objects.length > MAX_ITEMS)
+    throw new Error('Configure at most 50 object bindings');
+  const ids = new Set();
+  const subjects = new Set();
+
+  for (const item of objects) {
+    if (
+      !item ||
+      !slug(item.id) ||
+      !localSubject(item.subject) ||
+      typeof item.published !== 'string' ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/.test(item.published) ||
+      !Number.isFinite(Date.parse(item.published)) ||
+      new Date(item.published).toISOString() !== item.published ||
+      ids.has(item.id) ||
+      subjects.has(item.subject)
+    )
+      throw new Error('Invalid or duplicate object binding');
+    ids.add(item.id);
+    subjects.add(item.subject);
+  }
+
+  return {
+    ...c,
+    profile: profileSubject,
+    objects,
+    collection,
+    resolvedObjects: undefined,
+    actor: `${c.origin}/ap/actor`,
+    account: `acct:${c.username}@${c.origin.slice(8)}`,
+  };
+}
+
+function readPublic(ctx, subject) {
+  // manifest principal:anonymous -> pinned host ForAgent::Public, plus grants.
+  // A returned resource is already subject to host permission checking.
+  try {
+    return ctx.read(subject);
+  } catch {
+    return undefined;
+  }
+}
+
+function profile(ctx, c) {
+  const row = readPublic(ctx, c.profile);
+  if (!row || !validText(row[P.name], 255) || !row[P.name]) return undefined;
+
+  return row;
+}
+
+export function objectFor(ctx, c, binding) {
+  const row = readPublic(ctx, binding.subject);
+  if (!row || !Array.isArray(row[P.isA])) return undefined;
+  if (
+    c.collection &&
+    (localSubject(row[P.parent]) !== c.collection.parent ||
+      propertyValue(row, c.collection.idProperty) !== binding.id ||
+      propertyValue(row, c.collection.publishedProperty) !== binding.published)
+  )
+    return undefined;
+  const note = row[P.isA].some(t => NOTE_CLASSES.includes(t));
+  const article = row[P.isA].some(t => DOCUMENT_CLASSES.includes(t));
+  if (!note && !article) return undefined;
+  if (note && !validText(row[P.description])) return undefined;
+  if (article && (!validText(row[P.name], 255) || !row[P.name]))
+    return undefined;
+
+  return {
+    '@context': AS,
+    id: `${c.origin}/ap/objects/${binding.id}`,
+    type: note ? 'Note' : 'Article',
+    attributedTo: c.actor,
+    published: binding.published,
+    to: [PUBLIC],
+    url: resourceUrl(c, binding.subject),
+    ...(validText(row[P.name], 255) ? { name: row[P.name] } : {}),
+    ...(note
+      ? {
+          content: `<p>${html(row[P.description])}</p>`,
+          mediaType: 'text/html',
+        }
+      : {}),
+    ...(article
+      ? { summary: 'Open the linked Atomic document to read its content.' }
+      : {}),
+  };
+}
+
+function activity(c, object, id) {
+  return {
+    '@context': AS,
+    id: `${c.origin}/ap/activities/${id}`,
+    type: 'Create',
+    actor: c.actor,
+    published: object.published,
+    to: [PUBLIC],
+    object,
+  };
+}
+
+function bindings(ctx, c) {
+  if (!c.collection) return c.objects;
+  if (c.resolvedObjects) return c.resolvedObjects;
+  const spec = c.collection;
+  const found = ctx.query(P.parent, spec.parent);
+  const subjects = Array.isArray(found) ? found.map(localSubject) : found;
+  if (
+    !Array.isArray(subjects) ||
+    subjects.length > MAX_ITEMS ||
+    new Set(subjects).size !== subjects.length
+  )
+    throw new Error('Incomplete or oversized collection');
+  const ids = new Set();
+  const result = [];
+
+  for (const subject of subjects) {
+    if (!subject) throw new Error('Invalid query result');
+    const row = readPublic(ctx, subject);
+    if (!row || localSubject(row[P.parent]) !== spec.parent) continue;
+    const id = propertyValue(row, spec.idProperty),
+      published = propertyValue(row, spec.publishedProperty);
+    // Ordinary siblings without publication metadata are not posts.
+    if (id === undefined || published === undefined) continue;
+    if (
+      !slug(id) ||
+      typeof published !== 'string' ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/.test(published) ||
+      !Number.isFinite(Date.parse(published)) ||
+      new Date(published).toISOString() !== published ||
+      ids.has(id)
+    )
+      throw new Error('Invalid or duplicate collection identity');
+    ids.add(id);
+    result.push({ id, subject, published });
+  }
+
+  c.resolvedObjects = result;
+
+  return result;
+}
+
+function visible(ctx, c) {
+  return bindings(ctx, c)
+    .map(binding => ({ binding, object: objectFor(ctx, c, binding) }))
+    .filter(row => row.object)
+    .sort((a, b) =>
+      a.binding.published === b.binding.published
+        ? a.binding.id < b.binding.id
+          ? -1
+          : a.binding.id > b.binding.id
+            ? 1
+            : 0
+        : a.binding.published > b.binding.published
+          ? -1
+          : 1,
+    );
+}
+
+// Honor explicit q=0 exclusions even in the presence of a wildcard.
+export function negotiate(accept) {
+  if (accept === undefined || accept === '') return MIME;
+  if (typeof accept !== 'string' || accept.length > 2048) return undefined;
+  const entries = accept.split(',').map(raw => {
+    const [type, ...parameters] = raw.trim().toLowerCase().split(';');
+    const q = parameters.map(p => p.trim()).find(p => p.startsWith('q='));
+    const quality = q === undefined ? 1 : Number(q.slice(2));
+
+    return {
+      type: type.trim(),
+      quality:
+        Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0,
+    };
+  });
+
+  const quality = type => {
+    const exact = entries.filter(e => e.type === type);
+    const ranges = exact.length
+      ? exact
+      : entries.filter(e => e.type === 'application/*');
+    const matches = ranges.length
+      ? ranges
+      : entries.filter(e => e.type === '*/*');
+
+    return Math.max(0, ...matches.map(e => e.quality));
+  };
+
+  const a = quality(MIME),
+    l = quality('application/ld+json');
+
+  return a === 0 && l === 0 ? undefined : a >= l ? MIME : LD;
+}
+
+function reply(status, value, method, type = 'application/json') {
+  return {
+    status,
+    headers: {
+      'content-type': type,
+      'cache-control': 'no-store',
+      vary: 'Accept',
+    },
+    body: method === 'HEAD' ? '' : JSON.stringify(value),
+  };
+}
+
+function dispatch(ctx, request) {
+  const method = request.method;
+  const path = request.path;
+  const q = request.query ?? {};
+  if (method === 'POST' && (path === '/ap/inbox' || path === '/ap/outbox'))
+    return reply(
+      501,
+      {
+        error:
+          'Signed ActivityPub delivery and authorized writes are unavailable on this host',
+      },
+      method,
+    );
+  if (method !== 'GET' && method !== 'HEAD')
+    return reply(405, { error: 'Method not allowed' }, method);
+  let c;
+
+  try {
+    c = config(ctx);
+  } catch {
+    return reply(503, { error: 'Actor configuration unavailable' }, method);
+  }
+
+  // No discovery, actor data, object counts or objects are exposed if the
+  // backing profile itself is not readable anonymously.
+  const source = profile(ctx, c);
+  if (!source) return reply(404, { error: 'Not found' }, method);
+
+  if (path === '/webfinger' || request.wellKnown === 'webfinger') {
+    if (typeof q.resource !== 'string')
+      return reply(
+        400,
+        { error: 'One resource parameter is required' },
+        method,
+      );
+    if (q.resource !== c.account && q.resource !== c.actor)
+      return reply(404, { error: 'Not found' }, method);
+    const rels =
+      q.rel === undefined ? undefined : Array.isArray(q.rel) ? q.rel : [q.rel];
+
+    return reply(
+      200,
+      {
+        subject: c.account,
+        aliases: [c.actor],
+        links:
+          rels && !rels.includes('self')
+            ? []
+            : [{ rel: 'self', type: MIME, href: c.actor }],
+      },
+      method,
+      'application/jrd+json',
+    );
+  }
+
+  if (path === '/nodeinfo' || request.wellKnown === 'nodeinfo')
+    return reply(
+      200,
+      { links: [{ rel: SCHEMA, href: `${c.origin}/nodeinfo/2.1` }] },
+      method,
+    );
+  if (path === '/nodeinfo/2.1')
+    return reply(
+      200,
+      {
+        version: '2.1',
+        software: { name: 'atomic-fediverse', version: '0.1.0' },
+        protocols: [],
+        services: { inbound: [], outbound: [] },
+        openRegistrations: false,
+        usage: { users: { total: 1 }, localPosts: visible(ctx, c).length },
+        metadata: { activityStreamsReadOnly: true, federationEnabled: false },
+      },
+      method,
+      `application/json; profile="${SCHEMA}#"`,
+    );
+  const type = negotiate(request.headers?.accept);
+  if (!type)
+    return reply(
+      406,
+      { error: 'Request an ActivityStreams JSON representation' },
+      method,
+    );
+  if (path === '/ap/actor')
+    return reply(
+      200,
+      {
+        '@context': AS,
+        id: c.actor,
+        type: 'Service',
+        preferredUsername: c.username,
+        name: source[P.name],
+        summary: validText(source[P.description])
+          ? html(source[P.description])
+          : '',
+        url: resourceUrl(c, c.profile),
+        inbox: `${c.origin}/ap/inbox`,
+        outbox: `${c.origin}/ap/outbox`,
+      },
+      method,
+      type,
+    );
+  if (path === '/ap/inbox')
+    return reply(501, { error: 'Inbox is unavailable' }, method);
+
+  if (path === '/ap/outbox') {
+    const rows = visible(ctx, c);
+    const base = `${c.origin}/ap/outbox`;
+    if (q.page === undefined)
+      return reply(
+        200,
+        {
+          '@context': AS,
+          id: base,
+          type: 'OrderedCollection',
+          totalItems: rows.length,
+          first: `${base}?page=1`,
+        },
+        method,
+        type,
+      );
+    if (typeof q.page !== 'string' || !/^[1-9][0-9]{0,2}$/.test(q.page))
+      return reply(400, { error: 'Invalid page' }, method);
+    const page = Number(q.page),
+      start = (page - 1) * PAGE_SIZE;
+    if (page > Math.max(1, Math.ceil(rows.length / PAGE_SIZE)))
+      return reply(404, { error: 'Not found' }, method);
+
+    return reply(
+      200,
+      {
+        '@context': AS,
+        id: `${base}?page=${page}`,
+        type: 'OrderedCollectionPage',
+        partOf: base,
+        orderedItems: rows
+          .slice(start, start + PAGE_SIZE)
+          .map(row => activity(c, row.object, row.binding.id)),
+        ...(page > 1 ? { prev: `${base}?page=${page - 1}` } : {}),
+        ...(start + PAGE_SIZE < rows.length
+          ? { next: `${base}?page=${page + 1}` }
+          : {}),
+      },
+      method,
+      type,
+    );
+  }
+
+  const match = /^\/ap\/(objects|activities)\/([a-z0-9][a-z0-9_-]{0,63})$/.exec(
+    path,
+  );
+
+  if (match) {
+    const binding = bindings(ctx, c).find(item => item.id === match[2]);
+    const object = binding && objectFor(ctx, c, binding);
+    if (object)
+      return reply(
+        200,
+        match[1] === 'objects' ? object : activity(c, object, binding.id),
+        method,
+        type,
+      );
+  }
+
+  return reply(404, { error: 'Not found' }, method);
+}
+
+export function run() {
+  return { intents: [], problems: [] };
+}
+
+function matchesTag(value, tag, weak) {
+  if (typeof value !== 'string' || value.length > 2048)
+    throw new Error('Invalid condition');
+  if (value.trim() === '*') return true;
+  const tags = value.match(/(?:W\/)?"[^"\s]*"/g) ?? [];
+  if (!tags.length || tags.join(',') !== value.trim().replace(/\s*,\s*/g, ','))
+    throw new Error('Invalid condition');
+
+  return tags.some(
+    candidate => (weak ? candidate.replace(/^W\//, '') : candidate) === tag,
+  );
+}
+
+export function handle(ctx, request) {
+  let response;
+
+  try {
+    response = dispatch(
+      ctx,
+      request.method === 'HEAD' ? { ...request, method: 'GET' } : request,
+    );
+  } catch {
+    response = reply(
+      503,
+      { error: 'Atomic collection unavailable' },
+      request.method,
+    );
+  }
+
+  if (response.status === 200 && ['GET', 'HEAD'].includes(request.method)) {
+    const tag =
+      '"' +
+      sha256(response.headers['content-type'] + '\n' + response.body) +
+      '"';
+    response.headers.etag = tag;
+
+    try {
+      const match = request.headers?.['if-match'];
+      const none = request.headers?.['if-none-match'];
+      if (match !== undefined && !matchesTag(match, tag, false))
+        response = { ...response, status: 412, body: '' };
+      else if (none !== undefined && matchesTag(none, tag, true))
+        response = { ...response, status: 304, body: '' };
+    } catch {
+      response = reply(
+        400,
+        { error: 'Invalid HTTP condition' },
+        request.method,
+      );
+    }
+  }
+
+  if (request.method === 'HEAD') response.body = '';
+
+  return response;
+}
