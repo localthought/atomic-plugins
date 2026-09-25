@@ -144,7 +144,10 @@ parent and `about` link against the configured existing document, and checks
 that the receipt text has not been locally edited.
 
 New receipts persist lifecycle metadata in the host's existing JSON
-`importBaseline` property. States are `recorded`, `accepted`, `declined` and
+`importBaseline` property. Its `values` map records the source description;
+`previous` carries the preceding source values for the native commit validator.
+This lets the host reject a stale transition or a concurrent local text edit.
+States are `recorded`, `accepted`, `declined` and
 `unshared`. The local policy permits recorded → accepted/declined/unshared and
 accepted → unshared. Declined/unshared are terminal; this conservative policy
 is ours, not a state machine defined by OCM. A repeat of the recorded last
@@ -160,9 +163,9 @@ particular an `unshared` receipt is **not enforcement of remote or Atomic access
 revocation**. No notification is sent or acknowledged over the network. POST
 `/ocm/notifications` is explicitly 501 behind the same host gates as shares.
 
-`expectedState` is checked while planning, not an atomic compare-and-swap at
-commit. Serialize reviewed jobs and resolve concurrent plans before application;
-there is no transaction/snapshot guarantee. OCM1.3 has no notification event ID
+`expectedState` is checked while planning. The native import baseline validator
+also checks preceding source values and local text edits at commit. These
+checks do not provide a transaction/snapshot guarantee across resources. OCM1.3 has no notification event ID
 in this schema, so idempotency here recognizes repeated resulting decisions,
 not an authenticated durable inbox log. Live host and peer interoperability
 remain unverified.

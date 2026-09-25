@@ -497,9 +497,11 @@ test('canonical Atomic document subjects work for import and lifecycle', () => {
     },
   );
   assert.equal(run(n).intents[0].set[P.baseline].document, atomicDocument);
+
   n.read = () => {
     throw Error('Denied by host');
   };
+
   assert.deepEqual(run(n).intents, []);
   for (const document of [
     'atomic:',
@@ -508,4 +510,41 @@ test('canonical Atomic document subjects work for import and lifecycle', () => {
     'atomic:x?query',
   ])
     assert.deepEqual(run(host({ document })).intents, []);
+});
+
+test('native import baselines carry exact source values and previous values across lifecycle', () => {
+  // Contract: atomic-server/lib/src/import_identity.rs validate_baseline.
+  // Metadata can accompany the maps, but cannot replace these required fields.
+  const initial = savedReceipt();
+  assert.deepEqual(initial[P.baseline].previous, {});
+  assert.deepEqual(initial[P.baseline].values, {
+    [P.description]: initial[P.description],
+  });
+  const accept = notify(initial).intents[0].set;
+  assert.deepEqual(accept[P.baseline].previous, initial[P.baseline].values);
+  assert.deepEqual(accept[P.baseline].values, {
+    [P.description]: accept[P.description],
+  });
+  const accepted = { ...initial, ...accept };
+  const revoke = notify(accepted, 'SHARE_UNSHARED', {
+    expectedState: 'accepted',
+  }).intents[0].set;
+  assert.deepEqual(revoke[P.baseline].previous, accept[P.baseline].values);
+  assert.deepEqual(revoke[P.baseline].values, {
+    [P.description]: revoke[P.description],
+  });
+  const legacy = { ...initial };
+  delete legacy[P.baseline];
+  const adopted = run(host({}, { receipt: legacy })).intents[0].set;
+  assert.deepEqual(adopted[P.baseline].previous, {});
+  assert.deepEqual(adopted[P.baseline].values, {
+    [P.description]: legacy[P.description],
+  });
+});
+
+test('inconsistent source baseline is refused before receipt state can change', () => {
+  const row = savedReceipt();
+  row[P.baseline].values[P.description] = 'different source text';
+  assert.deepEqual(notify(row).intents, []);
+  assert.deepEqual(run(host({}, { receipt: row })).intents, []);
 });

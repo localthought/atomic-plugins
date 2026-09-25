@@ -298,7 +298,8 @@ function reviewedNotification(ctx, c, peer, document) {
     state.document !== document ||
     typeof state.summary !== 'string' ||
     !['recorded', 'accepted', 'declined', 'unshared'].includes(state.state) ||
-    existing[P.description] !== receiptDescription(state)
+    existing[P.description] !== receiptDescription(state) ||
+    state.values?.[P.description] !== existing[P.description]
   )
     throw new Error(
       'Receipt binding or locally edited state conflicts; review required',
@@ -326,7 +327,9 @@ function reviewedNotification(ctx, c, peer, document) {
     ...state,
     state: next,
     lastNotification: notification.notificationType,
+    previous: state.values,
   };
+  updated.values = { [P.description]: receiptDescription(updated) };
 
   return {
     intents: [
@@ -417,6 +420,8 @@ export function run(ctx) {
       summary,
       state: 'recorded',
       lastNotification: null,
+      values: { [P.description]: summary },
+      previous: {},
     };
 
     if (matches.length) {
@@ -438,7 +443,10 @@ export function run(ctx) {
             !['recorded', 'accepted', 'declined', 'unshared'].includes(
               existing[P.baseline].state,
             ) ||
-            existing[P.description] !== receiptDescription(existing[P.baseline])
+            existing[P.description] !==
+              receiptDescription(existing[P.baseline]) ||
+            existing[P.baseline].values?.[P.description] !==
+              existing[P.description]
           : existing[P.description] !== summary)
       )
         throw new Error(
