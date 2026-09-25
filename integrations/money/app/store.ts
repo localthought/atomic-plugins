@@ -10,15 +10,17 @@
  *
  * Checked against view-client.js and
  * `browser/data-browser/src/chunks/AppPage/hostStore.ts` at the pinned
- * atomic-server (`.atomic-server-ref`, 007869464):
+ * atomic-server (`.atomic-server-ref`, bc39dac4b):
  * - `getData()` answers the table the app is a view of (a table's app tab),
  *   or the app's own table, with the row class read off that table.
  * - `query` is a collection over the drive, all pages (500 per page).
  * - Reads are allowed anywhere the signed-in person can read. Writes
  *   (`save`, `destroy`, `newResource`) are refused unless the subject is
  *   beneath the app itself: "This app may only write its own data."
- * - There is no op that runs a sandbox importer (atomic-server#1739), and
- *   writes to the table an app views are refused (#1740).
+ * - Since candidate11 (bc39dac4b): `getData().tables` for an importer's
+ *   other tables (#1768), `importer.run` with the host's review (#1774),
+ *   and `rowAccess`/`requestRowAccess` for editing the viewed table's rows
+ *   (#1788). Without a grant, writes outside the app are still refused.
  * - Since the 007869464 pin: `getMany` (at most 100 subjects, errors in
  *   place), `getTheme`/`onThemeChange` (`colorScheme`), `openResource` and
  *   `openExternal`. Typed optional and feature-detected, so the app still
@@ -40,7 +42,32 @@ export type JSONValue =
 export interface DataRef {
   table: string;
   rowClass?: string;
+  /**
+   * The other tables the importer's Set up created beside this one
+   * (manifest `destination.tables`, atomic-server#1768), by key.
+   */
+  tables?: Record<string, { table: string; rowClass: string }>;
 }
+
+/** `store.rowAccess()` (atomic-server#1788). */
+export type RowAccess =
+  | { status: 'granted'; grantedBy?: string; grantedAt?: number; via?: string }
+  | { status: 'none' }
+  | { status: 'unavailable' };
+
+/** `store.importer.run()` (atomic-server#1774). */
+export type ImporterRun =
+  | {
+      status: 'applied';
+      importer?: string;
+      created: number;
+      updated: number;
+      destroyed: number;
+      failed: number;
+      errors?: string[];
+    }
+  | { status: 'nothing' | 'cancelled'; importer?: string }
+  | { status: 'blocked'; importer?: string; errors?: string[] };
 
 export interface PluginResource {
   readonly subject: string;
@@ -82,6 +109,18 @@ export interface PluginStore {
   openResource?(
     subject: string,
   ): Promise<{ status: 'opened'; subject: string }>;
+  /** Whether this app may edit the rows of the table it views. */
+  rowAccess?(): Promise<RowAccess>;
+  /** Asks the person, in the host's bar, to allow editing those rows. */
+  requestRowAccess?(): Promise<
+    { status: 'granted' } | { status: 'denied'; reason?: string }
+  >;
+  /** The importer whose table this app views; runs it with host review. */
+  importer?: {
+    run(args?: {
+      file?: { name: string; mediaType: string; text: string };
+    }): Promise<ImporterRun>;
+  };
 }
 
 export interface ViewArgs {

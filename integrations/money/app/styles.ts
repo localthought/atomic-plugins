@@ -477,6 +477,7 @@ textarea.m-input { min-height: 64px; resize: vertical; }
 
 .m-imports caption { padding-top: 12px; }
 .m-line { display: block; white-space: nowrap; }
+.m-strong { font-weight: 600; }
 
 .m-popover {
   position: fixed;

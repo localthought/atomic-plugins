@@ -171,7 +171,11 @@ export function renderApp(ctx: Ctx, actions: Actions): Node[] {
           id: 'imports',
           label: 'Imports',
           count: populated
-            ? count(importedStatements(state.rows).length, locale)
+            ? count(
+                state.statements?.length ||
+                  importedStatements(state.rows).length,
+                locale,
+              )
             : undefined,
         },
         { id: 'sources', label: 'Sources' },

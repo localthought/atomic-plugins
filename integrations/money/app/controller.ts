@@ -25,12 +25,15 @@ import {
   atomic,
   canAnnotate,
   isBankTable,
+  readMany,
   readRows,
+  readStatement,
+  type StoredStatement,
   resolveFields,
   type Fields,
   type Txn,
 } from './rows.js';
-import type { PluginStore } from './store.js';
+import type { ImporterRun, PluginStore } from './store.js';
 
 export type ViewState =
   | { kind: 'loading'; loaded: number; total?: number }
@@ -72,18 +75,37 @@ export interface ChosenFile {
 }
 
 /**
- * Applies a checked statement through the sandbox importer. The pinned host
- * has no app op for this (issues.md M-8), so `view()` passes none and the
- * preview says where to import instead; tests pass a fake.
+ * Applies a checked statement through the importer, with the host's own
+ * review (`store.importer.run`, atomic-server#1774). An older host has none,
+ * and the preview then says where to import instead; tests pass a fake.
  */
 export interface ImportPort {
-  apply(text: string, file: FileInfo): Promise<{ created: number }>;
+  apply(text: string, file: FileInfo): Promise<ImporterRun>;
+}
+
+/** The host's importer, when it has one, as an ImportPort. */
+export function hostImporter(store: PluginStore): ImportPort | undefined {
+  const importer = store.importer;
+  if (!importer) return undefined;
+
+  return {
+    apply: (text, file) =>
+      importer.run({
+        file: {
+          name: file.name,
+          mediaType:
+            file.format === 'camt053' ? 'application/xml' : 'text/plain',
+          text,
+        },
+      }),
+  };
 }
 
 /** A save of one annotation field, kept until the row is closed. */
 export interface Edit {
   value: string;
-  status: 'saving' | 'saved' | 'error';
+  /** `asking`: waiting for the person to allow editing in the host's bar. */
+  status: 'asking' | 'saving' | 'saved' | 'error';
   /** For `error`: one sentence of cause, and the host's raw message. */
   message?: string;
   details?: string;
@@ -117,6 +139,18 @@ export interface State {
   importer?: string;
   /** Why opening the importer failed, when it did. */
   openFailure?: string;
+  /**
+   * The importer's stored statements (atomic-server#1768), or undefined
+   * where the table has none: then the Imports tab is built from the rows.
+   */
+  statements?: StoredStatement[];
+  /**
+   * Whether this app may edit the viewed table's rows (atomic-server#1788):
+   * `unknown` on a host that cannot say.
+   */
+  rowAccess: 'granted' | 'none' | 'denied' | 'unavailable' | 'unknown';
+  /** Why the person or host refused editing, when they did. */
+  rowAccessReason?: string;
 }
 
 export const NOT_A_BANK_TABLE =
@@ -141,6 +175,8 @@ export interface Controller {
   /** Closes the import sheet; during a check, abandons it. */
   closeImport(): void;
   toggleHelp(open?: boolean): void;
+  /** Asks the person, in the host's bar, to allow editing the rows. */
+  allowEditing(): Promise<boolean>;
   /** Leaves the app for the importer's page, where Import applies (M-8). */
   openImporter(): Promise<void>;
   /** ISO date the period filters are relative to. */
@@ -184,8 +220,14 @@ export function createController(
     limit: WINDOW,
     edits: {},
     drafts: {},
-    canApply: Boolean(importer),
+    canApply: false,
+    rowAccess: 'unknown',
   };
+  const port = importer ?? hostImporter(store);
+  state.canApply = Boolean(port);
+  let statementsTable: string | undefined;
+  let statementFields: Fields = {};
+  let unsubscribeStatements: (() => void) | undefined;
   /** Bumped on every new check or close, so a stale check stops. */
   let run = 0;
   let pendingText: string | undefined;
@@ -250,6 +292,33 @@ export function createController(
       });
   };
 
+  const loadStatements = async () => {
+    if (!statementsTable) return;
+    const subjects = await store.query({
+      property: atomic.parent,
+      value: statementsTable,
+    });
+    const statements = await readMany(store, subjects, r =>
+      readStatement(r, statementFields),
+    );
+    update({ statements });
+  };
+
+  const askForAccess = async (): Promise<boolean> => {
+    if (!store.requestRowAccess) return false;
+    const answer = await store.requestRowAccess();
+
+    if (answer.status === 'granted') {
+      update({ rowAccess: 'granted', rowAccessReason: undefined });
+
+      return true;
+    }
+
+    update({ rowAccess: 'denied', rowAccessReason: answer.reason });
+
+    return false;
+  };
+
   const PROPERTY: Record<NoteKey, 'money-category' | 'money-note'> = {
     category: 'money-category',
     note: 'money-note',
@@ -287,6 +356,23 @@ export function createController(
           fields,
           view: { kind: 'loading', loaded: 0, total: subjects.length },
         });
+        const statements = data.tables?.statements;
+
+        if (statements) {
+          statementsTable = statements.table;
+          statementFields = await resolveFields(store, statements.rowClass);
+          await loadStatements().catch(() => undefined);
+          unsubscribeStatements?.();
+          unsubscribeStatements = store.subscribe(statementsTable, () => {
+            void loadStatements().catch(() => undefined);
+          });
+        }
+
+        if (store.rowAccess) {
+          const access = await store.rowAccess().catch(() => undefined);
+          if (access) update({ rowAccess: access.status });
+        }
+
         const rows = await readRows(store, subjects, fields, loaded => {
           // Progress in steps, not per row: each update re-renders.
           if (loaded % 50 === 0)
@@ -339,6 +425,27 @@ export function createController(
       const next = field === 'note' ? value : value.trim();
       const edit = state.edits[field];
       if (next === row[field] && edit?.status !== 'error') return;
+
+      // A host that can grant editing the viewed table's rows: ask first,
+      // in the host's bar, and keep what was typed meanwhile.
+      if (store.rowAccess && state.rowAccess !== 'granted') {
+        setEdit(field, { value: next, status: 'asking' });
+        const granted = await askForAccess().catch(() => false);
+
+        if (!granted) {
+          if (state.selected === subject)
+            setEdit(field, {
+              value: next,
+              status: 'error',
+              message:
+                "You didn't allow Money to edit this table, so it wasn't saved. Your text is kept here.",
+              details: state.rowAccessReason,
+            });
+
+          return;
+        }
+      }
+
       setEdit(field, { value: next, status: 'saving' });
 
       try {
@@ -465,15 +572,32 @@ export function createController(
     },
     async applyImport() {
       const sheet = state.importing;
-      if (sheet?.step !== 'preview' || !importer || !pendingText) return;
+      if (sheet?.step !== 'preview' || !port || !pendingText) return;
       const mine = run;
       update({ importing: { ...sheet, applying: true, failure: undefined } });
 
       try {
-        const { created } = await importer.apply(pendingText, sheet.file);
+        const outcome = await port.apply(pendingText, sheet.file);
         if (mine !== run) return;
-        pendingText = undefined;
-        update({ importing: undefined, arrived: { count: created } });
+
+        if (outcome.status === 'applied' || outcome.status === 'nothing') {
+          pendingText = undefined;
+          // The new rows, and "Imported N", arrive through the table
+          // subscription: `created` also counts the statement rows.
+          update({ importing: undefined });
+        } else if (outcome.status === 'cancelled')
+          // Closed in the host's review: back to the preview, unchanged.
+          update({ importing: { ...sheet, applying: false } });
+        else
+          update({
+            importing: {
+              ...sheet,
+              applying: false,
+              failure:
+                ('errors' in outcome ? outcome.errors?.join('\n') : '') ||
+                'The importer blocked this file.',
+            },
+          });
       } catch (error) {
         if (mine === run)
           update({
@@ -501,11 +625,15 @@ export function createController(
         });
       }
     },
+    async allowEditing() {
+      return askForAccess().catch(() => false);
+    },
     toggleHelp(open = !state.help) {
       update({ help: open });
     },
     today,
     dispose() {
+      unsubscribeStatements?.();
       unsubscribe?.();
       unsubscribe = undefined;
     },

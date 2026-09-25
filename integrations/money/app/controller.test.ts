@@ -113,7 +113,7 @@ describe('Money controller: annotations', () => {
   };
 
   it('saves a category and a note on the row, and says Saved', async () => {
-    const { store, controller, subject } = await opened({ rowsWritable: true });
+    const { store, controller, subject } = await opened({ access: 'granted' });
     await controller.saveNote('category', '  Groceries ');
     await controller.saveNote('note', 'Team lunch\nwith receipts');
     expect(store.saves).toEqual([
@@ -170,8 +170,8 @@ describe('Money controller: annotations', () => {
     expect(controller.state().rows[0].category).toBe('Office supplies');
   });
 
-  it("explains the host's app-scope refusal (the table is not under the app)", async () => {
-    const { controller } = await opened();
+  it("explains an older host's refusal (no way to allow editing there)", async () => {
+    const { controller } = await opened({ host: 'legacy' });
     await controller.saveNote('note', 'x');
     expect(controller.state().edits.note).toMatchObject({
       status: 'error',
@@ -213,7 +213,7 @@ describe('Money controller: host APIs from the 007869464 pin', () => {
       100, 100, 50,
     ]);
     // Only the table, its class and properties go one by one.
-    expect(store.calls.get - before).toBeLessThan(20);
+    expect(store.calls.get - before).toBeLessThan(40);
   });
 
   it('skips a row getMany could not read, and keeps the rest', async () => {
@@ -252,5 +252,117 @@ describe('Money controller: host APIs from the 007869464 pin', () => {
     const legacy = harness(fakeStore({ rows: many(1), host: 'legacy' }));
     await legacy.controller.load();
     expect(legacy.controller.state().importer).toBeUndefined();
+  });
+});
+
+describe('Money controller: editing rows (atomic-server#1788)', () => {
+  const opened = async (options: Parameters<typeof fakeStore>[0] = {}) => {
+    const store = fakeStore({
+      rows: [row('-23.47', '2026-09-22')],
+      ...options,
+    });
+    const { controller, seen } = harness(store);
+    await controller.load();
+    controller.select(controller.state().rows[0].subject);
+
+    return { store, controller, seen };
+  };
+
+  it('knows the access at load', async () => {
+    expect((await opened()).controller.state().rowAccess).toBe('none');
+    expect(
+      (await opened({ access: 'granted' })).controller.state().rowAccess,
+    ).toBe('granted');
+    expect(
+      (await opened({ host: 'legacy' })).controller.state().rowAccess,
+    ).toBe('unknown');
+  });
+
+  it('asks once, keeping the typed value while it waits, then saves', async () => {
+    const { store, controller, seen } = await opened();
+    await controller.saveNote('category', 'Groceries');
+    expect(
+      seen.some(
+        s =>
+          s.edits.category?.status === 'asking' &&
+          s.edits.category.value === 'Groceries',
+      ),
+    ).toBe(true);
+    expect(store.accessRequests).toBe(1);
+    expect(controller.state().rowAccess).toBe('granted');
+    expect(controller.state().rows[0].category).toBe('Groceries');
+    await controller.saveNote('note', 'Lunch');
+    expect(store.accessRequests).toBe(1);
+    expect(store.saves).toHaveLength(2);
+  });
+
+  it('keeps the text and says so when the person says no', async () => {
+    const { store, controller } = await opened({ answer: 'deny' });
+    await controller.saveNote('category', 'Groceries');
+    expect(store.saves).toEqual([]);
+    expect(controller.state().rowAccess).toBe('denied');
+    expect(controller.state().edits.category).toMatchObject({
+      value: 'Groceries',
+      status: 'error',
+      details: 'Not now',
+    });
+  });
+
+  it('can be allowed up front, from the detail', async () => {
+    const { controller } = await opened();
+    expect(await controller.allowEditing()).toBe(true);
+    expect(controller.state().rowAccess).toBe('granted');
+  });
+});
+
+describe('Money controller: stored statements (atomic-server#1768)', () => {
+  it("reads the importer's statements table and follows it", async () => {
+    const store = fakeStore({
+      rows: [row('-1', '2026-09-02')],
+      statements: [
+        {
+          'bank-account': 'NL42BUNQ0123456789',
+          'bank-currency': 'EUR',
+          'bank-statement': '31/1',
+          'bank-period-start': '2026-09-01',
+          'bank-period-end': '2026-09-22',
+          'bank-opening-balance': '8412.06',
+          'bank-closing-balance': '7921.95',
+          'bank-entry-count': '196',
+          'bank-format': 'camt053',
+          'bank-imported-date': '2026-09-23',
+        },
+      ],
+    });
+    const { controller } = harness(store);
+    await controller.load();
+    expect(controller.state().statements).toEqual([
+      expect.objectContaining({
+        number: '31/1',
+        closing: '7921.95',
+        entries: '196',
+        format: 'camt053',
+        imported: '2026-09-23',
+      }),
+    ]);
+    store.addStatements([
+      {
+        'bank-account': 'NL18RABO0301224456',
+        'bank-currency': 'EUR',
+        'bank-period-end': '2026-09-16',
+        'bank-closing-balance': '19738',
+      },
+    ]);
+    await settle();
+    await settle();
+    expect(controller.state().statements).toHaveLength(2);
+  });
+
+  it('has none on an older host, so the Imports tab falls back to the rows', async () => {
+    const { controller } = harness(
+      fakeStore({ rows: [row('-1', '2026-09-02')], host: 'legacy' }),
+    );
+    await controller.load();
+    expect(controller.state().statements).toBeUndefined();
   });
 });

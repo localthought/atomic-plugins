@@ -86,6 +86,7 @@ export async function mount(
     setPreviewTab: tab => controller.setPreviewTab(tab),
     applyImport: () => void controller.applyImport(),
     openImporter: () => void controller.openImporter(),
+    allowEditing: () => void controller.allowEditing(),
     toggleHelp: open => {
       controller.toggleHelp(open);
       if (!controller.state().help) helpOpener?.focus();

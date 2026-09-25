@@ -10,10 +10,19 @@
  * It starts with what the importer's Set up creates: banking properties, the
  * Bank transaction class and an empty table. Test-only; not bundled.
  */
-import { atomic, BANK_FIELDS, NOTE_FIELDS, type Shortname } from './rows.js';
+import { entries } from '../identity.js';
+import { parseBankStatement } from '../statement.js';
+import {
+  atomic,
+  BANK_FIELDS,
+  NOTE_FIELDS,
+  STATEMENT_ROW_FIELDS,
+  type Shortname,
+} from './rows.js';
 import {
   GET_MANY_MAX,
   type ColorScheme,
+  type ImporterRun,
   type JSONValue,
   type PluginResource,
   type PluginStore,
@@ -22,6 +31,9 @@ import {
 export const APP = 'did:ad:money-app';
 export const IMPORTER = 'did:ad:importer';
 export const TABLE = 'did:ad:importer/table';
+/** The importer's second table (atomic-server#1768). */
+export const STATEMENTS = 'did:ad:importer/statements';
+export const STATEMENT_CLASS = 'did:ad:ontology/class/bank-statement-record';
 export const ONTOLOGY = 'did:ad:ontology';
 export const ROW_CLASS = 'did:ad:ontology/class/bank-transaction';
 export const property = (shortname: string) =>
@@ -68,7 +80,16 @@ export const seedRow = (
   };
 };
 
+/** A stored statement as a test states it, by shortname. */
+export type SeedStatement = Partial<Record<Shortname, string>>;
+
 export interface FakeStore extends PluginStore {
+  /** Adds statement rows to the statements table. */
+  addStatements(rows: SeedStatement[]): string[];
+  /** Files handed to `importer.run`, by name. */
+  readonly runs: string[];
+  /** How often the app asked the person to allow editing. */
+  readonly accessRequests: number;
   readonly resources: Map<string, Record<string, JSONValue>>;
   readonly saves: { subject: string; propVals: Record<string, JSONValue> }[];
   /** Adds rows to the table, notifying subscribers of the table. */
@@ -94,7 +115,18 @@ export function fakeStore({
   data = 'bank',
   host = 'current',
   scheme = 'light',
+  statements = [],
+  access = 'none',
+  answer = 'grant',
+  importRun,
 }: {
+  statements?: SeedStatement[];
+  /** `rowAccess()` at the start (a current host). */
+  access?: 'granted' | 'none' | 'unavailable';
+  /** What the person says to `requestRowAccess()`. */
+  answer?: 'grant' | 'deny';
+  /** Overrides `importer.run`; by default it imports like the importer. */
+  importRun?: (file?: { name: string; text: string }) => Promise<ImporterRun>;
   /** `legacy`: a host before 007869464, without getMany, theme or openResource. */
   host?: 'current' | 'legacy';
   scheme?: ColorScheme;
@@ -107,6 +139,11 @@ export function fakeStore({
 } = {}): FakeStore {
   const resources = new Map<string, Record<string, JSONValue>>();
   const shortnames: string[] = [...BANK_FIELDS, ...(notes ? NOTE_FIELDS : [])];
+  const modern = host === 'current';
+  let writable = rowsWritable || (modern && access === 'granted');
+  let accessStatus: 'granted' | 'none' | 'unavailable' = access;
+  const runs: string[] = [];
+  let accessRequests = 0;
 
   resources.set(APP, {});
   resources.set(IMPORTER, {});
@@ -140,6 +177,35 @@ export function fakeStore({
   });
   if (data === 'other')
     resources.set('did:ad:ontology/class/pet', { [atomic.parent]: ONTOLOGY });
+
+  if (modern) {
+    for (const shortname of STATEMENT_ROW_FIELDS)
+      resources.set(property(shortname), {
+        [atomic.parent]: ONTOLOGY,
+        [atomic.isA]: [atomic.propertyClass],
+        [atomic.shortname]: shortname,
+      });
+    resources.set(STATEMENT_CLASS, {
+      [atomic.parent]: ONTOLOGY,
+      [atomic.shortname]: 'bank-statement-record',
+      [atomic.requires]: [
+        'bank-account',
+        'bank-currency',
+        'bank-period-start',
+        'bank-period-end',
+        'bank-opening-balance',
+        'bank-closing-balance',
+        'bank-source-id',
+      ].map(property),
+      [atomic.recommends]: ['bank-statement', ...STATEMENT_ROW_FIELDS].map(
+        property,
+      ),
+    });
+    resources.set(STATEMENTS, {
+      [atomic.parent]: IMPORTER,
+      [atomic.classtype]: STATEMENT_CLASS,
+    });
+  }
 
   const saves: FakeStore['saves'] = [];
   const listeners = new Map<string, Set<() => void>>();
@@ -204,7 +270,7 @@ export function fakeStore({
           throw new Error(failure);
         }
 
-        if (!within(subject) && !(rowsWritable && isRow(subject)))
+        if (!within(subject) && !(writable && isRow(subject)))
           throw new Error(REFUSED);
         const propVals = Object.fromEntries(
           [...changed].map(p => [p, props[p]]),
@@ -230,8 +296,37 @@ export function fakeStore({
   const themeListeners = new Set<(t: { colorScheme: ColorScheme }) => void>();
   let colorScheme = scheme;
 
+  const addUnder = (
+    parent: string,
+    klass: string,
+    prefix: string,
+    seed: Partial<Record<string, string>>[],
+  ) => {
+    const subjects = seed.map(row => {
+      const subject = `${parent}/${prefix}-${++next}`;
+      resources.set(subject, {
+        [atomic.parent]: parent,
+        [atomic.isA]: [klass],
+        ...Object.fromEntries(
+          Object.entries(row).map(([k, v]) => [property(k), v]),
+        ),
+      });
+
+      return subject;
+    });
+    notify(parent);
+
+    return subjects;
+  };
+
   const store: FakeStore = {
     resources,
+    runs,
+    get accessRequests() {
+      return accessRequests;
+    },
+    addStatements: seed =>
+      addUnder(STATEMENTS, STATEMENT_CLASS, 'statement', seed),
     saves,
     subscribed,
     calls,
@@ -278,6 +373,16 @@ export function fakeStore({
         : {
             table: TABLE,
             rowClass: resources.get(TABLE)?.[atomic.classtype] as string,
+            ...(modern
+              ? {
+                  tables: {
+                    statements: {
+                      table: STATEMENTS,
+                      rowClass: STATEMENT_CLASS,
+                    },
+                  },
+                }
+              : {}),
           },
     async getResource(subject) {
       calls.get++;
@@ -350,7 +455,86 @@ export function fakeStore({
     };
   }
 
+  if (modern) {
+    store.rowAccess = async () => ({ status: accessStatus });
+
+    store.requestRowAccess = async () => {
+      accessRequests++;
+
+      if (answer === 'grant') {
+        accessStatus = 'granted';
+        writable = true;
+
+        return { status: 'granted' as const };
+      }
+
+      return { status: 'denied' as const, reason: 'Not now' };
+    };
+
+    store.importer = {
+      async run(args) {
+        runs.push(args?.file?.name ?? '(picker)');
+        if (importRun) return importRun(args?.file);
+        if (!args?.file) return { status: 'cancelled' };
+
+        // Like the importer: new transactions by identity, one statement
+        // row per statement, append-only.
+        const { format, statements: parsed } = parseBankStatement(
+          args.file.text,
+        );
+        const known = new Set(
+          [...resources.values()].map(
+            r => r[property('bank-source-id')] as string,
+          ),
+        );
+        const fresh = entries(format, parsed).filter(
+          e => !known.has(e.identity),
+        );
+        store.addRows(
+          fresh.map(e => ({
+            'bank-account': e.statement.account,
+            'bank-currency': e.statement.currency,
+            'bank-amount': e.row.amount,
+            'bank-value-date': e.row.date,
+            'bank-booking-date': e.row.bookingDate,
+            'bank-description': e.row.description,
+            'bank-reference': e.row.bankReference || e.row.reference,
+            'bank-transaction-code': e.row.code,
+            'bank-statement': e.statement.number,
+            'bank-source-id': e.identity,
+            'bank-fingerprint': e.fingerprint,
+          })),
+        );
+        store.addStatements(
+          parsed.map(st => ({
+            'bank-account': st.account,
+            'bank-currency': st.currency,
+            'bank-statement': st.number,
+            'bank-period-start': st.start,
+            'bank-period-end': st.end,
+            'bank-opening-balance': st.opening,
+            'bank-closing-balance': st.closing,
+            'bank-entry-count': String(st.transactions.length),
+            'bank-format': format,
+            'bank-imported-date': '2026-09-24',
+          })),
+        );
+
+        return fresh.length
+          ? {
+              status: 'applied',
+              created: fresh.length + parsed.length,
+              updated: 0,
+              destroyed: 0,
+              failed: 0,
+            }
+          : { status: 'nothing' };
+      },
+    };
+  }
+
   if (rows.length) store.addRows(rows);
+  if (statements.length) store.addStatements(statements);
 
   return store;
 }

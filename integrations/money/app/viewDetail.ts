@@ -24,6 +24,7 @@ export interface DetailActions {
   draft(field: NoteKey, value: string): void;
   saveNote(field: NoteKey, value: string): void;
   showStatement(key: StatementKey): void;
+  allowEditing(): void;
 }
 
 const LABEL: Record<NoteKey, string> = { category: 'Category', note: 'Note' };
@@ -78,10 +79,13 @@ function field(
         banner({
           tone: 'neg',
           text: `Couldn't save the ${LABEL[key].toLowerCase()}. ${edit.message ?? ''}`.trim(),
-          action: button('Retry', {
-            onClick: () => actions.saveNote(key, edit.value),
-            key: `retry-${key}`,
-          }),
+          action: button(
+            ctx.state.rowAccess === 'denied' ? 'Ask again' : 'Retry',
+            {
+              onClick: () => actions.saveNote(key, edit.value),
+              key: `retry-${key}`,
+            },
+          ),
           details: edit.details,
         }),
       ),
@@ -90,10 +94,48 @@ function field(
   return nodes;
 }
 
+/**
+ * Whether Money may save here (atomic-server#1788). Said before anyone
+ * types, so a refusal is never a surprise; saving asks in any case.
+ */
+function access(ctx: Ctx, actions: DetailActions): HTMLElement | undefined {
+  const { rowAccess, rowAccessReason } = ctx.state;
+  const allow = button('Allow editing', {
+    onClick: actions.allowEditing,
+    key: 'allow-editing',
+  });
+
+  if (rowAccess === 'none')
+    return banner({
+      tone: 'info',
+      text: 'Money can show this table. To save categories and notes on its rows, allow it to edit them.',
+      action: allow,
+    });
+
+  if (rowAccess === 'denied')
+    return banner({
+      tone: 'warn',
+      text: `Editing isn't allowed${rowAccessReason ? `: ${rowAccessReason}` : ''}. Categories and notes you type are kept here but not saved.`,
+      action: button('Ask again', {
+        onClick: actions.allowEditing,
+        key: 'allow-editing',
+      }),
+    });
+
+  if (rowAccess === 'unavailable')
+    return banner({
+      tone: 'info',
+      text: 'Categories and notes can be saved when Money is open as a view of your Bank transactions table.',
+    });
+
+  return undefined;
+}
+
 function footer(ctx: Ctx, row: Txn, actions: DetailActions): HTMLElement {
   const edits = Object.values(ctx.state.edits);
+  const asking = edits.some(e => e?.status === 'asking');
   const saving = edits.some(e => e?.status === 'saving');
-  const saved = !saving && edits.some(e => e?.status === 'saved');
+  const saved = !saving && !asking && edits.some(e => e?.status === 'saved');
 
   return h(
     'footer',
@@ -101,7 +143,13 @@ function footer(ctx: Ctx, row: Txn, actions: DetailActions): HTMLElement {
     h(
       'span',
       { class: saved ? 'm-saved' : 'pl-muted', 'aria-live': 'polite' },
-      saving ? 'Saving…' : saved ? 'Saved' : '',
+      asking
+        ? 'Waiting for you to allow editing…'
+        : saving
+          ? 'Saving…'
+          : saved
+            ? 'Saved'
+            : '',
     ),
     h('span', { class: 'pl-spacer' }),
     row.statement
@@ -189,6 +237,7 @@ export function detail(
       h('h3', { id: 'money-notes-h' }, 'Your notes'),
       canAnnotate(state.fields)
         ? [
+            access(ctx, actions),
             ...field(ctx, row, 'category', actions),
             ...field(ctx, row, 'note', actions),
             h(

@@ -4,9 +4,11 @@
  * came from. Selecting one shows its transactions.
  */
 import { formatAmount, totals } from './amounts.js';
+import type { StoredStatement } from './rows.js';
 import {
   count,
   formatLabel,
+  fullDate,
   groupAccount,
   rangeLabel,
   shortAccount,
@@ -23,6 +25,7 @@ export interface ImportsActions {
 
 export function imports(ctx: Ctx, actions: ImportsActions): HTMLElement[] {
   const { state, locale } = ctx;
+  if (state.statements?.length) return stored(ctx, actions);
   const list = importedStatements(state.rows);
 
   if (!list.length)
@@ -166,5 +169,131 @@ export function imports(ctx: Ctx, actions: ImportsActions): HTMLElement[] {
       ),
     ),
     note,
+  ];
+}
+
+/**
+ * The statements the importer stored (atomic-server#1768): with their
+ * reconciled opening and closing balances and the date they were imported.
+ */
+function stored(ctx: Ctx, actions: ImportsActions): HTMLElement[] {
+  const { locale } = ctx;
+  const list = [...ctx.state.statements!].sort((a, b) =>
+    a.end === b.end ? (a.account < b.account ? -1 : 1) : a.end < b.end ? 1 : -1,
+  );
+  const key = (s: StoredStatement): StatementKey => ({
+    account: s.account,
+    currency: s.currency,
+    statement: s.number,
+    format: s.format,
+  });
+  const label = (s: StoredStatement) =>
+    `${narrow(ctx.width) || ctx.width < 900 ? shortAccount(s.account) : groupAccount(s.account)} · ${s.currency}`;
+  const money = (s: StoredStatement, amount: string) =>
+    formatAmount(amount, s.currency, locale, { sign: 'negative' });
+  const period = (s: StoredStatement) =>
+    s.start ? rangeLabel(s.start, s.end, locale) : fullDate(s.end, locale);
+
+  if (narrow(ctx.width))
+    return [
+      h(
+        'ul',
+        { class: 'm-list m-flat', 'aria-label': 'Imported statements' },
+        list.map(s =>
+          h(
+            'li',
+            {},
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'm-item',
+                'data-key': `import-${s.subject}`,
+                onclick: () => actions.showStatement(key(s)),
+              },
+              h('span', { class: 'm-t' }, label(s)),
+              h('span', { class: 'pl-num m-strong' }, money(s, s.closing)),
+              h(
+                'span',
+                { class: 'm-s pl-num' },
+                h(
+                  'span',
+                  {},
+                  `Statement ${s.number || '—'} · ${period(s)} · ${formatLabel(s.format)}`,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+
+  return [
+    h(
+      'table',
+      { class: 'm-ledger m-imports' },
+      h(
+        'caption',
+        {},
+        `${count(list.length, locale)} imported statements, newest first`,
+      ),
+      h(
+        'thead',
+        {},
+        h(
+          'tr',
+          {},
+          h('th', { scope: 'col' }, 'Account'),
+          h('th', { scope: 'col' }, 'Period'),
+          h('th', { scope: 'col' }, 'Statement'),
+          h('th', { scope: 'col' }, 'Opening → closing'),
+          h('th', { scope: 'col' }, 'Entries'),
+          h('th', { scope: 'col' }, 'Imported'),
+        ),
+      ),
+      h(
+        'tbody',
+        {},
+        list.map(s =>
+          h(
+            'tr',
+            { class: 'm-row', onclick: () => actions.showStatement(key(s)) },
+            h(
+              'td',
+              {},
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'm-rowbtn',
+                  'data-key': `import-${s.subject}`,
+                  'aria-label': `Show the transactions of statement ${s.number || 'without a number'} for ${groupAccount(s.account)} ${s.currency}`,
+                },
+                h('b', {}, label(s)),
+                h(
+                  'span',
+                  { class: 'm-line pl-muted m-small' },
+                  formatLabel(s.format),
+                ),
+              ),
+            ),
+            h('td', { class: 'pl-num m-nowrap' }, period(s)),
+            h('td', { class: 'pl-num' }, s.number || '—'),
+            h(
+              'td',
+              { class: 'pl-num' },
+              h('span', { class: 'm-line' }, `${money(s, s.opening)} →`),
+              h('b', { class: 'm-line' }, money(s, s.closing)),
+            ),
+            h('td', { class: 'pl-num' }, s.entries || '—'),
+            h(
+              'td',
+              { class: 'pl-num m-nowrap' },
+              s.imported ? fullDate(s.imported, locale) : '—',
+            ),
+          ),
+        ),
+      ),
+    ),
   ];
 }

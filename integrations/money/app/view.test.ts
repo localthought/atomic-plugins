@@ -190,7 +190,8 @@ describe('Money view: detail', () => {
   });
 
   it('saves on change and shows the failure inline with Retry, keeping the text', async () => {
-    const store = fakeStore({ rows: sampleRows() });
+    // An older host, which refuses the write and cannot be asked.
+    const store = fakeStore({ rows: sampleRows(), host: 'legacy' });
     const root = await open(store, 360);
     selectFirst(root, 'Albert Heijn');
     const input = root.querySelector<HTMLInputElement>('#money-category')!;
@@ -238,7 +239,8 @@ describe('Money view: import sheet', () => {
     `:20:SYNTHETIC\n:25:NL42BUNQ0123456789\n:28C:31/1\n:60F:C260901EUR100,00\n:61:2609020902D12,34NTRFNONREF//TEST-1\n:86:Fixture lunch\n:61:2609030903C20,00NTRFNONREF//TEST-2\n:86:Fixture refund\n:62F:C260903EUR${closing}\n`;
 
   it('previews a file as a modal dialog with a reconciliation card per statement', async () => {
-    const root = await open(fakeStore());
+    // An older host, without importer.run: Import stays disabled.
+    const root = await open(fakeStore({ host: 'legacy' }));
     await choose(root, 'bunq.sta', mt940Text());
     const dialog = root.querySelector('[role="dialog"]')!;
     expect(dialog.getAttribute('aria-modal')).toBe('true');
@@ -279,7 +281,13 @@ describe('Money view: import sheet', () => {
         apply: async (_text, file) => {
           applied.push(file.name);
 
-          return { created: 2 };
+          return {
+            status: 'applied',
+            created: 2,
+            updated: 0,
+            destroyed: 0,
+            failed: 0,
+          };
         },
       },
     });
@@ -368,8 +376,9 @@ describe('Money view: host theme and navigation (007869464 pin)', () => {
     expect(root.dataset.colorScheme).toBe('light');
   });
 
-  it("offers to open the importer from the preview's note", async () => {
+  it("offers to open the importer from the preview's note when it can't import", async () => {
     const store = fakeStore();
+    delete store.importer;
     const root = await open(store);
     const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
     const statement =
@@ -391,5 +400,62 @@ describe('Money view: host theme and navigation (007869464 pin)', () => {
   it('leaves the button out on a host without openResource', async () => {
     const root = await open(fakeStore({ host: 'legacy' }));
     expect(root.dataset.colorScheme).toBeUndefined();
+  });
+});
+
+describe('Money view: candidate11 host (#1768, #1788)', () => {
+  const statement = {
+    'bank-account': 'NL42BUNQ0123456789',
+    'bank-currency': 'EUR',
+    'bank-statement': '31/1',
+    'bank-period-start': '2026-09-01',
+    'bank-period-end': '2026-09-22',
+    'bank-opening-balance': '8412.06',
+    'bank-closing-balance': '7921.95',
+    'bank-entry-count': '196',
+    'bank-format': 'camt053',
+    'bank-imported-date': '2026-09-23',
+  };
+
+  it('shows the latest closing balance in the strip, and in/out where there is none', async () => {
+    const root = await open(
+      fakeStore({ rows: sampleRows(), statements: [statement] }),
+    );
+    const [bunq, rabo] = root.querySelectorAll('.m-seg');
+    expect(text(bunq.querySelector('.m-net'))).toMatch(
+      /^€7,921\.95on 22 Sept?$/,
+    );
+    expect(text(rabo.querySelector('.m-net'))).toMatch(/net$/);
+  });
+
+  it('lists stored statements with their balances on the Imports tab', async () => {
+    const root = await open(
+      fakeStore({ rows: sampleRows(), statements: [statement] }),
+    );
+    [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find(t => text(t).startsWith('Imports'))!
+      .click();
+    const table = root.querySelector('table.m-imports')!;
+    expect(text(table)).toMatch(/€8,412\.06 →\s*€7,921\.95/);
+    expect(text(table)).toContain('23 Sept 2026');
+  });
+
+  it('says editing needs permission, and asks when the person allows it', async () => {
+    const store = fakeStore({ rows: sampleRows() });
+    const root = await open(store);
+    [...root.querySelectorAll<HTMLElement>('[data-row]')]
+      .find(b => text(b).includes('Albert Heijn'))!
+      .click();
+    const allow = [
+      ...root.querySelectorAll<HTMLButtonElement>('.pl-panel button'),
+    ].find(b => text(b) === 'Allow editing')!;
+    expect(text(allow.closest('.pl-banner'))).toContain(
+      'allow it to edit them',
+    );
+    allow.click();
+    await settle();
+    await settle();
+    expect(store.accessRequests).toBe(1);
+    expect(root.querySelector('[data-key="allow-editing"]')).toBeNull();
   });
 });

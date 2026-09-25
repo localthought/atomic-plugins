@@ -9,7 +9,7 @@
  */
 import { mount } from '../app.js';
 import { fakeStore, seedRow, type FakeStore } from '../fakeStore.js';
-import { sampleRows } from './sample.js';
+import { sampleRows, sampleStatements } from './sample.js';
 import { BUNQ_SEPT, importedRows, mt940, RABO_SEPT } from './statements.js';
 
 /** The host's default theme values (useCreateThemeVars.ts), as in mockups.html. */
@@ -269,6 +269,7 @@ export async function run(): Promise<void> {
         : [];
   const store = fakeStore({
     rows,
+    statements: scenario.rows === true ? sampleStatements() : [],
     scheme: params.get('theme') === 'dark' ? 'dark' : 'light',
   });
   let ticks = 0;

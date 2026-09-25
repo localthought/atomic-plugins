@@ -39,12 +39,24 @@ export const BANK_FIELDS = [
   'bank-fingerprint',
 ] as const;
 
+/** On a Bank statement row (the importer's `statements` table). */
+export const STATEMENT_ROW_FIELDS = [
+  'bank-period-start',
+  'bank-period-end',
+  'bank-opening-balance',
+  'bank-closing-balance',
+  'bank-entry-count',
+  'bank-format',
+  'bank-imported-date',
+] as const;
+
 /** The person's own annotations (DESIGN.md gap 5); the importer never writes them. */
 export const NOTE_FIELDS = ['money-category', 'money-note'] as const;
 
 export type BankField = (typeof BANK_FIELDS)[number];
 export type NoteField = (typeof NOTE_FIELDS)[number];
-export type Shortname = BankField | NoteField;
+export type StatementField = (typeof STATEMENT_ROW_FIELDS)[number];
+export type Shortname = BankField | NoteField | StatementField;
 
 /** Property subject by shortname, for the ones the row class declares. */
 export type Fields = Partial<Record<Shortname, string>>;
@@ -72,7 +84,60 @@ export interface Txn {
   note: string;
 }
 
-const KNOWN = new Set<string>([...BANK_FIELDS, ...NOTE_FIELDS]);
+const KNOWN = new Set<string>([
+  ...BANK_FIELDS,
+  ...NOTE_FIELDS,
+  ...STATEMENT_ROW_FIELDS,
+]);
+
+/** One imported statement, as the importer stored it (atomic-server#1768). */
+export interface StoredStatement {
+  subject: string;
+  account: string;
+  currency: string;
+  number: string;
+  start: string;
+  end: string;
+  /** Exact decimal strings. */
+  opening: string;
+  closing: string;
+  entries: string;
+  format?: StatementFormat;
+  imported: string;
+}
+
+export function readStatement(
+  resource: Pick<PluginResource, 'subject' | 'get'>,
+  fields: Fields,
+): StoredStatement | undefined {
+  const text = (name: Shortname) => {
+    const property = fields[name];
+    const value = property ? resource.get(property) : undefined;
+
+    return typeof value === 'string' ? value : '';
+  };
+
+  const account = text('bank-account');
+  const currency = text('bank-currency');
+  const end = text('bank-period-end');
+  const closing = text('bank-closing-balance');
+  if (!account || !currency || !end || !closing) return undefined;
+  const format = text('bank-format');
+
+  return {
+    subject: resource.subject,
+    account,
+    currency,
+    number: text('bank-statement'),
+    start: text('bank-period-start'),
+    end,
+    opening: text('bank-opening-balance'),
+    closing,
+    entries: text('bank-entry-count'),
+    format: format === 'mt940' || format === 'camt053' ? format : undefined,
+    imported: text('bank-imported-date'),
+  };
+}
 
 const list = (value: JSONValue): string[] =>
   Array.isArray(value)
@@ -203,7 +268,24 @@ export async function readRows(
   onProgress?: (loaded: number) => void,
   concurrency = 16,
 ): Promise<Txn[]> {
-  const out: (Txn | undefined)[] = new Array(subjects.length);
+  return readMany(
+    store,
+    subjects,
+    r => readRow(r, fields),
+    onProgress,
+    concurrency,
+  );
+}
+
+/** Reads `subjects` into `T`s (see `readRows`); unreadable ones are skipped. */
+export async function readMany<T>(
+  store: PluginStore,
+  subjects: string[],
+  read: (resource: PluginResource) => T | undefined,
+  onProgress?: (loaded: number) => void,
+  concurrency = 16,
+): Promise<T[]> {
+  const out: (T | undefined)[] = new Array(subjects.length);
   let loaded = 0;
   const getMany = store.getMany?.bind(store);
 
@@ -222,7 +304,7 @@ export async function readRows(
           out[at + i] =
             'error' in entry && entry.error !== undefined
               ? undefined
-              : readRow(entry as PluginResource, fields);
+              : read(entry as PluginResource);
         });
         loaded += Math.min(GET_MANY_MAX, subjects.length - at);
         onProgress?.(loaded);
@@ -241,7 +323,7 @@ export async function readRows(
         const resource = await store
           .getResource(subjects[index])
           .catch(() => undefined);
-        out[index] = resource ? readRow(resource, fields) : undefined;
+        out[index] = resource ? read(resource) : undefined;
         onProgress?.(++loaded);
       }
     };
@@ -251,5 +333,5 @@ export async function readRows(
     );
   }
 
-  return out.filter((row): row is Txn => row !== undefined);
+  return out.filter((row): row is T => row !== undefined);
 }

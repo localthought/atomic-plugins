@@ -5,6 +5,7 @@ import {
   accounts,
   applyFilters,
   categories,
+  closingBalance,
   defaultPeriod,
   filterExceptAccount,
   importedStatements,
@@ -237,5 +238,41 @@ describe('imported statements (Imports tab)', () => {
       ['9/1', 'mt940', 1, '2026-09-16', '2026-09-16'],
       ['30/1', 'mt940', 1, '2026-08-03', '2026-08-03'],
     ]);
+  });
+});
+
+describe('closing balance for the strip (M-12)', () => {
+  const s = (end: string, closing: string, account = 'A') => ({
+    account,
+    currency: 'EUR',
+    end,
+    closing,
+  });
+
+  it('takes the latest statement ending in the period, never a computed one', () => {
+    const list = [
+      s('2026-08-31', '10'),
+      s('2026-09-15', '20'),
+      s('2026-09-22', '30'),
+      s('2026-09-30', '99', 'B'),
+    ];
+    expect(
+      closingBalance(list, 'A', 'EUR', { kind: 'this-month' }, TODAY),
+    ).toEqual({ amount: '30', date: '2026-09-22' });
+    expect(
+      closingBalance(list, 'A', 'EUR', { kind: 'last-month' }, TODAY),
+    ).toEqual({ amount: '10', date: '2026-08-31' });
+    expect(
+      closingBalance(list, 'A', 'USD', { kind: 'all' }, TODAY),
+    ).toBeUndefined();
+    expect(
+      closingBalance(
+        list,
+        'A',
+        'EUR',
+        { kind: 'custom', from: '2026-07-01', to: '2026-07-31' },
+        TODAY,
+      ),
+    ).toBeUndefined();
   });
 });

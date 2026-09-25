@@ -21,11 +21,13 @@ import {
   periodLabel,
   plural,
   shortAccount,
+  shortDate,
 } from './format.js';
 import {
   accountKey,
   accounts,
   applyFilters,
+  closingBalance,
   filterExceptAccount,
   sortNewestFirst,
   type Filters,
@@ -258,6 +260,34 @@ export function accountSwitcher(
   );
 }
 
+/** The latest stored closing balance in the period, or the period's net. */
+function balanceOrNet(ctx: Ctx, t: Totals): HTMLElement {
+  const { state, locale, today } = ctx;
+  const balance = state.statements
+    ? closingBalance(
+        state.statements,
+        t.account,
+        t.currency,
+        state.filters.period,
+        today,
+      )
+    : undefined;
+
+  return balance
+    ? h(
+        'span',
+        { class: 'm-net' },
+        formatAmount(balance.amount, t.currency, locale, { sign: 'negative' }),
+        h('small', {}, `on ${shortDate(balance.date, locale)}`),
+      )
+    : h(
+        'span',
+        { class: 'm-net' },
+        formatAmount(t.net, t.currency, locale),
+        h('small', {}, 'net'),
+      );
+}
+
 function stripView(ctx: Ctx, derived: Derived, actions: LedgerActions) {
   const { state, locale, today } = ctx;
   const short = narrow(ctx.width);
@@ -289,12 +319,7 @@ function stripView(ctx: Ctx, derived: Derived, actions: LedgerActions) {
           { class: 'm-acct pl-num' },
           `${short ? shortAccount(t.account) : groupAccount(t.account)} · ${t.currency}`,
         ),
-        h(
-          'span',
-          { class: 'm-net' },
-          formatAmount(t.net, t.currency, locale),
-          h('small', {}, 'net'),
-        ),
+        balanceOrNet(ctx, t),
         h(
           'span',
           { class: 'm-flow pl-num' },

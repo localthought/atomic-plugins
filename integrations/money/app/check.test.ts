@@ -11,6 +11,7 @@ import {
 } from './controller.js';
 import { fakeStore, property, TABLE, type SeedRow } from './fakeStore.js';
 import { readRow, type Txn } from './rows.js';
+import type { ImporterRun } from './store.js';
 
 const mt940 = readFileSync(
   new URL('../fixtures/synthetic.mt940', import.meta.url),
@@ -35,21 +36,35 @@ function imported(text: string): SeedRow[] {
     'bank-statement',
     'bank-source-id',
     'bank-fingerprint',
+    'bank-period-start',
+    'bank-period-end',
+    'bank-opening-balance',
+    'bank-closing-balance',
+    'bank-entry-count',
+    'bank-format',
+    'bank-imported-date',
   ];
   const properties = Object.fromEntries(shortnames.map(s => [s, property(s)]));
   const { intents } = run({
     text,
-    config: { table: TABLE, rowClass: 'x', properties },
+    config: {
+      table: TABLE,
+      rowClass: 'x',
+      properties,
+      tables: { statements: { table: 'did:ad:statements', rowClass: 'y' } },
+    },
     query: () => [],
     read: () => ({}),
   }) as { intents: { set: Record<string, string> }[] };
 
-  return intents.map(
-    intent =>
-      Object.fromEntries(
-        shortnames.map(s => [s, intent.set[property(s)]]),
-      ) as SeedRow,
-  );
+  return intents
+    .filter(intent => !intent.set[property('bank-period-end')])
+    .map(
+      intent =>
+        Object.fromEntries(
+          shortnames.map(s => [s, intent.set[property(s)]]),
+        ) as SeedRow,
+    );
 }
 
 const asTxn = (rows: SeedRow[]): Txn[] => {
@@ -188,7 +203,8 @@ describe('import sheet states', () => {
     });
     expect(preview.tab).toBe('new');
     expect(preview.preview.fresh).toHaveLength(2);
-    expect(controller.state().canApply).toBe(false);
+    // The fake is a current host: it runs the importer (atomic-server#1774).
+    expect(controller.state().canApply).toBe(true);
   });
 
   it('opens on "Already imported" when nothing is new', async () => {
@@ -250,7 +266,13 @@ describe('import sheet states', () => {
         apply: async (text, info) => {
           applied.push(`${info.name}:${text.length}`);
 
-          return { created: 2 };
+          return {
+            status: 'applied',
+            created: 2,
+            updated: 0,
+            destroyed: 0,
+            failed: 0,
+          };
         },
       },
     });
@@ -260,7 +282,6 @@ describe('import sheet states', () => {
     await controller.applyImport();
     expect(applied).toEqual([`bunq-2026-09.sta:${mt940.length}`]);
     expect(controller.state().importing).toBeUndefined();
-    expect(controller.state().arrived).toEqual({ count: 2 });
   });
 
   it('keeps the preview and says why when applying fails', async () => {
@@ -279,5 +300,59 @@ describe('import sheet states', () => {
       applying: false,
       failure: 'Refused by the host',
     });
+  });
+});
+
+describe('importing through the host (atomic-server#1774)', () => {
+  const file = (text: string, name = 'bunq-2026-09.sta'): ChosenFile => ({
+    name,
+    size: text.length,
+    text: async () => text,
+  });
+
+  it('hands the checked file to the importer and shows its rows', async () => {
+    const store = fakeStore();
+    const controller = createController(store, () => {}, {
+      tick: async () => {},
+    });
+    await controller.load();
+    await controller.importFile(file(mt940));
+    await controller.applyImport();
+    expect(store.runs).toEqual(['bunq-2026-09.sta']);
+    expect(controller.state().importing).toBeUndefined();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(controller.state().rows).toHaveLength(2);
+    expect(controller.state().arrived).toEqual({ count: 2 });
+    expect(controller.state().statements).toHaveLength(1);
+  });
+
+  it('goes back to the preview when the review is cancelled, and says why when blocked', async () => {
+    let outcome: ImporterRun = { status: 'cancelled' };
+    const store = fakeStore({ importRun: async () => outcome });
+    const controller = createController(store, () => {}, {
+      tick: async () => {},
+    });
+    await controller.load();
+    await controller.importFile(file(mt940));
+    await controller.applyImport();
+    expect(controller.state().importing).toMatchObject({
+      step: 'preview',
+      applying: false,
+    });
+    outcome = { status: 'blocked', errors: ['Statement changed at the bank'] };
+    await controller.applyImport();
+    expect(controller.state().importing).toMatchObject({
+      step: 'preview',
+      failure: 'Statement changed at the bank',
+    });
+  });
+
+  it('keeps the older-host fallback: no import, a pointer to the importer', async () => {
+    const controller = createController(
+      fakeStore({ host: 'legacy' }),
+      () => {},
+    );
+    expect(controller.state().canApply).toBe(false);
   });
 });

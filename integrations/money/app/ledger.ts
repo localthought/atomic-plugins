@@ -278,3 +278,33 @@ export function importedStatements(rows: Txn[]): ImportedStatement[] {
         : -1,
   );
 }
+
+/**
+ * The closing balance to show for one account + currency (issues.md M-12):
+ * the latest stored statement that ends within the period. None when the
+ * period has no statement: the strip then shows in and out only, never a
+ * balance computed from the rows.
+ */
+export function closingBalance(
+  statements: readonly {
+    account: string;
+    currency: string;
+    end: string;
+    closing: string;
+  }[],
+  account: string,
+  currency: string,
+  period: Period,
+  today: string,
+): { amount: string; date: string } | undefined {
+  const { from, to } = periodRange(period, today);
+  let best: { amount: string; date: string } | undefined;
+
+  for (const s of statements) {
+    if (s.account !== account || s.currency !== currency) continue;
+    if ((from && s.end < from) || (to && s.end > to)) continue;
+    if (!best || s.end > best.date) best = { amount: s.closing, date: s.end };
+  }
+
+  return best;
+}

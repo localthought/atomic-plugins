@@ -166,3 +166,65 @@ export function sampleRows(): SeedRow[] {
     },
   );
 }
+
+/** Invented stored statements matching the sample rows (atomic-server#1768). */
+export function sampleStatements() {
+  const row = (
+    account: string,
+    number: string,
+    start: string,
+    end: string,
+    opening: string,
+    closing: string,
+    entries: string,
+    format: string,
+    imported: string,
+  ) => ({
+    'bank-account': account,
+    'bank-currency': 'EUR',
+    'bank-statement': number,
+    'bank-period-start': start,
+    'bank-period-end': end,
+    'bank-opening-balance': opening,
+    'bank-closing-balance': closing,
+    'bank-entry-count': entries,
+    'bank-format': format,
+    'bank-imported-date': imported,
+  });
+
+  return [
+    row(
+      BUNQ,
+      '31/1',
+      '2026-09-01',
+      '2026-09-22',
+      '4962.36',
+      '7921.95',
+      '12',
+      'camt053',
+      '2026-09-23',
+    ),
+    row(
+      RABO,
+      '9/1',
+      '2026-09-01',
+      '2026-09-16',
+      '21050',
+      '19738',
+      '1',
+      'mt940',
+      '2026-09-17',
+    ),
+    row(
+      BUNQ,
+      '30/1',
+      '2026-08-01',
+      '2026-08-31',
+      '3625.16',
+      '4962.36',
+      '5',
+      'camt053',
+      '2026-09-01',
+    ),
+  ];
+}
