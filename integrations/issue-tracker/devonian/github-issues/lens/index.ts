@@ -94,3 +94,60 @@ export function issuePatch(
 
   return patch;
 }
+
+export interface LabelChip {
+  name: string;
+  /** `#rrggbb`, only when GitHub sent a well-formed hex colour. */
+  color?: string;
+}
+
+/** Read-only issue fields for display; never part of a patch or `unproject`. */
+export interface IssueExtras {
+  labels: LabelChip[];
+  assignees: string[];
+  /** GitHub's own count; absent when the payload has none. */
+  commentCount?: number;
+}
+
+/**
+ * Labels (without the `atomic:doing` workflow label, which is the Doing
+ * status), assignee logins and GitHub's comment count. Only ever written to
+ * the Atomic side as provenance metadata: `issueFields`/`issuePatch` above
+ * do not read these, so they cannot reach GitHub.
+ */
+export function issueExtras(
+  issue: Pick<Issue, 'labels'> & {
+    assignees?: unknown;
+    comments?: unknown;
+  },
+): IssueExtras {
+  const labels: LabelChip[] = [];
+
+  for (const label of issue.labels) {
+    const name = typeof label === 'string' ? label : label?.name;
+    if (typeof name !== 'string' || name.toLowerCase() === 'atomic:doing')
+      continue;
+    const raw =
+      typeof label === 'object' ? (label as { color?: unknown }).color : '';
+    const color = typeof raw === 'string' ? raw : '';
+    labels.push(
+      /^[0-9a-f]{6}$/i.test(color)
+        ? { name, color: `#${color.toLowerCase()}` }
+        : { name },
+    );
+  }
+
+  const assignees = Array.isArray(issue.assignees)
+    ? issue.assignees
+        .map(a => (a as { login?: unknown })?.login)
+        .filter((login): login is string => typeof login === 'string')
+    : [];
+
+  return {
+    labels,
+    assignees,
+    ...(Number.isSafeInteger(issue.comments) && (issue.comments as number) >= 0
+      ? { commentCount: issue.comments as number }
+      : {}),
+  };
+}

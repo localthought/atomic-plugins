@@ -16,5 +16,9 @@ export default {
         .pathname,
     },
   },
-  test: { include: ['*.test.ts', 'app/*.test.ts', 'devonian/**/*.test.ts'] },
+  test: {
+    include: ['*.test.ts', 'app/**/*.test.ts', 'devonian/**/*.test.ts'],
+    // app/ui/theme.ts imports theme.css?raw; without this Vitest stubs CSS.
+    css: { include: [/theme\.css/] },
+  },
 };

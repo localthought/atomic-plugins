@@ -90,7 +90,19 @@ export interface HostProxy {
    * settles.
    */
   connect(args: { platform: string }): Promise<ConnectResult>;
+  /**
+   * Removes this app's delegation of its `platform` connections (the
+   * connection itself stays the person's). Feature-detected: older hosts
+   * lack it, and the app then offers no Disconnect.
+   */
+  disconnect?(args: { platform: string }): Promise<{
+    status: 'disconnected';
+    platform: string;
+    connectionIds: string[];
+  }>;
 }
+
+export type ColorScheme = 'light' | 'dark';
 
 export interface PluginStore {
   getApp(): Promise<string>;
@@ -106,6 +118,21 @@ export interface PluginStore {
   subscribe(subject: string, handler: () => void): () => void;
   /** Feature-detected: hosts without integration-proxy support lack it. */
   proxy?: HostProxy;
+  /**
+   * Opens an http(s) link in a new tab once the person confirms it: the
+   * frame has no popup rights. Feature-detected, like the three below.
+   */
+  openExternal?(url: string): Promise<{ status: 'opened' | 'cancelled' }>;
+  /** Shows a resource the person can read in the host page, leaving the app. */
+  openResource?(
+    subject: string,
+  ): Promise<{ status: 'opened'; subject: string }>;
+  /** The host's light or dark setting. */
+  getTheme?(): { colorScheme: ColorScheme };
+  /** Calls back when the person switches it; returns an unsubscribe. */
+  onThemeChange?(
+    handler: (theme: { colorScheme: ColorScheme }) => void,
+  ): () => void;
 }
 
 export interface ViewArgs {

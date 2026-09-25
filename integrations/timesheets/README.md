@@ -46,10 +46,25 @@ Live account data must never be checked into fixtures.
 
 `app/` is the replacement for the LocalThought extension path above:
 Clockify as an Atomic **App** ("drive plugin"). `app/build.mjs` bundles it
-into one ES module (`app/dist/ui.js`, about 52 KB unminified, no imports) that exports
-only `view({ root, store })`; the host stores it as the App's entry-point
-source and runs it in a null-origin, `allow-scripts`-only iframe
-(`plugin_ui.rs`). Plain DOM, no framework, no stylesheet.
+into one minified ES module (`app/dist/ui.js`, about 89 KB, no imports) that
+exports only `view({ root, store })`; the host stores it as the App's
+entry-point source and runs it in a null-origin, `allow-scripts`-only iframe
+(`plugin_ui.rs`). Plain DOM, no framework; one `<style>` element injected
+into the view root.
+
+- **Views** (#89, design on branch `claude/design-timesheets`). `app/ui/`
+  renders the design's frames from `controller.ts`'s state and a
+  `Timesheet` (`app/model/types.ts`) built from the observation log's
+  mirror (`app/model/source.ts`), never from the table's rows: Week grid
+  (project × day), Entries (by day), Projects (the whole window), a
+  read-only entry drawer, the settings sheet, and the set-up, empty and
+  error states. Below 560px of frame width the week becomes a strip of day
+  tabs. `app/ui/theme.ts` maps every `--pl-*` token from the host's
+  `--t-*` theme variables, so dark mode is the host's. `app/ui/theme.ts`,
+  `components.ts` and `dom.ts` know nothing of Clockify: shared-kit
+  candidates. View, week and open entry live in memory only.
+  `app/ui/preview.ts` renders every frame from the mockup's sample data
+  for the DOM tests and the e2e's screenshot and axe pass.
 
 - **Connecting.** "Connect Clockify" calls
   `store.proxy.connect({ platform: 'clockify' })`. The host, not the frame,
@@ -125,6 +140,34 @@ source and runs it in a null-origin, `allow-scripts`-only iframe
     each only when it applies.
     Nothing is written to Clockify. Requests are sequential; each is one
     relay round trip.
+- **Timeline lens** (#123 M2, read-only). Two stages over the mirror, full
+  recompute on every build (not measured; #97 §3.2 estimates single-digit
+  ms at 2,000 entries):
+  - _Map_ (`devonian/clockify/lens/claims.ts`): each entry becomes at most
+    one claim over `[start, end)` with the exact instant strings:
+    `worked(P)`, `worked(none)` (no project: a label, not a conflict, #97
+    answer 3), a running timer up to now (`open`), and `didNotWork` with a
+    badge for `BREAK`, `HOLIDAY` and `TIME_OFF` (the last two are spec enum
+    values, never seen live). Locked entries and entries with custom field
+    values are flagged.
+  - _Aggregate_ (`app/timeline/sweep.ts`): a sweep over the claims and the
+    coverage gives non-overlapping segments per local day in the profile
+    time zone, from the day holding the window's start up to now; DST days
+    are 23 or 25 h. A segment is `unknown` where M1's coverage says so
+    (absence candidates included; this wins over any claim), `didNotWork`
+    where coverage is complete and no entry claims it, `worked`, `worked`
+    - `duplicate` (same project twice), or `conflict`: "unclear which
+      project" (different projects, "no project" included) or "unclear
+      whether worked" (work overlapping a break, holiday or time off). Each
+      segment lists why it would not be editable (running, locked, entry
+      type, custom fields, and `worked(none)` under `forceProjects`).
+      Sorted throughout, so equal mirrors give equal timelines.
+  - _View model_: `app/model/source.ts` fills the #89 views' `Timesheet`
+    hooks from it: `unknown` (the window's unknown spans) and `conflicts`
+    (`app/timeline/types.ts` `TimelineConflict`: the views' `Conflict` plus
+    kind, span, entries and candidates). `app/ui/coverage.ts` renders them
+    as a "Not loaded" note and a read-only "Conflicts in Clockify" list.
+    Nothing can be resolved from the app yet (M4).
 - **Errors.** If the window's first page fails, the pass fails and rows
   are not touched ("Import failed: …. Rows already in the table are
   kept."). If a later page fails, what was read is kept as an incomplete
@@ -163,6 +206,11 @@ node integrations/timesheets/app/build.mjs                      # -> app/dist/ui
   random observation sets (`app/observations.test.ts`): appending equals
   refolding, any permutation folds the same, snapshot + tail equals the
   full fold, two devices' diffs fold the same, fields equal the latest read.
+  The timeline's #123 scenarios S1, S6 and S7 (display only), conflict
+  kinds, `forceProjects`, the DST days of 29 March and 25 October 2026 in
+  Europe/Amsterdam, the rendering hooks, and the merge property over 40
+  seeded observation sets (any fold order and record order gives equal
+  segments and conflicts) are in `app/timeline/timeline.test.ts`.
 - **Host e2e** (`e2e/clockify.spec.ts`, the `timesheets` lane's `e2e` tier)
   against the pinned atomic-server (`.atomic-server-ref`, which includes
   frame capabilities from atomic-server#1697) and the local mock proxy,
@@ -232,8 +280,10 @@ Read from the pinned atomic-server, and reproduced by the e2e where noted.
    with its entry point, table and ontology, without the test-side
    `setAppSource` the e2e uses.
 2. **Disconnect**: there is no `store.proxy.disconnect()` in the host
-   contract.
-3. **The designed UI** (week grid, entries, projects; branch
-   `claude/design-timesheets`, #89).
+   contract. The settings sheet offers Disconnect only when the host has
+   one, and says so otherwise.
+3. **Links out of the frame**: the sandbox has no `allow-popups`, so the
+   drawer's "Open Clockify" (`target=_blank`) is blocked, and there is no
+   host call to open the row in Atomic, so that link is left out.
 4. **Removal** of the LocalThought-extension Clockify path in
    `data-browser`, and pruning `localthought.ts` to what `app/` imports.

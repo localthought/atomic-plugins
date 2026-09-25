@@ -13,6 +13,7 @@
  */
 import { githubTracker } from '../fixtures/github-issues/scenario.mjs';
 import type {
+  ColorScheme,
   HostProxy,
   HostProxyRequest,
   JSONValue,
@@ -43,6 +44,13 @@ export interface FakeStore extends PluginStore {
   refusal?: string;
   lagReads: number;
   hideFromQuery: number;
+  /** Host calls counted by name (getResource, getMany, openExternal, …). */
+  readonly counts: Record<string, number>;
+  /** URLs passed to openExternal. */
+  readonly opened: string[];
+  readonly disconnected: string[];
+  /** The person switching the host between light and dark. */
+  setScheme(scheme: ColorScheme): void;
   /** A person editing a row in the data-browser: no app write, no lag. */
   edit(subject: string, props: Record<string, JSONValue>): void;
 }
@@ -50,7 +58,13 @@ export interface FakeStore extends PluginStore {
 export function fakeStore({
   connected = true,
   relay = true,
-}: { connected?: boolean; relay?: boolean } = {}): FakeStore {
+  hostApis = true,
+}: {
+  connected?: boolean;
+  relay?: boolean;
+  /** The host calls of atomic-server pin 007869464 (getMany, openExternal, …). */
+  hostApis?: boolean;
+} = {}): FakeStore {
   const resources = new Map<string, Record<string, JSONValue>>([
     [APP, { [NAME]: 'New app' }],
     [ONTOLOGY, { [PARENT]: APP, [PROPERTIES]: [] }],
@@ -74,6 +88,8 @@ export function fakeStore({
     stored: Record<string, JSONValue>,
   ): PluginResource => {
     const props = structuredClone(stored);
+    /** Removed since the last save; `save` sends them, as view-client.js does. */
+    const removed = new Set<string>();
 
     return {
       subject,
@@ -83,11 +99,13 @@ export function fakeStore({
       get: property => props[property],
       set(property, value) {
         props[property] = value;
+        removed.delete(property);
 
         return this;
       },
       remove(property) {
         delete props[property];
+        removed.add(property);
 
         return this;
       },
@@ -98,8 +116,12 @@ export function fakeStore({
             props: structuredClone(before),
             reads: fake.lagReads,
           });
-        // /app-write `save` sets every property sent; it never removes one.
-        resources.set(subject, { ...before, ...structuredClone(props) });
+        // /app-write `save` sets every property sent and removes only the
+        // ones `remove` named since the last save.
+        const saved = { ...before, ...structuredClone(props) };
+        for (const property of removed) delete saved[property];
+        removed.clear();
+        resources.set(subject, saved);
         writes.push({ op: 'save', subject });
 
         return this;
@@ -154,13 +176,41 @@ export function fakeStore({
         request.body ? JSON.parse(request.body) : {},
       );
 
-      return { status: result.status, headers: {}, body: result.body };
+      // Relayed headers arrive lower-cased, as view-client.js passes them.
+      const headers = Object.fromEntries(
+        Object.entries(
+          (result as { headers?: Record<string, string> }).headers ?? {},
+        ).map(([k, v]) => [k.toLowerCase(), v]),
+      );
+
+      return { status: result.status, headers, body: result.body };
     },
     async connections({ platform }) {
       return connected ? [{ connectionId: 'c1', platform }] : [];
     },
     connect: () => new Promise(() => {}),
+    ...(hostApis
+      ? {
+          async disconnect({ platform }: { platform: string }) {
+            const had = connected;
+            connected = false;
+            fake.disconnected.push(platform);
+
+            return {
+              status: 'disconnected' as const,
+              platform,
+              connectionIds: had ? ['c1'] : [],
+            };
+          },
+        }
+      : {}),
   };
+  let scheme: ColorScheme = 'light';
+  const themeListeners = new Set<(t: { colorScheme: ColorScheme }) => void>();
+
+  const counts: Record<string, number> = {};
+  const count = (name: string) => (counts[name] = (counts[name] ?? 0) + 1);
+  const opened: string[] = [];
 
   const fake: FakeStore = {
     resources,
@@ -178,6 +228,7 @@ export function fakeStore({
     getApp: async () => APP,
     getData: async () => ({ table: TABLE, rowClass: ROW_CLASS }),
     async getResource(subject) {
+      count('getResource');
       const lag = stale.get(subject);
 
       if (lag && lag.reads > 0) {
@@ -221,6 +272,48 @@ export function fakeStore({
       return wrap(subject, stored);
     },
     subscribe: () => () => {},
+    counts,
+    opened,
+    disconnected: [],
+    setScheme(value) {
+      scheme = value;
+      for (const listener of themeListeners) listener({ colorScheme: value });
+    },
+    ...(hostApis
+      ? {
+          async getMany(subjects: string[]) {
+            count('getMany');
+            if (subjects.length > 100) throw new Error('getMany: at most 100');
+            const out = [];
+
+            for (const subject of subjects) {
+              const stored = resources.get(subject);
+              out.push(
+                stored
+                  ? wrap(subject, stale.get(subject)?.props ?? stored)
+                  : { subject, error: `No resource ${subject}` },
+              );
+            }
+
+            return out;
+          },
+          async openExternal(url: string) {
+            count('openExternal');
+            opened.push(url);
+
+            return { status: 'opened' as const };
+          },
+          async openResource(subject: string) {
+            return { status: 'opened' as const, subject };
+          },
+          getTheme: () => ({ colorScheme: scheme }),
+          onThemeChange(handler: (t: { colorScheme: ColorScheme }) => void) {
+            themeListeners.add(handler);
+
+            return () => themeListeners.delete(handler);
+          },
+        }
+      : {}),
     ...(relay ? { proxy } : {}),
   };
 

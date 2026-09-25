@@ -1,0 +1,18 @@
+{
+  "//": "Copied byte for byte from ontola/atomic-server's testdata/plugin-manifest/, the shared fixtures its Rust (server/src/plugins/manifest_http.rs) and TypeScript (browser/lib/src/plugin-manifest-http.ts) implementations both run. integrations/tooling/manifest-http.test.mjs runs this repo's port against them. To refresh: copy the files again from the named commit and update `commit`.",
+  "repository": "ontola/atomic-server",
+  "path": "testdata/plugin-manifest",
+  "pullRequest": 1732,
+  "commit": "bcf8199927fc4b9d6640c228146fbb189609015a",
+  "files": {
+    "added by #1732": [
+      "http-index.json",
+      "http-refusals.json",
+      "v3-*.json"
+    ],
+    "unchanged by #1732, copied from the pin 11264e83e18ca59e0e0bd696eef6c8ac7ced5f68": [
+      "v2-js-extension.json",
+      "v2-wasm-server-extension.json"
+    ]
+  }
+}

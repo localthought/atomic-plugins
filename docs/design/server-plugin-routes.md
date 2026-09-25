@@ -883,8 +883,11 @@ revisit if needed**.
 - **D5. Wildcard delivery destinations.** `https://*` operations are
   accepted only for operations listed in `enqueues`, only on nodes at
   `read-write`, with the egress guard, the per-destination concurrency limit
-  and a per-installation daily delivery cap (*proposed*: 10,000) as
-  restrictions. *Decided by default; revisit if needed.*
+  and a per-installation daily delivery cap as restrictions. The cap
+  defaults to **1,000 deliveries per installation per day** (decided by
+  Michiel, 2026-09-25); operators can change it with
+  `--plugin-route-deliveries-per-day` / `ATOMIC_PLUGIN_ROUTE_DELIVERIES_PER_DAY`
+  (atomic-server #1760).
 - **D6. Consent pages.** A host-owned consent page on the API origin. The
   plugin never serves a login or consent form.
 - **D7. Reachability.** The host runs a reachability self-check (fetching
