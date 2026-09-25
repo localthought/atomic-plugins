@@ -26,12 +26,25 @@ const p = Object.fromEntries(
     'statement',
     'source-id',
     'fingerprint',
+    'period-start',
+    'period-end',
+    'opening-balance',
+    'closing-balance',
+    'entry-count',
+    'format',
+    'imported-date',
   ].map(k => [`bank-${k}`, `https://example.com/${k}`]),
 );
 const config = {
   table: 'https://example.com/table',
   rowClass: 'https://example.com/transaction',
   properties: p,
+  tables: {
+    statements: {
+      table: 'https://example.com/statements',
+      rowClass: 'https://example.com/statement',
+    },
+  },
 };
 const host = {
   text: fixture,
@@ -151,7 +164,8 @@ describe('MT940 parser and import proposals', () => {
         ':62F:C260903EUR107,66',
         ':61:2609020902D12,34NTRFNONREF\n:86:Lunch\nSecond line\n:62F:C260903EUR95,32',
       );
-    expect(run({ ...host, text: sample }).intents).toHaveLength(3);
+    // Three transactions and the statement they came from.
+    expect(run({ ...host, text: sample }).intents).toHaveLength(4);
   });
   it('bounds files and transaction counts', () => {
     expect(() => parseMT940('x'.repeat(512001))).toThrow('512 KB');

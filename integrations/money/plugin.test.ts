@@ -14,6 +14,12 @@ const config = {
   table: 'https://example.com/table',
   rowClass: 'https://example.com/bank-transaction',
   properties,
+  tables: {
+    statements: {
+      table: 'https://example.com/statements',
+      rowClass: 'https://example.com/bank-statement-record',
+    },
+  },
 };
 
 describe('host declaration (atomic-server#1653)', () => {
@@ -46,7 +52,13 @@ describe('host declaration (atomic-server#1653)', () => {
       'table',
       'rowClass',
       'properties',
+      'tables',
     ]);
+    // A second table for the statements (atomic-server#1768).
+    const statements = manifest.destination.tables.statements;
+    expect(schema.classes.map(c => c.shortname)).toContain(statements.rowClass);
+    for (const column of statements.columns)
+      expect(shortnames).toContain(column);
   });
 
   it('keeps the declaration JSON: the host reads it without running code', () => {
@@ -79,14 +91,15 @@ describe('input', () => {
       ...host,
       upload: { name: 'statement.sta', size: fixture.length, text: fixture },
     });
-    expect(result.intents).toHaveLength(2);
+    // Two transactions and their statement.
+    expect(result.intents).toHaveLength(3);
   });
 
   it('still reads the legacy ctx.text and trigger payload', () => {
-    expect(run({ ...host, text: fixture }).intents).toHaveLength(2);
+    expect(run({ ...host, text: fixture }).intents).toHaveLength(3);
     expect(
       run({ ...host, trigger: { payload: { text: fixture } } }).intents,
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it('says where to choose a file when none was given', () => {
@@ -148,5 +161,54 @@ describe('annotations (money-category, money-note)', () => {
     expect(again.problems.filter(p => p.severity === 'error')).toEqual([]);
     expect(saved.get('row-0')![category]).toBe('Lunch');
     expect(saved.get('row-0')![note]).toBe('Client lunch, invoice 2026-031');
+  });
+});
+
+describe('statements (atomic-server#1768 destination.tables)', () => {
+  const host = {
+    config,
+    query: () => [] as string[],
+    read: () => ({}),
+  };
+  const set = (intent: unknown) =>
+    (intent as { set: Record<string, unknown>; parent: string }).set;
+
+  it('writes one statement row with its reconciled balances beside the transactions', () => {
+    const { intents } = run({ ...host, text: fixture }) as {
+      intents: {
+        parent: string;
+        isA?: string[];
+        set: Record<string, unknown>;
+      }[];
+    };
+    const statements = intents.filter(
+      i => i.parent === config.tables.statements.table,
+    );
+    expect(statements).toHaveLength(1);
+    expect(statements[0].isA).toEqual([config.tables.statements.rowClass]);
+    expect(set(statements[0])).toMatchObject({
+      [properties['bank-account']]: 'NL00BUNQ0000000000',
+      [properties['bank-currency']]: 'EUR',
+      [properties['bank-statement']]: '1/1',
+      [properties['bank-period-start']]: '2026-09-01',
+      [properties['bank-period-end']]: '2026-09-03',
+      [properties['bank-opening-balance']]: '100',
+      [properties['bank-closing-balance']]: '107.66',
+      [properties['bank-entry-count']]: '2',
+      [properties['bank-format']]: 'mt940',
+    });
+    expect(set(statements[0])[properties['bank-imported-date']]).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+  });
+
+  it('asks for Set up again when the statements table is missing', () => {
+    expect(() =>
+      run({
+        ...host,
+        config: { ...config, tables: undefined as never },
+        text: fixture,
+      }),
+    ).toThrow('missing tables.statements');
   });
 });

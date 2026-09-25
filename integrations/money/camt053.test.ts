@@ -24,6 +24,13 @@ const p = Object.fromEntries(
     'statement',
     'source-id',
     'fingerprint',
+    'period-start',
+    'period-end',
+    'opening-balance',
+    'closing-balance',
+    'entry-count',
+    'format',
+    'imported-date',
   ].map(k => [`bank-${k}`, `https://example.com/${k}`]),
 );
 const host = {
@@ -32,6 +39,12 @@ const host = {
     table: 'https://example.com/table',
     rowClass: 'https://example.com/transaction',
     properties: p,
+    tables: {
+      statements: {
+        table: 'https://example.com/statements',
+        rowClass: 'https://example.com/statement',
+      },
+    },
   },
   query: () => [] as string[],
   read: () => ({}),
@@ -137,7 +150,8 @@ describe('camt.053 parser and import proposals', () => {
     expect(parseBankStatement(mt940Fixture).format).toBe('mt940');
     expect(parseBankStatement('﻿\n' + fixture).format).toBe('camt053');
     const verdict = run(host);
-    expect(verdict.intents).toHaveLength(2);
+    // Two transactions and their statement.
+    expect(verdict.intents).toHaveLength(3);
     const first = verdict.intents[0] as Intent;
     expect(first.set[p['bank-amount']]).toBe('-12.34');
     expect(first.set[p['bank-source-id']]).toBe(

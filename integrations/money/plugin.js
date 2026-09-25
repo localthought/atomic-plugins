@@ -807,6 +807,35 @@ var OVERLAP_MESSAGE = "This statement overlaps an earlier import without unique 
 // integrations/money/schema.ts
 var DATE = "https://atomicdata.dev/datatypes/date";
 var STRING = "https://atomicdata.dev/datatypes/string";
+var STATEMENT_FIELDS = [
+  [
+    "bank-period-start",
+    "Period start",
+    "Date of the statement opening balance."
+  ],
+  ["bank-period-end", "Period end", "Date of the statement closing balance."],
+  [
+    "bank-opening-balance",
+    "Opening balance",
+    "Exact signed decimal string: the booked balance the statement starts from."
+  ],
+  [
+    "bank-closing-balance",
+    "Closing balance",
+    "Exact signed decimal string: the booked balance the statement ends on, reconciled with its entries."
+  ],
+  [
+    "bank-entry-count",
+    "Entries",
+    "Number of booked entries in the statement, as a decimal string."
+  ],
+  ["bank-format", "Format", "mt940 or camt053: the export format read."],
+  [
+    "bank-imported-date",
+    "Imported on",
+    "The date this statement was first imported."
+  ]
+];
 function bankingSchema() {
   const fields = [
     [
@@ -873,13 +902,16 @@ function bankingSchema() {
       "Your own note on this transaction. Never written by the importer."
     ]
   ];
+  const dated = /* @__PURE__ */ new Set(["bank-period-start", "bank-period-end"]);
   return {
-    properties: [...fields, ...notes].map(([shortname, name, description]) => ({
-      shortname,
-      name,
-      description,
-      datatype: shortname.endsWith("-date") ? DATE : STRING
-    })),
+    properties: [...fields, ...notes, ...STATEMENT_FIELDS].map(
+      ([shortname, name, description]) => ({
+        shortname,
+        name,
+        description,
+        datatype: shortname.endsWith("-date") || dated.has(shortname) ? DATE : STRING
+      })
+    ),
     classes: [
       {
         shortname: "bank-transaction",
@@ -893,6 +925,32 @@ function bankingSchema() {
           "bank-source-id"
         ],
         recommends: [...fields.slice(0, 9), ...notes].map((f) => f[0])
+      },
+      {
+        shortname: "bank-statement-record",
+        name: "Bank statement",
+        description: "One imported MT940 or camt.053 statement: account, period and its reconciled opening and closing balances.",
+        requires: [
+          "bank-account",
+          "bank-currency",
+          "bank-period-start",
+          "bank-period-end",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-source-id"
+        ],
+        recommends: [
+          "bank-account",
+          "bank-currency",
+          "bank-statement",
+          "bank-period-start",
+          "bank-period-end",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-entry-count",
+          "bank-format",
+          "bank-imported-date"
+        ]
       }
     ]
   };
@@ -937,9 +995,13 @@ var manifest = {
       properties: {
         type: "object",
         description: "Banking ontology properties, by shortname"
+      },
+      tables: {
+        type: "object",
+        description: "More tables Set up created, by key: `statements` holds one row per imported statement with its balances"
       }
     },
-    required: ["table", "rowClass", "properties"]
+    required: ["table", "rowClass", "properties", "tables"]
   },
   // The host draws the file picker and hands the decoded text over as
   // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
@@ -966,6 +1028,23 @@ var manifest = {
         "bank-account",
         "bank-reference"
       ]
+    },
+    // One row per imported statement, with its reconciled balances: the
+    // Money app's Imports tab and closing balances (atomic-server#1768).
+    tables: {
+      statements: {
+        name: "Imported statements",
+        rowClass: "bank-statement-record",
+        columns: [
+          "bank-period-end",
+          "bank-account",
+          "bank-currency",
+          "bank-statement",
+          "bank-opening-balance",
+          "bank-closing-balance",
+          "bank-entry-count"
+        ]
+      }
     }
   }
 };
@@ -977,11 +1056,18 @@ function run(ctx) {
     );
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };
-  const { table, rowClass, properties: p } = ctx.config ?? {};
+  const {
+    table,
+    rowClass,
+    properties: p,
+    tables
+  } = ctx.config ?? {};
+  const statementsTable = tables?.statements;
   const missing = [
     ["table", table],
     ["rowClass", rowClass],
-    ["properties", p]
+    ["properties", p],
+    ["tables.statements", statementsTable?.table && statementsTable.rowClass]
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length)
     throw new Error(
@@ -1030,10 +1116,47 @@ function run(ctx) {
     });
   }
   const result = importRecords(ctx, records);
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const statementRecords = statements.map(
+    (statement, index) => {
+      const identity = JSON.stringify([
+        "statement",
+        format,
+        statement.account,
+        statement.currency,
+        statement.number,
+        statement.start,
+        statement.end
+      ]);
+      return {
+        sourceId: identity,
+        mode: "append",
+        localId: `statement-${index}`,
+        parent: statementsTable.table,
+        isA: [statementsTable.rowClass],
+        values: {
+          "https://atomicdata.dev/properties/name": `${statement.account} ${statement.currency} ${statement.number}`,
+          [p["bank-account"]]: statement.account,
+          [p["bank-currency"]]: statement.currency,
+          [p["bank-statement"]]: statement.number,
+          [p["bank-period-start"]]: statement.start,
+          [p["bank-period-end"]]: statement.end,
+          [p["bank-opening-balance"]]: statement.opening,
+          [p["bank-closing-balance"]]: statement.closing,
+          [p["bank-entry-count"]]: String(statement.transactions.length),
+          [p["bank-format"]]: format,
+          [p["bank-imported-date"]]: today,
+          [p["bank-source-id"]]: identity
+        }
+      };
+    }
+  );
+  const saved = importRecords(ctx, statementRecords);
   return {
-    intents: result.intents,
+    intents: [...result.intents, ...saved.intents],
     problems: [
       ...result.problems,
+      ...saved.problems,
       {
         severity: "warning",
         message: `${statements.length} statements reconciled. ${result.summary.unchanged} previously imported transactions skipped. Amounts are exact decimal strings; negative amounts are money out.`

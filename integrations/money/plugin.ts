@@ -35,8 +35,13 @@ export const manifest = {
         type: 'object',
         description: 'Banking ontology properties, by shortname',
       },
+      tables: {
+        type: 'object',
+        description:
+          'More tables Set up created, by key: `statements` holds one row per imported statement with its balances',
+      },
     },
-    required: ['table', 'rowClass', 'properties'],
+    required: ['table', 'rowClass', 'properties', 'tables'],
   },
   // The host draws the file picker and hands the decoded text over as
   // `ctx.upload` (atomic-server#1653). 5 MB is the camt.053 limit; MT940 files
@@ -64,12 +69,30 @@ export const manifest = {
         'bank-reference',
       ],
     },
+    // One row per imported statement, with its reconciled balances: the
+    // Money app's Imports tab and closing balances (atomic-server#1768).
+    tables: {
+      statements: {
+        name: 'Imported statements',
+        rowClass: 'bank-statement-record',
+        columns: [
+          'bank-period-end',
+          'bank-account',
+          'bank-currency',
+          'bank-statement',
+          'bank-opening-balance',
+          'bank-closing-balance',
+          'bank-entry-count',
+        ],
+      },
+    },
   },
 };
 export interface Config {
   table: string;
   rowClass: string;
   properties: Record<string, string>;
+  tables: { statements: { table: string; rowClass: string } };
 }
 interface Host {
   /** What the host hands over for a declared `accepts` file. */
@@ -92,11 +115,18 @@ export function run(ctx: Host) {
   const { format, statements } = parseBankStatement(text);
   if (ctx.trigger?.payload?.validate) return { intents: [], problems: [] };
   // Absent config reads as a configuration problem, never a TypeError.
-  const { table, rowClass, properties: p } = ctx.config ?? ({} as Config);
+  const {
+    table,
+    rowClass,
+    properties: p,
+    tables,
+  } = ctx.config ?? ({} as Config);
+  const statementsTable = tables?.statements;
   const missing = [
     ['table', table],
     ['rowClass', rowClass],
     ['properties', p],
+    ['tables.statements', statementsTable?.table && statementsTable.rowClass],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name);
@@ -160,11 +190,52 @@ export function run(ctx: Host) {
   }
 
   const result = importRecords(ctx, records);
+  // One row per statement, beside its transactions: account, period and the
+  // reconciled balances. Append-only, like the transactions, so a reimport
+  // of the same statement proposes nothing.
+  const today = new Date().toISOString().slice(0, 10);
+  const statementRecords: ImportRecord[] = statements.map(
+    (statement, index) => {
+      const identity = JSON.stringify([
+        'statement',
+        format,
+        statement.account,
+        statement.currency,
+        statement.number,
+        statement.start,
+        statement.end,
+      ]);
+
+      return {
+        sourceId: identity,
+        mode: 'append',
+        localId: `statement-${index}`,
+        parent: statementsTable!.table,
+        isA: [statementsTable!.rowClass],
+        values: {
+          'https://atomicdata.dev/properties/name': `${statement.account} ${statement.currency} ${statement.number}`,
+          [p['bank-account']]: statement.account,
+          [p['bank-currency']]: statement.currency,
+          [p['bank-statement']]: statement.number,
+          [p['bank-period-start']]: statement.start,
+          [p['bank-period-end']]: statement.end,
+          [p['bank-opening-balance']]: statement.opening,
+          [p['bank-closing-balance']]: statement.closing,
+          [p['bank-entry-count']]: String(statement.transactions.length),
+          [p['bank-format']]: format,
+          [p['bank-imported-date']]: today,
+          [p['bank-source-id']]: identity,
+        },
+      };
+    },
+  );
+  const saved = importRecords(ctx, statementRecords);
 
   return {
-    intents: result.intents,
+    intents: [...result.intents, ...saved.intents],
     problems: [
       ...result.problems,
+      ...saved.problems,
       {
         severity: 'warning',
         message: `${statements.length} statements reconciled. ${result.summary.unchanged} previously imported transactions skipped. Amounts are exact decimal strings; negative amounts are money out.`,
