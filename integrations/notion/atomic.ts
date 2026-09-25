@@ -8,7 +8,7 @@ import {
   Datatype,
   ensureSchema,
   pluginSchema,
-  signRequest,
+  signedRequestInit,
   type JSONValue,
 } from '../../browser/lib/src/index.js';
 import {
@@ -79,20 +79,21 @@ export async function install(
 
   if (typeof token === 'string') {
     const secretUrl = `${store.getServerUrl()}/plugin-secret`;
-    const response = await fetch(secretUrl, {
-      method: 'POST',
-      headers: {
-        ...(await signRequest(secretUrl, store.getAgent()!, {})),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        drive,
-        plugin: plugin.subject,
-        name: 'notion',
-        value: `Bearer ${token}`,
-        origins: ['https://api.notion.com'],
+    // `/plugin-secret` takes only a version 2 signature (atomic-server#1832).
+    const response = await fetch(
+      secretUrl,
+      await signedRequestInit(secretUrl, store.getAgent()!, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          drive,
+          plugin: plugin.subject,
+          name: 'notion',
+          value: `Bearer ${token}`,
+          origins: ['https://api.notion.com'],
+        }),
       }),
-    });
+    );
     if (!response.ok) throw new Error('Could not store Notion credential');
   }
 

@@ -8,7 +8,7 @@ import {
   ensureSchema,
   findSchema,
   pluginSchema,
-  signRequest,
+  signedRequestInit,
   taskSchema,
   readConnectionSubjects,
 } from '@tomic/lib';
@@ -133,20 +133,21 @@ export async function install(
 
   if (token) {
     const url = `${store.getServerUrl()}/plugin-secret`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        ...(await signRequest(url, store.getAgent()!, {})),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        drive,
-        plugin: plugin.subject,
-        name: 'github',
-        value: `Bearer ${token}`,
-        origins: ['https://api.github.com'],
+    // `/plugin-secret` takes only a version 2 signature (atomic-server#1832).
+    const response = await fetch(
+      url,
+      await signedRequestInit(url, store.getAgent()!, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          drive,
+          plugin: plugin.subject,
+          name: 'github',
+          value: `Bearer ${token}`,
+          origins: ['https://api.github.com'],
+        }),
       }),
-    });
+    );
     if (!response.ok)
       throw new Error('Could not store GitHub credential on AtomicServer');
   }
