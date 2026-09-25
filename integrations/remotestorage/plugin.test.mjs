@@ -288,3 +288,39 @@ test('bundle is deterministic, self-contained and executable without Node host A
   assert.equal(bundle.sha256('abc'), sha256('abc'));
   assert.equal(bundle.handle(fixture([document()]).ctx, request()).status, 200);
 });
+
+test('canonical Atomic parents and resource IDs support imports, updates and public reads', () => {
+  const parent = 'atomic:' + Buffer.alloc(64, 1).toString('base64');
+  const subject = 'atomic:' + Buffer.alloc(64, 2).toString('base64');
+  const f = fixture();
+  f.ctx.config = { table: parent, publicCategories: { notes: parent } };
+  const created = f.proposal([document()]);
+  assert.deepEqual(created.problems, []);
+  assert.equal(created.intents[0].parent, parent);
+  f.resources.set(subject, { [P.parent]: parent, ...created.intents[0].set });
+  assert.equal(handle(f.ctx, request()).body, 'hello');
+  assert.deepEqual(f.proposal([document()]).intents, []);
+  assert.equal(
+    f.proposal([document(undefined, 'changed')]).intents[0].subject,
+    subject,
+  );
+});
+
+test('empty, legacy-link and control-containing parent subjects are refused', () => {
+  for (const parent of [
+    'atomic:',
+    'atomic:?drive=x',
+    'atomic://host/path',
+    'atomic:bad\nvalue',
+    'did:ad:',
+    'https://',
+  ]) {
+    const f = fixture();
+    f.ctx.config = { table: parent, publicCategories: { notes: parent } };
+    assert.match(
+      f.proposal([document()]).problems[0].message,
+      /parent subject/,
+    );
+    assert.equal(handle(f.ctx, request()).status, 503);
+  }
+});

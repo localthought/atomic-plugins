@@ -232,11 +232,32 @@ function sameDisplay(resource, doc) {
   return resource[P.content] === doc.text;
 }
 
+// Match the host's canonical atomic: scheme and legacy did:ad: alias without
+// imposing a signature alphabet. The host owns deeper identifier validation.
+function subjectId(value) {
+  if (
+    typeof value !== 'string' ||
+    /\s/.test(value) ||
+    [...value].some(
+      char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    )
+  )
+    return false;
+  if (/^https?:\/\/[^/?#]+/.test(value)) return true;
+  const body = value.startsWith('atomic:')
+    ? value.slice(7)
+    : value.startsWith('did:ad:')
+      ? value.slice(7)
+      : '';
+
+  return body.split(/[?#]/)[0].length > 0 && !body.startsWith('//');
+}
+
 /** Existing host importer contract: proposals only; host previews, authorizes and applies. */
 export function run(ctx) {
   try {
     const parent = ctx.config?.table;
-    if (typeof parent !== 'string' || !/^(https?:\/\/|did:ad:)/.test(parent))
+    if (!subjectId(parent))
       fail('Configure table with an Atomic parent subject');
     const text = ctx.upload?.text;
     if (typeof text !== 'string' || utf8(text).length > MAX_BYTES)
@@ -315,8 +336,7 @@ export function readCategory(ctx, category) {
   if (!exports || !Object.prototype.hasOwnProperty.call(exports, category))
     return null;
   const parent = exports[category];
-  if (typeof parent !== 'string' || !/^(https?:\/\/|did:ad:)/.test(parent))
-    fail('Invalid category parent');
+  if (!subjectId(parent)) fail('Invalid category parent');
   const subjects = ctx.query(P.parent, parent);
   if (!Array.isArray(subjects) || subjects.length > MAX_RECORDS)
     fail('Category exceeds 128 records');
