@@ -134,6 +134,11 @@
         "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/pagination-overlay.yaml",
         "https://ontola.github.io/atomic-plugins/overlays/clockify.me/1.0.0-readonly/time-entry-write-overlay.yaml"
       ]
+    },
+    {
+      "name": "pets",
+      "openapi": "https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/openapi.json",
+      "overlays": []
     }
   ]
 }

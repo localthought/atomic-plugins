@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "name": "Rex",
+    "species": "Dog",
+    "age": 1,
+    "vaccinated": true,
+    "weight": 0.5,
+    "updated_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "name": "Whiskers",
+    "species": "Cat",
+    "age": 2,
+    "vaccinated": false,
+    "weight": 1.5,
+    "updated_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "id": 3,
+    "name": "Tweety",
+    "species": "Bird",
+    "age": 3,
+    "vaccinated": true,
+    "weight": 2.5,
+    "updated_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "id": 4,
+    "name": "Nibbles",
+    "species": "Rabbit",
+    "age": 4,
+    "vaccinated": false,
+    "weight": 3.5,
+    "updated_at": "2026-09-09T00:00:00Z"
+  },
+  {
+    "id": 5,
+    "name": "Bubbles",
+    "species": "Fish",
+    "age": 5,
+    "vaccinated": true,
+    "weight": 4.5,
+    "updated_at": "2026-09-09T00:00:00Z"
+  }
+]

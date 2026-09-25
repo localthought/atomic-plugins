@@ -34,7 +34,8 @@ The proxy:
 
 - runs the OAuth 2.0 authorization-code flow (with PKCE where the provider
   supports it) against a provider, or shows a form where the user pastes an
-  API key for API-key providers such as Clockify;
+  API key for API-key providers such as Clockify, or, for a platform whose
+  document requires no security (the Pets demo), asks only for consent;
 - stores the resulting token or key encrypted in PostgreSQL, as a
   **connection** owned by the user's Atomic agent;
 - forwards requests from that agent, and from app agents the owner has
@@ -477,6 +478,7 @@ loaded.
 | `spotify` | `OAUTH_SPOTIFY_CLIENT_ID` | [Spotify for Developers → Dashboard](https://developer.spotify.com/dashboard) | `playlist-read-private`, `playlist-read-collaborative` | A public client: the catalog declares only `none`, so no secret is needed or sent (setting `OAUTH_SPOTIFY_CLIENT_AUTH_METHOD=none` is equivalent). Apps in development mode only admit users you allowlist. |
 | `discord` | `OAUTH_DISCORD_CLIENT_ID`, `_CLIENT_SECRET` | [Discord Developer Portal → Applications](https://discord.com/developers/applications) → OAuth2 → Redirects | `identify`, `guilds` | No bot token needed. |
 | `clockify` | none | nothing to register | n/a | An API-key platform. The consent page asks the user for their own key (Clockify → Profile settings → API), which is sealed like an OAuth token. |
+| `pets` | none | nothing to register | n/a | A static, read-only demo API published on GitHub Pages next to the catalog (`overlays/pets-demo/`), for the Pets drive app. Its document requires no security, so the consent page asks for nothing and no credential is stored or sent. Needs 0.2.2 or later; 0.2.1 lists it but refuses to connect it. |
 
 The consoles' names and layouts change over time; the links were current
 when this was written, and no registration was redone for this guide. A

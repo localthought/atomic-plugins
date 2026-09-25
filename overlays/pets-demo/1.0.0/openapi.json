@@ -1,0 +1,104 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Pets demo",
+    "version": "1.0.0",
+    "description": "A static, read-only demo API published by GitHub Pages from ontola/atomic-plugins (overlays/pets-demo/1.0.0/api/). It needs no account and no credential. GET /pets answers five synthetic pets in one page."
+  },
+  "servers": [
+    {
+      "url": "https://ontola.github.io/atomic-plugins/overlays/pets-demo/1.0.0/api"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/pets": {
+      "get": {
+        "x-pagination": [
+          {
+            "scheme": "nextLink"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Pet"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "paginationSchemes": {
+      "nextLink": {
+        "type": "nextLink",
+        "response": {
+          "headers": {
+            "Link": {
+              "role": "nextLink"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "species": {
+            "type": "string"
+          },
+          "age": {
+            "type": "integer"
+          },
+          "vaccinated": {
+            "type": "boolean"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "crudResources": {
+      "pet": {
+        "schema": {
+          "$ref": "#/components/schemas/Pet"
+        },
+        "identity": {
+          "urlTemplate": "/pets/{pet_id}",
+          "bindings": {
+            "pet_id": {
+              "field": "id"
+            }
+          }
+        },
+        "collections": {
+          "pets": {
+            "urlTemplate": "/pets"
+          }
+        }
+      }
+    }
+  }
+}
